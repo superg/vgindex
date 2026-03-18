@@ -1,0 +1,99 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    depends_on:
+      - app
+      - phpbb
+      - mediawiki
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER:-redump}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-redump}
+      - APP_SECRET_KEY=${APP_SECRET_KEY:-devsecretkey0000000000000000000000000000000000000000000000000000}
+      - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8080}
+      - APP_PORT=${APP_PORT:-3000}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+    volumes:
+      - archive_cache:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5437:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-redump}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=${POSTGRES_DB:-redump}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-redump}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  phpbb:
+    image: bitnami/phpbb:3
+    restart: unless-stopped
+    environment:
+      - PHPBB_DATABASE_HOST=postgres
+      - PHPBB_DATABASE_PORT_NUMBER=5432
+      - PHPBB_DATABASE_NAME=phpbb
+      - PHPBB_DATABASE_USER=${POSTGRES_USER:-redump}
+      - PHPBB_DATABASE_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - PHPBB_USERNAME=${PHPBB_ADMIN_USER:-admin}
+      - PHPBB_PASSWORD=${PHPBB_ADMIN_PASSWORD:-changeme}
+      - PHPBB_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@redump.org}
+      - PHPBB_FORUM_NAME=redump.org Forum
+      - PHPBB_FORUM_DESCRIPTION=Disc Preservation Community
+      - PHP_MEMORY_LIMIT=256M
+    volumes:
+      - phpbb_data:/bitnami/phpbb
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mediawiki:
+    image: mediawiki:1.42
+    restart: unless-stopped
+    environment:
+      - MEDIAWIKI_DB_HOST=postgres
+      - MEDIAWIKI_DB_NAME=mediawiki
+      - MEDIAWIKI_DB_USER=${POSTGRES_USER:-redump}
+      - MEDIAWIKI_DB_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - MEDIAWIKI_DB_TYPE=postgres
+    volumes:
+      - mediawiki_data:/var/www/html
+      - ./docker/mediawiki/LocalSettings.php:/var/www/html/LocalSettings.php:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+  archive_cache:
+  phpbb_data:
+  mediawiki_data:

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Submissions{% endblock %}
+
+{% block content %}
+<h2>Submissions</h2>
+
+<form method="get" action="/submissions/">
+    <div class="grid">
+        <label>
+            Status
+            <select name="status">
+                <option value="">All</option>
+                <option value="Pending" {% match query.status %}{% when Some with (st) %}{% if st == "Pending" %}selected{% endif %}{% when None %}{% endmatch %}>Pending</option>
+                <option value="Approved" {% match query.status %}{% when Some with (st) %}{% if st == "Approved" %}selected{% endif %}{% when None %}{% endmatch %}>Approved</option>
+                <option value="Denied" {% match query.status %}{% when Some with (st) %}{% if st == "Denied" %}selected{% endif %}{% when None %}{% endmatch %}>Denied</option>
+            </select>
+        </label>
+        <label>
+            Type
+            <select name="sub_type">
+                <option value="">All</option>
+                <option value="New Dump" {% match query.sub_type %}{% when Some with (t) %}{% if t == "New Dump" %}selected{% endif %}{% when None %}{% endmatch %}>New Dump</option>
+                <option value="Verification" {% match query.sub_type %}{% when Some with (t) %}{% if t == "Verification" %}selected{% endif %}{% when None %}{% endmatch %}>Verification</option>
+                <option value="Edit" {% match query.sub_type %}{% when Some with (t) %}{% if t == "Edit" %}selected{% endif %}{% when None %}{% endmatch %}>Edit</option>
+            </select>
+        </label>
+        <label>&nbsp;<button type="submit">Filter</button></label>
+    </div>
+</form>
+
+<table class="submissions-table striped">
+    <thead>
+        <tr>
+            <th>Type</th>
+            <th>Title</th>
+            {% if is_moderator %}<th>Submitter</th>{% endif %}
+            <th>Date</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for sub in submissions %}
+        <tr>
+            <td>{{ sub.submission_type }}</td>
+            <td><a href="/submissions/{{ sub.id }}/">{{ sub.title }}</a></td>
+            {% if is_moderator %}<td>{{ sub.submitter }}</td>{% endif %}
+            <td><small>{{ sub.created_at.format("%Y-%m-%d %H:%M") }}</small></td>
+            <td><span class="{{ sub.status.css_class() }}">{{ sub.status }}</span></td>
+        </tr>
+        {% endfor %}
+        {% if submissions.is_empty() %}
+        <tr><td colspan="{% if is_moderator %}5{% else %}4{% endif %}">No submissions found.</td></tr>
+        {% endif %}
+    </tbody>
+</table>
+
+{% if total_pages > 1 %}
+<nav>
+    <ul>
+        {% if page > 1 %}<li><a href="/submissions/?page={{ page - 1 }}">&laquo; Previous</a></li>{% endif %}
+        <li>Page {{ page }} of {{ total_pages }}</li>
+        {% if page < total_pages %}<li><a href="/submissions/?page={{ page + 1 }}">Next &raquo;</a></li>{% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

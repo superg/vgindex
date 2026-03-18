@@ -1,0 +1,13 @@
+{$DOMAIN:localhost} {
+    handle /forum/* {
+        reverse_proxy phpbb:80
+    }
+
+    handle /wiki/* {
+        reverse_proxy mediawiki:80
+    }
+
+    handle {
+        reverse_proxy app:3000
+    }
+}
