@@ -1,0 +1,209 @@
+:root {
+    --status-verified: #2ecc40;
+    --status-good: #0074d9;
+    --status-questionable: #ffdc00;
+    --status-bad: #ff4136;
+}
+
+/* Flag icons */
+.flag-icon {
+    width: 20px;
+    height: 14px;
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0 1px;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+/* Status dots */
+.status-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+.status-dot.verified { background: var(--status-verified); }
+.status-dot.good { background: var(--status-good); }
+.status-dot.questionable { background: var(--status-questionable); }
+.status-dot.bad { background: var(--status-bad); }
+
+/* Compact tables for disc listing */
+.disc-table td, .disc-table th {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+.disc-table a {
+    text-decoration: none;
+}
+.disc-table a:hover {
+    text-decoration: underline;
+}
+
+/* Striped table rows for readability */
+table.striped tbody tr:nth-child(even) {
+    background: rgba(0,0,0,0.03);
+}
+
+/* Letter picker */
+.letter-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+}
+.letter-picker a {
+    padding: 0.15rem 0.5rem;
+    text-decoration: none;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    transition: background 0.15s;
+}
+.letter-picker a:hover {
+    background: var(--pico-secondary-background);
+}
+.letter-picker a.active {
+    background: var(--pico-primary);
+    color: var(--pico-primary-inverse);
+    border-color: var(--pico-primary);
+}
+
+/* Hex dump */
+.hex-dump {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.8rem;
+    white-space: pre;
+    overflow-x: auto;
+    background: var(--pico-code-background-color);
+    padding: 0.75rem;
+    border-radius: 4px;
+    line-height: 1.4;
+}
+
+/* SBI highlight */
+.sbi-highlight {
+    color: var(--status-bad);
+    font-weight: bold;
+}
+
+/* Ring code entry boxes */
+.ring-code-entry {
+    border: 1px solid var(--pico-muted-border-color);
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    border-radius: 4px;
+}
+.ring-code-entry table {
+    margin-bottom: 0.5rem;
+}
+
+/* Quick search in nav */
+nav .quick-search {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+    position: relative;
+}
+nav .quick-search input[type="search"] {
+    margin: 0;
+    padding: 0.3rem 0.5rem;
+    height: auto;
+    font-size: 0.85rem;
+    width: 180px;
+}
+
+/* Quick search dropdown results */
+.search-results {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--pico-background-color);
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.search-results li {
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+.search-results li:last-child {
+    border-bottom: none;
+}
+.search-results li:hover {
+    background: var(--pico-secondary-background);
+}
+.search-results a {
+    text-decoration: none;
+    display: block;
+}
+.search-results small {
+    color: var(--pico-muted-color);
+}
+
+/* Recent dumps table */
+.recent-dumps td {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* Submission status colors */
+.submissions-table .status-pending { color: #f39c12; font-weight: 600; }
+.submissions-table .status-approved { color: var(--status-verified); font-weight: 600; }
+.submissions-table .status-denied { color: var(--status-bad); font-weight: 600; }
+
+/* Diff view */
+.diff-add { background: #e6ffec; }
+.diff-remove { background: #ffebe9; }
+
+/* Responsive nav adjustments */
+@media (max-width: 768px) {
+    nav ul {
+        flex-wrap: wrap;
+    }
+    nav .quick-search input[type="search"] {
+        width: 120px;
+    }
+    .disc-table {
+        font-size: 0.75rem;
+    }
+}
+
+/* Fieldset styling for forms */
+fieldset {
+    margin-bottom: 1rem;
+}
+fieldset legend {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+/* Code blocks in submission detail */
+pre code {
+    font-size: 0.8rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* Footer online users */
+#online-users a {
+    text-decoration: none;
+}
+#online-users a:hover {
+    text-decoration: underline;
+}
+
+/* HTMX loading indicator */
+.htmx-indicator {
+    display: none;
+}
+.htmx-request .htmx-indicator {
+    display: inline;
+}

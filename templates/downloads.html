@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Downloads{% endblock %}
+
+{% block content %}
+<h2>Downloads</h2>
+<p>Download datfiles, cuesheets, and SBI archives for each system.</p>
+
+<table class="striped">
+    <thead>
+        <tr>
+            <th>System</th>
+            <th>Datfile</th>
+            <th>Cuesheets</th>
+            <th>SBI</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for sys in systems %}
+        <tr>
+            <td>{{ sys.full_name }}</td>
+            <td>{% if sys.has_dat %}<a href="/downloads/{{ sys.short_code }}/dat">Download</a>{% endif %}</td>
+            <td>{% if sys.has_cue %}<a href="/downloads/{{ sys.short_code }}/cue">Download</a>{% endif %}</td>
+            <td>{% if sys.has_sbi %}<a href="/downloads/{{ sys.short_code }}/sbi">Download</a>{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

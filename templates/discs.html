@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Discs{% endblock %}
+
+{% block content %}
+<h2>Disc Database</h2>
+
+<details open>
+    <summary>Filters</summary>
+    <form method="get" action="/discs/" id="filter-form">
+        <div class="grid">
+            <label>
+                System
+                <select name="system">
+                    <option value="">All Systems</option>
+                    {% for sys in systems %}
+                    <option value="{{ sys.short_code }}" {% if sys.selected %}selected{% endif %}>{{ sys.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                Status
+                <select name="status">
+                    <option value="">All Statuses</option>
+                    <option value="Verified" {% if filter_status == "Verified" %}selected{% endif %}>Verified</option>
+                    <option value="Good" {% if filter_status == "Good" %}selected{% endif %}>Good</option>
+                    <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable</option>
+                    <option value="Bad" {% if filter_status == "Bad" %}selected{% endif %}>Bad</option>
+                </select>
+            </label>
+        </div>
+        <input type="hidden" name="q" value="{{ filter_q }}">
+        <button type="submit">Apply</button>
+    </form>
+
+    <div class="letter-picker">
+        <a href="/discs/?system={{ filter_system }}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
+        <a href="/discs/?system={{ filter_system }}&amp;letter=%23" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
+        {% for c in letters %}
+        <a href="/discs/?system={{ filter_system }}&amp;letter={{ c.0 }}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
+        {% endfor %}
+    </div>
+</details>
+
+<p><small>{{ total_count }} disc(s) found. Page {{ page }} of {{ total_pages }}.</small></p>
+
+<div id="disc-results">
+    <div style="overflow-x: auto;">
+    <table class="disc-table striped">
+        <thead>
+            <tr>
+                <th>Region</th>
+                <th><a href="/discs/?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}">Title</a></th>
+                <th><a href="/discs/?sort=system&amp;order={{ next_system_order }}">System</a></th>
+                <th>Version</th>
+                <th>Edition</th>
+                <th>Languages</th>
+                <th>Serial</th>
+                <th><a href="/discs/?sort=status&amp;order={{ next_status_order }}">Status</a></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for disc in discs %}
+            <tr>
+                <td>
+                    {% if disc.region_flag.is_some() %}
+                    <img class="flag-icon" src="/static/flags/{{ disc.region_flag_lower }}.png"
+                         title="{{ disc.region_name_display }}"
+                         alt="{{ disc.region_name_display }}">
+                    {% endif %}
+                </td>
+                <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
+                <td>{{ disc.system_short }}</td>
+                <td>{{ disc.version_display }}</td>
+                <td>{{ disc.edition_display }}</td>
+                <td>
+                    {% for lang in disc.language_flags %}
+                    <img class="flag-icon" src="/static/flags/{{ lang.flag_code_lower }}.png"
+                         title="{{ lang.name }}" alt="{{ lang.name }}">
+                    {% endfor %}
+                </td>
+                <td><small>{{ disc.serials }}</small></td>
+                <td><span class="status-dot {{ disc.status_class }}" title="{{ disc.status_display }}"></span></td>
+            </tr>
+            {% endfor %}
+            {% if discs.is_empty() %}
+            <tr><td colspan="8">No discs found.</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <nav aria-label="Pagination">
+        <ul>
+            {% if page > 1 %}
+            <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}">&laquo; Previous</a></li>
+            {% endif %}
+            <li>Page {{ page }} of {{ total_pages }}</li>
+            {% if page < total_pages %}
+            <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}">Next &raquo;</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

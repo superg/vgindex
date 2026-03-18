@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Submit New Disc{% endblock %}
+
+{% block content %}
+<h2>Submit New Disc</h2>
+
+<form method="post" action="/disc/submit/">
+    <fieldset>
+        <legend>System &amp; Media</legend>
+        <div class="grid">
+            <label>
+                System
+                <select name="system_id" required>
+                    <option value="">-- Select System --</option>
+                    {% for sys in systems %}
+                    <option value="{{ sys.id }}">{{ sys.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                Media Type
+                <select name="media_type" required>
+                    {% for mt in media_types %}
+                    <option value="{{ mt }}">{{ mt }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+    </fieldset>
+
+    <fieldset>
+        <legend>Disc Info</legend>
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" required>
+
+        <label for="category">Category</label>
+        <select id="category" name="category">
+            {% for cat in categories %}
+            <option value="{{ cat }}">{{ cat }}</option>
+            {% endfor %}
+        </select>
+
+        <fieldset>
+            <legend>Release Regions</legend>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+            {% for rr in release_regions %}
+            <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
+                <input type="checkbox" name="release_regions" value="{{ rr.id }}">
+                <img class="flag-icon" src="/static/flags/{{ rr.flag_lower }}.png" title="{{ rr.name }}" alt="{{ rr.name }}">
+            </label>
+            {% endfor %}
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Languages</legend>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+            {% for lang in languages %}
+            <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
+                <input type="checkbox" name="languages" value="{{ lang.id }}">
+                <img class="flag-icon" src="/static/flags/{{ lang.flag_lower }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
+            </label>
+            {% endfor %}
+            </div>
+        </fieldset>
+
+        <label for="barcode">Barcode</label>
+        <input type="text" id="barcode" name="barcode">
+        <label for="comments">Comments</label>
+        <textarea id="comments" name="comments" rows="3"></textarea>
+    </fieldset>
+
+    <fieldset>
+        <legend>Version / Edition</legend>
+        <div class="grid">
+            <label>Version <input type="text" name="version"></label>
+            <label>Edition <input type="text" name="edition"></label>
+            <label>Filename Suffix <input type="text" name="filename_suffix"></label>
+        </div>
+    </fieldset>
+
+    <fieldset>
+        <legend>Copy Protection</legend>
+        <label>Protection <input type="text" name="protection"></label>
+        <label>EXE Date <input type="date" name="exe_date"></label>
+        <label>Error Count <input type="number" name="error_count" value="0"></label>
+    </fieldset>
+
+    <fieldset>
+        <legend>Files (ROM entries)</legend>
+        <label for="files_xml">Paste ROM entries (one per line)
+            <textarea id="files_xml" name="files_xml" rows="6" placeholder='&lt;rom name="Title (Track 1).bin" size="..." crc="..." md5="..." sha1="..." /&gt;'></textarea>
+        </label>
+        <label for="cue_content">Cue Sheet (for CD/GD-ROM systems)
+            <textarea id="cue_content" name="cue_content" rows="6" placeholder="Paste raw cue sheet content"></textarea>
+        </label>
+    </fieldset>
+
+    <fieldset>
+        <legend>Dump Log</legend>
+        <label for="dump_log">Paste dump software log output
+            <textarea id="dump_log" name="dump_log" rows="6"></textarea>
+        </label>
+    </fieldset>
+
+    <button type="submit">Submit</button>
+</form>
+{% endblock %}

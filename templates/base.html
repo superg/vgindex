@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Redump{% endblock %} - redump.org</title>
+    <link rel="stylesheet" href="/static/css/pico.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="alternate" type="application/rss+xml" title="Redump.org - Recent Dumps" href="/feeds/recent/rss">
+    <script src="/static/js/htmx.min.js" defer></script>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <header class="container">
+        <nav>
+            <ul>
+                <li><strong><a href="/">redump.org</a></strong></li>
+            </ul>
+            <ul>
+                <li><a href="/">Main</a></li>
+                <li><a href="/discs/">Discs</a></li>
+                <li><a href="/downloads/">Downloads</a></li>
+                {% if current_user.is_some() %}
+                <li><a href="/disc/submit/">Add Disc</a></li>
+                <li><a href="/submissions/">Submissions</a></li>
+                {% endif %}
+                <li><a href="/forum/">Forum</a></li>
+                <li><a href="/wiki/">Wiki</a></li>
+            </ul>
+            <ul>
+                <li>
+                    <div class="quick-search">
+                        <input type="search" name="q" placeholder="Search..."
+                               aria-label="Search"
+                               hx-get="/api/search"
+                               hx-trigger="keyup changed delay:300ms"
+                               hx-target="#search-dropdown"
+                               hx-swap="innerHTML">
+                        <div id="search-dropdown"></div>
+                    </div>
+                </li>
+                {% match current_user %}
+                {% when Some with (user) %}
+                <li>{{ user }}</li>
+                <li><form method="post" action="/logout" style="margin:0"><button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;margin:0">Logout</button></form></li>
+                {% when None %}
+                <li><a href="/login" role="button" class="outline">Login</a></li>
+                <li><a href="/register" role="button">Register</a></li>
+                {% endmatch %}
+            </ul>
+        </nav>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="container">
+        <hr>
+        <p>
+            <small id="online-users"
+                   hx-get="/api/online-html"
+                   hx-trigger="load, every 60s"
+                   hx-swap="innerHTML">
+            </small>
+        </p>
+        <p><small>&copy; redump.org</small></p>
+    </footer>
+</body>
+</html>

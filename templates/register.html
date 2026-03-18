@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Register{% endblock %}
+
+{% block content %}
+<article>
+    <header><h2>Register</h2></header>
+    {% match error %}
+    {% when Some with (err) %}
+    <p role="alert" style="color: var(--pico-del-color);">{{ err }}</p>
+    {% when None %}
+    {% endmatch %}
+    {% match success %}
+    {% when Some with (msg) %}
+    <p role="status" style="color: var(--pico-ins-color);">{{ msg }}</p>
+    {% when None %}
+    <form method="post" action="/register">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required minlength="3" maxlength="64" autofocus>
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required>
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required minlength="8">
+        <label for="password_confirm">Confirm Password</label>
+        <input type="password" id="password_confirm" name="password_confirm" required minlength="8">
+        <button type="submit">Register</button>
+    </form>
+    {% endmatch %}
+    <footer>
+        <p>Already have an account? <a href="/login">Login</a></p>
+    </footer>
+</article>
+{% endblock %}

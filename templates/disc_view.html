@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h2>{{ title }}</h2>
+
+{% if !alt_titles.is_empty() %}
+<details open>
+    <summary>Alternative Titles</summary>
+    <table>
+        {% for at in alt_titles %}
+        <tr><td><strong>{{ at.type_name }}</strong></td><td>{{ at.value }}</td></tr>
+        {% endfor %}
+    </table>
+</details>
+{% endif %}
+
+<div class="grid">
+    <section>
+        <h3>Game Info</h3>
+        <table>
+            <tr><td><strong>System</strong></td><td>{{ system_name }}</td></tr>
+            <tr><td><strong>Media</strong></td><td>{{ media_type }}</td></tr>
+            <tr><td><strong>Category</strong></td><td>{{ category }}</td></tr>
+            {% if !system_region_name.is_empty() %}
+            <tr><td><strong>Region</strong></td><td>
+                <img class="flag-icon" src="/static/flags/{{ system_region_flag_lower }}.png" title="{{ system_region_name }}" alt="{{ system_region_name }}">
+                {{ system_region_name }}
+            </td></tr>
+            {% endif %}
+            {% if !release_regions.is_empty() %}
+            <tr><td><strong>Release Regions</strong></td><td>
+                {% for rr in release_regions %}
+                <img class="flag-icon" src="/static/flags/{{ rr.flag_code_lower }}.png" title="{{ rr.name }}" alt="{{ rr.name }}">
+                {% endfor %}
+            </td></tr>
+            {% endif %}
+            {% if !lang_flags.is_empty() %}
+            <tr><td><strong>Languages</strong></td><td>
+                {% for lang in lang_flags %}
+                <img class="flag-icon" src="/static/flags/{{ lang.flag_code_lower }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
+                {% endfor %}
+            </td></tr>
+            {% endif %}
+            {% for s in serials %}
+            <tr><td><strong>{{ s.type_name }} Serial</strong></td><td>{{ s.value }}</td></tr>
+            {% endfor %}
+            {% if !exe_date.is_empty() %}
+            <tr><td><strong>EXE Date</strong></td><td>{{ exe_date }}</td></tr>
+            {% endif %}
+            {% if !version.is_empty() %}
+            <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
+            {% endif %}
+            {% if !edition.is_empty() %}
+            <tr><td><strong>Edition</strong></td><td>{{ edition }}</td></tr>
+            {% endif %}
+            {% if !edc_display.is_empty() %}
+            <tr><td><strong>EDC</strong></td><td>{{ edc_display }}</td></tr>
+            {% endif %}
+            {% if !protection.is_empty() %}
+            <tr><td><strong>Protection</strong></td><td>{{ protection }}</td></tr>
+            {% endif %}
+            {% if !error_count.is_empty() %}
+            <tr><td><strong>Errors</strong></td><td>{{ error_count }}</td></tr>
+            {% endif %}
+            <tr><td><strong>Files</strong></td><td>{{ file_count }}</td></tr>
+            <tr><td><strong>Added</strong></td><td>{{ created_at }}</td></tr>
+            <tr><td><strong>Modified</strong></td><td>{{ updated_at }}</td></tr>
+        </table>
+    </section>
+
+    <section>
+        <h3>Dump Info</h3>
+        <table>
+            <tr>
+                <td><strong>Status</strong></td>
+                <td><span class="status-dot {{ status_class }}"></span> {{ status_display }}</td>
+            </tr>
+            <tr>
+                <td><strong>Dumpers</strong></td>
+                <td>
+                    {% for dumper in dumpers %}
+                    <a href="/discs/?dumper={{ dumper.user_id }}">{{ dumper.username }}</a>{% if !loop.last %}, {% endif %}
+                    {% endfor %}
+                    {% if dumpers.is_empty() %}Unknown{% endif %}
+                </td>
+            </tr>
+        </table>
+
+        {% if !barcode.is_empty() %}
+        <h4>Barcode</h4>
+        <p>{{ barcode }}</p>
+        {% endif %}
+
+        {% if !comments.is_empty() %}
+        <h4>Comments</h4>
+        <p>{{ comments }}</p>
+        {% endif %}
+    </section>
+</div>
+
+{% if !ring_entries.is_empty() %}
+<section>
+    <h3>Ring Codes</h3>
+    {% for entry in ring_entries %}
+    <div class="ring-code-entry">
+        <strong>Entry {{ loop.index }}</strong>
+        {% for layer in entry.layers %}
+        <table>
+            <tr><th colspan="2">Layer {{ layer.layer }}</th></tr>
+            {% if !layer.mastering_code.is_empty() %}
+            <tr><td>Mastering Code</td><td>{{ layer.mastering_code }}</td></tr>
+            {% endif %}
+            {% if !layer.mastering_sid.is_empty() %}
+            <tr><td>Mastering SID</td><td>{{ layer.mastering_sid }}</td></tr>
+            {% endif %}
+            {% if !layer.mould_sids.is_empty() %}
+            <tr><td>Mould SID(s)</td><td>{{ layer.mould_sids }}</td></tr>
+            {% endif %}
+            {% if !layer.toolstamps.is_empty() %}
+            <tr><td>Toolstamp(s)</td><td>{{ layer.toolstamps }}</td></tr>
+            {% endif %}
+            {% if !layer.additional_moulds.is_empty() %}
+            <tr><td>Additional Mould(s)</td><td>{{ layer.additional_moulds }}</td></tr>
+            {% endif %}
+            {% if !layer.offset_value.is_empty() %}
+            <tr><td>Offset</td><td>{{ layer.offset_value }}</td></tr>
+            {% endif %}
+            {% if !layer.sample_data_start.is_empty() %}
+            <tr><td>Sample Data Start</td><td>{{ layer.sample_data_start }}</td></tr>
+            {% endif %}
+            {% if !layer.comment.is_empty() %}
+            <tr><td>Comment</td><td>{{ layer.comment }}</td></tr>
+            {% endif %}
+        </table>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+
+<section>
+    <h3>Tracks</h3>
+    <div style="overflow-x: auto;">
+    {% if is_cd %}
+    <table class="disc-table striped">
+        <thead>
+            <tr><th>Track</th><th>Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th></tr>
+        </thead>
+        <tbody>
+            {% for file in files %}
+            {% if !file.track_display.is_empty() %}
+            <tr>
+                <td>{{ file.track_display }}</td>
+                <td>{{ file.size }}</td>
+                <td><code>{{ file.crc32 }}</code></td>
+                <td><code>{{ file.md5 }}</code></td>
+                <td><code>{{ file.sha1 }}</code></td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <table class="disc-table striped">
+        <thead>
+            <tr><th>Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th></tr>
+        </thead>
+        <tbody>
+            {% for file in files %}
+            <tr>
+                <td>{{ file.size }}</td>
+                <td><code>{{ file.crc32 }}</code></td>
+                <td><code>{{ file.md5 }}</code></td>
+                <td><code>{{ file.sha1 }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+    </div>
+</section>
+
+{% if !sbi_rows.is_empty() %}
+<section>
+    <h3>SBI Data</h3>
+    <div style="overflow-x: auto;">
+    <table class="disc-table striped">
+        <thead>
+            <tr><th>Sector</th><th>MSF</th><th>Contents</th></tr>
+        </thead>
+        <tbody>
+            {% for row in sbi_rows %}
+            <tr>
+                <td>{{ row.sector }}</td>
+                <td><code>{{ row.msf }}</code></td>
+                <td><code>{{ row.contents }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+{% if !hex_pvd.is_empty() %}
+<section>
+    <h3>PVD Data</h3>
+    <div class="hex-dump">{{ hex_pvd }}</div>
+</section>
+{% endif %}
+
+{% if can_edit %}
+<p><a href="/disc/{{ disc_id }}/edit/" role="button" class="outline">Edit this disc</a></p>
+{% endif %}
+{% endblock %}
