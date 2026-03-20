@@ -18,7 +18,7 @@ impl Config {
     pub fn from_env() -> Self {
         Self {
             database_url: env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgres://redump:changeme@localhost:5432/redump".into()),
+                .unwrap_or_else(|_| "postgres://vgindex:changeme@localhost:5432/vgindex".into()),
             secret_key: env::var("APP_SECRET_KEY")
                 .unwrap_or_else(|_| "devsecretkey0000000000000000000000000000000000000000000000000000".into()),
             base_url: env::var("APP_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".into()),

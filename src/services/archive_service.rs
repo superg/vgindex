@@ -66,7 +66,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
         <name>{}</name>
         <description>{}</description>
         <version>{}</version>
-        <homepage>https://redump.org</homepage>
+        <homepage>https://vgindex.org</homepage>
     </header>
 "#,
         html_escape(&sys.full_name),

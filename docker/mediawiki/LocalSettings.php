@@ -1,8 +1,8 @@
 <?php
-# MediaWiki LocalSettings for redump.org wiki integration
+# MediaWiki LocalSettings for vgindex.org wiki integration
 
-$wgSitename = "redump.org Wiki";
-$wgMetaNamespace = "Redump";
+$wgSitename = "vgindex.org Wiki";
+$wgMetaNamespace = "vgindex";
 $wgServer = "http://localhost:8080";
 $wgScriptPath = "/wiki";
 $wgArticlePath = "/wiki/$1";
@@ -11,7 +11,7 @@ $wgArticlePath = "/wiki/$1";
 $wgDBtype = "postgres";
 $wgDBserver = "postgres";
 $wgDBname = "mediawiki";
-$wgDBuser = getenv('MEDIAWIKI_DB_USER') ?: "redump";
+$wgDBuser = getenv('MEDIAWIKI_DB_USER') ?: "vgindex";
 $wgDBpassword = getenv('MEDIAWIKI_DB_PASSWORD') ?: "changeme";
 $wgDBprefix = "";
 
@@ -35,7 +35,7 @@ $wgGroupPermissions['*']['createaccount'] = false;
 # wfLoadExtension('PluggableAuth');
 # wfLoadExtension('OpenIDConnect');
 #
-# $wgPluggableAuth_Config['redump'] = [
+# $wgPluggableAuth_Config['vgindex'] = [
 #     'plugin' => 'OpenIDConnect',
 #     'data' => [
 #         'providerURL' => 'http://app:3000',
@@ -45,7 +45,7 @@ $wgGroupPermissions['*']['createaccount'] = false;
 # ];
 #
 # Role mapping (synced from OIDC claims):
-# $wgPluggableAuth_Config['redump']['data']['preferred_username'] = 'preferred_username';
+# $wgPluggableAuth_Config['vgindex']['data']['preferred_username'] = 'preferred_username';
 
 # File uploads
 $wgEnableUploads = true;

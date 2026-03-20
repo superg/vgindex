@@ -5,6 +5,22 @@
     --status-bad: #ff4136;
 }
 
+/* Header banner (redump-style) */
+#banner {
+    width: 100%;
+    min-width: 0;
+    height: 79px;
+    overflow: hidden;
+    background-color: #f9fafa;
+    background-image: url('/static/images/logo-right.png'), url('/static/images/tile.png');
+    background-repeat: no-repeat, repeat-x;
+    background-position: top right, top left;
+}
+#banner img {
+    float: left;
+    height: 79px;
+}
+
 /* Flag icons */
 .flag-icon {
     width: 20px;

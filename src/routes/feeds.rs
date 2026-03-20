@@ -29,11 +29,11 @@ async fn recent_rss(State(state): State<AppState>) -> Response {
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
 <channel>
-<title>Redump.org - Recent Dumps</title>
+<title>vgindex.org - Recent Dumps</title>
 <link>"#,
     );
     xml.push_str(base);
-    xml.push_str("</link>\n<description>Recent disc dumps on redump.org</description>\n");
+    xml.push_str("</link>\n<description>Recent disc dumps on vgindex.org</description>\n");
 
     for row in &rows {
         xml.push_str("<item>\n<title>");
