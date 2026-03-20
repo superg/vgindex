@@ -45,15 +45,13 @@ async fn online_users(State(state): State<AppState>) -> Json<OnlineInfo> {
 }
 
 async fn online_users_html(State(state): State<AppState>) -> Html<String> {
-    let usernames: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT u.username FROM sessions s
-         JOIN users u ON u.id = s.user_id
-         WHERE s.last_active_at > NOW() - INTERVAL '15 minutes'
-         ORDER BY u.username"
+    let registered: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT user_id) FROM sessions
+         WHERE user_id IS NOT NULL AND last_active_at > NOW() - INTERVAL '15 minutes'"
     )
-    .fetch_all(&state.pool)
+    .fetch_one(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or(0);
 
     let guests: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM sessions
@@ -63,21 +61,12 @@ async fn online_users_html(State(state): State<AppState>) -> Html<String> {
     .await
     .unwrap_or(0);
 
-    let mut html = String::new();
-    if !usernames.is_empty() {
-        html.push_str("Online: ");
-        for (i, name) in usernames.iter().enumerate() {
-            if i > 0 { html.push_str(", "); }
-            html.push_str(&format!("<a href=\"/discs/?dumper={}\">{}</a>", html_escape(name), html_escape(name)));
-        }
-    }
-    if guests > 0 {
-        if !usernames.is_empty() { html.push_str(" | "); }
-        html.push_str(&format!("{guests} guest(s)"));
-    }
-    if html.is_empty() {
-        html.push_str("No users online");
-    }
+    let total = registered + guests;
+    let html = if total == 0 {
+        "No users online".to_string()
+    } else {
+        format!("{total} user(s) online ({registered} registered, {guests} guest(s))")
+    };
 
     Html(html)
 }
@@ -90,7 +79,7 @@ async fn news_feed(State(state): State<AppState>) -> Html<String> {
     // This requires a separate connection or cross-database query.
     // For simplicity, we'll use a placeholder that can be connected later.
     let phpbb_url = state.config.database_url
-        .replace("/redump", "/phpbb");
+        .replace("/vgindex", "/phpbb");
 
     if let Ok(phpbb_pool) = crate::db::create_pool(&phpbb_url).await {
         // phpBB uses phpbb_ prefix by default with bitnami image

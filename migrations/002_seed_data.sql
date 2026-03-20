@@ -110,7 +110,7 @@ INSERT INTO systems (short_code, full_name, allowed_media, allowed_system_region
     ('fmt', 'Fujitsu FM Towns series', '{CD}', '{2}', false, false, false, false, 24),
     ('pc-98', 'NEC PC-98 series', '{CD}', '{2}', false, false, false, false, 25);
 
--- Systems: additional systems from redump.org (current site has many more)
+-- Systems: additional systems from vgindex.org (current site has many more)
 INSERT INTO systems (short_code, full_name, allowed_media, allowed_system_regions, has_date_field, has_sbi, has_pvd, has_edc_field, display_order) VALUES
     ('ps4', 'Sony PlayStation 4', '{BD-25,BD-50,BD-66,BD-100}', '{1,2,3,4}', false, false, false, false, 26),
     ('ps5', 'Sony PlayStation 5', '{BD-25,BD-50,BD-66,BD-100}', '{1,2,3,4}', false, false, false, false, 27),

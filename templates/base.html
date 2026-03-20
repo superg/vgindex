@@ -3,18 +3,19 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Redump{% endblock %} - redump.org</title>
+    <title>{% block title %}vgindex{% endblock %} - vgindex.org</title>
     <link rel="stylesheet" href="/static/css/pico.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
-    <link rel="alternate" type="application/rss+xml" title="Redump.org - Recent Dumps" href="/feeds/recent/rss">
+    <link rel="alternate" type="application/rss+xml" title="vgindex.org - Recent Dumps" href="/feeds/recent/rss">
     <script src="/static/js/htmx.min.js" defer></script>
     {% block head %}{% endblock %}
 </head>
 <body>
+    <div id="banner"><img src="/static/images/logo-left.png" alt="vgindex.org" /></div>
     <header class="container">
         <nav>
             <ul>
-                <li><strong><a href="/">redump.org</a></strong></li>
+                <li><strong><a href="/">vgindex.org</a></strong></li>
             </ul>
             <ul>
                 <li><a href="/">Main</a></li>
@@ -64,7 +65,6 @@
                    hx-swap="innerHTML">
             </small>
         </p>
-        <p><small>&copy; redump.org</small></p>
     </footer>
 </body>
 </html>

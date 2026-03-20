@@ -13,14 +13,13 @@ services:
       - DOMAIN=${DOMAIN:-localhost}
     depends_on:
       - app
-      - phpbb
       - mediawiki
 
   app:
     build: .
     restart: unless-stopped
     environment:
-      - DATABASE_URL=postgres://${POSTGRES_USER:-redump}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-redump}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-vgindex}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-vgindex}
       - APP_SECRET_KEY=${APP_SECRET_KEY:-devsecretkey0000000000000000000000000000000000000000000000000000}
       - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8080}
       - APP_PORT=${APP_PORT:-3000}
@@ -39,16 +38,16 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
-      - "5437:5432"
+      - "5432:5432"
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-redump}
+      - POSTGRES_USER=${POSTGRES_USER:-vgindex}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      - POSTGRES_DB=${POSTGRES_DB:-redump}
+      - POSTGRES_DB=${POSTGRES_DB:-vgindex}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-redump}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vgindex}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -60,12 +59,12 @@ services:
       - PHPBB_DATABASE_HOST=postgres
       - PHPBB_DATABASE_PORT_NUMBER=5432
       - PHPBB_DATABASE_NAME=phpbb
-      - PHPBB_DATABASE_USER=${POSTGRES_USER:-redump}
+      - PHPBB_DATABASE_USER=${POSTGRES_USER:-vgindex}
       - PHPBB_DATABASE_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - PHPBB_USERNAME=${PHPBB_ADMIN_USER:-admin}
       - PHPBB_PASSWORD=${PHPBB_ADMIN_PASSWORD:-changeme}
-      - PHPBB_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@redump.org}
-      - PHPBB_FORUM_NAME=redump.org Forum
+      - PHPBB_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@vgindex.org}
+      - PHPBB_FORUM_NAME=vgindex.org Forum
       - PHPBB_FORUM_DESCRIPTION=Disc Preservation Community
       - PHP_MEMORY_LIMIT=256M
     volumes:
@@ -80,7 +79,7 @@ services:
     environment:
       - MEDIAWIKI_DB_HOST=postgres
       - MEDIAWIKI_DB_NAME=mediawiki
-      - MEDIAWIKI_DB_USER=${POSTGRES_USER:-redump}
+      - MEDIAWIKI_DB_USER=${POSTGRES_USER:-vgindex}
       - MEDIAWIKI_DB_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - MEDIAWIKI_DB_TYPE=postgres
     volumes:
