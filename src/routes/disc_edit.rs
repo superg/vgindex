@@ -25,9 +25,7 @@ struct DiscEditTemplate {
     disc_id: i32,
     disc_title: String,
     categories: Vec<SelectOption>,
-    system_regions: Vec<SelectOption>,
-    show_system_region: bool,
-    release_regions: Vec<CheckOption>,
+    regions: Vec<CheckOption>,
     languages: Vec<CheckOption>,
     barcode: String,
     comments: String,
@@ -62,18 +60,15 @@ async fn edit_page(
 ) -> AppResult<Html<String>> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
 
-    let sys_regions: Vec<SystemRegion> =
-        sqlx::query_as("SELECT * FROM system_regions ORDER BY display_order")
-            .fetch_all(&state.pool).await?;
-    let rel_regions: Vec<ReleaseRegion> =
-        sqlx::query_as("SELECT * FROM release_regions ORDER BY display_order")
+    let all_regions: Vec<Region> =
+        sqlx::query_as("SELECT * FROM regions ORDER BY display_order")
             .fetch_all(&state.pool).await?;
     let langs: Vec<Language> =
         sqlx::query_as("SELECT * FROM languages ORDER BY display_order")
             .fetch_all(&state.pool).await?;
 
-    let disc_rr_ids: Vec<i32> = sqlx::query_scalar(
-        "SELECT release_region_id FROM disc_release_regions WHERE disc_id = $1"
+    let disc_region_ids: Vec<i32> = sqlx::query_scalar(
+        "SELECT region_id FROM disc_regions WHERE disc_id = $1"
     ).bind(id).fetch_all(&state.pool).await?;
 
     let disc_lang_ids: Vec<i32> = sqlx::query_scalar(
@@ -87,18 +82,11 @@ async fn edit_page(
         selected: detail.disc.category == *c,
     }).collect();
 
-    let system_regions: Vec<SelectOption> = sys_regions.iter().map(|sr| SelectOption {
-        id: sr.id,
-        value: sr.id.to_string(),
-        name: sr.name.clone(),
-        selected: detail.disc.system_region_id == Some(sr.id),
-    }).collect();
-
-    let release_regions: Vec<CheckOption> = rel_regions.iter().map(|rr| CheckOption {
-        id: rr.id,
-        name: rr.name.clone(),
-        flag_lower: rr.flag_code.to_lowercase(),
-        selected: disc_rr_ids.contains(&rr.id),
+    let regions: Vec<CheckOption> = all_regions.iter().map(|r| CheckOption {
+        id: r.id,
+        name: r.name.clone(),
+        flag_lower: r.flag_code.to_lowercase(),
+        selected: disc_region_ids.contains(&r.id),
     }).collect();
 
     let languages: Vec<CheckOption> = langs.iter().map(|l| CheckOption {
@@ -114,9 +102,7 @@ async fn edit_page(
             disc_id: id,
             disc_title: detail.disc.title.clone(),
             categories,
-            system_regions,
-            show_system_region: !detail.system.allowed_system_regions.is_empty(),
-            release_regions,
+            regions,
             languages,
             barcode: detail.disc.barcode.unwrap_or_default(),
             comments: detail.disc.comments.unwrap_or_default(),
@@ -138,7 +124,6 @@ async fn edit_page(
 pub struct DiscEditForm {
     pub title: String,
     pub category: String,
-    pub system_region_id: Option<i32>,
     pub version: Option<String>,
     pub edition: Option<String>,
     pub barcode: Option<String>,
@@ -148,7 +133,7 @@ pub struct DiscEditForm {
     pub protection: Option<String>,
     pub error_count: Option<i32>,
     #[serde(default)]
-    pub release_regions: Vec<i32>,
+    pub regions: Vec<i32>,
     #[serde(default)]
     pub languages: Vec<i32>,
 }
@@ -162,7 +147,6 @@ async fn edit_submit(
     let data = serde_json::json!({
         "title": form.title,
         "category": form.category,
-        "system_region_id": form.system_region_id,
         "version": form.version,
         "edition": form.edition,
         "barcode": form.barcode,
@@ -171,7 +155,7 @@ async fn edit_submit(
         "edc": form.edc,
         "protection": form.protection,
         "error_count": form.error_count,
-        "release_regions": form.release_regions,
+        "regions": form.regions,
         "languages": form.languages,
     });
 

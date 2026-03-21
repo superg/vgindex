@@ -56,11 +56,14 @@ struct DiscRow {
     edition_display: String,
     status_class: String,
     status_display: String,
-    region_flag: Option<String>,
-    region_flag_lower: String,
-    region_name_display: String,
+    region_flags: Vec<RegionFlag>,
     language_flags: Vec<LangFlag>,
     serials: String,
+}
+
+struct RegionFlag {
+    flag_code_lower: String,
+    name: String,
 }
 
 struct LangFlag {
@@ -144,14 +147,12 @@ async fn discs_page(
     };
 
     let sql_count = format!(
-        "SELECT COUNT(*) FROM discs d JOIN systems s ON s.id = d.system_id LEFT JOIN system_regions sr ON sr.id = d.system_region_id WHERE {where_sql}"
+        "SELECT COUNT(*) FROM discs d JOIN systems s ON s.id = d.system_id WHERE {where_sql}"
     );
     let sql_select = format!(
-        "SELECT d.id, d.title, s.short_code AS system_short, d.version, d.edition, d.status,
-                sr.flag_code AS region_flag, sr.name AS region_name
+        "SELECT d.id, d.title, s.short_code AS system_short, d.version, d.edition, d.status
          FROM discs d
          JOIN systems s ON s.id = d.system_id
-         LEFT JOIN system_regions sr ON sr.id = d.system_region_id
          WHERE {where_sql}
          ORDER BY {sort_col} {sort_dir} LIMIT {PAGE_SIZE} OFFSET {offset}"
     );
@@ -186,6 +187,16 @@ async fn discs_page(
 
     let mut discs = Vec::with_capacity(raw_rows.len());
     for r in raw_rows {
+        let region_rows: Vec<LangRow> = sqlx::query_as(
+            "SELECT r.flag_code, r.name FROM disc_regions dr
+             JOIN regions r ON r.id = dr.region_id
+             WHERE dr.disc_id = $1 ORDER BY r.display_order",
+        )
+        .bind(r.id)
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
+
         let lang_rows: Vec<LangRow> = sqlx::query_as(
             "SELECT l.flag_code, l.name FROM disc_languages dl
              JOIN languages l ON l.id = dl.language_id
@@ -212,9 +223,10 @@ async fn discs_page(
             edition_display: r.edition.unwrap_or_default(),
             status_class: r.status.css_class().to_string(),
             status_display: r.status.to_string(),
-            region_flag_lower: r.region_flag.as_deref().unwrap_or("").to_lowercase(),
-            region_name_display: r.region_name.clone().unwrap_or_default(),
-            region_flag: r.region_flag,
+            region_flags: region_rows.into_iter().map(|r| RegionFlag {
+                flag_code_lower: r.flag_code.to_lowercase(),
+                name: r.name,
+            }).collect(),
             language_flags: lang_rows.into_iter().map(|l| LangFlag {
                 flag_code_lower: l.flag_code.to_lowercase(),
                 name: l.name,
@@ -265,8 +277,6 @@ struct RawDiscRow {
     version: Option<String>,
     edition: Option<String>,
     status: DiscStatus,
-    region_flag: Option<String>,
-    region_name: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]

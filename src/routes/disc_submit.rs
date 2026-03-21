@@ -23,7 +23,7 @@ pub fn routes() -> Router<AppState> {
 struct DiscSubmitTemplate {
     current_user: Option<String>,
     systems: Vec<System>,
-    release_regions: Vec<SubmitRegion>,
+    regions: Vec<SubmitRegion>,
     languages: Vec<SubmitLang>,
     categories: Vec<String>,
     media_types: Vec<String>,
@@ -46,8 +46,8 @@ async fn submit_page(
     RequireAuth(user): RequireAuth,
 ) -> AppResult<Html<String>> {
     let systems = disc_service::get_all_systems(&state.pool).await?;
-    let rel_regions: Vec<ReleaseRegion> =
-        sqlx::query_as("SELECT * FROM release_regions ORDER BY display_order")
+    let all_regions: Vec<Region> =
+        sqlx::query_as("SELECT * FROM regions ORDER BY display_order")
             .fetch_all(&state.pool).await?;
     let langs: Vec<Language> =
         sqlx::query_as("SELECT * FROM languages ORDER BY display_order")
@@ -57,10 +57,10 @@ async fn submit_page(
         DiscSubmitTemplate {
             current_user: Some(user.username),
             systems,
-            release_regions: rel_regions.iter().map(|rr| SubmitRegion {
-                id: rr.id,
-                name: rr.name.clone(),
-                flag_lower: rr.flag_code.to_lowercase(),
+            regions: all_regions.iter().map(|r| SubmitRegion {
+                id: r.id,
+                name: r.name.clone(),
+                flag_lower: r.flag_code.to_lowercase(),
             }).collect(),
             languages: langs.iter().map(|l| SubmitLang {
                 id: l.id,
@@ -93,7 +93,7 @@ pub struct DiscSubmitForm {
     pub cue_content: Option<String>,
     pub dump_log: Option<String>,
     #[serde(default)]
-    pub release_regions: Vec<i32>,
+    pub regions: Vec<i32>,
     #[serde(default)]
     pub languages: Vec<i32>,
 }
@@ -118,7 +118,7 @@ async fn submit_handler(
         "error_count": form.error_count,
         "files_xml": form.files_xml,
         "cue_content": form.cue_content,
-        "release_regions": form.release_regions,
+        "regions": form.regions,
         "languages": form.languages,
     });
 

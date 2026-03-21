@@ -23,16 +23,10 @@
             <tr><td><strong>System</strong></td><td>{{ system_name }}</td></tr>
             <tr><td><strong>Media</strong></td><td>{{ media_type }}</td></tr>
             <tr><td><strong>Category</strong></td><td>{{ category }}</td></tr>
-            {% if !system_region_name.is_empty() %}
-            <tr><td><strong>Region</strong></td><td>
-                <img class="flag-icon" src="/static/flags/{{ system_region_flag_lower }}.png" title="{{ system_region_name }}" alt="{{ system_region_name }}">
-                {{ system_region_name }}
-            </td></tr>
-            {% endif %}
-            {% if !release_regions.is_empty() %}
-            <tr><td><strong>Release Regions</strong></td><td>
-                {% for rr in release_regions %}
-                <img class="flag-icon" src="/static/flags/{{ rr.flag_code_lower }}.png" title="{{ rr.name }}" alt="{{ rr.name }}">
+            {% if !regions.is_empty() %}
+            <tr><td><strong>Regions</strong></td><td>
+                {% for r in regions %}
+                <img class="flag-icon" src="/static/flags/{{ r.flag_code_lower }}.png" title="{{ r.name }}" alt="{{ r.name }}">
                 {% endfor %}
             </td></tr>
             {% endif %}

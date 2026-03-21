@@ -49,7 +49,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
 
     let discs: Vec<DatfileDisc> = sqlx::query_as(
         "SELECT d.id, d.title, d.version, d.edition, d.filename_suffix,
-                d.status, d.system_region_id
+                d.status
          FROM discs d
          WHERE d.system_id = $1 AND d.status IN ('Verified', 'Good')
          ORDER BY d.title"
@@ -82,7 +82,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
         .fetch_all(pool)
         .await?;
 
-        let regions = get_disc_region_codes(pool, disc.id).await;
+        let regions = get_disc_region_names(pool, disc.id).await;
         let game_name = build_datfile_name(&disc.title, &regions, disc.version.as_deref(), disc.edition.as_deref(), disc.filename_suffix.as_deref());
 
         xml.push_str(&format!(
@@ -93,7 +93,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
 
         for file in &files {
             let ext = if file.track_number.is_some() {
-                if sys.allowed_media.iter().any(|m| m.is_cd()) {
+                if sys.allowed_media.iter().any(|&id| MediaType::from_id(id).map_or(false, |m| m.is_cd())) {
                     "bin"
                 } else {
                     "iso"
@@ -143,13 +143,13 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Vec
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if !sys.allowed_media.iter().any(|m| m.is_cd()) {
+    if !sys.allowed_media.iter().any(|&id| MediaType::from_id(id).map_or(false, |m| m.is_cd())) {
         return Err(AppError::NotFound);
     }
 
     let discs: Vec<DatfileDisc> = sqlx::query_as(
         "SELECT d.id, d.title, d.version, d.edition, d.filename_suffix,
-                d.status, d.system_region_id
+                d.status
          FROM discs d
          WHERE d.system_id = $1 AND d.status IN ('Verified', 'Good')
          ORDER BY d.title"
@@ -171,7 +171,7 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Vec
             .fetch_all(pool)
             .await?;
 
-            let regions = get_disc_region_codes(pool, disc.id).await;
+            let regions = get_disc_region_names(pool, disc.id).await;
             let game_name = build_datfile_name(&disc.title, &regions, disc.version.as_deref(), disc.edition.as_deref(), disc.filename_suffix.as_deref());
 
             let cue = generate_cuesheet(&game_name, &files);
@@ -255,11 +255,11 @@ fn generate_cuesheet(game_name: &str, files: &[File]) -> String {
     cue
 }
 
-async fn get_disc_region_codes(pool: &PgPool, disc_id: i32) -> Vec<String> {
+async fn get_disc_region_names(pool: &PgPool, disc_id: i32) -> Vec<String> {
     sqlx::query_scalar::<_, String>(
-        "SELECT rr.code FROM disc_release_regions drr
-         JOIN release_regions rr ON rr.id = drr.release_region_id
-         WHERE drr.disc_id = $1 ORDER BY rr.display_order"
+        "SELECT r.name FROM disc_regions dr
+         JOIN regions r ON r.id = dr.region_id
+         WHERE dr.disc_id = $1 ORDER BY r.display_order"
     )
     .bind(disc_id)
     .fetch_all(pool)
@@ -305,7 +305,6 @@ struct DatfileDisc {
     edition: Option<String>,
     filename_suffix: Option<String>,
     status: DiscStatus,
-    system_region_id: Option<i32>,
 }
 
 #[derive(sqlx::FromRow)]
