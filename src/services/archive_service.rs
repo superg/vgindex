@@ -41,7 +41,7 @@ pub async fn invalidate_cache(config: &Config, system: &str) {
 }
 
 async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<u8>> {
-    let sys: System = sqlx::query_as("SELECT * FROM systems WHERE short_code = $1")
+    let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
         .await?
@@ -51,10 +51,10 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
         "SELECT d.id, d.title, d.version, d.edition, d.filename_suffix,
                 d.status
          FROM discs d
-         WHERE d.system_id = $1 AND d.status IN ('Verified', 'Good')
+         WHERE d.system_code = $1 AND d.status IN ('Verified', 'Good')
          ORDER BY d.title"
     )
-    .bind(sys.id)
+    .bind(&sys.code)
     .fetch_all(pool)
     .await?;
 
@@ -93,7 +93,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
 
         for file in &files {
             let ext = if file.track_number.is_some() {
-                if sys.allowed_media.iter().any(|&id| MediaType::from_id(id).map_or(false, |m| m.is_cd())) {
+                if sys.allowed_media.iter().any(|s| MediaType::from_code(s).map_or(false, |m| m.is_cd())) {
                     "bin"
                 } else {
                     "iso"
@@ -137,13 +137,13 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
 }
 
 async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Vec<u8>> {
-    let sys: System = sqlx::query_as("SELECT * FROM systems WHERE short_code = $1")
+    let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if !sys.allowed_media.iter().any(|&id| MediaType::from_id(id).map_or(false, |m| m.is_cd())) {
+    if !sys.allowed_media.iter().any(|s| MediaType::from_code(s).map_or(false, |m| m.is_cd())) {
         return Err(AppError::NotFound);
     }
 
@@ -151,10 +151,10 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Vec
         "SELECT d.id, d.title, d.version, d.edition, d.filename_suffix,
                 d.status
          FROM discs d
-         WHERE d.system_id = $1 AND d.status IN ('Verified', 'Good')
+         WHERE d.system_code = $1 AND d.status IN ('Verified', 'Good')
          ORDER BY d.title"
     )
-    .bind(sys.id)
+    .bind(&sys.code)
     .fetch_all(pool)
     .await?;
 
@@ -187,7 +187,7 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Vec
 }
 
 async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<Vec<u8>> {
-    let sys: System = sqlx::query_as("SELECT * FROM systems WHERE short_code = $1")
+    let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
         .await?
@@ -200,10 +200,10 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<Vec<u8>>
     let discs: Vec<SbiDisc> = sqlx::query_as(
         "SELECT d.id, d.title, d.sbi_data
          FROM discs d
-         WHERE d.system_id = $1 AND d.sbi_data IS NOT NULL AND d.status IN ('Verified', 'Good')
+         WHERE d.system_code = $1 AND d.sbi_data IS NOT NULL AND d.status IN ('Verified', 'Good')
          ORDER BY d.title"
     )
-    .bind(sys.id)
+    .bind(&sys.code)
     .fetch_all(pool)
     .await?;
 
@@ -258,8 +258,8 @@ fn generate_cuesheet(game_name: &str, files: &[File]) -> String {
 async fn get_disc_region_names(pool: &PgPool, disc_id: i32) -> Vec<String> {
     sqlx::query_scalar::<_, String>(
         "SELECT r.name FROM disc_regions dr
-         JOIN regions r ON r.id = dr.region_id
-         WHERE dr.disc_id = $1 ORDER BY r.display_order"
+         JOIN regions r ON r.code = dr.region_code
+         WHERE dr.disc_id = $1 ORDER BY r.sort_order"
     )
     .bind(disc_id)
     .fetch_all(pool)

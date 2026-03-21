@@ -25,7 +25,7 @@ struct DownloadsTemplate {
 }
 
 struct SystemDownload {
-    short_code: String,
+    code: String,
     full_name: String,
     has_dat: bool,
     has_cue: bool,
@@ -37,10 +37,10 @@ async fn downloads_page(
     user: CurrentUser,
 ) -> Html<String> {
     let rows: Vec<SystemDownloadRow> = sqlx::query_as(
-        "SELECT s.short_code, s.full_name, s.has_sbi,
-                CASE WHEN 'CD' = ANY(s.allowed_media::text[]) OR 'GD-ROM' = ANY(s.allowed_media::text[]) THEN true ELSE false END AS has_cue
+        "SELECT s.code, s.full_name, s.has_sbi,
+                CASE WHEN 'cd' = ANY(s.allowed_media) OR 'gdrom' = ANY(s.allowed_media) THEN true ELSE false END AS has_cue
          FROM systems s
-         ORDER BY s.display_order, s.full_name"
+         ORDER BY s.sort_order, s.full_name"
     )
     .fetch_all(&state.pool)
     .await
@@ -49,7 +49,7 @@ async fn downloads_page(
     let systems = rows
         .into_iter()
         .map(|r| SystemDownload {
-            short_code: r.short_code,
+            code: r.code,
             full_name: r.full_name,
             has_dat: true,
             has_cue: r.has_cue,
@@ -69,7 +69,7 @@ async fn downloads_page(
 
 #[derive(sqlx::FromRow)]
 struct SystemDownloadRow {
-    short_code: String,
+    code: String,
     full_name: String,
     has_sbi: bool,
     has_cue: bool,

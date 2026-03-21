@@ -14,7 +14,7 @@
                 <select name="system">
                     <option value="">All Systems</option>
                     {% for sys in systems %}
-                    <option value="{{ sys.short_code }}" {% if sys.selected %}selected{% endif %}>{{ sys.full_name }}</option>
+                    <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.full_name }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -70,7 +70,7 @@
                     {% endfor %}
                 </td>
                 <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
-                <td>{{ disc.system_short }}</td>
+                <td>{{ disc.system_code }}</td>
                 <td>{{ disc.version_display }}</td>
                 <td>{{ disc.edition_display }}</td>
                 <td>
@@ -79,7 +79,7 @@
                          title="{{ lang.name }}" alt="{{ lang.name }}">
                     {% endfor %}
                 </td>
-                <td><small>{{ disc.serials }}</small></td>
+                <td><small>{{ disc.serial }}</small></td>
                 <td><span class="status-dot {{ disc.status_class }}" title="{{ disc.status_display }}"></span></td>
             </tr>
             {% endfor %}

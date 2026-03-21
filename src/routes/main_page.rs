@@ -31,9 +31,9 @@ struct HomeRegionFlag {
 
 async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
     let rows: Vec<RecentDiscRow> = sqlx::query_as(
-        "SELECT d.id, d.title, s.short_code AS system, d.status, d.created_at
+        "SELECT d.id, d.title, s.code AS system, d.status, d.created_at
          FROM discs d
-         JOIN systems s ON s.id = d.system_id
+         JOIN systems s ON s.code = d.system_code
          WHERE d.status != 'Bad'
          ORDER BY d.created_at DESC
          LIMIT 25"
@@ -46,8 +46,8 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
     for r in rows {
         let region_rows: Vec<HomeRegionRow> = sqlx::query_as(
             "SELECT r.flag_code, r.name FROM disc_regions dr
-             JOIN regions r ON r.id = dr.region_id
-             WHERE dr.disc_id = $1 ORDER BY r.display_order"
+             JOIN regions r ON r.code = dr.region_code
+             WHERE dr.disc_id = $1 ORDER BY r.sort_order"
         )
         .bind(r.id)
         .fetch_all(&state.pool)

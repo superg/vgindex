@@ -23,7 +23,7 @@
             <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
             {% for r in regions %}
             <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
-                <input type="checkbox" name="regions" value="{{ r.id }}" {% if r.selected %}checked{% endif %}>
+                <input type="checkbox" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
                 <img class="flag-icon" src="/static/flags/{{ r.flag_lower }}.png" title="{{ r.name }}" alt="{{ r.name }}">
             </label>
             {% endfor %}
@@ -35,7 +35,7 @@
             <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
             {% for lang in languages %}
             <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
-                <input type="checkbox" name="languages" value="{{ lang.id }}" {% if lang.selected %}checked{% endif %}>
+                <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}>
                 <img class="flag-icon" src="/static/flags/{{ lang.flag_lower }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
             </label>
             {% endfor %}

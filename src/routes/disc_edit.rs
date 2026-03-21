@@ -47,7 +47,7 @@ struct SelectOption {
 }
 
 struct CheckOption {
-    id: i32,
+    value: String,
     name: String,
     flag_lower: String,
     selected: bool,
@@ -61,14 +61,14 @@ async fn edit_page(
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
 
     let all_regions: Vec<Region> =
-        sqlx::query_as("SELECT * FROM regions ORDER BY display_order")
+        sqlx::query_as("SELECT * FROM regions ORDER BY sort_order")
             .fetch_all(&state.pool).await?;
     let langs: Vec<Language> =
-        sqlx::query_as("SELECT * FROM languages ORDER BY display_order")
+        sqlx::query_as("SELECT * FROM languages ORDER BY sort_order")
             .fetch_all(&state.pool).await?;
 
-    let disc_region_ids: Vec<i32> = sqlx::query_scalar(
-        "SELECT region_id FROM disc_regions WHERE disc_id = $1"
+    let disc_region_codes: Vec<String> = sqlx::query_scalar(
+        "SELECT region_code FROM disc_regions WHERE disc_id = $1"
     ).bind(id).fetch_all(&state.pool).await?;
 
     let disc_lang_ids: Vec<i32> = sqlx::query_scalar(
@@ -83,14 +83,14 @@ async fn edit_page(
     }).collect();
 
     let regions: Vec<CheckOption> = all_regions.iter().map(|r| CheckOption {
-        id: r.id,
+        value: r.code.trim().to_string(),
         name: r.name.clone(),
         flag_lower: r.flag_code.to_lowercase(),
-        selected: disc_region_ids.contains(&r.id),
+        selected: disc_region_codes.iter().any(|c| c.trim() == r.code.trim()),
     }).collect();
 
     let languages: Vec<CheckOption> = langs.iter().map(|l| CheckOption {
-        id: l.id,
+        value: l.id.to_string(),
         name: l.name.clone(),
         flag_lower: l.flag_code.to_lowercase(),
         selected: disc_lang_ids.contains(&l.id),
@@ -133,7 +133,7 @@ pub struct DiscEditForm {
     pub protection: Option<String>,
     pub error_count: Option<i32>,
     #[serde(default)]
-    pub regions: Vec<i32>,
+    pub regions: Vec<String>,
     #[serde(default)]
     pub languages: Vec<i32>,
 }

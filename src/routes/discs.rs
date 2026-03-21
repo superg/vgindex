@@ -51,14 +51,14 @@ struct DiscsTemplate {
 struct DiscRow {
     id: i32,
     title: String,
-    system_short: String,
+    system_code: String,
     version_display: String,
     edition_display: String,
     status_class: String,
     status_display: String,
     region_flags: Vec<RegionFlag>,
     language_flags: Vec<LangFlag>,
-    serials: String,
+    serial: String,
 }
 
 struct RegionFlag {
@@ -72,7 +72,7 @@ struct LangFlag {
 }
 
 struct SystemOption {
-    short_code: String,
+    code: String,
     full_name: String,
     selected: bool,
 }
@@ -93,14 +93,14 @@ async fn discs_page(
     let filter_q = query.q.clone().unwrap_or_default();
 
     let sys_rows: Vec<SysRow> =
-        sqlx::query_as("SELECT short_code, full_name FROM systems ORDER BY display_order, full_name")
+        sqlx::query_as("SELECT code, full_name FROM systems ORDER BY sort_order, full_name")
             .fetch_all(&state.pool)
             .await
             .unwrap_or_default();
 
     let systems: Vec<SystemOption> = sys_rows.into_iter().map(|s| SystemOption {
-        selected: s.short_code == filter_system,
-        short_code: s.short_code,
+        selected: s.code == filter_system,
+        code: s.code,
         full_name: s.full_name,
     }).collect();
 
@@ -109,7 +109,7 @@ async fn discs_page(
 
     if !filter_system.is_empty() {
         bind_idx += 1;
-        where_clauses.push(format!("s.short_code = ${bind_idx}"));
+        where_clauses.push(format!("s.code = ${bind_idx}"));
     }
     if filter_letter == "#" {
         where_clauses.push("d.title ~* '^[^a-zA-Z]'".to_string());
@@ -136,7 +136,7 @@ async fn discs_page(
 
     let sort_col = match query.sort.as_deref() {
         Some("title") => "d.title",
-        Some("system") => "s.short_code",
+        Some("system") => "s.code",
         Some("status") => "d.status",
         Some("updated") => "d.updated_at",
         _ => "d.title",
@@ -147,12 +147,12 @@ async fn discs_page(
     };
 
     let sql_count = format!(
-        "SELECT COUNT(*) FROM discs d JOIN systems s ON s.id = d.system_id WHERE {where_sql}"
+        "SELECT COUNT(*) FROM discs d JOIN systems s ON s.code = d.system_code WHERE {where_sql}"
     );
     let sql_select = format!(
-        "SELECT d.id, d.title, s.short_code AS system_short, d.version, d.edition, d.status
+        "SELECT d.id, d.title, s.code AS system_code, d.serial, d.version, d.edition, d.status
          FROM discs d
-         JOIN systems s ON s.id = d.system_id
+         JOIN systems s ON s.code = d.system_code
          WHERE {where_sql}
          ORDER BY {sort_col} {sort_dir} LIMIT {PAGE_SIZE} OFFSET {offset}"
     );
@@ -189,8 +189,8 @@ async fn discs_page(
     for r in raw_rows {
         let region_rows: Vec<LangRow> = sqlx::query_as(
             "SELECT r.flag_code, r.name FROM disc_regions dr
-             JOIN regions r ON r.id = dr.region_id
-             WHERE dr.disc_id = $1 ORDER BY r.display_order",
+             JOIN regions r ON r.code = dr.region_code
+             WHERE dr.disc_id = $1 ORDER BY r.sort_order",
         )
         .bind(r.id)
         .fetch_all(&state.pool)
@@ -200,15 +200,7 @@ async fn discs_page(
         let lang_rows: Vec<LangRow> = sqlx::query_as(
             "SELECT l.flag_code, l.name FROM disc_languages dl
              JOIN languages l ON l.id = dl.language_id
-             WHERE dl.disc_id = $1 ORDER BY l.display_order",
-        )
-        .bind(r.id)
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default();
-
-        let serial_list: Vec<String> = sqlx::query_scalar(
-            "SELECT ds.serial FROM disc_serials ds WHERE ds.disc_id = $1",
+             WHERE dl.disc_id = $1 ORDER BY l.sort_order",
         )
         .bind(r.id)
         .fetch_all(&state.pool)
@@ -218,7 +210,7 @@ async fn discs_page(
         discs.push(DiscRow {
             id: r.id,
             title: r.title,
-            system_short: r.system_short,
+            system_code: r.system_code,
             version_display: r.version.unwrap_or_default(),
             edition_display: r.edition.unwrap_or_default(),
             status_class: r.status.css_class().to_string(),
@@ -231,7 +223,7 @@ async fn discs_page(
                 flag_code_lower: l.flag_code.to_lowercase(),
                 name: l.name,
             }).collect(),
-            serials: serial_list.join(", "),
+            serial: r.serial.unwrap_or_default(),
         });
     }
 
@@ -265,7 +257,7 @@ async fn discs_page(
 
 #[derive(sqlx::FromRow)]
 struct SysRow {
-    short_code: String,
+    code: String,
     full_name: String,
 }
 
@@ -273,7 +265,8 @@ struct SysRow {
 struct RawDiscRow {
     id: i32,
     title: String,
-    system_short: String,
+    system_code: String,
+    serial: Option<String>,
     version: Option<String>,
     edition: Option<String>,
     status: DiscStatus,
