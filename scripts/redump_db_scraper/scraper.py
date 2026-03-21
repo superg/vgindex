@@ -2,12 +2,13 @@
 """
 Redump.org disc database scraper.
 
-Scrapes edit page fields and change history for disc IDs 2..N from redump.org.
+Scrapes edit page fields and change history for disc IDs from redump.org.
 Requires a valid session cookie copied from your browser's dev tools.
 
 Usage:
-    python scraper.py 100 --cookie "redump_cookie=BASE64VALUE"
-    python scraper.py 132192 --cookie "redump_cookie=BASE64VALUE" --delay 2.0
+    python scraper.py --end-id 100 --cookie "redump_cookie=BASE64VALUE"
+    python scraper.py --start-id 1 --end-id 132192 --cookie "redump_cookie=BASE64VALUE" --delay 2.0
+    python scraper.py --update --cookie "redump_cookie=BASE64VALUE"
 """
 
 import argparse
@@ -19,6 +20,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
 
 import requests
@@ -44,13 +46,10 @@ def print_summary():
 
 def signal_handler(_sig, _frame):
     global interrupted
+    if interrupted:
+        return
     interrupted = True
-    print("\nInterrupted by user.")
-    print_summary()
-    sys.exit(1)
-
-
-signal.signal(signal.SIGINT, signal_handler)
+    print("\nInterrupted by user — finishing in-flight requests…")
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +391,70 @@ def _detect_change_type(td_style: str, tr_style: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# RSS update detection
+# ---------------------------------------------------------------------------
+
+RSS_URL = f"{BASE_URL}/feeds/recentchanges/rss"
+_DISC_ID_RE = re.compile(r"/disc/(\d+)/")
+
+
+def fetch_changed_ids_from_rss(
+    session: requests.Session,
+) -> list[tuple[int, datetime]]:
+    """Fetch the recent-changes RSS feed and return (disc_id, pub_datetime) pairs.
+
+    Deduplicates by disc ID, keeping the latest pubDate per disc.
+    Returns a sorted list of (disc_id, pub_datetime) tuples.
+    """
+    resp = session.get(RSS_URL, timeout=30)
+    resp.raise_for_status()
+
+    soup = BeautifulSoup(resp.content, "xml")
+    latest: dict[int, datetime] = {}
+
+    for item in soup.find_all("item"):
+        link_tag = item.find("link")
+        pub_tag = item.find("pubDate")
+        if not link_tag or not pub_tag:
+            continue
+
+        link_text = link_tag.get_text(strip=True)
+        m = _DISC_ID_RE.search(link_text)
+        if not m:
+            continue
+
+        disc_id = int(m.group(1))
+        pub_dt = parsedate_to_datetime(pub_tag.get_text(strip=True))
+
+        if disc_id not in latest or pub_dt > latest[disc_id]:
+            latest[disc_id] = pub_dt
+
+    return sorted(latest.items())
+
+
+def filter_stale_ids(
+    rss_entries: list[tuple[int, datetime]],
+    output_dir: str,
+) -> list[int]:
+    """Return disc IDs whose local JSON is missing or older than the RSS pubDate."""
+    stale = []
+    for disc_id, pub_dt in rss_entries:
+        path = os.path.join(output_dir, f"{disc_id:06d}.json")
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            stale.append(disc_id)
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            scraped_at = datetime.fromisoformat(data["scraped_at"])
+            if scraped_at < pub_dt:
+                stale.append(disc_id)
+        except (json.JSONDecodeError, KeyError, ValueError):
+            stale.append(disc_id)
+    return stale
+
+
+# ---------------------------------------------------------------------------
 # Scraping logic
 # ---------------------------------------------------------------------------
 
@@ -410,7 +473,34 @@ def _strip_empty(d: dict) -> dict:
     return {k: v for k, v in d.items() if v != ""}
 
 
-def scrape_disc(session: requests.Session, disc_id: int) -> tuple[dict | None, list[str]]:
+class _Interrupted(Exception):
+    """Raised when a worker detects the interrupted flag during a wait."""
+
+
+def _rate_limited_get(
+    session: requests.Session, url: str, delay: float, **kwargs
+) -> requests.Response:
+    """Perform a GET with global rate limiting so all threads share one throttle."""
+    with rate_lock:
+        if interrupted:
+            raise _Interrupted
+        now = time.monotonic()
+        wait = delay - (now - _rate_limited_get.last_request_time)
+        if wait > 0:
+            deadline = now + wait
+            while time.monotonic() < deadline:
+                if interrupted:
+                    raise _Interrupted
+                time.sleep(min(0.25, deadline - time.monotonic()))
+        _rate_limited_get.last_request_time = time.monotonic()
+    return session.get(url, **kwargs)
+
+_rate_limited_get.last_request_time = 0.0
+
+
+def scrape_disc(
+    session: requests.Session, disc_id: int, delay: float = 0.0,
+) -> tuple[dict | str | None, list[str]]:
     """Scrape both edit and changes pages for a single disc ID.
     Returns (result_dict_or_None, list_of_warnings)."""
     warnings: list[str] = []
@@ -422,19 +512,23 @@ def scrape_disc(session: requests.Session, disc_id: int) -> tuple[dict | None, l
     # Fetch edit page
     edit_url = f"{BASE_URL}/disc/{disc_id}/edit/"
     try:
-        resp = session.get(edit_url, timeout=30)
+        resp = _rate_limited_get(session, edit_url, delay, timeout=30)
+    except _Interrupted:
+        return None, warnings
     except requests.RequestException as e:
         warnings.append(f"[edit] Request failed: {e}")
         return None, warnings
 
-    if resp.status_code in (403, 404) or resp.url.rstrip("/") != edit_url.rstrip("/"):
+    if resp.status_code in (403, 404):
+        return None, warnings
+    if resp.url.rstrip("/") != edit_url.rstrip("/"):
+        warnings.append(f"[edit] Redirected to {resp.url}")
         return None, warnings
 
     if resp.status_code != 200:
         warnings.append(f"[edit] HTTP {resp.status_code}")
         return None, warnings
 
-    import re
     if re.search(r'with ID ".+" doesn\'t exist', resp.text):
         return "nonexistent", warnings
 
@@ -450,7 +544,9 @@ def scrape_disc(session: requests.Session, disc_id: int) -> tuple[dict | None, l
     # Fetch changes page
     changes_url = f"{BASE_URL}/disc/{disc_id}/changes/"
     try:
-        resp = session.get(changes_url, timeout=30)
+        resp = _rate_limited_get(session, changes_url, delay, timeout=30)
+    except _Interrupted:
+        return None, warnings
     except requests.RequestException as e:
         warnings.append(f"[changes] Request failed: {e}")
         return None, warnings
@@ -483,7 +579,7 @@ def main():
     parser.add_argument(
         "--end-id",
         type=int,
-        required=True,
+        default=None,
         help="Last disc ID to scrape (range is start_id..end_id inclusive).",
     )
     parser.add_argument(
@@ -513,48 +609,56 @@ def main():
         action="store_true",
         help="Re-scrape even if JSON file already exists.",
     )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Fetch RSS recent-changes feed and re-scrape only stale entries. Overrides --start-id / --end-id.",
+    )
 
     args = parser.parse_args()
 
-    if args.start_id < 1:
-        parser.error("start_id must be >= 1")
-    if args.end_id < args.start_id:
-        parser.error("end_id must be >= start_id")
+    if not args.update and args.end_id is None:
+        parser.error("--end-id is required unless --update is used")
+
     if args.delay < 0:
         parser.error("delay must be >= 0")
     if args.workers < 1:
         parser.error("workers must be >= 1")
+    if not args.update:
+        if args.start_id < 1:
+            parser.error("start_id must be >= 1")
+        if args.end_id < args.start_id:
+            parser.error("end_id must be >= start_id")
 
-    total = args.end_id - args.start_id + 1
     os.makedirs(args.output_dir, exist_ok=True)
     session = create_session(args.cookie)
 
-    print(f"Scraping discs {args.start_id}..{args.end_id} ({total} entries)")
-    print(f"Output: {os.path.abspath(args.output_dir)}")
-    print(f"Delay: {args.delay}s, Workers: {args.workers}")
-    print()
+    # Per-thread sessions for thread safety (requests.Session is not thread-safe)
+    _thread_local = threading.local()
 
-    last_request_time = 0.0
+    def _get_session() -> requests.Session:
+        if not hasattr(_thread_local, "session"):
+            _thread_local.session = create_session(args.cookie)
+        return _thread_local.session
 
-    def rate_limited_scrape(disc_id: int) -> tuple[int, dict | None, list[str]]:
-        """Scrape a single disc with rate limiting."""
-        nonlocal last_request_time
+    def worker_scrape(disc_id: int) -> tuple[int, dict | str | None, list[str]]:
         if interrupted:
             return disc_id, None, []
-        with rate_lock:
-            now = time.monotonic()
-            wait = args.delay - (now - last_request_time)
-            if wait > 0:
-                time.sleep(wait)
-            last_request_time = time.monotonic()
-        result, warnings = scrape_disc(session, disc_id)
+        s = session if args.workers == 1 else _get_session()
+        result, warnings = scrape_disc(s, disc_id, delay=args.delay)
         return disc_id, result, warnings
 
     # Build list of disc IDs to process
-    disc_ids = []
-    if args.force:
+    if args.update:
+        print("Fetching recent-changes RSS feed...")
+        rss_entries = fetch_changed_ids_from_rss(session)
+        print(f"RSS feed contains {len(rss_entries)} unique disc(s)")
+        disc_ids = filter_stale_ids(rss_entries, args.output_dir)
+        print(f"{len(disc_ids)} disc(s) need updating")
+    elif args.force:
         disc_ids = list(range(args.start_id, args.end_id + 1))
     else:
+        disc_ids = []
         existing = set(os.listdir(args.output_dir))
         for disc_id in range(args.start_id, args.end_id + 1):
             if f"{disc_id:06d}.json" in existing:
@@ -562,24 +666,30 @@ def main():
             else:
                 disc_ids.append(disc_id)
 
-    if stats["skipped_exists"] > 0:
-        print(f"Skipping {stats['skipped_exists']} already scraped (use --force to re-scrape)")
-        print()
+    total = len(disc_ids)
+
+    if not args.update:
+        if stats["skipped_exists"] > 0:
+            print(f"Skipping {stats['skipped_exists']} already scraped (use --force to re-scrape)")
+            print()
+        print(f"Scraping discs {args.start_id}..{args.end_id} ({total} entries)")
+
+    print(f"Output: {os.path.abspath(args.output_dir)}")
+    print(f"Delay: {args.delay}s, Workers: {args.workers}")
+    print()
 
     completed = 0
 
     if args.workers == 1:
-        # Sequential mode
         for disc_id in disc_ids:
             if interrupted:
                 break
             completed += 1
-            _, result, warnings = rate_limited_scrape(disc_id)
+            _, result, warnings = worker_scrape(disc_id)
             _save_result(disc_id, completed, total, result, warnings, args.output_dir)
     else:
-        # Parallel mode
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            futures = {executor.submit(rate_limited_scrape, did): did for did in disc_ids}
+            futures = {executor.submit(worker_scrape, did): did for did in disc_ids}
             for future in as_completed(futures):
                 if interrupted:
                     executor.shutdown(wait=False, cancel_futures=True)
@@ -589,6 +699,8 @@ def main():
                 _save_result(disc_id, completed, total, result, warnings, args.output_dir)
 
     print_summary()
+    if interrupted:
+        sys.exit(1)
 
 
 def _save_result(disc_id: int, progress: int, total: int,
@@ -631,4 +743,5 @@ def _save_result(disc_id: int, progress: int, total: int,
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, signal_handler)
     main()
