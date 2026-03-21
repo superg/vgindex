@@ -16,7 +16,9 @@ import os
 import re
 import signal
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 import requests
@@ -26,6 +28,9 @@ BASE_URL = "http://redump.org"
 
 # Stats tracked globally for signal handler access
 stats = {"scraped": 0, "skipped_exists": 0, "skipped_inaccessible": 0, "failed": 0}
+stats_lock = threading.Lock()
+rate_lock = threading.Lock()
+print_lock = threading.Lock()
 interrupted = False
 
 
@@ -405,8 +410,10 @@ def _strip_empty(d: dict) -> dict:
     return {k: v for k, v in d.items() if v != ""}
 
 
-def scrape_disc(session: requests.Session, disc_id: int) -> dict | None:
-    """Scrape both edit and changes pages for a single disc ID."""
+def scrape_disc(session: requests.Session, disc_id: int) -> tuple[dict | None, list[str]]:
+    """Scrape both edit and changes pages for a single disc ID.
+    Returns (result_dict_or_None, list_of_warnings)."""
+    warnings: list[str] = []
     result: dict = {
         "disc_id": disc_id,
         "scraped_at": datetime.now(timezone.utc).isoformat(),
@@ -417,25 +424,26 @@ def scrape_disc(session: requests.Session, disc_id: int) -> dict | None:
     try:
         resp = session.get(edit_url, timeout=30)
     except requests.RequestException as e:
-        print(f"  [edit] Request failed: {e}")
-        return None
+        warnings.append(f"[edit] Request failed: {e}")
+        return None, warnings
 
     if resp.status_code in (403, 404) or resp.url.rstrip("/") != edit_url.rstrip("/"):
-        # Redirected away or forbidden — disc is inaccessible
-        return None
+        return None, warnings
 
     if resp.status_code != 200:
-        print(f"  [edit] HTTP {resp.status_code}")
-        return None
+        warnings.append(f"[edit] HTTP {resp.status_code}")
+        return None, warnings
+
+    import re
+    if re.search(r'with ID ".+" doesn\'t exist', resp.text):
+        return "nonexistent", warnings
 
     edit_data = parse_edit_page(resp.text)
     if edit_data is None:
-        # Page loaded but no form found — might be an error page or redirect
-        # Check if we got redirected to login or disc view
-        if "login" in resp.url or "/disc/" in resp.text and "edit" not in resp.url:
-            return None
-        print(f"  [edit] No form found in response")
-        return None
+        if "login" in resp.url:
+            return None, warnings
+        warnings.append("[edit] No form found in response")
+        return None, warnings
 
     result.update(_strip_empty(edit_data))
 
@@ -444,17 +452,18 @@ def scrape_disc(session: requests.Session, disc_id: int) -> dict | None:
     try:
         resp = session.get(changes_url, timeout=30)
     except requests.RequestException as e:
-        print(f"  [changes] Request failed: {e}")
-        return result
+        warnings.append(f"[changes] Request failed: {e}")
+        return None, warnings
 
     if resp.status_code == 200:
         changes_data = parse_changes_page(resp.text)
         if changes_data:
             result["changes"] = changes_data
     else:
-        print(f"  [changes] HTTP {resp.status_code}")
+        warnings.append(f"[changes] HTTP {resp.status_code}")
+        return None, warnings
 
-    return result
+    return result, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +503,12 @@ def main():
         help="Output directory for JSON files (default: data/redump/db).",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of parallel workers (default: 1).",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Re-scrape even if JSON file already exists.",
@@ -507,6 +522,8 @@ def main():
         parser.error("end_id must be >= start_id")
     if args.delay < 0:
         parser.error("delay must be >= 0")
+    if args.workers < 1:
+        parser.error("workers must be >= 1")
 
     total = args.end_id - args.start_id + 1
     os.makedirs(args.output_dir, exist_ok=True)
@@ -514,44 +531,103 @@ def main():
 
     print(f"Scraping discs {args.start_id}..{args.end_id} ({total} entries)")
     print(f"Output: {os.path.abspath(args.output_dir)}")
-    print(f"Delay: {args.delay}s")
+    print(f"Delay: {args.delay}s, Workers: {args.workers}")
     print()
 
-    for disc_id in range(args.start_id, args.end_id + 1):
+    last_request_time = 0.0
+
+    def rate_limited_scrape(disc_id: int) -> tuple[int, dict | None, list[str]]:
+        """Scrape a single disc with rate limiting."""
+        nonlocal last_request_time
         if interrupted:
-            break
+            return disc_id, None, []
+        with rate_lock:
+            now = time.monotonic()
+            wait = args.delay - (now - last_request_time)
+            if wait > 0:
+                time.sleep(wait)
+            last_request_time = time.monotonic()
+        result, warnings = scrape_disc(session, disc_id)
+        return disc_id, result, warnings
 
-        progress = disc_id - args.start_id + 1
-        out_path = os.path.join(args.output_dir, f"{disc_id:06d}.json")
+    # Build list of disc IDs to process
+    disc_ids = []
+    if args.force:
+        disc_ids = list(range(args.start_id, args.end_id + 1))
+    else:
+        existing = set(os.listdir(args.output_dir))
+        for disc_id in range(args.start_id, args.end_id + 1):
+            if f"{disc_id:06d}.json" in existing:
+                stats["skipped_exists"] += 1
+            else:
+                disc_ids.append(disc_id)
 
-        # Skip if already scraped
-        if not args.force and os.path.exists(out_path):
-            stats["skipped_exists"] += 1
-            continue
+    if stats["skipped_exists"] > 0:
+        print(f"Skipping {stats['skipped_exists']} already scraped (use --force to re-scrape)")
+        print()
 
-        print(f"[{progress}/{total}] Disc {disc_id}: ", end="", flush=True)
+    completed = 0
 
-        result = scrape_disc(session, disc_id)
-
-        if result is None:
-            stats["skipped_inaccessible"] += 1
-            print("skipped (inaccessible)")
-        else:
-            try:
-                with open(out_path, "w", encoding="utf-8") as f:
-                    json.dump(result, f, ensure_ascii=False, indent=2)
-                title = result.get("d_title", "")
-                print(f"OK{f' - {title}' if title else ''}")
-                stats["scraped"] += 1
-            except OSError as e:
-                print(f"FAILED (write error: {e})")
-                stats["failed"] += 1
-
-        # Delay between discs (two requests per disc: edit + changes)
-        if disc_id < args.end_id:
-            time.sleep(args.delay)
+    if args.workers == 1:
+        # Sequential mode
+        for disc_id in disc_ids:
+            if interrupted:
+                break
+            completed += 1
+            _, result, warnings = rate_limited_scrape(disc_id)
+            _save_result(disc_id, completed, total, result, warnings, args.output_dir)
+    else:
+        # Parallel mode
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = {executor.submit(rate_limited_scrape, did): did for did in disc_ids}
+            for future in as_completed(futures):
+                if interrupted:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+                disc_id, result, warnings = future.result()
+                completed += 1
+                _save_result(disc_id, completed, total, result, warnings, args.output_dir)
 
     print_summary()
+
+
+def _save_result(disc_id: int, progress: int, total: int,
+                 result: dict | str | None, warnings: list[str], output_dir: str):
+    """Save scrape result to JSON and update stats. Output is atomic per disc."""
+    lines = []
+    out_path = os.path.join(output_dir, f"{disc_id:06d}.json")
+    if result == "nonexistent":
+        status = "skipped (doesn't exist)"
+        try:
+            open(out_path, "w").close()  # create empty file
+        except OSError:
+            pass
+        with stats_lock:
+            stats["skipped_inaccessible"] += 1
+    elif result is None:
+        status = "FAILED"
+        with stats_lock:
+            stats["failed"] += 1
+    else:
+        try:
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            title = result.get("d_title", "")
+            status = f"OK{f' - {title}' if title else ''}"
+            with stats_lock:
+                stats["scraped"] += 1
+        except OSError as e:
+            status = f"FAILED (write error: {e})"
+            with stats_lock:
+                stats["failed"] += 1
+
+    pct = round(100 * progress / total) if total > 0 else 100
+    lines.append(f"[{pct:3d}%] Disc {disc_id}: {status}")
+    for w in warnings:
+        lines.append(f"  ^ {w}")
+
+    with print_lock:
+        print("\n".join(lines), flush=True)
 
 
 if __name__ == "__main__":
