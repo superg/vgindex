@@ -20,19 +20,20 @@ struct RecentDisc {
     id: i32,
     title: String,
     system: String,
-    region_flag: Option<String>,
-    region_flag_lower: String,
-    region_name_display: String,
+    region_flags: Vec<HomeRegionFlag>,
     created_at: String,
+}
+
+struct HomeRegionFlag {
+    flag_code_lower: String,
+    name: String,
 }
 
 async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
     let rows: Vec<RecentDiscRow> = sqlx::query_as(
-        "SELECT d.id, d.title, s.short_code AS system, sr.flag_code AS region_flag,
-                sr.name AS region_name, d.status, d.created_at
+        "SELECT d.id, d.title, s.short_code AS system, d.status, d.created_at
          FROM discs d
          JOIN systems s ON s.id = d.system_id
-         LEFT JOIN system_regions sr ON sr.id = d.system_region_id
          WHERE d.status != 'Bad'
          ORDER BY d.created_at DESC
          LIMIT 25"
@@ -41,18 +42,29 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
     .await
     .unwrap_or_default();
 
-    let recent_discs = rows
-        .into_iter()
-        .map(|r| RecentDisc {
+    let mut recent_discs = Vec::with_capacity(rows.len());
+    for r in rows {
+        let region_rows: Vec<HomeRegionRow> = sqlx::query_as(
+            "SELECT r.flag_code, r.name FROM disc_regions dr
+             JOIN regions r ON r.id = dr.region_id
+             WHERE dr.disc_id = $1 ORDER BY r.display_order"
+        )
+        .bind(r.id)
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
+
+        recent_discs.push(RecentDisc {
             id: r.id,
             title: r.title,
             system: r.system,
-            region_flag_lower: r.region_flag.as_deref().unwrap_or("").to_lowercase(),
-            region_name_display: r.region_name.clone().unwrap_or_default(),
-            region_flag: r.region_flag,
+            region_flags: region_rows.into_iter().map(|rr| HomeRegionFlag {
+                flag_code_lower: rr.flag_code.to_lowercase(),
+                name: rr.name,
+            }).collect(),
             created_at: r.created_at.format("%Y-%m-%d %H:%M").to_string(),
-        })
-        .collect();
+        });
+    }
 
     Html(
         MainTemplate {
@@ -69,8 +81,12 @@ struct RecentDiscRow {
     id: i32,
     title: String,
     system: String,
-    region_flag: Option<String>,
-    region_name: Option<String>,
     status: DiscStatus,
     created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(sqlx::FromRow)]
+struct HomeRegionRow {
+    flag_code: String,
+    name: String,
 }

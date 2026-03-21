@@ -4,38 +4,40 @@ use serde::{Deserialize, Serialize};
 // --- Enums ---
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "media_type_enum", rename_all = "kebab-case")]
+#[repr(i32)]
 pub enum MediaType {
-    #[sqlx(rename = "CD")]
     #[serde(rename = "CD")]
-    Cd,
-    #[sqlx(rename = "GD-ROM")]
+    Cd = 1,
     #[serde(rename = "GD-ROM")]
-    GdRom,
-    #[sqlx(rename = "DVD-5")]
+    GdRom = 2,
     #[serde(rename = "DVD-5")]
-    Dvd5,
-    #[sqlx(rename = "DVD-9")]
+    Dvd5 = 3,
     #[serde(rename = "DVD-9")]
-    Dvd9,
-    #[sqlx(rename = "HD-DVD")]
-    #[serde(rename = "HD-DVD")]
-    HdDvd,
-    #[sqlx(rename = "BD-25")]
+    Dvd9 = 4,
+    #[serde(rename = "HD DVD (SL)")]
+    HdDvdSl = 5,
+    #[serde(rename = "HD DVD (DL)")]
+    HdDvdDl = 6,
     #[serde(rename = "BD-25")]
-    Bd25,
-    #[sqlx(rename = "BD-50")]
+    Bd25 = 7,
     #[serde(rename = "BD-50")]
-    Bd50,
-    #[sqlx(rename = "BD-66")]
+    Bd50 = 8,
     #[serde(rename = "BD-66")]
-    Bd66,
-    #[sqlx(rename = "BD-100")]
+    Bd66 = 9,
     #[serde(rename = "BD-100")]
-    Bd100,
-    #[sqlx(rename = "UMD")]
-    #[serde(rename = "UMD")]
-    Umd,
+    Bd100 = 10,
+    #[serde(rename = "UMD (SL)")]
+    UmdSl = 11,
+    #[serde(rename = "UMD (DL)")]
+    UmdDl = 12,
+    #[serde(rename = "Nintendo GameCube Game Disc")]
+    GameCubeDisc = 13,
+    #[serde(rename = "Wii Optical Disc (SL)")]
+    WiiDiscSl = 14,
+    #[serde(rename = "Wii Optical Disc (DL)")]
+    WiiDiscDl = 15,
+    #[serde(rename = "Wii U Optical Disc (SL)")]
+    WiiUDiscSl = 16,
 }
 
 impl std::fmt::Display for MediaType {
@@ -45,56 +47,73 @@ impl std::fmt::Display for MediaType {
             Self::GdRom => write!(f, "GD-ROM"),
             Self::Dvd5 => write!(f, "DVD-5"),
             Self::Dvd9 => write!(f, "DVD-9"),
-            Self::HdDvd => write!(f, "HD-DVD"),
+            Self::HdDvdSl => write!(f, "HD DVD (SL)"),
+            Self::HdDvdDl => write!(f, "HD DVD (DL)"),
             Self::Bd25 => write!(f, "BD-25"),
             Self::Bd50 => write!(f, "BD-50"),
             Self::Bd66 => write!(f, "BD-66"),
             Self::Bd100 => write!(f, "BD-100"),
-            Self::Umd => write!(f, "UMD"),
+            Self::UmdSl => write!(f, "UMD (SL)"),
+            Self::UmdDl => write!(f, "UMD (DL)"),
+            Self::GameCubeDisc => write!(f, "Nintendo GameCube Game Disc"),
+            Self::WiiDiscSl => write!(f, "Wii Optical Disc (SL)"),
+            Self::WiiDiscDl => write!(f, "Wii Optical Disc (DL)"),
+            Self::WiiUDiscSl => write!(f, "Wii U Optical Disc (SL)"),
         }
     }
 }
 
 impl MediaType {
+    pub fn from_id(id: i32) -> Option<Self> {
+        Self::ALL.iter().find(|m| **m as i32 == id).copied()
+    }
+
     pub fn is_cd(&self) -> bool {
         matches!(self, Self::Cd | Self::GdRom)
     }
 
     pub fn max_layers(&self) -> u32 {
         match self {
-            Self::Cd | Self::GdRom | Self::Umd => 1,
-            Self::Dvd5 | Self::Dvd9 | Self::HdDvd => 2,
+            Self::Cd | Self::GdRom | Self::UmdSl | Self::UmdDl
+                | Self::GameCubeDisc | Self::WiiUDiscSl => 1,
+            Self::Dvd5 | Self::Dvd9 | Self::HdDvdSl | Self::HdDvdDl
+                | Self::WiiDiscSl | Self::WiiDiscDl => 2,
             Self::Bd25 | Self::Bd50 | Self::Bd66 | Self::Bd100 => 4,
         }
     }
 
     pub const ALL: &[MediaType] = &[
-        Self::Cd, Self::GdRom, Self::Dvd5, Self::Dvd9, Self::HdDvd,
-        Self::Bd25, Self::Bd50, Self::Bd66, Self::Bd100, Self::Umd,
+        Self::Cd, Self::GdRom, Self::Dvd5, Self::Dvd9,
+        Self::HdDvdSl, Self::HdDvdDl,
+        Self::Bd25, Self::Bd50, Self::Bd66, Self::Bd100,
+        Self::UmdSl, Self::UmdDl,
+        Self::GameCubeDisc, Self::WiiDiscSl, Self::WiiDiscDl, Self::WiiUDiscSl,
     ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "category_enum", rename_all = "PascalCase")]
+#[repr(i32)]
 pub enum Category {
-    Games,
-    Demos,
-    Video,
-    Audio,
-    Multimedia,
-    Applications,
-    Coverdiscs,
-    Educational,
-    #[sqlx(rename = "Bonus Discs")]
+    Games = 1,
+    Demos = 2,
+    Coverdiscs = 3,
     #[serde(rename = "Bonus Discs")]
-    BonusDiscs,
-    Betas,
+    BonusDiscs = 4,
+    Applications = 5,
+    Multimedia = 6,
+    #[serde(rename = "Add-Ons")]
+    AddOns = 7,
+    Educational = 8,
+    Preproduction = 9,
+    Video = 10,
+    Audio = 11,
 }
 
 impl std::fmt::Display for Category {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::BonusDiscs => write!(f, "Bonus Discs"),
+            Self::AddOns => write!(f, "Add-Ons"),
             other => write!(f, "{:?}", other),
         }
     }
@@ -102,8 +121,9 @@ impl std::fmt::Display for Category {
 
 impl Category {
     pub const ALL: &[Category] = &[
-        Self::Games, Self::Demos, Self::Video, Self::Audio, Self::Multimedia,
-        Self::Applications, Self::Coverdiscs, Self::Educational, Self::BonusDiscs, Self::Betas,
+        Self::Games, Self::Demos, Self::Coverdiscs, Self::BonusDiscs,
+        Self::Applications, Self::Multimedia, Self::AddOns, Self::Educational,
+        Self::Preproduction, Self::Video, Self::Audio,
     ];
 }
 
@@ -228,8 +248,7 @@ pub struct System {
     pub id: i32,
     pub short_code: String,
     pub full_name: String,
-    pub allowed_media: Vec<MediaType>,
-    pub allowed_system_regions: Vec<i32>,
+    pub allowed_media: Vec<i32>,
     pub has_date_field: bool,
     pub has_sbi: bool,
     pub has_pvd: bool,
@@ -243,17 +262,8 @@ pub struct System {
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
-pub struct SystemRegion {
+pub struct Region {
     pub id: i32,
-    pub name: String,
-    pub flag_code: String,
-    pub display_order: i32,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow, Serialize)]
-pub struct ReleaseRegion {
-    pub id: i32,
-    pub code: String,
     pub name: String,
     pub flag_code: String,
     pub display_order: i32,
@@ -316,10 +326,11 @@ pub struct Session {
 pub struct Disc {
     pub id: i32,
     pub system_id: i32,
+    #[sqlx(rename = "media_type_id")]
     pub media_type: MediaType,
     pub title: String,
+    #[sqlx(rename = "category_id")]
     pub category: Category,
-    pub system_region_id: Option<i32>,
     pub version: Option<String>,
     pub edition: Option<String>,
     pub barcode: Option<String>,
@@ -426,8 +437,6 @@ pub struct DiscListRow {
     pub version: Option<String>,
     pub edition: Option<String>,
     pub status: DiscStatus,
-    pub system_region_flag: Option<String>,
-    pub system_region_name: Option<String>,
     pub region_flags: Vec<FlagInfo>,
     pub language_flags: Vec<FlagInfo>,
     pub serials: Vec<String>,
@@ -443,8 +452,7 @@ pub struct FlagInfo {
 pub struct DiscDetail {
     pub disc: Disc,
     pub system: System,
-    pub system_region: Option<SystemRegion>,
-    pub release_regions: Vec<ReleaseRegion>,
+    pub regions: Vec<Region>,
     pub languages: Vec<Language>,
     pub alt_titles: Vec<(String, String)>,
     pub serials: Vec<(String, String)>,

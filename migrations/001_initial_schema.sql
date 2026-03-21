@@ -1,32 +1,26 @@
 -- Enums
-CREATE TYPE media_type_enum AS ENUM (
-    'CD', 'GD-ROM', 'DVD-5', 'DVD-9', 'HD-DVD',
-    'BD-25', 'BD-50', 'BD-66', 'BD-100', 'UMD'
-);
-
-CREATE TYPE category_enum AS ENUM (
-    'Games', 'Demos', 'Video', 'Audio', 'Multimedia',
-    'Applications', 'Coverdiscs', 'Educational', 'Bonus Discs', 'Betas'
-);
-
 CREATE TYPE disc_status_enum AS ENUM ('Verified', 'Good', 'Questionable', 'Bad');
 CREATE TYPE user_role_enum AS ENUM ('User', 'UserPlus', 'Moderator', 'Admin');
 CREATE TYPE submission_type_enum AS ENUM ('New Dump', 'Verification', 'Edit');
 CREATE TYPE submission_status_enum AS ENUM ('Pending', 'Approved', 'Denied');
 
--- System regions
-CREATE TABLE system_regions (
+-- Lookup tables
+CREATE TABLE media_types (
     id SERIAL PRIMARY KEY,
     name VARCHAR(64) UNIQUE NOT NULL,
-    flag_code VARCHAR(8) NOT NULL,
     display_order INT NOT NULL DEFAULT 0
 );
 
--- Release regions / countries
-CREATE TABLE release_regions (
+CREATE TABLE categories (
     id SERIAL PRIMARY KEY,
-    code VARCHAR(8) UNIQUE NOT NULL,
-    name VARCHAR(128) NOT NULL,
+    name VARCHAR(64) UNIQUE NOT NULL,
+    display_order INT NOT NULL DEFAULT 0
+);
+
+-- Regions / countries
+CREATE TABLE regions (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(128) UNIQUE NOT NULL,
     flag_code VARCHAR(8) NOT NULL,
     display_order INT NOT NULL DEFAULT 0
 );
@@ -59,8 +53,7 @@ CREATE TABLE systems (
     id SERIAL PRIMARY KEY,
     short_code VARCHAR(16) UNIQUE NOT NULL,
     full_name VARCHAR(255) NOT NULL,
-    allowed_media media_type_enum[] NOT NULL,
-    allowed_system_regions INT[] NOT NULL DEFAULT '{}',
+    allowed_media INT[] NOT NULL DEFAULT '{}',
     has_date_field BOOLEAN NOT NULL DEFAULT FALSE,
     has_sbi BOOLEAN NOT NULL DEFAULT FALSE,
     has_pvd BOOLEAN NOT NULL DEFAULT FALSE,
@@ -109,10 +102,9 @@ CREATE INDEX idx_sessions_expires ON sessions(expires_at);
 CREATE TABLE discs (
     id SERIAL PRIMARY KEY,
     system_id INT NOT NULL REFERENCES systems(id),
-    media_type media_type_enum NOT NULL,
+    media_type_id INT NOT NULL REFERENCES media_types(id),
     title VARCHAR(512) NOT NULL,
-    category category_enum NOT NULL DEFAULT 'Games',
-    system_region_id INT REFERENCES system_regions(id),
+    category_id INT NOT NULL REFERENCES categories(id) DEFAULT 1,
     version VARCHAR(255),
     edition VARCHAR(512),
     barcode VARCHAR(255),
@@ -149,11 +141,11 @@ ALTER TABLE discs ADD COLUMN search_vector tsvector
     ) STORED;
 CREATE INDEX idx_discs_search ON discs USING GIN(search_vector);
 
--- Disc <-> release regions junction
-CREATE TABLE disc_release_regions (
+-- Disc <-> regions junction
+CREATE TABLE disc_regions (
     disc_id INT NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
-    release_region_id INT NOT NULL REFERENCES release_regions(id),
-    PRIMARY KEY (disc_id, release_region_id)
+    region_id INT NOT NULL REFERENCES regions(id),
+    PRIMARY KEY (disc_id, region_id)
 );
 
 -- Disc <-> languages junction

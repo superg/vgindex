@@ -26,19 +26,10 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
 
     let system = get_system(pool, disc.system_id).await?;
 
-    let system_region: Option<SystemRegion> = if let Some(sr_id) = disc.system_region_id {
-        sqlx::query_as("SELECT * FROM system_regions WHERE id = $1")
-            .bind(sr_id)
-            .fetch_optional(pool)
-            .await?
-    } else {
-        None
-    };
-
-    let release_regions: Vec<ReleaseRegion> = sqlx::query_as(
-        "SELECT rr.* FROM release_regions rr
-         JOIN disc_release_regions drr ON drr.release_region_id = rr.id
-         WHERE drr.disc_id = $1 ORDER BY rr.display_order"
+    let regions: Vec<Region> = sqlx::query_as(
+        "SELECT r.* FROM regions r
+         JOIN disc_regions dr ON dr.region_id = r.id
+         WHERE dr.disc_id = $1 ORDER BY r.display_order"
     )
     .bind(disc_id)
     .fetch_all(pool)
@@ -118,8 +109,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     Ok(DiscDetail {
         disc,
         system,
-        system_region,
-        release_regions,
+        regions,
         languages,
         alt_titles,
         serials,
@@ -132,7 +122,6 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
 pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) -> AppResult<()> {
     let title = data["title"].as_str().unwrap_or_default();
     let category = data["category"].as_str().unwrap_or("Games");
-    let system_region_id = data["system_region_id"].as_i64().map(|v| v as i32);
     let version = data["version"].as_str().filter(|s| !s.is_empty());
     let edition = data["edition"].as_str().filter(|s| !s.is_empty());
     let barcode = data["barcode"].as_str().filter(|s| !s.is_empty());
@@ -141,14 +130,14 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     let error_count = data["error_count"].as_i64().map(|v| v as i32);
 
     sqlx::query(
-        "UPDATE discs SET title = $1, category = $2::category_enum,
-         system_region_id = $3, version = $4, edition = $5, barcode = $6,
-         comments = $7, protection = $8, error_count = $9, updated_at = NOW()
-         WHERE id = $10"
+        "UPDATE discs SET title = $1,
+         category_id = (SELECT id FROM categories WHERE name = $2),
+         version = $3, edition = $4, barcode = $5,
+         comments = $6, protection = $7, error_count = $8, updated_at = NOW()
+         WHERE id = $9"
     )
     .bind(title)
     .bind(category)
-    .bind(system_region_id)
     .bind(version)
     .bind(edition)
     .bind(barcode)
@@ -159,16 +148,16 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     .execute(pool)
     .await?;
 
-    // Update release regions
-    sqlx::query("DELETE FROM disc_release_regions WHERE disc_id = $1")
+    // Update regions
+    sqlx::query("DELETE FROM disc_regions WHERE disc_id = $1")
         .bind(disc_id)
         .execute(pool)
         .await?;
-    if let Some(regions) = data["release_regions"].as_array() {
+    if let Some(regions) = data["regions"].as_array() {
         for r in regions {
             if let Some(rid) = r.as_i64() {
                 sqlx::query(
-                    "INSERT INTO disc_release_regions (disc_id, release_region_id) VALUES ($1, $2)
+                    "INSERT INTO disc_regions (disc_id, region_id) VALUES ($1, $2)
                      ON CONFLICT DO NOTHING"
                 )
                 .bind(disc_id)
@@ -213,8 +202,9 @@ pub async fn create_disc_from_submission(
     let category = data["category"].as_str().unwrap_or("Games");
 
     let disc_id: i32 = sqlx::query_scalar(
-        "INSERT INTO discs (system_id, media_type, title, category, status)
-         VALUES ($1, $2::media_type_enum, $3, $4::category_enum, 'Good')
+        "INSERT INTO discs (system_id, media_type_id, title, category_id, status)
+         VALUES ($1, (SELECT id FROM media_types WHERE name = $2), $3,
+                 (SELECT id FROM categories WHERE name = $4), 'Good')
          RETURNING id"
     )
     .bind(system_id)

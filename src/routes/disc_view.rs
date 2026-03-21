@@ -27,9 +27,7 @@ struct DiscViewTemplate {
     media_type: String,
     is_cd: bool,
     category: String,
-    system_region_name: String,
-    system_region_flag_lower: String,
-    release_regions: Vec<ViewFlag>,
+    regions: Vec<ViewFlag>,
     lang_flags: Vec<ViewFlag>,
     alt_titles: Vec<ViewKV>,
     serials: Vec<ViewKV>,
@@ -147,11 +145,9 @@ async fn disc_view(
             media_type: detail.disc.media_type.to_string(),
             is_cd,
             category: detail.disc.category.to_string(),
-            system_region_name: detail.system_region.as_ref().map(|sr| sr.name.clone()).unwrap_or_default(),
-            system_region_flag_lower: detail.system_region.as_ref().map(|sr| sr.flag_code.to_lowercase()).unwrap_or_default(),
-            release_regions: detail.release_regions.iter().map(|rr| ViewFlag {
-                flag_code_lower: rr.flag_code.to_lowercase(),
-                name: rr.name.clone(),
+            regions: detail.regions.iter().map(|r| ViewFlag {
+                flag_code_lower: r.flag_code.to_lowercase(),
+                name: r.name.clone(),
             }).collect(),
             lang_flags: detail.languages.iter().map(|l| ViewFlag {
                 flag_code_lower: l.flag_code.to_lowercase(),

@@ -63,11 +63,11 @@
             {% for disc in discs %}
             <tr>
                 <td>
-                    {% if disc.region_flag.is_some() %}
-                    <img class="flag-icon" src="/static/flags/{{ disc.region_flag_lower }}.png"
-                         title="{{ disc.region_name_display }}"
-                         alt="{{ disc.region_name_display }}">
-                    {% endif %}
+                    {% for rf in disc.region_flags %}
+                    <img class="flag-icon" src="/static/flags/{{ rf.flag_code_lower }}.png"
+                         title="{{ rf.name }}"
+                         alt="{{ rf.name }}">
+                    {% endfor %}
                 </td>
                 <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
                 <td>{{ disc.system_short }}</td>

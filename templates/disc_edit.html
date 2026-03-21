@@ -18,23 +18,13 @@
             {% endfor %}
         </select>
 
-        {% if show_system_region %}
-        <label for="system_region_id">System Region</label>
-        <select id="system_region_id" name="system_region_id">
-            <option value="">-- None --</option>
-            {% for sr in system_regions %}
-            <option value="{{ sr.id }}" {% if sr.selected %}selected{% endif %}>{{ sr.name }}</option>
-            {% endfor %}
-        </select>
-        {% endif %}
-
         <fieldset>
-            <legend>Release Regions</legend>
+            <legend>Regions</legend>
             <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
-            {% for rr in release_regions %}
+            {% for r in regions %}
             <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
-                <input type="checkbox" name="release_regions" value="{{ rr.id }}" {% if rr.selected %}checked{% endif %}>
-                <img class="flag-icon" src="/static/flags/{{ rr.flag_lower }}.png" title="{{ rr.name }}" alt="{{ rr.name }}">
+                <input type="checkbox" name="regions" value="{{ r.id }}" {% if r.selected %}checked{% endif %}>
+                <img class="flag-icon" src="/static/flags/{{ r.flag_lower }}.png" title="{{ r.name }}" alt="{{ r.name }}">
             </label>
             {% endfor %}
             </div>
