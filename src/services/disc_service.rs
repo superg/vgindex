@@ -4,14 +4,14 @@ use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 
 pub async fn get_all_systems(pool: &PgPool) -> AppResult<Vec<System>> {
-    Ok(sqlx::query_as("SELECT * FROM systems ORDER BY display_order, full_name")
+    Ok(sqlx::query_as("SELECT * FROM systems ORDER BY sort_order, full_name")
         .fetch_all(pool)
         .await?)
 }
 
-pub async fn get_system(pool: &PgPool, id: i32) -> AppResult<System> {
-    sqlx::query_as("SELECT * FROM systems WHERE id = $1")
-        .bind(id)
+pub async fn get_system(pool: &PgPool, code: &str) -> AppResult<System> {
+    sqlx::query_as("SELECT * FROM systems WHERE code = $1")
+        .bind(code)
         .fetch_optional(pool)
         .await?
         .ok_or(AppError::NotFound)
@@ -24,12 +24,12 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         .await?
         .ok_or(AppError::NotFound)?;
 
-    let system = get_system(pool, disc.system_id).await?;
+    let system = get_system(pool, &disc.system_code).await?;
 
     let regions: Vec<Region> = sqlx::query_as(
         "SELECT r.* FROM regions r
-         JOIN disc_regions dr ON dr.region_id = r.id
-         WHERE dr.disc_id = $1 ORDER BY r.display_order"
+         JOIN disc_regions dr ON dr.region_code = r.code
+         WHERE dr.disc_id = $1 ORDER BY r.sort_order"
     )
     .bind(disc_id)
     .fetch_all(pool)
@@ -38,39 +38,11 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     let languages: Vec<Language> = sqlx::query_as(
         "SELECT l.* FROM languages l
          JOIN disc_languages dl ON dl.language_id = l.id
-         WHERE dl.disc_id = $1 ORDER BY l.display_order"
+         WHERE dl.disc_id = $1 ORDER BY l.sort_order"
     )
     .bind(disc_id)
     .fetch_all(pool)
     .await?;
-
-    let alt_title_rows: Vec<AltTitleRow> = sqlx::query_as(
-        "SELECT dat.title, tt.name AS type_name FROM disc_alt_titles dat
-         JOIN title_types tt ON tt.id = dat.title_type_id
-         WHERE dat.disc_id = $1 ORDER BY tt.display_order"
-    )
-    .bind(disc_id)
-    .fetch_all(pool)
-    .await?;
-
-    let alt_titles: Vec<(String, String)> = alt_title_rows
-        .into_iter()
-        .map(|r| (r.type_name, r.title))
-        .collect();
-
-    let serial_rows: Vec<SerialRow> = sqlx::query_as(
-        "SELECT ds.serial, st.name AS type_name FROM disc_serials ds
-         JOIN serial_types st ON st.id = ds.serial_type_id
-         WHERE ds.disc_id = $1 ORDER BY st.display_order"
-    )
-    .bind(disc_id)
-    .fetch_all(pool)
-    .await?;
-
-    let serials: Vec<(String, String)> = serial_rows
-        .into_iter()
-        .map(|r| (r.type_name, r.serial))
-        .collect();
 
     let ring_entries: Vec<DiscRingCodeEntry> = sqlx::query_as(
         "SELECT * FROM disc_ring_code_entries WHERE disc_id = $1 ORDER BY id"
@@ -111,8 +83,6 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         system,
         regions,
         languages,
-        alt_titles,
-        serials,
         ring_entries: ring_views,
         files,
         dumpers,
@@ -121,6 +91,10 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
 
 pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) -> AppResult<()> {
     let title = data["title"].as_str().unwrap_or_default();
+    let title_foreign = data["title_foreign"].as_str().filter(|s| !s.is_empty());
+    let title_disc = data["title_disc"].as_str().filter(|s| !s.is_empty());
+    let title_disc_number = data["title_disc_number"].as_str().filter(|s| !s.is_empty());
+    let serial = data["serial"].as_str().filter(|s| !s.is_empty());
     let category = data["category"].as_str().unwrap_or("Games");
     let version = data["version"].as_str().filter(|s| !s.is_empty());
     let edition = data["edition"].as_str().filter(|s| !s.is_empty());
@@ -131,12 +105,18 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
 
     sqlx::query(
         "UPDATE discs SET title = $1,
-         category_id = (SELECT id FROM categories WHERE name = $2),
-         version = $3, edition = $4, barcode = $5,
-         comments = $6, protection = $7, error_count = $8, updated_at = NOW()
-         WHERE id = $9"
+         title_foreign = $2, title_disc = $3, title_disc_number = $4,
+         serial = $5,
+         category_id = (SELECT id FROM categories WHERE name = $6),
+         version = $7, edition = $8, barcode = $9,
+         comments = $10, protection = $11, error_count = $12, updated_at = NOW()
+         WHERE id = $13"
     )
     .bind(title)
+    .bind(title_foreign)
+    .bind(title_disc)
+    .bind(title_disc_number)
+    .bind(serial)
     .bind(category)
     .bind(version)
     .bind(edition)
@@ -155,13 +135,13 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         .await?;
     if let Some(regions) = data["regions"].as_array() {
         for r in regions {
-            if let Some(rid) = r.as_i64() {
+            if let Some(rcode) = r.as_str() {
                 sqlx::query(
-                    "INSERT INTO disc_regions (disc_id, region_id) VALUES ($1, $2)
+                    "INSERT INTO disc_regions (disc_id, region_code) VALUES ($1, $2)
                      ON CONFLICT DO NOTHING"
                 )
                 .bind(disc_id)
-                .bind(rid as i32)
+                .bind(rcode)
                 .execute(pool)
                 .await?;
             }
@@ -196,18 +176,21 @@ pub async fn create_disc_from_submission(
     data: &serde_json::Value,
     submitter_id: i32,
 ) -> AppResult<i32> {
-    let system_id = data["system_id"].as_i64().ok_or(AppError::BadRequest("system_id required".into()))? as i32;
-    let media_type = data["media_type"].as_str().unwrap_or("CD");
+    let system_code = data["system_code"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or(AppError::BadRequest("system_code required".into()))?;
+    let media_type = data["media_type"].as_str().unwrap_or("cd");
     let title = data["title"].as_str().unwrap_or_default();
     let category = data["category"].as_str().unwrap_or("Games");
 
     let disc_id: i32 = sqlx::query_scalar(
-        "INSERT INTO discs (system_id, media_type_id, title, category_id, status)
-         VALUES ($1, (SELECT id FROM media_types WHERE name = $2), $3,
+        "INSERT INTO discs (system_code, media_type_code, title, category_id, status)
+         VALUES ($1, $2, $3,
                  (SELECT id FROM categories WHERE name = $4), 'Good')
          RETURNING id"
     )
-    .bind(system_id)
+    .bind(system_code)
     .bind(media_type)
     .bind(title)
     .bind(category)
@@ -284,18 +267,6 @@ fn extract_track_number(filename: &str) -> Option<String> {
         }
     }
     None
-}
-
-#[derive(sqlx::FromRow)]
-struct AltTitleRow {
-    title: String,
-    type_name: String,
-}
-
-#[derive(sqlx::FromRow)]
-struct SerialRow {
-    serial: String,
-    type_name: String,
 }
 
 // DumperInfo needs FromRow

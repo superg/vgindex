@@ -26,11 +26,16 @@ struct DiscSubmitTemplate {
     regions: Vec<SubmitRegion>,
     languages: Vec<SubmitLang>,
     categories: Vec<String>,
-    media_types: Vec<String>,
+    media_types: Vec<MediaTypeOption>,
+}
+
+struct MediaTypeOption {
+    code: String,
+    name: String,
 }
 
 struct SubmitRegion {
-    id: i32,
+    code: String,
     name: String,
     flag_lower: String,
 }
@@ -47,10 +52,10 @@ async fn submit_page(
 ) -> AppResult<Html<String>> {
     let systems = disc_service::get_all_systems(&state.pool).await?;
     let all_regions: Vec<Region> =
-        sqlx::query_as("SELECT * FROM regions ORDER BY display_order")
+        sqlx::query_as("SELECT * FROM regions ORDER BY sort_order")
             .fetch_all(&state.pool).await?;
     let langs: Vec<Language> =
-        sqlx::query_as("SELECT * FROM languages ORDER BY display_order")
+        sqlx::query_as("SELECT * FROM languages ORDER BY sort_order")
             .fetch_all(&state.pool).await?;
 
     Ok(Html(
@@ -58,7 +63,7 @@ async fn submit_page(
             current_user: Some(user.username),
             systems,
             regions: all_regions.iter().map(|r| SubmitRegion {
-                id: r.id,
+                code: r.code.trim().to_string(),
                 name: r.name.clone(),
                 flag_lower: r.flag_code.to_lowercase(),
             }).collect(),
@@ -68,7 +73,10 @@ async fn submit_page(
                 flag_lower: l.flag_code.to_lowercase(),
             }).collect(),
             categories: Category::ALL.iter().map(|c| c.to_string()).collect(),
-            media_types: MediaType::ALL.iter().map(|m| m.to_string()).collect(),
+            media_types: MediaType::ALL.iter().map(|m| MediaTypeOption {
+                code: m.code().to_string(),
+                name: m.to_string(),
+            }).collect(),
         }
         .render()
         .unwrap(),
@@ -77,7 +85,7 @@ async fn submit_page(
 
 #[derive(Deserialize)]
 pub struct DiscSubmitForm {
-    pub system_id: i32,
+    pub system_code: String,
     pub media_type: String,
     pub title: String,
     pub category: String,
@@ -93,7 +101,7 @@ pub struct DiscSubmitForm {
     pub cue_content: Option<String>,
     pub dump_log: Option<String>,
     #[serde(default)]
-    pub regions: Vec<i32>,
+    pub regions: Vec<String>,
     #[serde(default)]
     pub languages: Vec<i32>,
 }
@@ -104,7 +112,7 @@ async fn submit_handler(
     Form(form): Form<DiscSubmitForm>,
 ) -> AppResult<Redirect> {
     let data = serde_json::json!({
-        "system_id": form.system_id,
+        "system_code": form.system_code,
         "media_type": form.media_type,
         "title": form.title,
         "category": form.category,

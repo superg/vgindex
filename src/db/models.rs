@@ -3,41 +3,91 @@ use serde::{Deserialize, Serialize};
 
 // --- Enums ---
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MediaType {
-    #[serde(rename = "CD")]
-    Cd = 1,
-    #[serde(rename = "GD-ROM")]
-    GdRom = 2,
-    #[serde(rename = "DVD-5")]
-    Dvd5 = 3,
-    #[serde(rename = "DVD-9")]
-    Dvd9 = 4,
-    #[serde(rename = "HD DVD (SL)")]
-    HdDvdSl = 5,
-    #[serde(rename = "HD DVD (DL)")]
-    HdDvdDl = 6,
-    #[serde(rename = "BD-25")]
-    Bd25 = 7,
-    #[serde(rename = "BD-50")]
-    Bd50 = 8,
-    #[serde(rename = "BD-66")]
-    Bd66 = 9,
-    #[serde(rename = "BD-100")]
-    Bd100 = 10,
-    #[serde(rename = "UMD (SL)")]
-    UmdSl = 11,
-    #[serde(rename = "UMD (DL)")]
-    UmdDl = 12,
-    #[serde(rename = "Nintendo GameCube Game Disc")]
-    GameCubeDisc = 13,
-    #[serde(rename = "Wii Optical Disc (SL)")]
-    WiiDiscSl = 14,
-    #[serde(rename = "Wii Optical Disc (DL)")]
-    WiiDiscDl = 15,
-    #[serde(rename = "Wii U Optical Disc (SL)")]
-    WiiUDiscSl = 16,
+    Cd,
+    GdRom,
+    Dvd5,
+    Dvd9,
+    Hdvd15,
+    Hdvd30,
+    Bd25,
+    Bd50,
+    Bd66,
+    Bd100,
+    Umd1,
+    Umd2,
+    Dvd5Gc,
+    Dvd5Wii,
+    Dvd9Wii,
+    Bd25WiiU,
+}
+
+impl MediaType {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Cd => "cd",
+            Self::GdRom => "gdrom",
+            Self::Dvd5 => "dvd5",
+            Self::Dvd9 => "dvd9",
+            Self::Hdvd15 => "hdvd15",
+            Self::Hdvd30 => "hdvd30",
+            Self::Bd25 => "bd25",
+            Self::Bd50 => "bd50",
+            Self::Bd66 => "bd66",
+            Self::Bd100 => "bd100",
+            Self::Umd1 => "umd1",
+            Self::Umd2 => "umd2",
+            Self::Dvd5Gc => "dvd5gc",
+            Self::Dvd5Wii => "dvd5wii",
+            Self::Dvd9Wii => "dvd9wii",
+            Self::Bd25WiiU => "bd25wiiu",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<Self> {
+        match code.trim() {
+            "cd" => Some(Self::Cd),
+            "gdrom" => Some(Self::GdRom),
+            "dvd5" => Some(Self::Dvd5),
+            "dvd9" => Some(Self::Dvd9),
+            "hdvd15" => Some(Self::Hdvd15),
+            "hdvd30" => Some(Self::Hdvd30),
+            "bd25" => Some(Self::Bd25),
+            "bd50" => Some(Self::Bd50),
+            "bd66" => Some(Self::Bd66),
+            "bd100" => Some(Self::Bd100),
+            "umd1" => Some(Self::Umd1),
+            "umd2" => Some(Self::Umd2),
+            "dvd5gc" => Some(Self::Dvd5Gc),
+            "dvd5wii" => Some(Self::Dvd5Wii),
+            "dvd9wii" => Some(Self::Dvd9Wii),
+            "bd25wiiu" => Some(Self::Bd25WiiU),
+            _ => None,
+        }
+    }
+
+    pub fn is_cd(&self) -> bool {
+        matches!(self, Self::Cd | Self::GdRom)
+    }
+
+    pub fn max_layers(&self) -> u32 {
+        match self {
+            Self::Cd | Self::GdRom | Self::Umd1 | Self::Umd2
+                | Self::Dvd5Gc | Self::Bd25WiiU => 1,
+            Self::Dvd5 | Self::Dvd9 | Self::Hdvd15 | Self::Hdvd30
+                | Self::Dvd5Wii | Self::Dvd9Wii => 2,
+            Self::Bd25 | Self::Bd50 | Self::Bd66 | Self::Bd100 => 4,
+        }
+    }
+
+    pub const ALL: &[MediaType] = &[
+        Self::Cd, Self::GdRom, Self::Dvd5, Self::Dvd9,
+        Self::Hdvd15, Self::Hdvd30,
+        Self::Bd25, Self::Bd50, Self::Bd66, Self::Bd100,
+        Self::Umd1, Self::Umd2,
+        Self::Dvd5Gc, Self::Dvd5Wii, Self::Dvd9Wii, Self::Bd25WiiU,
+    ];
 }
 
 impl std::fmt::Display for MediaType {
@@ -47,48 +97,42 @@ impl std::fmt::Display for MediaType {
             Self::GdRom => write!(f, "GD-ROM"),
             Self::Dvd5 => write!(f, "DVD-5"),
             Self::Dvd9 => write!(f, "DVD-9"),
-            Self::HdDvdSl => write!(f, "HD DVD (SL)"),
-            Self::HdDvdDl => write!(f, "HD DVD (DL)"),
+            Self::Hdvd15 => write!(f, "HD DVD (SL)"),
+            Self::Hdvd30 => write!(f, "HD DVD (DL)"),
             Self::Bd25 => write!(f, "BD-25"),
             Self::Bd50 => write!(f, "BD-50"),
             Self::Bd66 => write!(f, "BD-66"),
             Self::Bd100 => write!(f, "BD-100"),
-            Self::UmdSl => write!(f, "UMD (SL)"),
-            Self::UmdDl => write!(f, "UMD (DL)"),
-            Self::GameCubeDisc => write!(f, "Nintendo GameCube Game Disc"),
-            Self::WiiDiscSl => write!(f, "Wii Optical Disc (SL)"),
-            Self::WiiDiscDl => write!(f, "Wii Optical Disc (DL)"),
-            Self::WiiUDiscSl => write!(f, "Wii U Optical Disc (SL)"),
+            Self::Umd1 => write!(f, "UMD (SL)"),
+            Self::Umd2 => write!(f, "UMD (DL)"),
+            Self::Dvd5Gc => write!(f, "Nintendo GameCube Game Disc"),
+            Self::Dvd5Wii => write!(f, "Wii Optical Disc (SL)"),
+            Self::Dvd9Wii => write!(f, "Wii Optical Disc (DL)"),
+            Self::Bd25WiiU => write!(f, "Wii U Optical Disc (SL)"),
         }
     }
 }
 
-impl MediaType {
-    pub fn from_id(id: i32) -> Option<Self> {
-        Self::ALL.iter().find(|m| **m as i32 == id).copied()
+impl sqlx::Type<sqlx::Postgres> for MediaType {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as sqlx::Type<sqlx::Postgres>>::type_info()
     }
+}
 
-    pub fn is_cd(&self) -> bool {
-        matches!(self, Self::Cd | Self::GdRom)
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for MediaType {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        let s = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Self::from_code(&s).ok_or_else(|| format!("unknown media type code: {s}").into())
     }
+}
 
-    pub fn max_layers(&self) -> u32 {
-        match self {
-            Self::Cd | Self::GdRom | Self::UmdSl | Self::UmdDl
-                | Self::GameCubeDisc | Self::WiiUDiscSl => 1,
-            Self::Dvd5 | Self::Dvd9 | Self::HdDvdSl | Self::HdDvdDl
-                | Self::WiiDiscSl | Self::WiiDiscDl => 2,
-            Self::Bd25 | Self::Bd50 | Self::Bd66 | Self::Bd100 => 4,
-        }
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for MediaType {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(self.code(), buf)
     }
-
-    pub const ALL: &[MediaType] = &[
-        Self::Cd, Self::GdRom, Self::Dvd5, Self::Dvd9,
-        Self::HdDvdSl, Self::HdDvdDl,
-        Self::Bd25, Self::Bd50, Self::Bd66, Self::Bd100,
-        Self::UmdSl, Self::UmdDl,
-        Self::GameCubeDisc, Self::WiiDiscSl, Self::WiiDiscDl, Self::WiiUDiscSl,
-    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
@@ -243,12 +287,12 @@ impl std::fmt::Display for SubmissionStatus {
 
 // --- Row structs ---
 
+/// Platform row from `systems` (`code` is the PK, VARCHAR(16); `full_name` matches Redump's system name).
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct System {
-    pub id: i32,
-    pub short_code: String,
+    pub code: String,
     pub full_name: String,
-    pub allowed_media: Vec<i32>,
+    pub allowed_media: Vec<String>,
     pub has_date_field: bool,
     pub has_sbi: bool,
     pub has_pvd: bool,
@@ -258,15 +302,15 @@ pub struct System {
     pub has_header: bool,
     pub has_bca: bool,
     pub has_universal_hash: bool,
-    pub display_order: i32,
+    pub sort_order: i32,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
 pub struct Region {
-    pub id: i32,
+    pub code: String,
     pub name: String,
     pub flag_code: String,
-    pub display_order: i32,
+    pub sort_order: i32,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
@@ -275,21 +319,7 @@ pub struct Language {
     pub code: String,
     pub name: String,
     pub flag_code: String,
-    pub display_order: i32,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow, Serialize)]
-pub struct TitleType {
-    pub id: i32,
-    pub name: String,
-    pub display_order: i32,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow, Serialize)]
-pub struct SerialType {
-    pub id: i32,
-    pub name: String,
-    pub display_order: i32,
+    pub sort_order: i32,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -325,10 +355,14 @@ pub struct Session {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Disc {
     pub id: i32,
-    pub system_id: i32,
-    #[sqlx(rename = "media_type_id")]
+    pub system_code: String,
+    #[sqlx(rename = "media_type_code")]
     pub media_type: MediaType,
     pub title: String,
+    pub title_foreign: Option<String>,
+    pub title_disc: Option<String>,
+    pub title_disc_number: Option<String>,
+    pub serial: Option<String>,
     #[sqlx(rename = "category_id")]
     pub category: Category,
     pub version: Option<String>,
@@ -351,14 +385,6 @@ pub struct Disc {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, sqlx::FromRow, Serialize)]
-pub struct DiscAltTitle {
-    pub id: i32,
-    pub disc_id: i32,
-    pub title_type_id: i32,
-    pub title: String,
-}
-
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct DiscRingCodeEntry {
     pub id: i32,
@@ -378,14 +404,6 @@ pub struct DiscRingCodeLayer {
     pub offset_value: Option<String>,
     pub sample_data_start: Option<String>,
     pub comment: Option<String>,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow, Serialize)]
-pub struct DiscSerial {
-    pub id: i32,
-    pub disc_id: i32,
-    pub serial_type_id: i32,
-    pub serial: String,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
@@ -431,7 +449,7 @@ pub struct OAuthClient {
 pub struct DiscListRow {
     pub id: i32,
     pub title: String,
-    pub system_short: String,
+    pub system_code: String,
     pub system_full: String,
     pub media_type: MediaType,
     pub version: Option<String>,
@@ -439,7 +457,6 @@ pub struct DiscListRow {
     pub status: DiscStatus,
     pub region_flags: Vec<FlagInfo>,
     pub language_flags: Vec<FlagInfo>,
-    pub serials: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -454,8 +471,6 @@ pub struct DiscDetail {
     pub system: System,
     pub regions: Vec<Region>,
     pub languages: Vec<Language>,
-    pub alt_titles: Vec<(String, String)>,
-    pub serials: Vec<(String, String)>,
     pub ring_entries: Vec<RingEntryView>,
     pub files: Vec<File>,
     pub dumpers: Vec<DumperInfo>,

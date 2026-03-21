@@ -6,23 +6,23 @@ CREATE TYPE submission_status_enum AS ENUM ('Pending', 'Approved', 'Denied');
 
 -- Lookup tables
 CREATE TABLE media_types (
-    id SERIAL PRIMARY KEY,
+    code VARCHAR(16) PRIMARY KEY,
     name VARCHAR(64) UNIQUE NOT NULL,
-    display_order INT NOT NULL DEFAULT 0
+    sort_order INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE categories (
     id SERIAL PRIMARY KEY,
     name VARCHAR(64) UNIQUE NOT NULL,
-    display_order INT NOT NULL DEFAULT 0
+    sort_order INT NOT NULL DEFAULT 0
 );
 
--- Regions / countries
+-- Regions / countries (code = ISO 3166-1 alpha-2, or X* user-assigned for non-country entries)
 CREATE TABLE regions (
-    id SERIAL PRIMARY KEY,
+    code CHAR(2) PRIMARY KEY,
     name VARCHAR(128) UNIQUE NOT NULL,
     flag_code VARCHAR(8) NOT NULL,
-    display_order INT NOT NULL DEFAULT 0
+    sort_order INT NOT NULL DEFAULT 0
 );
 
 -- Languages
@@ -31,29 +31,14 @@ CREATE TABLE languages (
     code VARCHAR(8) UNIQUE NOT NULL,
     name VARCHAR(128) NOT NULL,
     flag_code VARCHAR(8) NOT NULL,
-    display_order INT NOT NULL DEFAULT 0
+    sort_order INT NOT NULL DEFAULT 0
 );
 
--- Title types
-CREATE TABLE title_types (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(64) UNIQUE NOT NULL,
-    display_order INT NOT NULL DEFAULT 0
-);
-
--- Serial types
-CREATE TABLE serial_types (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(64) UNIQUE NOT NULL,
-    display_order INT NOT NULL DEFAULT 0
-);
-
--- Systems / Platforms
+-- Systems / Platforms (Redump /discs/system/<code>/ slugs; longest in seed is 11 chars, e.g. enhanced-cd, hddvd-video)
 CREATE TABLE systems (
-    id SERIAL PRIMARY KEY,
-    short_code VARCHAR(16) UNIQUE NOT NULL,
+    code VARCHAR(16) PRIMARY KEY,
     full_name VARCHAR(255) NOT NULL,
-    allowed_media INT[] NOT NULL DEFAULT '{}',
+    allowed_media TEXT[] NOT NULL DEFAULT '{}',
     has_date_field BOOLEAN NOT NULL DEFAULT FALSE,
     has_sbi BOOLEAN NOT NULL DEFAULT FALSE,
     has_pvd BOOLEAN NOT NULL DEFAULT FALSE,
@@ -63,7 +48,7 @@ CREATE TABLE systems (
     has_header BOOLEAN NOT NULL DEFAULT FALSE,
     has_bca BOOLEAN NOT NULL DEFAULT FALSE,
     has_universal_hash BOOLEAN NOT NULL DEFAULT FALSE,
-    display_order INT NOT NULL DEFAULT 0
+    sort_order INT NOT NULL DEFAULT 0
 );
 
 -- Users
@@ -101,9 +86,13 @@ CREATE INDEX idx_sessions_expires ON sessions(expires_at);
 -- Discs (main catalog)
 CREATE TABLE discs (
     id SERIAL PRIMARY KEY,
-    system_id INT NOT NULL REFERENCES systems(id),
-    media_type_id INT NOT NULL REFERENCES media_types(id),
+    system_code VARCHAR(16) NOT NULL REFERENCES systems(code),
+    media_type_code VARCHAR(16) NOT NULL REFERENCES media_types(code),
     title VARCHAR(512) NOT NULL,
+    title_foreign VARCHAR(512),
+    title_disc VARCHAR(512),
+    title_disc_number VARCHAR(64),
+    serial VARCHAR(255),
     category_id INT NOT NULL REFERENCES categories(id) DEFAULT 1,
     version VARCHAR(255),
     edition VARCHAR(512),
@@ -125,7 +114,7 @@ CREATE TABLE discs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX idx_discs_system ON discs(system_id);
+CREATE INDEX idx_discs_system ON discs(system_code);
 CREATE INDEX idx_discs_status ON discs(status);
 CREATE INDEX idx_discs_title ON discs(title);
 CREATE INDEX idx_discs_created ON discs(created_at DESC);
@@ -134,6 +123,8 @@ CREATE INDEX idx_discs_created ON discs(created_at DESC);
 ALTER TABLE discs ADD COLUMN search_vector tsvector
     GENERATED ALWAYS AS (
         setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(title_foreign, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(title_disc, '')), 'B') ||
         setweight(to_tsvector('english', coalesce(comments, '')), 'C') ||
         setweight(to_tsvector('english', coalesce(barcode, '')), 'B') ||
         setweight(to_tsvector('english', coalesce(version, '')), 'D') ||
@@ -144,8 +135,8 @@ CREATE INDEX idx_discs_search ON discs USING GIN(search_vector);
 -- Disc <-> regions junction
 CREATE TABLE disc_regions (
     disc_id INT NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
-    region_id INT NOT NULL REFERENCES regions(id),
-    PRIMARY KEY (disc_id, region_id)
+    region_code CHAR(2) NOT NULL REFERENCES regions(code),
+    PRIMARY KEY (disc_id, region_code)
 );
 
 -- Disc <-> languages junction
@@ -154,15 +145,6 @@ CREATE TABLE disc_languages (
     language_id INT NOT NULL REFERENCES languages(id),
     PRIMARY KEY (disc_id, language_id)
 );
-
--- Alternative titles
-CREATE TABLE disc_alt_titles (
-    id SERIAL PRIMARY KEY,
-    disc_id INT NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
-    title_type_id INT NOT NULL REFERENCES title_types(id),
-    title TEXT NOT NULL
-);
-CREATE INDEX idx_disc_alt_titles_disc ON disc_alt_titles(disc_id);
 
 -- Ring code entries
 CREATE TABLE disc_ring_code_entries (
@@ -186,15 +168,6 @@ CREATE TABLE disc_ring_code_layers (
     comment TEXT,
     UNIQUE(entry_id, layer)
 );
-
--- Serials
-CREATE TABLE disc_serials (
-    id SERIAL PRIMARY KEY,
-    disc_id INT NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
-    serial_type_id INT NOT NULL REFERENCES serial_types(id),
-    serial VARCHAR(255) NOT NULL
-);
-CREATE INDEX idx_disc_serials_disc ON disc_serials(disc_id);
 
 -- Files / tracks
 CREATE TABLE files (

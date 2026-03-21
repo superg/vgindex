@@ -29,8 +29,10 @@ struct DiscViewTemplate {
     category: String,
     regions: Vec<ViewFlag>,
     lang_flags: Vec<ViewFlag>,
-    alt_titles: Vec<ViewKV>,
-    serials: Vec<ViewKV>,
+    title_foreign: String,
+    title_disc: String,
+    title_disc_number: String,
+    serial: String,
     exe_date: String,
     version: String,
     edition: String,
@@ -54,11 +56,6 @@ struct DiscViewTemplate {
 struct ViewFlag {
     flag_code_lower: String,
     name: String,
-}
-
-struct ViewKV {
-    type_name: String,
-    value: String,
 }
 
 struct ViewRingEntry {
@@ -153,14 +150,10 @@ async fn disc_view(
                 flag_code_lower: l.flag_code.to_lowercase(),
                 name: l.name.clone(),
             }).collect(),
-            alt_titles: detail.alt_titles.iter().map(|(t, v)| ViewKV {
-                type_name: t.clone(),
-                value: v.clone(),
-            }).collect(),
-            serials: detail.serials.iter().map(|(t, v)| ViewKV {
-                type_name: t.clone(),
-                value: v.clone(),
-            }).collect(),
+            title_foreign: detail.disc.title_foreign.clone().unwrap_or_default(),
+            title_disc: detail.disc.title_disc.clone().unwrap_or_default(),
+            title_disc_number: detail.disc.title_disc_number.clone().unwrap_or_default(),
+            serial: detail.disc.serial.clone().unwrap_or_default(),
             exe_date: detail.disc.exe_date.map(|d| d.to_string()).unwrap_or_default(),
             version: detail.disc.version.clone().unwrap_or_default(),
             edition: detail.disc.edition.clone().unwrap_or_default(),

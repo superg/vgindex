@@ -5,13 +5,19 @@
 {% block content %}
 <h2>{{ title }}</h2>
 
-{% if !alt_titles.is_empty() %}
+{% if !title_foreign.is_empty() || !title_disc.is_empty() || !title_disc_number.is_empty() %}
 <details open>
     <summary>Alternative Titles</summary>
     <table>
-        {% for at in alt_titles %}
-        <tr><td><strong>{{ at.type_name }}</strong></td><td>{{ at.value }}</td></tr>
-        {% endfor %}
+        {% if !title_foreign.is_empty() %}
+        <tr><td><strong>Foreign Title</strong></td><td>{{ title_foreign }}</td></tr>
+        {% endif %}
+        {% if !title_disc.is_empty() %}
+        <tr><td><strong>Disc Title</strong></td><td>{{ title_disc }}</td></tr>
+        {% endif %}
+        {% if !title_disc_number.is_empty() %}
+        <tr><td><strong>Disc Number</strong></td><td>{{ title_disc_number }}</td></tr>
+        {% endif %}
     </table>
 </details>
 {% endif %}
@@ -37,9 +43,9 @@
                 {% endfor %}
             </td></tr>
             {% endif %}
-            {% for s in serials %}
-            <tr><td><strong>{{ s.type_name }} Serial</strong></td><td>{{ s.value }}</td></tr>
-            {% endfor %}
+            {% if !serial.is_empty() %}
+            <tr><td><strong>Serial</strong></td><td>{{ serial }}</td></tr>
+            {% endif %}
             {% if !exe_date.is_empty() %}
             <tr><td><strong>EXE Date</strong></td><td>{{ exe_date }}</td></tr>
             {% endif %}

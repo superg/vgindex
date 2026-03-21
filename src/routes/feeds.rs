@@ -15,8 +15,8 @@ pub fn routes() -> Router<AppState> {
 
 async fn recent_rss(State(state): State<AppState>) -> Response {
     let rows: Vec<RssRow> = sqlx::query_as(
-        "SELECT d.id, d.title, s.short_code AS system, d.created_at
-         FROM discs d JOIN systems s ON s.id = d.system_id
+        "SELECT d.id, d.title, s.code AS system, d.created_at
+         FROM discs d JOIN systems s ON s.code = d.system_code
          WHERE d.status != 'Bad'
          ORDER BY d.created_at DESC LIMIT 50"
     )
