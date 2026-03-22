@@ -27,15 +27,20 @@ struct DiscEditTemplate {
     categories: Vec<SelectOption>,
     regions: Vec<CheckOption>,
     languages: Vec<CheckOption>,
+    show_barcode: bool,
     barcode: String,
     comments: String,
+    show_version: bool,
     version: String,
+    show_edition: bool,
     edition: String,
     exe_date: String,
     show_date_field: bool,
     edc_value: String,
     show_edc_field: bool,
+    show_protection: bool,
     protection: String,
+    show_error_count: bool,
     error_count: String,
 }
 
@@ -49,7 +54,7 @@ struct SelectOption {
 struct CheckOption {
     value: String,
     name: String,
-    flag_lower: String,
+    code: String,
     selected: bool,
 }
 
@@ -71,8 +76,8 @@ async fn edit_page(
         "SELECT region_code FROM disc_regions WHERE disc_id = $1"
     ).bind(id).fetch_all(&state.pool).await?;
 
-    let disc_lang_ids: Vec<i32> = sqlx::query_scalar(
-        "SELECT language_id FROM disc_languages WHERE disc_id = $1"
+    let disc_lang_codes: Vec<String> = sqlx::query_scalar(
+        "SELECT language_code FROM disc_languages WHERE disc_id = $1"
     ).bind(id).fetch_all(&state.pool).await?;
 
     let categories: Vec<SelectOption> = Category::ALL.iter().map(|c| SelectOption {
@@ -85,15 +90,15 @@ async fn edit_page(
     let regions: Vec<CheckOption> = all_regions.iter().map(|r| CheckOption {
         value: r.code.trim().to_string(),
         name: r.name.clone(),
-        flag_lower: r.flag_code.to_lowercase(),
+        code: r.code.trim().to_lowercase(),
         selected: disc_region_codes.iter().any(|c| c.trim() == r.code.trim()),
     }).collect();
 
     let languages: Vec<CheckOption> = langs.iter().map(|l| CheckOption {
-        value: l.id.to_string(),
+        value: l.code.trim().to_string(),
         name: l.name.clone(),
-        flag_lower: l.flag_code.to_lowercase(),
-        selected: disc_lang_ids.contains(&l.id),
+        code: l.code.trim().to_lowercase(),
+        selected: disc_lang_codes.iter().any(|c| c.trim() == l.code.trim()),
     }).collect();
 
     Ok(Html(
@@ -104,15 +109,20 @@ async fn edit_page(
             categories,
             regions,
             languages,
+            show_barcode: detail.system.has_barcode,
             barcode: detail.disc.barcode.unwrap_or_default(),
             comments: detail.disc.comments.unwrap_or_default(),
+            show_version: detail.system.has_version,
             version: detail.disc.version.unwrap_or_default(),
+            show_edition: detail.system.has_edition,
             edition: detail.disc.edition.unwrap_or_default(),
             exe_date: detail.disc.exe_date.map(|d| d.to_string()).unwrap_or_default(),
-            show_date_field: detail.system.has_date_field,
-            edc_value: detail.disc.edc.map(|e| e.to_string()).unwrap_or_default(),
-            show_edc_field: detail.system.has_edc_field,
+            show_date_field: detail.system.has_exe_date,
+            edc_value: detail.disc.m2f2_edc.map(|e| e.to_string()).unwrap_or_default(),
+            show_edc_field: detail.system.has_m2f2_edc,
+            show_protection: detail.system.has_protection,
             protection: detail.disc.protection.unwrap_or_default(),
+            show_error_count: detail.system.has_error_count,
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or("0".to_string()),
         }
         .render()
@@ -135,7 +145,7 @@ pub struct DiscEditForm {
     #[serde(default)]
     pub regions: Vec<String>,
     #[serde(default)]
-    pub languages: Vec<i32>,
+    pub languages: Vec<String>,
 }
 
 async fn edit_submit(

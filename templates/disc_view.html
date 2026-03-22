@@ -32,14 +32,14 @@
             {% if !regions.is_empty() %}
             <tr><td><strong>Regions</strong></td><td>
                 {% for r in regions %}
-                <img class="flag-icon" src="/static/flags/{{ r.flag_code_lower }}.png" title="{{ r.name }}" alt="{{ r.name }}">
+                <img class="flag-icon" src="/static/flags/{{ r.code }}.png" title="{{ r.name }}" alt="{{ r.name }}">
                 {% endfor %}
             </td></tr>
             {% endif %}
             {% if !lang_flags.is_empty() %}
             <tr><td><strong>Languages</strong></td><td>
                 {% for lang in lang_flags %}
-                <img class="flag-icon" src="/static/flags/{{ lang.flag_code_lower }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
+                <img class="flag-icon" src="/static/flags/{{ lang.code }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
                 {% endfor %}
             </td></tr>
             {% endif %}

@@ -48,10 +48,9 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
         .ok_or(AppError::NotFound)?;
 
     let discs: Vec<DatfileDisc> = sqlx::query_as(
-        "SELECT d.id, d.title, d.version, d.edition, d.filename_suffix,
-                d.status
+        "SELECT d.id, d.title, d.version, d.edition, d.filename_suffix
          FROM discs d
-         WHERE d.system_code = $1 AND d.status IN ('Verified', 'Good')
+         WHERE d.system_code = $1 AND d.enabled AND NOT d.questionable
          ORDER BY d.title"
     )
     .bind(&sys.code)
@@ -69,8 +68,8 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
         <homepage>https://vgindex.org</homepage>
     </header>
 "#,
-        html_escape(&sys.full_name),
-        html_escape(&sys.full_name),
+        html_escape(&sys.name),
+        html_escape(&sys.name),
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
     );
 
@@ -93,7 +92,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
 
         for file in &files {
             let ext = if file.track_number.is_some() {
-                if sys.allowed_media.iter().any(|s| MediaType::from_code(s).map_or(false, |m| m.is_cd())) {
+                if sys.media_types.iter().any(|s| MediaType::from_code(s).map_or(false, |m| m.is_cd())) {
                     "bin"
                 } else {
                     "iso"
@@ -127,7 +126,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
     {
         let mut zip = ZipWriter::new(std::io::Cursor::new(&mut buf));
         let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-        let filename = format!("{} ({}).dat", sys.full_name, chrono::Utc::now().format("%Y-%m-%d"));
+        let filename = format!("{} ({}).dat", sys.name, chrono::Utc::now().format("%Y-%m-%d"));
         zip.start_file(filename, options).map_err(|e| AppError::Internal(e.to_string()))?;
         zip.write_all(xml.as_bytes()).map_err(|e| AppError::Internal(e.to_string()))?;
         zip.finish().map_err(|e| AppError::Internal(e.to_string()))?;
@@ -143,15 +142,14 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Vec
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if !sys.allowed_media.iter().any(|s| MediaType::from_code(s).map_or(false, |m| m.is_cd())) {
+    if !sys.media_types.iter().any(|s| MediaType::from_code(s).map_or(false, |m| m.is_cd())) {
         return Err(AppError::NotFound);
     }
 
     let discs: Vec<DatfileDisc> = sqlx::query_as(
-        "SELECT d.id, d.title, d.version, d.edition, d.filename_suffix,
-                d.status
+        "SELECT d.id, d.title, d.version, d.edition, d.filename_suffix
          FROM discs d
-         WHERE d.system_code = $1 AND d.status IN ('Verified', 'Good')
+         WHERE d.system_code = $1 AND d.enabled AND NOT d.questionable
          ORDER BY d.title"
     )
     .bind(&sys.code)
@@ -193,14 +191,14 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<Vec<u8>>
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if !sys.has_sbi {
+    if !sys.has_protection_sbi {
         return Err(AppError::NotFound);
     }
 
     let discs: Vec<SbiDisc> = sqlx::query_as(
-        "SELECT d.id, d.title, d.sbi_data
+        "SELECT d.id, d.title, d.protection_sbi
          FROM discs d
-         WHERE d.system_code = $1 AND d.sbi_data IS NOT NULL AND d.status IN ('Verified', 'Good')
+         WHERE d.system_code = $1 AND d.protection_sbi IS NOT NULL AND d.enabled AND NOT d.questionable
          ORDER BY d.title"
     )
     .bind(&sys.code)
@@ -213,12 +211,10 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<Vec<u8>>
         let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         for disc in &discs {
-            if let Some(ref sbi) = disc.sbi_data {
-                let filename = format!("{}.sbi", disc.title);
+            if let Some(ref sbi) = disc.protection_sbi {
+                let filename = format!("{}.txt", disc.title);
                 zip.start_file(&filename, options).map_err(|e| AppError::Internal(e.to_string()))?;
-                // SBI file header
-                zip.write_all(b"SBI\0").map_err(|e| AppError::Internal(e.to_string()))?;
-                zip.write_all(sbi).map_err(|e| AppError::Internal(e.to_string()))?;
+                zip.write_all(sbi.as_bytes()).map_err(|e| AppError::Internal(e.to_string()))?;
             }
         }
 
@@ -304,12 +300,11 @@ struct DatfileDisc {
     version: Option<String>,
     edition: Option<String>,
     filename_suffix: Option<String>,
-    status: DiscStatus,
 }
 
 #[derive(sqlx::FromRow)]
 struct SbiDisc {
     id: i32,
     title: String,
-    sbi_data: Option<Vec<u8>>,
+    protection_sbi: Option<String>,
 }

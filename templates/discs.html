@@ -14,7 +14,7 @@
                 <select name="system">
                     <option value="">All Systems</option>
                     {% for sys in systems %}
-                    <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.full_name }}</option>
+                    <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -23,9 +23,8 @@
                 <select name="status">
                     <option value="">All Statuses</option>
                     <option value="Verified" {% if filter_status == "Verified" %}selected{% endif %}>Verified</option>
-                    <option value="Good" {% if filter_status == "Good" %}selected{% endif %}>Good</option>
+                    <option value="Unverified" {% if filter_status == "Unverified" %}selected{% endif %}>Unverified</option>
                     <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable</option>
-                    <option value="Bad" {% if filter_status == "Bad" %}selected{% endif %}>Bad</option>
                 </select>
             </label>
         </div>
@@ -64,7 +63,7 @@
             <tr>
                 <td>
                     {% for rf in disc.region_flags %}
-                    <img class="flag-icon" src="/static/flags/{{ rf.flag_code_lower }}.png"
+                    <img class="flag-icon" src="/static/flags/{{ rf.code }}.png"
                          title="{{ rf.name }}"
                          alt="{{ rf.name }}">
                     {% endfor %}
@@ -75,7 +74,7 @@
                 <td>{{ disc.edition_display }}</td>
                 <td>
                     {% for lang in disc.language_flags %}
-                    <img class="flag-icon" src="/static/flags/{{ lang.flag_code_lower }}.png"
+                    <img class="flag-icon" src="/static/flags/{{ lang.code }}.png"
                          title="{{ lang.name }}" alt="{{ lang.name }}">
                     {% endfor %}
                 </td>

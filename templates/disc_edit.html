@@ -24,7 +24,7 @@
             {% for r in regions %}
             <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
                 <input type="checkbox" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
-                <img class="flag-icon" src="/static/flags/{{ r.flag_lower }}.png" title="{{ r.name }}" alt="{{ r.name }}">
+                <img class="flag-icon" src="/static/flags/{{ r.code }}.png" title="{{ r.name }}" alt="{{ r.name }}">
             </label>
             {% endfor %}
             </div>
@@ -36,26 +36,34 @@
             {% for lang in languages %}
             <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
                 <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}>
-                <img class="flag-icon" src="/static/flags/{{ lang.flag_lower }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
+                <img class="flag-icon" src="/static/flags/{{ lang.code }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
             </label>
             {% endfor %}
             </div>
         </fieldset>
 
+        {% if show_barcode %}
         <label for="barcode">Barcode</label>
         <input type="text" id="barcode" name="barcode" value="{{ barcode }}">
+        {% endif %}
 
         <label for="comments">Comments</label>
         <textarea id="comments" name="comments" rows="3">{{ comments }}</textarea>
     </fieldset>
 
+    {% if show_version || show_edition %}
     <fieldset>
-        <legend>Version / Edition</legend>
+        <legend>{% if show_version %}Version{% endif %}{% if show_version && show_edition %} / {% endif %}{% if show_edition %}Edition{% endif %}</legend>
         <div class="grid">
+            {% if show_version %}
             <label>Version <input type="text" name="version" value="{{ version }}"></label>
+            {% endif %}
+            {% if show_edition %}
             <label>Edition <input type="text" name="edition" value="{{ edition }}"></label>
+            {% endif %}
         </div>
     </fieldset>
+    {% endif %}
 
     {% if show_date_field %}
     <label for="exe_date">EXE Date</label>
@@ -71,11 +79,15 @@
     </select>
     {% endif %}
 
+    {% if show_protection %}
     <label for="protection">Protection</label>
     <input type="text" id="protection" name="protection" value="{{ protection }}">
+    {% endif %}
 
+    {% if show_error_count %}
     <label for="error_count">Error Count</label>
     <input type="number" id="error_count" name="error_count" value="{{ error_count }}">
+    {% endif %}
 
     <button type="submit">Save Changes</button>
 </form>

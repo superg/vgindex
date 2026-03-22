@@ -2,7 +2,6 @@ use askama::Template;
 use axum::{extract::State, response::Html, routing::get, Router};
 
 use crate::auth::middleware::CurrentUser;
-use crate::db::models::DiscStatus;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -25,16 +24,16 @@ struct RecentDisc {
 }
 
 struct HomeRegionFlag {
-    flag_code_lower: String,
+    code: String,
     name: String,
 }
 
 async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
     let rows: Vec<RecentDiscRow> = sqlx::query_as(
-        "SELECT d.id, d.title, s.code AS system, d.status, d.created_at
+        "SELECT d.id, d.title, s.code AS system, d.created_at
          FROM discs d
          JOIN systems s ON s.code = d.system_code
-         WHERE d.status != 'Bad'
+         WHERE d.enabled
          ORDER BY d.created_at DESC
          LIMIT 25"
     )
@@ -45,7 +44,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
     let mut recent_discs = Vec::with_capacity(rows.len());
     for r in rows {
         let region_rows: Vec<HomeRegionRow> = sqlx::query_as(
-            "SELECT r.flag_code, r.name FROM disc_regions dr
+            "SELECT r.code, r.name FROM disc_regions dr
              JOIN regions r ON r.code = dr.region_code
              WHERE dr.disc_id = $1 ORDER BY r.sort_order"
         )
@@ -59,7 +58,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
             title: r.title,
             system: r.system,
             region_flags: region_rows.into_iter().map(|rr| HomeRegionFlag {
-                flag_code_lower: rr.flag_code.to_lowercase(),
+                code: rr.code.to_lowercase(),
                 name: rr.name,
             }).collect(),
             created_at: r.created_at.format("%Y-%m-%d %H:%M").to_string(),
@@ -81,12 +80,12 @@ struct RecentDiscRow {
     id: i32,
     title: String,
     system: String,
-    status: DiscStatus,
+    enabled: bool,
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(sqlx::FromRow)]
 struct HomeRegionRow {
-    flag_code: String,
+    code: String,
     name: String,
 }

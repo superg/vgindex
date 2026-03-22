@@ -54,7 +54,7 @@ struct DiscViewTemplate {
 }
 
 struct ViewFlag {
-    flag_code_lower: String,
+    code: String,
     name: String,
 }
 
@@ -95,7 +95,7 @@ async fn disc_view(
 ) -> AppResult<Html<String>> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
 
-    if detail.disc.status == DiscStatus::Bad && !user.user().map_or(false, |u| u.role.can_edit_directly()) {
+    if !detail.disc.enabled && !user.user().map_or(false, |u| u.role.can_edit_directly()) {
         return Err(AppError::NotFound);
     }
 
@@ -124,11 +124,11 @@ async fn disc_view(
         sha1: f.sha1.clone(),
     }).collect();
 
-    let sbi_rows = detail.disc.sbi_data.as_ref()
-        .map(|data| parse_sbi_display(data))
+    let sbi_rows = detail.disc.protection_sbi.as_deref()
+        .map(|text| parse_sbi_display(text))
         .unwrap_or_default();
 
-    let hex_pvd = detail.disc.pvd_data.as_ref()
+    let hex_pvd = detail.disc.pvd.as_ref()
         .map(|data| format_hex_dump(data))
         .unwrap_or_default();
 
@@ -138,16 +138,16 @@ async fn disc_view(
             can_edit,
             disc_id: id,
             title: detail.disc.title.clone(),
-            system_name: detail.system.full_name.clone(),
+            system_name: detail.system.name.clone(),
             media_type: detail.disc.media_type.to_string(),
             is_cd,
             category: detail.disc.category.to_string(),
             regions: detail.regions.iter().map(|r| ViewFlag {
-                flag_code_lower: r.flag_code.to_lowercase(),
+                code: r.code.trim().to_lowercase(),
                 name: r.name.clone(),
             }).collect(),
             lang_flags: detail.languages.iter().map(|l| ViewFlag {
-                flag_code_lower: l.flag_code.to_lowercase(),
+                code: l.code.trim().to_lowercase(),
                 name: l.name.clone(),
             }).collect(),
             title_foreign: detail.disc.title_foreign.clone().unwrap_or_default(),
@@ -159,12 +159,18 @@ async fn disc_view(
             edition: detail.disc.edition.clone().unwrap_or_default(),
             barcode: detail.disc.barcode.clone().unwrap_or_default(),
             comments: detail.disc.comments.clone().unwrap_or_default(),
-            edc_display: detail.disc.edc.map(|e| if e { "Yes" } else { "No" }.to_string()).unwrap_or_default(),
+            edc_display: detail.disc.m2f2_edc.map(|e| if e { "Yes" } else { "No" }.to_string()).unwrap_or_default(),
             protection: detail.disc.protection.clone().unwrap_or_default(),
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             file_count: detail.files.len(),
-            status_class: detail.disc.status.css_class().to_string(),
-            status_display: detail.disc.status.to_string(),
+            status_class: {
+                let dumper_count = detail.dumpers.len() as i64;
+                DiscStatus::compute(detail.disc.questionable, dumper_count).css_class().to_string()
+            },
+            status_display: {
+                let dumper_count = detail.dumpers.len() as i64;
+                DiscStatus::compute(detail.disc.questionable, dumper_count).to_string()
+            },
             created_at: detail.disc.created_at.format("%Y-%m-%d %H:%M").to_string(),
             updated_at: detail.disc.updated_at.format("%Y-%m-%d %H:%M").to_string(),
             dumpers: detail.dumpers,
@@ -201,16 +207,29 @@ fn format_hex_dump(data: &[u8]) -> String {
     out
 }
 
-fn parse_sbi_display(data: &[u8]) -> Vec<SbiRow> {
+fn parse_sbi_display(text: &str) -> Vec<SbiRow> {
     let mut rows = Vec::new();
-    for chunk in data.chunks_exact(15) {
-        let m = chunk[0] as u32;
-        let s = chunk[1] as u32;
-        let f = chunk[2] as u32;
-        let sector = (m * 60 + s) * 75 + f - 150;
-        let msf = format!("{:02X}:{:02X}:{:02X}", chunk[0], chunk[1], chunk[2]);
-        let contents: Vec<String> = chunk[3..15].iter().map(|b| format!("{:02X}", b)).collect();
-        rows.push(SbiRow { sector, msf, contents: contents.join(" ") });
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let msf = line.strip_prefix("MSF: ")
+            .and_then(|s| s.split_whitespace().next())
+            .unwrap_or("")
+            .to_string();
+        let contents = line.find("Q-Data: ")
+            .map(|i| line[i + 8..].to_string())
+            .unwrap_or_default();
+        let sector = parse_msf_to_sector(&msf).unwrap_or(0);
+        rows.push(SbiRow { sector, msf, contents });
     }
     rows
+}
+
+fn parse_msf_to_sector(msf: &str) -> Option<u32> {
+    let parts: Vec<&str> = msf.split(':').collect();
+    if parts.len() != 3 { return None; }
+    let m = u32::from_str_radix(parts[0], 16).ok()?;
+    let s = u32::from_str_radix(parts[1], 16).ok()?;
+    let f = u32::from_str_radix(parts[2], 16).ok()?;
+    Some((m * 60 + s) * 75 + f - 150)
 }

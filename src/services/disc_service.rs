@@ -4,7 +4,7 @@ use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 
 pub async fn get_all_systems(pool: &PgPool) -> AppResult<Vec<System>> {
-    Ok(sqlx::query_as("SELECT * FROM systems ORDER BY sort_order, full_name")
+    Ok(sqlx::query_as("SELECT * FROM systems ORDER BY sort_order, name")
         .fetch_all(pool)
         .await?)
 }
@@ -37,7 +37,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
 
     let languages: Vec<Language> = sqlx::query_as(
         "SELECT l.* FROM languages l
-         JOIN disc_languages dl ON dl.language_id = l.id
+         JOIN disc_languages dl ON dl.language_code = l.code
          WHERE dl.disc_id = $1 ORDER BY l.sort_order"
     )
     .bind(disc_id)
@@ -155,13 +155,13 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         .await?;
     if let Some(langs) = data["languages"].as_array() {
         for l in langs {
-            if let Some(lid) = l.as_i64() {
+            if let Some(lcode) = l.as_str() {
                 sqlx::query(
-                    "INSERT INTO disc_languages (disc_id, language_id) VALUES ($1, $2)
+                    "INSERT INTO disc_languages (disc_id, language_code) VALUES ($1, $2)
                      ON CONFLICT DO NOTHING"
                 )
                 .bind(disc_id)
-                .bind(lid as i32)
+                .bind(lcode)
                 .execute(pool)
                 .await?;
             }

@@ -17,7 +17,7 @@ async fn recent_rss(State(state): State<AppState>) -> Response {
     let rows: Vec<RssRow> = sqlx::query_as(
         "SELECT d.id, d.title, s.code AS system, d.created_at
          FROM discs d JOIN systems s ON s.code = d.system_code
-         WHERE d.status != 'Bad'
+         WHERE d.enabled
          ORDER BY d.created_at DESC LIMIT 50"
     )
     .fetch_all(&state.pool)

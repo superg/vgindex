@@ -14,7 +14,7 @@
                 <select name="system_code" required>
                     <option value="">-- Select System --</option>
                     {% for sys in systems %}
-                    <option value="{{ sys.code }}">{{ sys.full_name }}</option>
+                    <option value="{{ sys.code }}">{{ sys.name }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -47,7 +47,7 @@
             {% for r in regions %}
             <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
                 <input type="checkbox" name="regions" value="{{ r.code }}">
-                <img class="flag-icon" src="/static/flags/{{ r.flag_lower }}.png" title="{{ r.name }}" alt="{{ r.name }}">
+                <img class="flag-icon" src="/static/flags/{{ r.code }}.png" title="{{ r.name }}" alt="{{ r.name }}">
             </label>
             {% endfor %}
             </div>
@@ -58,8 +58,8 @@
             <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
             {% for lang in languages %}
             <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
-                <input type="checkbox" name="languages" value="{{ lang.id }}">
-                <img class="flag-icon" src="/static/flags/{{ lang.flag_lower }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
+                <input type="checkbox" name="languages" value="{{ lang.code }}">
+                <img class="flag-icon" src="/static/flags/{{ lang.code }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
             </label>
             {% endfor %}
             </div>
