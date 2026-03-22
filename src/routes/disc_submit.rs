@@ -37,13 +37,11 @@ struct MediaTypeOption {
 struct SubmitRegion {
     code: String,
     name: String,
-    flag_lower: String,
 }
 
 struct SubmitLang {
-    id: i32,
+    code: String,
     name: String,
-    flag_lower: String,
 }
 
 async fn submit_page(
@@ -65,12 +63,10 @@ async fn submit_page(
             regions: all_regions.iter().map(|r| SubmitRegion {
                 code: r.code.trim().to_string(),
                 name: r.name.clone(),
-                flag_lower: r.flag_code.to_lowercase(),
             }).collect(),
             languages: langs.iter().map(|l| SubmitLang {
-                id: l.id,
+                code: l.code.trim().to_string(),
                 name: l.name.clone(),
-                flag_lower: l.flag_code.to_lowercase(),
             }).collect(),
             categories: Category::ALL.iter().map(|c| c.to_string()).collect(),
             media_types: MediaType::ALL.iter().map(|m| MediaTypeOption {
@@ -103,7 +99,7 @@ pub struct DiscSubmitForm {
     #[serde(default)]
     pub regions: Vec<String>,
     #[serde(default)]
-    pub languages: Vec<i32>,
+    pub languages: Vec<String>,
 }
 
 async fn submit_handler(

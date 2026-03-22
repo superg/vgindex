@@ -171,26 +171,32 @@ impl Category {
     ];
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "disc_status_enum", rename_all = "PascalCase")]
+/// Computed disc verification status (not stored; derived from `questionable` flag + dumper count).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiscStatus {
     Verified,
-    Good,
+    Unverified,
     Questionable,
-    Bad,
 }
 
 impl DiscStatus {
     pub fn css_class(&self) -> &'static str {
         match self {
             Self::Verified => "verified",
-            Self::Good => "good",
+            Self::Unverified => "unverified",
             Self::Questionable => "questionable",
-            Self::Bad => "bad",
         }
     }
 
-    pub const ALL: &[DiscStatus] = &[Self::Verified, Self::Good, Self::Questionable, Self::Bad];
+    pub fn compute(questionable: bool, dumper_count: i64) -> Self {
+        if questionable {
+            Self::Questionable
+        } else if dumper_count > 1 {
+            Self::Verified
+        } else {
+            Self::Unverified
+        }
+    }
 }
 
 impl std::fmt::Display for DiscStatus {
@@ -287,21 +293,29 @@ impl std::fmt::Display for SubmissionStatus {
 
 // --- Row structs ---
 
-/// Platform row from `systems` (`code` is the PK, VARCHAR(16); `full_name` matches Redump's system name).
+/// Platform row from `systems` (`code` is the PK, VARCHAR(16); `name` matches Redump's system name).
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct System {
     pub code: String,
-    pub full_name: String,
-    pub allowed_media: Vec<String>,
-    pub has_date_field: bool,
-    pub has_sbi: bool,
+    pub name: String,
+    pub media_types: Vec<String>,
+    pub has_exe_date: bool,
+    pub has_protection_sbi: bool,
     pub has_pvd: bool,
-    pub has_edc_field: bool,
+    pub has_m2f2_edc: bool,
+    pub has_title_foreign: bool,
+    pub has_title_disc: bool,
+    pub has_title_disc_number: bool,
+    pub has_serial: bool,
+    pub has_barcode: bool,
+    pub has_version: bool,
+    pub has_edition: bool,
+    pub has_error_count: bool,
+    pub has_protection: bool,
     pub has_pic: bool,
-    pub has_security_ranges: bool,
+    pub has_protection_ranges: bool,
     pub has_header: bool,
     pub has_bca: bool,
-    pub has_universal_hash: bool,
     pub sort_order: i32,
 }
 
@@ -309,16 +323,13 @@ pub struct System {
 pub struct Region {
     pub code: String,
     pub name: String,
-    pub flag_code: String,
     pub sort_order: i32,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
 pub struct Language {
-    pub id: i32,
     pub code: String,
     pub name: String,
-    pub flag_code: String,
     pub sort_order: i32,
 }
 
@@ -372,15 +383,15 @@ pub struct Disc {
     pub filename_suffix: Option<String>,
     pub error_count: Option<i32>,
     pub exe_date: Option<NaiveDate>,
-    pub edc: Option<bool>,
+    pub m2f2_edc: Option<bool>,
     pub protection: Option<String>,
-    pub sbi_data: Option<Vec<u8>>,
-    pub pvd_data: Option<Vec<u8>>,
-    pub pic_data: Option<Vec<u8>>,
-    pub header_data: Option<Vec<u8>>,
-    pub bca_data: Option<Vec<u8>>,
-    pub universal_hash: Option<String>,
-    pub status: DiscStatus,
+    pub protection_sbi: Option<String>,
+    pub pvd: Option<Vec<u8>>,
+    pub pic: Option<Vec<u8>>,
+    pub header: Option<Vec<u8>>,
+    pub bca: Option<Vec<u8>>,
+    pub enabled: bool,
+    pub questionable: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -454,14 +465,16 @@ pub struct DiscListRow {
     pub media_type: MediaType,
     pub version: Option<String>,
     pub edition: Option<String>,
-    pub status: DiscStatus,
+    pub enabled: bool,
+    pub questionable: bool,
+    pub dumper_count: i64,
     pub region_flags: Vec<FlagInfo>,
     pub language_flags: Vec<FlagInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct FlagInfo {
-    pub flag_code: String,
+    pub code: String,
     pub name: String,
 }
 

@@ -62,18 +62,18 @@ struct DiscRow {
 }
 
 struct RegionFlag {
-    flag_code_lower: String,
+    code: String,
     name: String,
 }
 
 struct LangFlag {
-    flag_code_lower: String,
+    code: String,
     name: String,
 }
 
 struct SystemOption {
     code: String,
-    full_name: String,
+    name: String,
     selected: bool,
 }
 
@@ -93,7 +93,7 @@ async fn discs_page(
     let filter_q = query.q.clone().unwrap_or_default();
 
     let sys_rows: Vec<SysRow> =
-        sqlx::query_as("SELECT code, full_name FROM systems ORDER BY sort_order, full_name")
+        sqlx::query_as("SELECT code, name FROM systems ORDER BY sort_order, name")
             .fetch_all(&state.pool)
             .await
             .unwrap_or_default();
@@ -101,7 +101,7 @@ async fn discs_page(
     let systems: Vec<SystemOption> = sys_rows.into_iter().map(|s| SystemOption {
         selected: s.code == filter_system,
         code: s.code,
-        full_name: s.full_name,
+        name: s.name,
     }).collect();
 
     let mut where_clauses = vec!["1=1".to_string()];
@@ -117,9 +117,12 @@ async fn discs_page(
         bind_idx += 1;
         where_clauses.push(format!("upper(left(d.title, 1)) = upper(${bind_idx})"));
     }
-    if !filter_status.is_empty() {
-        bind_idx += 1;
-        where_clauses.push(format!("d.status::text = ${bind_idx}"));
+    if filter_status == "Questionable" {
+        where_clauses.push("d.questionable".to_string());
+    } else if filter_status == "Verified" {
+        where_clauses.push("NOT d.questionable AND (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) > 1".to_string());
+    } else if filter_status == "Unverified" {
+        where_clauses.push("NOT d.questionable AND (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) <= 1".to_string());
     }
     if !filter_q.is_empty() {
         bind_idx += 1;
@@ -129,7 +132,7 @@ async fn discs_page(
     }
 
     if !user.is_logged_in() {
-        where_clauses.push("d.status != 'Bad'".to_string());
+        where_clauses.push("d.enabled".to_string());
     }
 
     let where_sql = where_clauses.join(" AND ");
@@ -137,7 +140,7 @@ async fn discs_page(
     let sort_col = match query.sort.as_deref() {
         Some("title") => "d.title",
         Some("system") => "s.code",
-        Some("status") => "d.status",
+        Some("status") => "d.questionable",
         Some("updated") => "d.updated_at",
         _ => "d.title",
     };
@@ -150,7 +153,9 @@ async fn discs_page(
         "SELECT COUNT(*) FROM discs d JOIN systems s ON s.code = d.system_code WHERE {where_sql}"
     );
     let sql_select = format!(
-        "SELECT d.id, d.title, s.code AS system_code, d.serial, d.version, d.edition, d.status
+        "SELECT d.id, d.title, s.code AS system_code, d.serial, d.version, d.edition,
+                d.questionable,
+                (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) AS dumper_count
          FROM discs d
          JOIN systems s ON s.code = d.system_code
          WHERE {where_sql}
@@ -168,10 +173,6 @@ async fn discs_page(
         count_query = count_query.bind(filter_letter.clone());
         select_query = select_query.bind(filter_letter.clone());
     }
-    if !filter_status.is_empty() {
-        count_query = count_query.bind(filter_status.clone());
-        select_query = select_query.bind(filter_status.clone());
-    }
     if !filter_q.is_empty() {
         count_query = count_query.bind(filter_q.clone());
         select_query = select_query.bind(filter_q.clone());
@@ -188,7 +189,7 @@ async fn discs_page(
     let mut discs = Vec::with_capacity(raw_rows.len());
     for r in raw_rows {
         let region_rows: Vec<LangRow> = sqlx::query_as(
-            "SELECT r.flag_code, r.name FROM disc_regions dr
+            "SELECT r.code, r.name FROM disc_regions dr
              JOIN regions r ON r.code = dr.region_code
              WHERE dr.disc_id = $1 ORDER BY r.sort_order",
         )
@@ -198,8 +199,8 @@ async fn discs_page(
         .unwrap_or_default();
 
         let lang_rows: Vec<LangRow> = sqlx::query_as(
-            "SELECT l.flag_code, l.name FROM disc_languages dl
-             JOIN languages l ON l.id = dl.language_id
+            "SELECT l.code, l.name FROM disc_languages dl
+             JOIN languages l ON l.code = dl.language_code
              WHERE dl.disc_id = $1 ORDER BY l.sort_order",
         )
         .bind(r.id)
@@ -213,14 +214,14 @@ async fn discs_page(
             system_code: r.system_code,
             version_display: r.version.unwrap_or_default(),
             edition_display: r.edition.unwrap_or_default(),
-            status_class: r.status.css_class().to_string(),
-            status_display: r.status.to_string(),
+            status_class: DiscStatus::compute(r.questionable, r.dumper_count).css_class().to_string(),
+            status_display: DiscStatus::compute(r.questionable, r.dumper_count).to_string(),
             region_flags: region_rows.into_iter().map(|r| RegionFlag {
-                flag_code_lower: r.flag_code.to_lowercase(),
+                code: r.code.to_lowercase(),
                 name: r.name,
             }).collect(),
             language_flags: lang_rows.into_iter().map(|l| LangFlag {
-                flag_code_lower: l.flag_code.to_lowercase(),
+                code: l.code.to_lowercase(),
                 name: l.name,
             }).collect(),
             serial: r.serial.unwrap_or_default(),
@@ -258,7 +259,7 @@ async fn discs_page(
 #[derive(sqlx::FromRow)]
 struct SysRow {
     code: String,
-    full_name: String,
+    name: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -269,11 +270,12 @@ struct RawDiscRow {
     serial: Option<String>,
     version: Option<String>,
     edition: Option<String>,
-    status: DiscStatus,
+    questionable: bool,
+    dumper_count: i64,
 }
 
 #[derive(sqlx::FromRow)]
 struct LangRow {
-    flag_code: String,
+    code: String,
     name: String,
 }
