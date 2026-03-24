@@ -47,7 +47,7 @@
             {% for r in regions %}
             <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
                 <input type="checkbox" name="regions" value="{{ r.code }}">
-                <img class="flag-icon" src="/static/flags/{{ r.code }}.png" title="{{ r.name }}" alt="{{ r.name }}">
+                <img class="flag-icon" src="/static/flags/{{ r.flag_code }}.svg" title="{{ r.name }}" alt="{{ r.name }}">
             </label>
             {% endfor %}
             </div>
@@ -59,7 +59,7 @@
             {% for lang in languages %}
             <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
                 <input type="checkbox" name="languages" value="{{ lang.code }}">
-                <img class="flag-icon" src="/static/flags/{{ lang.code }}.png" title="{{ lang.name }}" alt="{{ lang.name }}">
+                <img class="flag-icon" src="/static/flags/{{ lang.flag_code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
             </label>
             {% endfor %}
             </div>
@@ -85,6 +85,20 @@
         <label>Protection <input type="text" name="protection"></label>
         <label>EXE Date <input type="date" name="exe_date"></label>
         <label>Error Count <input type="number" name="error_count" value="0"></label>
+    </fieldset>
+
+    <fieldset>
+        <legend>PVD</legend>
+        <label for="pvd">Paste PVD hex dump
+            <textarea id="pvd" name="pvd" rows="6" class="hex-dump-input" spellcheck="false" placeholder="0320 : XX XX XX ..."></textarea>
+        </label>
+    </fieldset>
+
+    <fieldset>
+        <legend>Header</legend>
+        <label for="header">Paste Header hex dump
+            <textarea id="header" name="header" rows="16" class="hex-dump-input" spellcheck="false" placeholder="0000 : XX XX XX ..."></textarea>
+        </label>
     </fieldset>
 
     <fieldset>

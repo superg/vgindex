@@ -11,14 +11,12 @@
     {% block head %}{% endblock %}
 </head>
 <body>
-    <div id="banner"><img src="/static/images/logo-left.png" alt="vgindex.org" /></div>
     <header class="container">
         <nav>
             <ul>
                 <li><strong><a href="/">vgindex.org</a></strong></li>
             </ul>
             <ul>
-                <li><a href="/">Main</a></li>
                 <li><a href="/discs/">Discs</a></li>
                 <li><a href="/downloads/">Downloads</a></li>
                 {% if current_user.is_some() %}
@@ -30,15 +28,10 @@
             </ul>
             <ul>
                 <li>
-                    <div class="quick-search">
-                        <input type="search" name="q" placeholder="Search..."
-                               aria-label="Search"
-                               hx-get="/api/search"
-                               hx-trigger="keyup changed delay:300ms"
-                               hx-target="#search-dropdown"
-                               hx-swap="innerHTML">
-                        <div id="search-dropdown"></div>
-                    </div>
+                    <form class="quick-search" method="get" action="/discs/">
+                        <input type="text" name="q" placeholder="Search discs..."
+                               aria-label="Search">
+                    </form>
                 </li>
                 {% match current_user %}
                 {% when Some with (user) %}

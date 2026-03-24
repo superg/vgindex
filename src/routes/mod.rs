@@ -7,7 +7,6 @@ pub mod discs;
 pub mod downloads;
 pub mod feeds;
 pub mod main_page;
-pub mod search;
 pub mod submissions;
 
 use axum::Router;
@@ -23,7 +22,6 @@ pub fn build_router() -> Router<AppState> {
         .merge(disc_submit::routes())
         .merge(downloads::routes())
         .merge(submissions::routes())
-        .merge(search::routes())
         .merge(feeds::routes())
         .merge(api::routes())
 }

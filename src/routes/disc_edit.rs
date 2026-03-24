@@ -15,6 +15,7 @@ use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/disc/{id}/edit", get(edit_page).post(edit_submit))
         .route("/disc/{id}/edit/", get(edit_page).post(edit_submit))
 }
 
@@ -42,6 +43,10 @@ struct DiscEditTemplate {
     protection: String,
     show_error_count: bool,
     error_count: String,
+    show_pvd: bool,
+    pvd_hex: String,
+    show_header: bool,
+    header_hex: String,
 }
 
 struct SelectOption {
@@ -90,14 +95,14 @@ async fn edit_page(
     let regions: Vec<CheckOption> = all_regions.iter().map(|r| CheckOption {
         value: r.code.trim().to_string(),
         name: r.name.clone(),
-        code: r.code.trim().to_lowercase(),
+        code: r.flag_code.trim().to_lowercase(),
         selected: disc_region_codes.iter().any(|c| c.trim() == r.code.trim()),
     }).collect();
 
     let languages: Vec<CheckOption> = langs.iter().map(|l| CheckOption {
         value: l.code.trim().to_string(),
         name: l.name.clone(),
-        code: l.code.trim().to_lowercase(),
+        code: l.flag_code.trim().to_lowercase(),
         selected: disc_lang_codes.iter().any(|c| c.trim() == l.code.trim()),
     }).collect();
 
@@ -110,12 +115,12 @@ async fn edit_page(
             regions,
             languages,
             show_barcode: detail.system.has_barcode,
-            barcode: detail.disc.barcode.unwrap_or_default(),
+            barcode: detail.disc.barcode.join(", "),
             comments: detail.disc.comments.unwrap_or_default(),
             show_version: detail.system.has_version,
             version: detail.disc.version.unwrap_or_default(),
             show_edition: detail.system.has_edition,
-            edition: detail.disc.edition.unwrap_or_default(),
+            edition: detail.disc.edition.join(", "),
             exe_date: detail.disc.exe_date.map(|d| d.to_string()).unwrap_or_default(),
             show_date_field: detail.system.has_exe_date,
             edc_value: detail.disc.m2f2_edc.map(|e| e.to_string()).unwrap_or_default(),
@@ -124,6 +129,14 @@ async fn edit_page(
             protection: detail.disc.protection.unwrap_or_default(),
             show_error_count: detail.system.has_error_count,
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or("0".to_string()),
+            show_pvd: detail.system.has_pvd,
+            pvd_hex: detail.disc.pvd.as_ref()
+                .map(|data| format_pvd_hex_dump(data))
+                .unwrap_or_default(),
+            show_header: detail.system.has_header,
+            header_hex: detail.disc.header.as_ref()
+                .map(|data| format_header_hex_dump(data))
+                .unwrap_or_default(),
         }
         .render()
         .unwrap(),
@@ -142,6 +155,8 @@ pub struct DiscEditForm {
     pub edc: Option<String>,
     pub protection: Option<String>,
     pub error_count: Option<i32>,
+    pub pvd: Option<String>,
+    pub header: Option<String>,
     #[serde(default)]
     pub regions: Vec<String>,
     #[serde(default)]
@@ -165,6 +180,8 @@ async fn edit_submit(
         "edc": form.edc,
         "protection": form.protection,
         "error_count": form.error_count,
+        "pvd": form.pvd,
+        "header": form.header,
         "regions": form.regions,
         "languages": form.languages,
     });
@@ -184,4 +201,42 @@ async fn edit_submit(
     }
 
     Ok(Redirect::to(&format!("/disc/{id}/")))
+}
+
+fn format_hex_dump_edit(data: &[u8], base_addr: usize) -> String {
+    let mut out = String::new();
+    for (i, chunk) in data.chunks(16).enumerate() {
+        let offset = base_addr + i * 16;
+        out.push_str(&format!("{:04X} : ", offset));
+        for (j, byte) in chunk.iter().enumerate() {
+            out.push_str(&format!("{:02X} ", byte));
+            if j == 7 { out.push(' '); }
+        }
+        for _ in chunk.len()..16 { out.push_str("   "); }
+        out.push_str("  ");
+        for byte in chunk {
+            if byte.is_ascii_graphic() || *byte == b' ' {
+                out.push(*byte as char);
+            } else {
+                out.push(' ');
+            }
+        }
+        if i < data.len() / 16 {
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn format_pvd_hex_dump(data: &[u8]) -> String {
+    const PVD_FULL_SIZE: usize = 96;
+    const PVD_STORED_SIZE: usize = 82;
+    let mut buf = [0u8; PVD_FULL_SIZE];
+    let copy_len = data.len().min(PVD_STORED_SIZE);
+    buf[..copy_len].copy_from_slice(&data[..copy_len]);
+    format_hex_dump_edit(&buf, 0x0320)
+}
+
+fn format_header_hex_dump(data: &[u8]) -> String {
+    format_hex_dump_edit(data, 0x0000)
 }

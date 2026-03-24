@@ -1,6 +1,8 @@
 use axum::{
-    extract::FromRequestParts,
-    http::request::Parts,
+    extract::{FromRequestParts, Request, State},
+    http::{header, request::Parts},
+    middleware::Next,
+    response::Response,
 };
 
 use crate::db::models::UserRole;
@@ -128,6 +130,53 @@ impl FromRef<AppState> for AppState {
     fn from_ref(input: &AppState) -> Self {
         input.clone()
     }
+}
+
+pub async fn guest_session_layer(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let has_session = extract_session_cookie(request.headers()).is_some();
+    let is_static = request.uri().path().starts_with("/static/");
+
+    let (ip, ua) = if !has_session && !is_static {
+        let ip = request.headers().get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
+        let ua = request.headers().get(header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        (ip, ua)
+    } else {
+        (None, None)
+    };
+
+    let mut response = next.run(request).await;
+
+    if !has_session && !is_static {
+        let already_set = response.headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .any(|v| v.to_str().map(|s| s.starts_with("session_id=")).unwrap_or(false));
+
+        if !already_set {
+            if let Ok(sid) = crate::auth::session::create_guest_session(
+                &state.pool,
+                ip.as_deref(),
+                ua.as_deref(),
+            ).await {
+                let cookie = format!(
+                    "session_id={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400"
+                );
+                if let Ok(val) = cookie.parse() {
+                    response.headers_mut().append(header::SET_COOKIE, val);
+                }
+            }
+        }
+    }
+
+    response
 }
 
 fn extract_session_cookie(headers: &axum::http::HeaderMap) -> Option<String> {

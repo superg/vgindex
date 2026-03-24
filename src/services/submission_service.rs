@@ -140,19 +140,6 @@ pub async fn review_submission(
                     .execute(pool)
                     .await?;
 
-                    let dumper_count: i64 = sqlx::query_scalar(
-                        "SELECT COUNT(*) FROM disc_dumpers WHERE disc_id = $1"
-                    )
-                    .bind(disc_id)
-                    .fetch_one(pool)
-                    .await?;
-
-                    if dumper_count >= 2 {
-                        sqlx::query("UPDATE discs SET status = 'Verified', updated_at = NOW() WHERE id = $1")
-                            .bind(disc_id)
-                            .execute(pool)
-                            .await?;
-                    }
                 }
             }
             SubmissionType::Edit => {

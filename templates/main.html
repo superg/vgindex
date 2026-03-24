@@ -26,7 +26,7 @@
                     <td><small>{{ disc.created_at }}</small></td>
                     <td>
                         {% for rf in disc.region_flags %}
-                        <img class="flag-icon" src="/static/flags/{{ rf.code }}.png"
+                        <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg"
                              title="{{ rf.name }}"
                              alt="{{ rf.name }}">
                         {% endfor %}

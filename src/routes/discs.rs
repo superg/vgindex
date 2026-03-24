@@ -1,13 +1,15 @@
 use askama::Template;
-use axum::{extract::{Query, State}, response::Html, routing::get, Router};
+use axum::{extract::{Query, State}, response::{Html, IntoResponse, Redirect, Response}, routing::get, Router};
 use serde::Deserialize;
 
 use crate::auth::middleware::CurrentUser;
-use crate::db::models::DiscStatus;
+use crate::db::models::{DiscStatus, format_display_title};
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/discs/", get(discs_page))
+    Router::new()
+        .route("/discs", get(discs_page))
+        .route("/discs/", get(discs_page))
 }
 
 #[derive(Deserialize, Default)]
@@ -20,6 +22,7 @@ pub struct DiscsQuery {
     pub sort: Option<String>,
     pub order: Option<String>,
     pub page: Option<i64>,
+    pub dumper: Option<i32>,
 }
 
 const LETTERS: &[&str] = &[
@@ -33,18 +36,28 @@ struct DiscsTemplate {
     current_user: Option<String>,
     discs: Vec<DiscRow>,
     systems: Vec<SystemOption>,
+    regions: Vec<RegionOption>,
     letters: Vec<(String, bool)>,
     filter_system: String,
+    filter_region: String,
     filter_status: String,
     filter_letter: String,
     filter_q: String,
+    filter_dumper: String,
+    filter_dumper_name: String,
     total_count: i64,
     page: i64,
     total_pages: i64,
     prev_page: i64,
     next_page: i64,
+    sort_column: String,
+    sort_order: String,
+    next_region_order: String,
     next_title_order: String,
     next_system_order: String,
+    next_edition_order: String,
+    next_language_order: String,
+    next_serial_order: String,
     next_status_order: String,
 }
 
@@ -52,9 +65,8 @@ struct DiscRow {
     id: i32,
     title: String,
     system_code: String,
-    version_display: String,
     edition_display: String,
-    status_class: String,
+    status_emoji: String,
     status_display: String,
     region_flags: Vec<RegionFlag>,
     language_flags: Vec<LangFlag>,
@@ -77,20 +89,40 @@ struct SystemOption {
     selected: bool,
 }
 
+struct RegionOption {
+    code: String,
+    name: String,
+    selected: bool,
+}
+
 const PAGE_SIZE: i64 = 500;
 
 async fn discs_page(
     State(state): State<AppState>,
     user: CurrentUser,
     Query(query): Query<DiscsQuery>,
-) -> Html<String> {
+) -> Response {
     let page = query.page.unwrap_or(1).max(1);
     let offset = (page - 1) * PAGE_SIZE;
 
     let filter_system = query.system.clone().unwrap_or_default();
+    let filter_region = query.region.clone().unwrap_or_default();
     let filter_status = query.status.clone().unwrap_or_default();
     let filter_letter = query.letter.clone().unwrap_or_default();
     let filter_q = query.q.clone().unwrap_or_default();
+    let filter_dumper_id = query.dumper;
+    let filter_dumper = filter_dumper_id.map(|id| id.to_string()).unwrap_or_default();
+
+    let filter_dumper_name = if let Some(dumper_id) = filter_dumper_id {
+        sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE id = $1")
+            .bind(dumper_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None)
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     let sys_rows: Vec<SysRow> =
         sqlx::query_as("SELECT code, name FROM systems ORDER BY sort_order, name")
@@ -104,6 +136,18 @@ async fn discs_page(
         name: s.name,
     }).collect();
 
+    let region_rows: Vec<SysRow> =
+        sqlx::query_as("SELECT code, name FROM regions ORDER BY sort_order")
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+
+    let regions: Vec<RegionOption> = region_rows.into_iter().map(|r| RegionOption {
+        selected: r.code.trim() == filter_region,
+        code: r.code.trim().to_string(),
+        name: r.name,
+    }).collect();
+
     let mut where_clauses = vec!["1=1".to_string()];
     let mut bind_idx = 0u32;
 
@@ -111,38 +155,62 @@ async fn discs_page(
         bind_idx += 1;
         where_clauses.push(format!("s.code = ${bind_idx}"));
     }
+    if !filter_region.is_empty() {
+        bind_idx += 1;
+        where_clauses.push(format!(
+            "EXISTS (SELECT 1 FROM disc_regions dr WHERE dr.disc_id = d.id AND dr.region_code = ${bind_idx})"
+        ));
+    }
     if filter_letter == "#" {
         where_clauses.push("d.title ~* '^[^a-zA-Z]'".to_string());
     } else if filter_letter.len() == 1 && filter_letter.chars().next().unwrap().is_ascii_alphabetic() {
         bind_idx += 1;
         where_clauses.push(format!("upper(left(d.title, 1)) = upper(${bind_idx})"));
     }
-    if filter_status == "Questionable" {
-        where_clauses.push("d.questionable".to_string());
+    if filter_status == "Disabled" {
+        where_clauses.push("NOT d.enabled".to_string());
+    } else if filter_status == "All Statuses" {
+        // no filter — show both enabled and disabled
+    } else if filter_status == "Questionable" {
+        where_clauses.push("d.enabled AND d.questionable".to_string());
     } else if filter_status == "Verified" {
-        where_clauses.push("NOT d.questionable AND (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) > 1".to_string());
+        where_clauses.push("d.enabled AND NOT d.questionable AND (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) > 1".to_string());
     } else if filter_status == "Unverified" {
-        where_clauses.push("NOT d.questionable AND (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) <= 1".to_string());
+        where_clauses.push("d.enabled AND NOT d.questionable AND (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) <= 1".to_string());
+    } else {
+        where_clauses.push("d.enabled".to_string());
     }
     if !filter_q.is_empty() {
         bind_idx += 1;
         where_clauses.push(format!(
-            "(d.search_vector @@ plainto_tsquery('english', ${bind_idx}) OR d.title ILIKE '%' || ${bind_idx} || '%')"
+            "(d.search_vector @@ plainto_tsquery('english', ${bind_idx}) \
+             OR d.title ILIKE '%' || ${bind_idx} || '%' \
+             OR EXISTS (SELECT 1 FROM unnest(d.serial) elem WHERE elem ILIKE '%' || ${bind_idx} || '%') \
+             OR EXISTS (SELECT 1 FROM files f WHERE f.disc_id = d.id AND (f.crc32 ILIKE ${bind_idx} OR f.md5 ILIKE ${bind_idx} OR f.sha1 ILIKE ${bind_idx})))"
         ));
     }
-
-    if !user.is_logged_in() {
-        where_clauses.push("d.enabled".to_string());
+    if filter_dumper_id.is_some() {
+        bind_idx += 1;
+        where_clauses.push(format!(
+            "EXISTS (SELECT 1 FROM disc_dumpers dd2 WHERE dd2.disc_id = d.id AND dd2.user_id = ${bind_idx})"
+        ));
     }
 
     let where_sql = where_clauses.join(" AND ");
 
-    let sort_col = match query.sort.as_deref() {
-        Some("title") => "d.title",
-        Some("system") => "s.code",
-        Some("status") => "d.questionable",
-        Some("updated") => "d.updated_at",
-        _ => "d.title",
+    let sort_column = query.sort.clone().unwrap_or_else(|| "title".to_string());
+    let sort_order_str = query.order.clone().unwrap_or_else(|| "asc".to_string());
+
+    let sort_col = match sort_column.as_str() {
+        "region"   => "(SELECT MIN(r.sort_order) FROM disc_regions dr JOIN regions r ON r.code = dr.region_code WHERE dr.disc_id = d.id)",
+        "title"    => "LOWER(d.title)",
+        "system"   => "LOWER(s.code)",
+        "version"  => "LOWER(d.version)",
+        "edition"  => "LOWER(array_to_string(d.edition, ', '))",
+        "language" => "(SELECT MIN(l.sort_order) FROM disc_languages dl JOIN languages l ON l.code = dl.language_code WHERE dl.disc_id = d.id)",
+        "serial"   => "LOWER(array_to_string(d.serial, ', '))",
+        "status"   => "CASE WHEN d.questionable THEN 3 WHEN (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) > 1 THEN 1 ELSE 2 END",
+        _ => "LOWER(d.title)",
     };
     let sort_dir = match query.order.as_deref() {
         Some("desc") => "DESC",
@@ -153,8 +221,12 @@ async fn discs_page(
         "SELECT COUNT(*) FROM discs d JOIN systems s ON s.code = d.system_code WHERE {where_sql}"
     );
     let sql_select = format!(
-        "SELECT d.id, d.title, s.code AS system_code, d.serial, d.version, d.edition,
-                d.questionable,
+        "SELECT d.id, d.title, d.title_disc_number, d.title_disc, d.filename_suffix,
+                s.code AS system_code,
+                array_to_string(d.serial, ', ') AS serial,
+                d.version,
+                array_to_string(d.edition, ', ') AS edition,
+                d.enabled, d.questionable,
                 (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) AS dumper_count
          FROM discs d
          JOIN systems s ON s.code = d.system_code
@@ -169,6 +241,10 @@ async fn discs_page(
         count_query = count_query.bind(filter_system.clone());
         select_query = select_query.bind(filter_system.clone());
     }
+    if !filter_region.is_empty() {
+        count_query = count_query.bind(filter_region.clone());
+        select_query = select_query.bind(filter_region.clone());
+    }
     if filter_letter != "#" && filter_letter.len() == 1 && filter_letter.chars().next().unwrap().is_ascii_alphabetic() {
         count_query = count_query.bind(filter_letter.clone());
         select_query = select_query.bind(filter_letter.clone());
@@ -176,6 +252,10 @@ async fn discs_page(
     if !filter_q.is_empty() {
         count_query = count_query.bind(filter_q.clone());
         select_query = select_query.bind(filter_q.clone());
+    }
+    if let Some(dumper_id) = filter_dumper_id {
+        count_query = count_query.bind(dumper_id);
+        select_query = select_query.bind(dumper_id);
     }
 
     let total_count = count_query.fetch_one(&state.pool).await.unwrap_or(0);
@@ -186,10 +266,16 @@ async fn discs_page(
         .await
         .unwrap_or_default();
 
+    if !filter_q.is_empty() && total_count == 1 {
+        if let Some(row) = raw_rows.first() {
+            return Redirect::to(&format!("/disc/{}/", row.id)).into_response();
+        }
+    }
+
     let mut discs = Vec::with_capacity(raw_rows.len());
     for r in raw_rows {
         let region_rows: Vec<LangRow> = sqlx::query_as(
-            "SELECT r.code, r.name FROM disc_regions dr
+            "SELECT r.flag_code AS code, r.name FROM disc_regions dr
              JOIN regions r ON r.code = dr.region_code
              WHERE dr.disc_id = $1 ORDER BY r.sort_order",
         )
@@ -199,7 +285,7 @@ async fn discs_page(
         .unwrap_or_default();
 
         let lang_rows: Vec<LangRow> = sqlx::query_as(
-            "SELECT l.code, l.name FROM disc_languages dl
+            "SELECT l.flag_code AS code, l.name FROM disc_languages dl
              JOIN languages l ON l.code = dl.language_code
              WHERE dl.disc_id = $1 ORDER BY l.sort_order",
         )
@@ -210,12 +296,24 @@ async fn discs_page(
 
         discs.push(DiscRow {
             id: r.id,
-            title: r.title,
+            title: format_display_title(
+                &r.title,
+                r.title_disc_number.as_deref(),
+                r.title_disc.as_deref(),
+                r.filename_suffix.as_deref(),
+            ),
             system_code: r.system_code,
-            version_display: r.version.unwrap_or_default(),
             edition_display: r.edition.unwrap_or_default(),
-            status_class: DiscStatus::compute(r.questionable, r.dumper_count).css_class().to_string(),
-            status_display: DiscStatus::compute(r.questionable, r.dumper_count).to_string(),
+            status_emoji: if r.enabled {
+                DiscStatus::compute(r.questionable, r.dumper_count).emoji().to_string()
+            } else {
+                "🔴".to_string()
+            },
+            status_display: if r.enabled {
+                DiscStatus::compute(r.questionable, r.dumper_count).to_string()
+            } else {
+                "Disabled".to_string()
+            },
             region_flags: region_rows.into_iter().map(|r| RegionFlag {
                 code: r.code.to_lowercase(),
                 name: r.name,
@@ -228,32 +326,44 @@ async fn discs_page(
         });
     }
 
-    let next_title_order = if query.sort.as_deref() == Some("title") && query.order.as_deref() != Some("desc") { "desc" } else { "asc" }.to_string();
-    let next_system_order = if query.sort.as_deref() == Some("system") && query.order.as_deref() != Some("desc") { "desc" } else { "asc" }.to_string();
-    let next_status_order = if query.sort.as_deref() == Some("status") && query.order.as_deref() != Some("desc") { "desc" } else { "asc" }.to_string();
+    let is_asc = sort_order_str != "desc";
+    let next_order = |col: &str| -> String {
+        if sort_column == col && is_asc { "desc" } else { "asc" }.to_string()
+    };
 
     Html(
         DiscsTemplate {
             current_user: user.user().map(|u| u.username.clone()),
             discs,
             systems,
+            regions,
             letters: LETTERS.iter().map(|s| (s.to_string(), filter_letter == *s)).collect(),
             filter_system,
+            filter_region,
             filter_status,
             filter_letter,
             filter_q,
+            filter_dumper,
+            filter_dumper_name,
             total_count,
             page,
             total_pages,
             prev_page: page - 1,
             next_page: page + 1,
-            next_title_order,
-            next_system_order,
-            next_status_order,
+            sort_column: sort_column.clone(),
+            sort_order: sort_order_str,
+            next_region_order: next_order("region"),
+            next_title_order: next_order("title"),
+            next_system_order: next_order("system"),
+            next_edition_order: next_order("edition"),
+            next_language_order: next_order("language"),
+            next_serial_order: next_order("serial"),
+            next_status_order: next_order("status"),
         }
         .render()
         .unwrap(),
     )
+    .into_response()
 }
 
 #[derive(sqlx::FromRow)]
@@ -266,10 +376,14 @@ struct SysRow {
 struct RawDiscRow {
     id: i32,
     title: String,
+    title_disc_number: Option<String>,
+    title_disc: Option<String>,
+    filename_suffix: Option<String>,
     system_code: String,
     serial: Option<String>,
     version: Option<String>,
     edition: Option<String>,
+    enabled: bool,
     questionable: bool,
     dumper_count: i64,
 }
