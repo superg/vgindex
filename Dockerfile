@@ -8,7 +8,7 @@ COPY src ./src
 COPY templates ./templates
 COPY migrations ./migrations
 ENV SQLX_OFFLINE=true
-RUN cargo build --release
+RUN find src -name "*.rs" -exec touch {} + && cargo build --release
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*

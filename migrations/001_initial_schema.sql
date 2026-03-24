@@ -2,6 +2,7 @@ CREATE TABLE media_types (
     code VARCHAR(16) PRIMARY KEY,
     name VARCHAR(64) UNIQUE NOT NULL,
     layer_count INT NOT NULL DEFAULT 1,
+    rom_extension VARCHAR(8) NOT NULL DEFAULT 'iso',
     sort_order INT NOT NULL DEFAULT 0
 );
 
@@ -14,12 +15,14 @@ CREATE TABLE categories (
 CREATE TABLE regions (
     code CHAR(2) PRIMARY KEY,
     name VARCHAR(128) UNIQUE NOT NULL,
+    flag_code VARCHAR(8) NOT NULL,
     sort_order INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE languages (
     code CHAR(2) PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
+    flag_code VARCHAR(8) NOT NULL,
     sort_order INT NOT NULL DEFAULT 0
 );
 
@@ -50,6 +53,11 @@ CREATE TABLE systems (
     sort_order INT NOT NULL DEFAULT 0
 );
 
+-- immutable wrapper for array_to_string (needed for generated columns)
+CREATE FUNCTION arr_to_str(TEXT[], TEXT) RETURNS TEXT
+    LANGUAGE SQL IMMUTABLE PARALLEL SAFE
+    AS $$ SELECT array_to_string($1, $2) $$;
+
 -- discs (main catalog)
 CREATE TABLE discs (
     id SERIAL PRIMARY KEY,
@@ -60,34 +68,36 @@ CREATE TABLE discs (
     title VARCHAR(512) NOT NULL,
     filename_suffix VARCHAR(255),
     comments TEXT,
+    contents TEXT,
 
     -- optional fields
     title_foreign VARCHAR(512),
     title_disc VARCHAR(512),
     title_disc_number VARCHAR(64),
-    serial VARCHAR(255),
+    serial TEXT[] NOT NULL DEFAULT '{}',
     version VARCHAR(255),
-    edition VARCHAR(512),
-    barcode VARCHAR(255),
+    edition TEXT[] NOT NULL DEFAULT '{}',
+    barcode TEXT[] NOT NULL DEFAULT '{}',
     error_count INT,
-    exe_date DATE,
+    exe_date VARCHAR(16),
     m2f2_edc BOOLEAN,
+    layerbreaks INT[],
     pvd BYTEA,
     pic BYTEA,
     bca BYTEA,
     header BYTEA,
-    protection VARCHAR(255),
+    protection TEXT,
     protection_ranges INT4RANGE[],
     protection_sbi TEXT,
+    protection_keys TEXT[],
+    cue TEXT,
 
-    questionable BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    questionable BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE INDEX idx_discs_enabled ON discs(enabled) WHERE NOT enabled;
 CREATE INDEX idx_discs_system ON discs(system_code);
 CREATE INDEX idx_discs_title ON discs(title);
-CREATE INDEX idx_discs_created ON discs(created_at DESC);
+
 
 -- full-text search
 ALTER TABLE discs ADD COLUMN search_vector tsvector
@@ -95,10 +105,11 @@ ALTER TABLE discs ADD COLUMN search_vector tsvector
         setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
         setweight(to_tsvector('english', coalesce(title_foreign, '')), 'A') ||
         setweight(to_tsvector('english', coalesce(title_disc, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(arr_to_str(serial, ' '), '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(arr_to_str(barcode, ' '), '')), 'B') ||
         setweight(to_tsvector('english', coalesce(comments, '')), 'C') ||
-        setweight(to_tsvector('english', coalesce(barcode, '')), 'B') ||
-        setweight(to_tsvector('english', coalesce(version, '')), 'D') ||
-        setweight(to_tsvector('english', coalesce(edition, '')), 'D')
+        setweight(to_tsvector('english', coalesce(contents, '')), 'C') ||
+        setweight(to_tsvector('english', coalesce(protection, '')), 'D')
     ) STORED;
 CREATE INDEX idx_discs_search ON discs USING GIN(search_vector);
 
@@ -119,7 +130,10 @@ CREATE TABLE disc_languages (
 -- ring code entries
 CREATE TABLE disc_ring_code_entries (
     id SERIAL PRIMARY KEY,
-    disc_id INT NOT NULL REFERENCES discs(id) ON DELETE CASCADE
+    disc_id INT NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
+    offset_value INT[],
+    sample_data_start VARCHAR(16),
+    comment TEXT
 );
 CREATE INDEX idx_ring_entries_disc ON disc_ring_code_entries(disc_id);
 
@@ -133,9 +147,6 @@ CREATE TABLE disc_ring_code_layers (
     mould_sids TEXT[] NOT NULL DEFAULT '{}',
     toolstamps TEXT[] NOT NULL DEFAULT '{}',
     additional_moulds TEXT[] NOT NULL DEFAULT '{}',
-    offset_value VARCHAR(16),
-    sample_data_start VARCHAR(16),
-    comment TEXT,
     UNIQUE(entry_id, layer)
 );
 
@@ -151,6 +162,7 @@ CREATE TABLE files (
     UNIQUE(disc_id, track_number)
 );
 CREATE INDEX idx_files_disc ON files(disc_id);
+CREATE UNIQUE INDEX files_disc_cue_unique ON files (disc_id) WHERE track_number IS NULL;
 
 -- enums
 CREATE TYPE user_role_enum AS ENUM ('User', 'UserPlus', 'Moderator', 'Admin');
@@ -214,6 +226,7 @@ CREATE TABLE disc_submissions (
 CREATE INDEX idx_submissions_submitter ON disc_submissions(submitter_id);
 CREATE INDEX idx_submissions_status ON disc_submissions(status);
 CREATE INDEX idx_submissions_created ON disc_submissions(created_at DESC);
+CREATE INDEX idx_submissions_target_disc ON disc_submissions(target_disc_id);
 
 -- OIDC clients (for phpBB and MediaWiki)
 CREATE TABLE oauth_clients (

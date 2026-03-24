@@ -13,6 +13,7 @@ use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/downloads", get(downloads_page))
         .route("/downloads/", get(downloads_page))
         .route("/downloads/{system}/{archive_type}", get(download_archive))
 }

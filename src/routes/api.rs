@@ -1,5 +1,6 @@
 use axum::{extract::State, response::Html, routing::get, Json, Router};
 
+use crate::auth::middleware::CurrentUser;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -44,7 +45,7 @@ async fn online_users(State(state): State<AppState>) -> Json<OnlineInfo> {
     })
 }
 
-async fn online_users_html(State(state): State<AppState>) -> Html<String> {
+async fn online_users_html(State(state): State<AppState>, _user: CurrentUser) -> Html<String> {
     let registered: i64 = sqlx::query_scalar(
         "SELECT COUNT(DISTINCT user_id) FROM sessions
          WHERE user_id IS NOT NULL AND last_active_at > NOW() - INTERVAL '15 minutes'"
@@ -61,12 +62,7 @@ async fn online_users_html(State(state): State<AppState>) -> Html<String> {
     .await
     .unwrap_or(0);
 
-    let total = registered + guests;
-    let html = if total == 0 {
-        "No users online".to_string()
-    } else {
-        format!("{total} user(s) online ({registered} registered, {guests} guest(s))")
-    };
+    let html = format!("Users: {registered} Guests: {guests}");
 
     Html(html)
 }

@@ -1,5 +1,6 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha1::Digest;
 
 // --- Enums ---
 
@@ -71,6 +72,13 @@ impl MediaType {
         matches!(self, Self::Cd | Self::GdRom)
     }
 
+    pub fn rom_extension(&self) -> &'static str {
+        match self {
+            Self::Cd | Self::GdRom => "bin",
+            _ => "iso",
+        }
+    }
+
     pub fn max_layers(&self) -> u32 {
         match self {
             Self::Cd | Self::GdRom | Self::Umd1 | Self::Umd2
@@ -116,6 +124,10 @@ impl std::fmt::Display for MediaType {
 impl sqlx::Type<sqlx::Postgres> for MediaType {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         <String as sqlx::Type<sqlx::Postgres>>::type_info()
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        <String as sqlx::Type<sqlx::Postgres>>::compatible(ty)
     }
 }
 
@@ -185,6 +197,14 @@ impl DiscStatus {
             Self::Verified => "verified",
             Self::Unverified => "unverified",
             Self::Questionable => "questionable",
+        }
+    }
+
+    pub fn emoji(&self) -> &'static str {
+        match self {
+            Self::Verified => "🟢",
+            Self::Unverified => "🔵",
+            Self::Questionable => "🟡",
         }
     }
 
@@ -323,6 +343,7 @@ pub struct System {
 pub struct Region {
     pub code: String,
     pub name: String,
+    pub flag_code: String,
     pub sort_order: i32,
 }
 
@@ -330,6 +351,7 @@ pub struct Region {
 pub struct Language {
     pub code: String,
     pub name: String,
+    pub flag_code: String,
     pub sort_order: i32,
 }
 
@@ -373,33 +395,38 @@ pub struct Disc {
     pub title_foreign: Option<String>,
     pub title_disc: Option<String>,
     pub title_disc_number: Option<String>,
-    pub serial: Option<String>,
+    pub serial: Vec<String>,
     #[sqlx(rename = "category_id")]
     pub category: Category,
     pub version: Option<String>,
-    pub edition: Option<String>,
-    pub barcode: Option<String>,
+    pub edition: Vec<String>,
+    pub barcode: Vec<String>,
     pub comments: Option<String>,
+    pub contents: Option<String>,
     pub filename_suffix: Option<String>,
     pub error_count: Option<i32>,
-    pub exe_date: Option<NaiveDate>,
+    pub exe_date: Option<String>,
     pub m2f2_edc: Option<bool>,
+    pub layerbreaks: Option<Vec<i32>>,
     pub protection: Option<String>,
     pub protection_sbi: Option<String>,
+    pub protection_keys: Option<Vec<String>>,
+    pub cue: Option<String>,
     pub pvd: Option<Vec<u8>>,
     pub pic: Option<Vec<u8>>,
     pub header: Option<Vec<u8>>,
     pub bca: Option<Vec<u8>>,
     pub enabled: bool,
     pub questionable: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct DiscRingCodeEntry {
     pub id: i32,
     pub disc_id: i32,
+    pub offset_value: Option<Vec<i32>>,
+    pub sample_data_start: Option<String>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -412,9 +439,6 @@ pub struct DiscRingCodeLayer {
     pub mould_sids: Vec<String>,
     pub toolstamps: Vec<String>,
     pub additional_moulds: Vec<String>,
-    pub offset_value: Option<String>,
-    pub sample_data_start: Option<String>,
-    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
@@ -464,7 +488,7 @@ pub struct DiscListRow {
     pub system_full: String,
     pub media_type: MediaType,
     pub version: Option<String>,
-    pub edition: Option<String>,
+    pub edition: Vec<String>,
     pub enabled: bool,
     pub questionable: bool,
     pub dumper_count: i64,
@@ -487,10 +511,22 @@ pub struct DiscDetail {
     pub ring_entries: Vec<RingEntryView>,
     pub files: Vec<File>,
     pub dumpers: Vec<DumperInfo>,
+    pub protection_ranges: Vec<ProtectionRange>,
+    pub added_at: Option<DateTime<Utc>>,
+    pub modified_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ProtectionRange {
+    pub range_start: i32,
+    pub range_end: i32,
 }
 
 #[derive(Debug, Clone)]
 pub struct RingEntryView {
+    pub offset_value: Option<Vec<i32>>,
+    pub sample_data_start: Option<String>,
+    pub comment: Option<String>,
     pub layers: Vec<DiscRingCodeLayer>,
 }
 
@@ -498,6 +534,182 @@ pub struct RingEntryView {
 pub struct DumperInfo {
     pub user_id: i32,
     pub username: String,
+}
+
+pub fn format_display_title(
+    title: &str,
+    title_disc_number: Option<&str>,
+    title_disc: Option<&str>,
+    filename_suffix: Option<&str>,
+) -> String {
+    let mut result = title.to_string();
+    if let Some(n) = title_disc_number {
+        if !n.is_empty() {
+            result.push_str(&format!(" (Disc {n})"));
+        }
+    }
+    if let Some(d) = title_disc {
+        if !d.is_empty() {
+            result.push_str(&format!(" ({d})"));
+        }
+    }
+    if let Some(s) = filename_suffix {
+        if !s.is_empty() {
+            result.push_str(&format!(" ({s})"));
+        }
+    }
+    result
+}
+
+pub fn sanitize_filename(s: &str) -> String {
+    // Longer multi-char replacements first (order matters: ": " before ":")
+    const REPLACEMENTS: &[(&str, &str)] = &[
+        ("Böse", "Boese"),
+        (": ", " - "),
+        ("\"", ""),
+        ("*", "-"),
+        (":", "-"),
+        ("/", "-"),
+        ("?", ""),
+        ("°", ""),
+        ("Ä", "A"),
+        ("å", "a"),
+        ("ä", "a"),
+        ("É", "E"),
+        ("é", "e"),
+        ("ё", "e"),
+        ("Ö", "O"),
+        ("ö", "o"),
+        ("Ñ", "N"),
+        ("ñ", "n"),
+        ("³", " 3"),
+        ("α", "Alpha"),
+    ];
+    let mut result = s.to_string();
+    for &(from, to) in REPLACEMENTS {
+        result = result.replace(from, to);
+    }
+    result
+}
+
+pub fn build_rom_base_name(
+    title: &str,
+    region_names: &[String],
+    language_codes: &[String],
+    title_disc_number: Option<&str>,
+    title_disc: Option<&str>,
+    filename_suffix: Option<&str>,
+) -> String {
+    let mut name = title.to_string();
+    if !region_names.is_empty() {
+        name.push_str(&format!(" ({})", region_names.join(", ")));
+    }
+    if language_codes.len() > 1 {
+        let capitalized: Vec<String> = language_codes.iter()
+            .map(|c| {
+                let mut chars = c.chars();
+                match chars.next() {
+                    Some(first) => {
+                        let upper: String = first.to_uppercase().collect();
+                        format!("{upper}{}", chars.as_str())
+                    }
+                    None => String::new(),
+                }
+            })
+            .collect();
+        name.push_str(&format!(" ({})", capitalized.join(", ")));
+    }
+    if let Some(n) = title_disc_number {
+        if !n.is_empty() {
+            name.push_str(&format!(" (Disc {n})"));
+        }
+    }
+    if let Some(d) = title_disc {
+        if !d.is_empty() {
+            name.push_str(&format!(" ({d})"));
+        }
+    }
+    if let Some(s) = filename_suffix {
+        if !s.is_empty() {
+            name.push_str(&format!(" ({s})"));
+        }
+    }
+    sanitize_filename(&name)
+}
+
+pub fn build_rom_name(
+    base_name: &str,
+    track_number: Option<&str>,
+    total_tracks: usize,
+    extension: &str,
+) -> String {
+    let mut name = base_name.to_string();
+    if total_tracks > 1 {
+        if let Some(t) = track_number {
+            let n: u32 = t.parse().unwrap_or(0);
+            if total_tracks >= 10 {
+                name.push_str(&format!(" (Track {n:02})"));
+            } else {
+                name.push_str(&format!(" (Track {n})"));
+            }
+        }
+    }
+    name.push('.');
+    name.push_str(extension);
+    name
+}
+
+pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
+    let lines: Vec<&str> = raw_cue.lines().collect();
+    let total_tracks = lines.iter()
+        .filter(|l| l.trim_start().starts_with("TRACK "))
+        .count();
+
+    let mut result = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        if trimmed.starts_with("FILE ") {
+            // Find the next TRACK line to get the track number
+            let track_num = lines[i + 1..].iter()
+                .find_map(|l| {
+                    let lt = l.trim_start();
+                    if lt.starts_with("TRACK ") {
+                        lt.split_whitespace().nth(1)
+                            .map(|n| n.trim_start_matches('0'))
+                            .map(|n| if n.is_empty() { "0" } else { n })
+                    } else {
+                        None
+                    }
+                });
+            let rom_name = build_rom_name(
+                base_name,
+                track_num,
+                total_tracks,
+                extension,
+            );
+            let file_type = trimmed.rsplit_once(' ')
+                .map(|(_, t)| t)
+                .unwrap_or("BINARY");
+            result.push(format!("FILE \"{rom_name}\" {file_type}"));
+        } else {
+            result.push(lines[i].to_string());
+        }
+        i += 1;
+    }
+    result.join("\n")
+}
+
+pub fn compute_file_hashes(data: &[u8]) -> (i64, String, String, String) {
+    let size = data.len() as i64;
+
+    let crc = crc32fast::hash(data);
+    let crc32_hex = format!("{crc:08x}");
+
+    let md5_hex = format!("{:x}", <md5::Md5 as Digest>::digest(data));
+    let sha1_hex = format!("{:x}", <sha1::Sha1 as Digest>::digest(data));
+
+    (size, crc32_hex, md5_hex, sha1_hex)
 }
 
 #[derive(Debug, Clone)]

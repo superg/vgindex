@@ -3,6 +3,54 @@ use sqlx::PgPool;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 
+fn parse_hex_dump(text: &str) -> Vec<u8> {
+    let mut result = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let after_colon = match line.find(':') {
+            Some(pos) => &line[pos + 1..],
+            None => continue,
+        };
+        let trimmed = after_colon.trim_start();
+        let hex_part = match trimmed.find("   ") {
+            Some(pos) => &trimmed[..pos],
+            None => trimmed,
+        };
+        for token in hex_part.split_whitespace() {
+            if token.len() == 2 {
+                if let Ok(b) = u8::from_str_radix(token, 16) {
+                    result.push(b);
+                }
+            }
+        }
+    }
+    result
+}
+
+fn parse_pvd_hex_dump(text: &str) -> Vec<u8> {
+    let mut result = parse_hex_dump(text);
+    result.truncate(82);
+    result
+}
+
+fn parse_text_array(val: &serde_json::Value) -> Vec<String> {
+    if let Some(arr) = val.as_array() {
+        arr.iter()
+            .filter_map(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else if let Some(s) = val.as_str() {
+        s.split(',')
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
 pub async fn get_all_systems(pool: &PgPool) -> AppResult<Vec<System>> {
     Ok(sqlx::query_as("SELECT * FROM systems ORDER BY sort_order, name")
         .fetch_all(pool)
@@ -59,7 +107,13 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         .bind(entry.id)
         .fetch_all(pool)
         .await?;
-        ring_views.push(RingEntryView { layers });
+        ring_views.push(RingEntryView {
+            offset_value: entry.offset_value.clone(),
+
+            sample_data_start: entry.sample_data_start.clone(),
+            comment: entry.comment.clone(),
+            layers,
+        });
     }
 
     let files: Vec<File> = sqlx::query_as(
@@ -78,6 +132,28 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_all(pool)
     .await?;
 
+    let added_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+        "SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = $1"
+    )
+    .bind(disc_id)
+    .fetch_one(pool)
+    .await?;
+
+    let modified_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+        "SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = $1"
+    )
+    .bind(disc_id)
+    .fetch_one(pool)
+    .await?;
+
+    let protection_ranges: Vec<ProtectionRange> = sqlx::query_as(
+        "SELECT lower(r)::INT AS range_start, upper(r)::INT AS range_end \
+         FROM discs, unnest(protection_ranges) AS r WHERE id = $1 ORDER BY lower(r)"
+    )
+    .bind(disc_id)
+    .fetch_all(pool)
+    .await?;
+
     Ok(DiscDetail {
         disc,
         system,
@@ -86,6 +162,9 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         ring_entries: ring_views,
         files,
         dumpers,
+        protection_ranges,
+        added_at,
+        modified_at,
     })
 }
 
@@ -94,14 +173,20 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     let title_foreign = data["title_foreign"].as_str().filter(|s| !s.is_empty());
     let title_disc = data["title_disc"].as_str().filter(|s| !s.is_empty());
     let title_disc_number = data["title_disc_number"].as_str().filter(|s| !s.is_empty());
-    let serial = data["serial"].as_str().filter(|s| !s.is_empty());
+    let serial = parse_text_array(&data["serial"]);
     let category = data["category"].as_str().unwrap_or("Games");
     let version = data["version"].as_str().filter(|s| !s.is_empty());
-    let edition = data["edition"].as_str().filter(|s| !s.is_empty());
-    let barcode = data["barcode"].as_str().filter(|s| !s.is_empty());
+    let edition = parse_text_array(&data["edition"]);
+    let barcode = parse_text_array(&data["barcode"]);
     let comments = data["comments"].as_str().filter(|s| !s.is_empty());
     let protection = data["protection"].as_str().filter(|s| !s.is_empty());
     let error_count = data["error_count"].as_i64().map(|v| v as i32);
+    let pvd = data["pvd"].as_str()
+        .filter(|s| !s.is_empty())
+        .map(parse_pvd_hex_dump);
+    let header = data["header"].as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| parse_hex_dump(s));
 
     sqlx::query(
         "UPDATE discs SET title = $1,
@@ -109,21 +194,24 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
          serial = $5,
          category_id = (SELECT id FROM categories WHERE name = $6),
          version = $7, edition = $8, barcode = $9,
-         comments = $10, protection = $11, error_count = $12, updated_at = NOW()
-         WHERE id = $13"
+         comments = $10, protection = $11, error_count = $12,
+         pvd = $13, header = $14
+         WHERE id = $15"
     )
     .bind(title)
     .bind(title_foreign)
     .bind(title_disc)
     .bind(title_disc_number)
-    .bind(serial)
+    .bind(&serial)
     .bind(category)
     .bind(version)
-    .bind(edition)
-    .bind(barcode)
+    .bind(&edition)
+    .bind(&barcode)
     .bind(comments)
     .bind(protection)
     .bind(error_count)
+    .bind(&pvd)
+    .bind(&header)
     .bind(disc_id)
     .execute(pool)
     .await?;
@@ -168,6 +256,8 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         }
     }
 
+    regenerate_cue_entry(pool, disc_id).await?;
+
     Ok(())
 }
 
@@ -185,9 +275,9 @@ pub async fn create_disc_from_submission(
     let category = data["category"].as_str().unwrap_or("Games");
 
     let disc_id: i32 = sqlx::query_scalar(
-        "INSERT INTO discs (system_code, media_type_code, title, category_id, status)
+        "INSERT INTO discs (system_code, media_type_code, title, category_id)
          VALUES ($1, $2, $3,
-                 (SELECT id FROM categories WHERE name = $4), 'Good')
+                 (SELECT id FROM categories WHERE name = $4))
          RETURNING id"
     )
     .bind(system_code)
@@ -211,7 +301,76 @@ pub async fn create_disc_from_submission(
         parse_and_insert_files(pool, disc_id, files_xml).await?;
     }
 
+    regenerate_cue_entry(pool, disc_id).await?;
+
     Ok(disc_id)
+}
+
+pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> {
+    let disc: Disc = sqlx::query_as("SELECT * FROM discs WHERE id = $1")
+        .bind(disc_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let raw_cue = match &disc.cue {
+        Some(c) if !c.is_empty() => c,
+        _ => return Ok(()),
+    };
+
+    let region_names: Vec<String> = sqlx::query_scalar(
+        "SELECT r.name FROM regions r
+         JOIN disc_regions dr ON dr.region_code = r.code
+         WHERE dr.disc_id = $1 ORDER BY r.sort_order"
+    )
+    .bind(disc_id)
+    .fetch_all(pool)
+    .await?;
+
+    let language_codes: Vec<String> = sqlx::query_scalar(
+        "SELECT l.code FROM languages l
+         JOIN disc_languages dl ON dl.language_code = l.code
+         WHERE dl.disc_id = $1 ORDER BY l.sort_order"
+    )
+    .bind(disc_id)
+    .fetch_all(pool)
+    .await?;
+
+    let base_name = build_rom_base_name(
+        &disc.title,
+        &region_names,
+        &language_codes,
+        disc.title_disc_number.as_deref(),
+        disc.title_disc.as_deref(),
+        disc.filename_suffix.as_deref(),
+    );
+    let ext = disc.media_type.rom_extension();
+
+    let finalized = finalize_cue(raw_cue, &base_name, ext);
+
+    sqlx::query("UPDATE discs SET cue = $1 WHERE id = $2")
+        .bind(&finalized)
+        .bind(disc_id)
+        .execute(pool)
+        .await?;
+
+    let (size, crc32, md5, sha1) = compute_file_hashes(finalized.as_bytes());
+
+    sqlx::query(
+        "INSERT INTO files (disc_id, track_number, size, crc32, md5, sha1)
+         VALUES ($1, NULL, $2, $3, $4, $5)
+         ON CONFLICT (disc_id) WHERE track_number IS NULL
+         DO UPDATE SET size = $2, crc32 = $3, md5 = $4, sha1 = $5"
+    )
+    .bind(disc_id)
+    .bind(size)
+    .bind(&crc32)
+    .bind(&md5)
+    .bind(&sha1)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 async fn parse_and_insert_files(pool: &PgPool, disc_id: i32, files_xml: &str) -> AppResult<()> {

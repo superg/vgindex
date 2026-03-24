@@ -8,7 +8,7 @@ mod routes;
 mod services;
 
 use std::sync::Arc;
-use axum::Router;
+use axum::{middleware, Router};
 use sqlx::PgPool;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
@@ -51,6 +51,7 @@ async fn main() {
     let app = Router::new()
         .merge(routes::build_router())
         .nest_service("/static", ServeDir::new("static"))
+        .layer(middleware::from_fn_with_state(state.clone(), auth::middleware::guest_session_layer))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

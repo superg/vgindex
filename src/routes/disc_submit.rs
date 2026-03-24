@@ -15,6 +15,7 @@ use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/disc/submit", get(submit_page).post(submit_handler))
         .route("/disc/submit/", get(submit_page).post(submit_handler))
 }
 
@@ -36,11 +37,13 @@ struct MediaTypeOption {
 
 struct SubmitRegion {
     code: String,
+    flag_code: String,
     name: String,
 }
 
 struct SubmitLang {
     code: String,
+    flag_code: String,
     name: String,
 }
 
@@ -62,10 +65,12 @@ async fn submit_page(
             systems,
             regions: all_regions.iter().map(|r| SubmitRegion {
                 code: r.code.trim().to_string(),
+                flag_code: r.flag_code.trim().to_lowercase(),
                 name: r.name.clone(),
             }).collect(),
             languages: langs.iter().map(|l| SubmitLang {
                 code: l.code.trim().to_string(),
+                flag_code: l.flag_code.trim().to_lowercase(),
                 name: l.name.clone(),
             }).collect(),
             categories: Category::ALL.iter().map(|c| c.to_string()).collect(),
@@ -93,6 +98,8 @@ pub struct DiscSubmitForm {
     pub exe_date: Option<String>,
     pub protection: Option<String>,
     pub error_count: Option<i32>,
+    pub pvd: Option<String>,
+    pub header: Option<String>,
     pub files_xml: Option<String>,
     pub cue_content: Option<String>,
     pub dump_log: Option<String>,
@@ -120,6 +127,8 @@ async fn submit_handler(
         "exe_date": form.exe_date,
         "protection": form.protection,
         "error_count": form.error_count,
+        "pvd": form.pvd,
+        "header": form.header,
         "files_xml": form.files_xml,
         "cue_content": form.cue_content,
         "regions": form.regions,

@@ -162,6 +162,36 @@ _LABEL_ONLY = {"d_region", "d_edc", "d_protection_a", "d_protection_l"}
 _VALUE_ONLY_RADIO = {"d_status"}
 # Checkbox fields where only the value string matters
 _VALUE_ONLY_CHECKBOX = {"d_languages[]", "d_editions[]", "d_offset[]"}
+# Same groups sometimes use names without "[]" on the edit form
+_CHECKBOX_NAME_TO_BRACKET = {
+    "d_editions": "d_editions[]",
+    "d_languages": "d_languages[]",
+    "d_offset": "d_offset[]",
+}
+
+
+def _checkbox_raw_list_to_values(raw: list) -> list:
+    """Turn checkbox group items into plain value strings."""
+    return [item["value"] if isinstance(item, dict) else item for item in raw]
+
+
+def _merge_bracket_checkbox(cleaned: dict, bracket_key: str, raw_list: list) -> None:
+    """Merge parsed checkbox values into cleaned[bracket_key]; handles d_x and d_x[] both present."""
+    new_vals = _checkbox_raw_list_to_values(raw_list)
+    if bracket_key not in cleaned:
+        cleaned[bracket_key] = new_vals
+        return
+    existing = cleaned[bracket_key]
+    if not isinstance(existing, list):
+        cleaned[bracket_key] = new_vals
+        return
+    seen = set()
+    merged = []
+    for x in existing + new_vals:
+        if x not in seen:
+            seen.add(x)
+            merged.append(x)
+    cleaned[bracket_key] = merged
 
 
 def _clean_edit_data(data: dict) -> dict:
@@ -207,9 +237,15 @@ def _clean_edit_data(data: dict) -> dict:
             cleaned[key] = value.get("value", value)
             continue
 
-        # Checkbox fields: value-only lists
+        # Checkbox fields: value-only lists (may coexist with d_x sans [] — merge)
         if key in _VALUE_ONLY_CHECKBOX and isinstance(value, list):
-            cleaned[key] = [item["value"] if isinstance(item, dict) else item for item in value]
+            _merge_bracket_checkbox(cleaned, key, value)
+            continue
+
+        # d_editions / d_languages / d_offset without "[]" → same canonical key as d_x[]
+        bracket_key = _CHECKBOX_NAME_TO_BRACKET.get(key)
+        if bracket_key and isinstance(value, list):
+            _merge_bracket_checkbox(cleaned, bracket_key, value)
             continue
 
         cleaned[key] = value
