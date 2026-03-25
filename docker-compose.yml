@@ -14,6 +14,7 @@ services:
     depends_on:
       - app
       - mediawiki
+      - phpbb
 
   app:
     build: .
@@ -55,22 +56,33 @@ services:
       retries: 5
 
   phpbb:
-    image: bitnami/phpbb:3
+    build:
+      context: .
+      dockerfile: docker/phpbb/Dockerfile
     restart: unless-stopped
     environment:
-      - PHPBB_DATABASE_HOST=postgres
-      - PHPBB_DATABASE_PORT_NUMBER=5432
-      - PHPBB_DATABASE_NAME=phpbb
-      - PHPBB_DATABASE_USER=${POSTGRES_USER:-vgindex}
-      - PHPBB_DATABASE_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      - PHPBB_USERNAME=${PHPBB_ADMIN_USER:-admin}
-      - PHPBB_PASSWORD=${PHPBB_ADMIN_PASSWORD:-changeme}
-      - PHPBB_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@example.com}
-      - PHPBB_FORUM_NAME=${DOMAIN:-localhost} Forum
-      - PHPBB_FORUM_DESCRIPTION=Disc Preservation Community
-      - PHP_MEMORY_LIMIT=256M
+      - PHPBB_DB_HOST=postgres
+      - PHPBB_DB_PORT=5432
+      - PHPBB_DB_NAME=phpbb
+      - PHPBB_DB_USER=${POSTGRES_USER:-vgindex}
+      - PHPBB_DB_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - PHPBB_TABLE_PREFIX=${PHPBB_TABLE_PREFIX:-phpbb_}
+      - PHPBB_ADMIN_USER=${PHPBB_ADMIN_USER:-admin}
+      - PHPBB_ADMIN_PASSWORD=${PHPBB_ADMIN_PASSWORD:-changeme}
+      - PHPBB_ADMIN_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@example.com}
+      - PHPBB_BOARD_NAME=${DOMAIN:-localhost} Forum
+      - PHPBB_BOARD_DESCRIPTION=Disc Preservation Community
+      - DOMAIN=${DOMAIN:-localhost}
+      - HTTPS_PORT=${HTTPS_PORT:-8443}
+      - PHPBB_SERVER_NAME=forum.${DOMAIN:-localhost}
+      - PHPBB_OIDC_CLIENT_ID=${PHPBB_OIDC_CLIENT_ID:-phpbb-client}
+      - PHPBB_OIDC_CLIENT_SECRET=${PHPBB_OIDC_CLIENT_SECRET:-change-this-secret-phpbb}
+      - OIDC_ISSUER_URL=${OIDC_ISSUER_URL:-http://app:3000}
+      - APP_DB_NAME=${POSTGRES_DB:-vgindex}
     volumes:
-      - phpbb_data:/bitnami/phpbb
+      - phpbb_files:/var/www/html/files
+      - phpbb_store:/var/www/html/store
+      - phpbb_avatars:/var/www/html/images/avatars/upload
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,5 +119,7 @@ volumes:
   caddy_data:
   caddy_config:
   archive_cache:
-  phpbb_data:
+  phpbb_files:
+  phpbb_store:
+  phpbb_avatars:
   mediawiki_uploads:
