@@ -8,6 +8,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::middleware::RequireAuth;
+use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::AppResult;
 use crate::services::{disc_service, submission_service};
@@ -29,6 +30,7 @@ struct DiscSubmitTemplate {
     categories: Vec<String>,
     media_types: Vec<MediaTypeOption>,
 }
+impl SiteConfig for DiscSubmitTemplate {}
 
 struct MediaTypeOption {
     code: String,

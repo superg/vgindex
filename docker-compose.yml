@@ -3,8 +3,8 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
+      - "${HTTPS_PORT:-8443}:443"
       - "8080:80"
-      - "8443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -21,8 +21,10 @@ services:
     environment:
       - DATABASE_URL=postgres://${POSTGRES_USER:-vgindex}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-vgindex}
       - APP_SECRET_KEY=${APP_SECRET_KEY:-devsecretkey0000000000000000000000000000000000000000000000000000}
-      - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8080}
+      - DOMAIN=${DOMAIN:-localhost}
+      - HTTPS_PORT=${HTTPS_PORT:-8443}
       - APP_PORT=${APP_PORT:-3000}
+      - OIDC_ISSUER_URL=${OIDC_ISSUER_URL:-http://app:3000}
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
@@ -63,8 +65,8 @@ services:
       - PHPBB_DATABASE_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - PHPBB_USERNAME=${PHPBB_ADMIN_USER:-admin}
       - PHPBB_PASSWORD=${PHPBB_ADMIN_PASSWORD:-changeme}
-      - PHPBB_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@vgindex.org}
-      - PHPBB_FORUM_NAME=vgindex.org Forum
+      - PHPBB_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@example.com}
+      - PHPBB_FORUM_NAME=${DOMAIN:-localhost} Forum
       - PHPBB_FORUM_DESCRIPTION=Disc Preservation Community
       - PHP_MEMORY_LIMIT=256M
     volumes:
@@ -74,17 +76,28 @@ services:
         condition: service_healthy
 
   mediawiki:
-    image: mediawiki:1.42
+    build:
+      context: .
+      dockerfile: docker/mediawiki/Dockerfile
     restart: unless-stopped
     environment:
       - MEDIAWIKI_DB_HOST=postgres
+      - MEDIAWIKI_DB_PORT=5432
+      - MEDIAWIKI_DB_SCHEMA=public
       - MEDIAWIKI_DB_NAME=mediawiki
       - MEDIAWIKI_DB_USER=${POSTGRES_USER:-vgindex}
       - MEDIAWIKI_DB_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - MEDIAWIKI_DB_TYPE=postgres
+      - SITE_DOMAIN=${DOMAIN:-localhost}
+      - HTTPS_PORT=${HTTPS_PORT:-8443}
+      - MEDIAWIKI_ADMIN_USER=${MEDIAWIKI_ADMIN_USER:-admin}
+      - MEDIAWIKI_ADMIN_PASSWORD=${MEDIAWIKI_ADMIN_PASSWORD:-ChangeMe!Admin2026}
+      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-http://app:3000}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-mediawiki-client}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-change-this-secret-mediawiki}
     volumes:
-      - mediawiki_data:/var/www/html
-      - ./docker/mediawiki/LocalSettings.php:/var/www/html/LocalSettings.php:ro
+      - mediawiki_uploads:/var/www/html/images
+      - ./docker/mediawiki/LocalSettings.php:/etc/mediawiki/LocalSettings.php:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,4 +108,4 @@ volumes:
   caddy_config:
   archive_cache:
   phpbb_data:
-  mediawiki_data:
+  mediawiki_uploads:

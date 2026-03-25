@@ -11,6 +11,11 @@
     {% when None %}
     {% endmatch %}
     <form method="post" action="/login">
+        {% match return_to %}
+        {% when Some with (url) %}
+        <input type="hidden" name="return_to" value="{{ url }}">
+        {% when None %}
+        {% endmatch %}
         <label for="username">Username or Email</label>
         <input type="text" id="username" name="username" required autofocus>
         <label for="password">Password</label>

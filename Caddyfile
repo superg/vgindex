@@ -1,13 +1,15 @@
+www.{$DOMAIN:localhost} {
+    reverse_proxy app:3000
+}
+
+wiki.{$DOMAIN:localhost} {
+    reverse_proxy mediawiki:80
+}
+
+forum.{$DOMAIN:localhost} {
+    reverse_proxy phpbb:80
+}
+
 {$DOMAIN:localhost} {
-    handle /forum/* {
-        reverse_proxy phpbb:80
-    }
-
-    handle /wiki/* {
-        reverse_proxy mediawiki:80
-    }
-
-    handle {
-        reverse_proxy app:3000
-    }
+    reverse_proxy app:3000
 }

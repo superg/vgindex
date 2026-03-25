@@ -16,6 +16,7 @@ pub fn build_router() -> Router<AppState> {
     Router::new()
         .merge(main_page::routes())
         .merge(auth_routes::routes())
+        .merge(crate::auth::oidc::routes())
         .merge(discs::routes())
         .merge(disc_view::routes())
         .merge(disc_edit::routes())

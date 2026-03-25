@@ -23,4 +23,4 @@
 ## Creating the "News" forum category
 
 Create a forum category called "News" in phpBB. Posts from this category
-will appear on the vgindex.org homepage via direct database query.
+will appear on the site homepage via direct database query.

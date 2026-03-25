@@ -2,6 +2,7 @@ use askama::Template;
 use axum::{extract::State, response::Html, routing::get, Router};
 
 use crate::auth::middleware::CurrentUser;
+use crate::config::SiteConfig;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -14,6 +15,7 @@ struct MainTemplate {
     current_user: Option<String>,
     recent_discs: Vec<RecentDisc>,
 }
+impl SiteConfig for MainTemplate {}
 
 struct RecentDisc {
     id: i32,

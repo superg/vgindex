@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Main{% endblock %}
+{% block title %}Home{% endblock %}
 
 {% block content %}
 <hgroup>
-    <h2>Welcome to vgindex.org</h2>
+    <h2>Welcome to {{ self.site_name() }}</h2>
     <p>Disc preservation database</p>
 </hgroup>
 
@@ -45,7 +45,7 @@
 
     <section>
         <h3>News</h3>
-        <p>Check the <a href="/forum/">forum</a> for the latest news.</p>
+        <p>Check the <a href="{{ self.forum_url() }}">forum</a> for the latest news.</p>
     </section>
 </div>
 {% endblock %}

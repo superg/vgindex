@@ -1,16 +1,23 @@
 <?php
-# MediaWiki LocalSettings for vgindex.org wiki integration
+# MediaWiki LocalSettings
+# Site name and server URL are derived from SITE_DOMAIN and HTTPS_PORT env vars.
 
-$wgSitename = "vgindex.org Wiki";
-$wgMetaNamespace = "vgindex";
-$wgServer = "http://localhost:8080";
-$wgScriptPath = "/wiki";
-$wgArticlePath = "/wiki/$1";
+$siteDomain = getenv('SITE_DOMAIN') ?: 'localhost';
+$httpsPort = getenv('HTTPS_PORT') ?: '8443';
+$portSuffix = ($httpsPort === '443') ? '' : ":$httpsPort";
+
+$wgSitename = "$siteDomain Wiki";
+$wgMetaNamespace = str_replace('.', '_', $siteDomain);
+$wgServer = "https://wiki.{$siteDomain}{$portSuffix}";
+$wgScriptPath = "";
+$wgArticlePath = "/$1";
 
 # Database settings (PostgreSQL)
 $wgDBtype = "postgres";
-$wgDBserver = "postgres";
-$wgDBname = "mediawiki";
+$wgDBserver = getenv('MEDIAWIKI_DB_HOST') ?: "postgres";
+$wgDBport = getenv('MEDIAWIKI_DB_PORT') ?: "5432";
+$wgDBname = getenv('MEDIAWIKI_DB_NAME') ?: "mediawiki";
+$wgDBmwschema = getenv('MEDIAWIKI_DB_SCHEMA') ?: "public";
 $wgDBuser = getenv('MEDIAWIKI_DB_USER') ?: "vgindex";
 $wgDBpassword = getenv('MEDIAWIKI_DB_PASSWORD') ?: "changeme";
 $wgDBprefix = "";
@@ -26,26 +33,27 @@ wfLoadSkin('Vector');
 # Disable anonymous editing
 $wgGroupPermissions['*']['edit'] = false;
 $wgGroupPermissions['*']['createaccount'] = false;
+$wgGroupPermissions['*']['autocreateaccount'] = true;
 
 # PluggableAuth + OpenID Connect for SSO
-# Install these extensions:
-#   - PluggableAuth: https://www.mediawiki.org/wiki/Extension:PluggableAuth
-#   - OpenID Connect: https://www.mediawiki.org/wiki/Extension:OpenID_Connect
-#
-# wfLoadExtension('PluggableAuth');
-# wfLoadExtension('OpenIDConnect');
-#
-# $wgPluggableAuth_Config['vgindex'] = [
-#     'plugin' => 'OpenIDConnect',
-#     'data' => [
-#         'providerURL' => 'http://app:3000',
-#         'clientID' => 'mediawiki-client',
-#         'clientsecret' => 'change-this-secret-mediawiki',
-#     ],
-# ];
-#
-# Role mapping (synced from OIDC claims):
-# $wgPluggableAuth_Config['vgindex']['data']['preferred_username'] = 'preferred_username';
+wfLoadExtension('PluggableAuth');
+wfLoadExtension('OpenIDConnect');
+
+$wgPluggableAuth_Config['sso'] = [
+    'plugin' => 'OpenIDConnect',
+    'data' => [
+        'providerURL' => getenv('OIDC_PROVIDER_URL') ?: 'http://app:3000',
+        'clientID' => getenv('OIDC_CLIENT_ID') ?: 'mediawiki-client',
+        'clientsecret' => getenv('OIDC_CLIENT_SECRET') ?: 'change-this-secret-mediawiki',
+    ],
+];
+
+$wgPluggableAuth_EnableLocalLogin = true;
+
+# Debug logging (disable in production)
+$wgShowExceptionDetails = true;
+$wgShowDBErrorBacktrace = true;
+$wgDebugLogFile = '/tmp/mediawiki-debug.log';
 
 # File uploads
 $wgEnableUploads = true;

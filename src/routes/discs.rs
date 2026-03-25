@@ -3,6 +3,7 @@ use axum::{extract::{Query, State}, response::{Html, IntoResponse, Redirect, Res
 use serde::Deserialize;
 
 use crate::auth::middleware::CurrentUser;
+use crate::config::SiteConfig;
 use crate::db::models::{DiscStatus, format_display_title};
 use crate::AppState;
 
@@ -60,6 +61,7 @@ struct DiscsTemplate {
     next_serial_order: String,
     next_status_order: String,
 }
+impl SiteConfig for DiscsTemplate {}
 
 struct DiscRow {
     id: i32,

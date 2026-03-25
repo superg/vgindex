@@ -8,6 +8,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::middleware::RequireAuth;
+use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::AppResult;
 use crate::services::{disc_service, submission_service};
@@ -48,6 +49,7 @@ struct DiscEditTemplate {
     show_header: bool,
     header_hex: String,
 }
+impl SiteConfig for DiscEditTemplate {}
 
 struct SelectOption {
     id: i32,
