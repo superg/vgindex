@@ -39,7 +39,10 @@
                 <li><form method="post" action="/logout" style="margin:0"><button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;margin:0">Logout</button></form></li>
                 {% when None %}
                 <li><a href="/login" role="button" class="outline">Login</a></li>
+                {# Demo/public mode: disable self-registration link.
+                   Re-enable by uncommenting the line below.
                 <li><a href="/register" role="button">Register</a></li>
+                #}
                 {% endmatch %}
             </ul>
         </nav>

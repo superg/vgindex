@@ -165,7 +165,7 @@ CREATE INDEX idx_files_disc ON files(disc_id);
 CREATE UNIQUE INDEX files_disc_cue_unique ON files (disc_id) WHERE track_number IS NULL;
 
 -- enums
-CREATE TYPE user_role_enum AS ENUM ('User', 'UserPlus', 'Moderator', 'Admin');
+CREATE TYPE user_role_enum AS ENUM ('User', 'User+', 'Moderator', 'Admin');
 CREATE TYPE submission_type_enum AS ENUM ('New Dump', 'Verification', 'Edit');
 CREATE TYPE submission_status_enum AS ENUM ('Pending', 'Approved', 'Denied');
 

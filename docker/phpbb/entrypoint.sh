@@ -109,6 +109,8 @@ configure_oidc_sso() {
     php bin/phpbbcli.php config:set auth_oauth_vgindex_key "$PHPBB_OIDC_CLIENT_ID" >/dev/null
     php bin/phpbbcli.php config:set auth_oauth_vgindex_secret "$PHPBB_OIDC_CLIENT_SECRET" >/dev/null
     php bin/phpbbcli.php config:set auth_method oauth >/dev/null
+    # Disable local self-registration permanently; users must come from app SSO.
+    php bin/phpbbcli.php config:set require_activation 3 >/dev/null
 
     local redirect_uri client_id_sql client_secret_sql redirect_uri_sql
     redirect_uri="$(forum_public_base)/ucp.php?mode=login&login=external&oauth_service=vgindex"

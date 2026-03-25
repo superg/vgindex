@@ -64,6 +64,7 @@ automatically on startup:
 
 - enables extension `vgindex/oidc`
 - sets `auth_method` to `oauth` (OIDC-first login flow)
+- disables local self-registration (`require_activation = 3`)
 - writes OAuth key/secret from env vars
 - syncs callback URL to `https://forum.<domain>:<port>/ucp.php?mode=login`
 
