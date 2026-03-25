@@ -75,9 +75,10 @@ async fn news_feed(State(state): State<AppState>) -> Html<String> {
     // For simplicity, we'll use a placeholder that can be connected later.
     let phpbb_url = state.config.database_url
         .replace("/vgindex", "/phpbb");
+    let forum_base = state.config.forum_url.trim_end_matches('/');
 
     if let Ok(phpbb_pool) = crate::db::create_pool(&phpbb_url).await {
-        // phpBB uses phpbb_ prefix by default with bitnami image
+        // phpBB uses phpbb_ prefix by default
         let topics: Vec<NewsTopicRow> = sqlx::query_as(
             "SELECT t.topic_id, t.topic_title, t.topic_time, t.topic_views
              FROM phpbb_topics t
@@ -97,7 +98,8 @@ async fn news_feed(State(state): State<AppState>) -> Html<String> {
                     .map(|d| d.format("%Y-%m-%d").to_string())
                     .unwrap_or_default();
                 html.push_str(&format!(
-                    "<li><small>{date}</small> <a href=\"/forum/viewtopic.php?t={}\">{}</a></li>",
+                    "<li><small>{date}</small> <a href=\"{}/viewtopic.php?t={}\">{}</a></li>",
+                    forum_base,
                     t.topic_id,
                     html_escape(&t.topic_title),
                 ));
@@ -107,7 +109,10 @@ async fn news_feed(State(state): State<AppState>) -> Html<String> {
         }
     }
 
-    Html("<p>No news available. Visit the <a href=\"/forum/\">forum</a> for updates.</p>".to_string())
+    Html(format!(
+        "<p>No news available. Visit the <a href=\"{}/\">forum</a> for updates.</p>",
+        forum_base
+    ))
 }
 
 #[derive(serde::Serialize)]
