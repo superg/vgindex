@@ -30,10 +30,22 @@ $wgUpgradeKey = getenv('MEDIAWIKI_UPGRADE_KEY') ?: "change-this-upgrade-key";
 $wgDefaultSkin = "vector-2022";
 wfLoadSkin('Vector');
 
-# Disable anonymous editing
+# Disable anonymous editing and account creation
 $wgGroupPermissions['*']['edit'] = false;
 $wgGroupPermissions['*']['createaccount'] = false;
 $wgGroupPermissions['*']['autocreateaccount'] = true;
+
+# Revoke edit from default logged-in users (User and User+ are both
+# in the MW "user" group; editing is granted via the "editor" group below)
+$wgGroupPermissions['user']['edit'] = false;
+$wgGroupPermissions['user']['createpage'] = false;
+
+# editor group: User+ / Moderator / Admin can edit wiki pages
+$wgGroupPermissions['editor']['edit'] = true;
+$wgGroupPermissions['editor']['createpage'] = true;
+$wgGroupPermissions['editor']['createtalk'] = true;
+$wgGroupPermissions['editor']['writeapi'] = true;
+$wgGroupPermissions['editor']['upload'] = true;
 
 # PluggableAuth + OpenID Connect for SSO
 wfLoadExtension('PluggableAuth');
@@ -49,6 +61,38 @@ $wgPluggableAuth_Config['sso'] = [
 ];
 
 $wgPluggableAuth_EnableLocalLogin = true;
+
+# Sync OIDC role claim -> MediaWiki groups on every SSO login.
+#   User / User+   -> (no extra groups, read-only wiki)
+#   User+          -> editor (can edit pages)
+#   Moderator      -> editor
+#   Admin          -> editor + sysop
+$wgHooks['PluggableAuthPopulateGroups'][] = function (
+    \MediaWiki\User\User $user,
+    array $attributes
+) {
+    $role = $attributes['role'] ?? null;
+    if ($role === null) {
+        return;
+    }
+
+    $ugm = \MediaWiki\MediaWikiServices::getInstance()->getUserGroupManager();
+    $current = $ugm->getUserGroups($user);
+
+    $syncMap = [
+        'editor' => in_array($role, ['User+', 'Moderator', 'Admin'], true),
+        'sysop'  => ($role === 'Admin'),
+    ];
+
+    foreach ($syncMap as $group => $desired) {
+        $has = in_array($group, $current, true);
+        if ($desired && !$has) {
+            $ugm->addUserToGroup($user, $group);
+        } elseif (!$desired && $has) {
+            $ugm->removeUserFromGroup($user, $group);
+        }
+    }
+};
 
 # Debug logging (disable in production)
 $wgShowExceptionDetails = true;

@@ -42,11 +42,14 @@ class listener implements EventSubscriberInterface
         $this->oauth_account_table = $oauth_account_table;
     }
 
+    protected static $sso_managed_groups = ['GLOBAL_MODERATORS', 'ADMINISTRATORS'];
+
     public static function getSubscribedEvents()
     {
         return [
             'core.user_setup' => 'load_language',
             'core.oauth_login_after_check_if_provider_id_has_match' => 'auto_provision',
+            'core.auth_oauth_login_after' => 'sync_roles',
         ];
     }
 
@@ -125,6 +128,107 @@ class listener implements EventSubscriberInterface
         $result = $this->db->sql_query($sql);
         $event['row'] = $this->db->sql_fetchrow($result);
         $this->db->sql_freeresult($result);
+    }
+
+    /**
+     * On every SSO login, sync the user's phpBB group memberships
+     * to match the role claim from the IdP.
+     *
+     * Mapping:
+     *   User / User+   -> REGISTERED only
+     *   Moderator      -> REGISTERED + GLOBAL_MODERATORS
+     *   Admin          -> REGISTERED + GLOBAL_MODERATORS + ADMINISTRATORS
+     */
+    public function sync_roles($event)
+    {
+        $userinfo = vgindex_service::get_last_userinfo();
+        if (!$userinfo || empty($userinfo['role']))
+        {
+            return;
+        }
+
+        $user_id = (int) $event['user_row']['user_id'];
+        if (!$user_id)
+        {
+            return;
+        }
+
+        $role = $userinfo['role'];
+
+        $desired = $this->role_to_groups($role);
+        $this->sync_managed_groups($user_id, $desired);
+    }
+
+    /**
+     * Map an IdP role string to the set of SSO-managed phpBB groups
+     * the user should belong to (beyond REGISTERED).
+     */
+    protected function role_to_groups($role)
+    {
+        switch ($role)
+        {
+            case 'Admin':
+                return ['GLOBAL_MODERATORS', 'ADMINISTRATORS'];
+            case 'Moderator':
+                return ['GLOBAL_MODERATORS'];
+            default:
+                return [];
+        }
+    }
+
+    /**
+     * Idempotently add/remove the user from SSO-managed groups so
+     * their memberships match $desired exactly. Non-managed groups
+     * (e.g. REGISTERED, custom groups) are never touched.
+     */
+    protected function sync_managed_groups($user_id, array $desired)
+    {
+        if (!function_exists('group_user_add'))
+        {
+            include($this->get_phpbb_root_path() . 'includes/functions_user.php');
+        }
+
+        foreach (self::$sso_managed_groups as $group_name)
+        {
+            $group_id = $this->get_group_id_by_name($group_name);
+            if (!$group_id)
+            {
+                continue;
+            }
+
+            $is_member = $this->is_group_member($user_id, $group_id);
+            $should_be_member = in_array($group_name, $desired, true);
+
+            if ($should_be_member && !$is_member)
+            {
+                group_user_add($group_id, [$user_id]);
+            }
+            else if (!$should_be_member && $is_member)
+            {
+                group_user_del($group_id, [$user_id]);
+            }
+        }
+    }
+
+    protected function get_group_id_by_name($group_name)
+    {
+        $sql = 'SELECT group_id FROM ' . GROUPS_TABLE
+             . " WHERE group_name = '" . $this->db->sql_escape($group_name) . "'";
+        $result = $this->db->sql_query($sql);
+        $row = $this->db->sql_fetchrow($result);
+        $this->db->sql_freeresult($result);
+        return $row ? (int) $row['group_id'] : 0;
+    }
+
+    protected function is_group_member($user_id, $group_id)
+    {
+        $sql = 'SELECT user_id FROM ' . USER_GROUP_TABLE
+             . ' WHERE user_id = ' . (int) $user_id
+             . ' AND group_id = ' . (int) $group_id;
+        $result = $this->db->sql_query($sql);
+        $row = $this->db->sql_fetchrow($result);
+        $this->db->sql_freeresult($result);
+        return (bool) $row;
     }
 
     /**

@@ -18,7 +18,9 @@ use crate::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/login", get(login_page).post(login_submit))
-        .route("/register", get(register_page).post(register_submit))
+        // Demo/public mode: disable open self-registration.
+        // Re-enable by uncommenting this route.
+        // .route("/register", get(register_page).post(register_submit))
         .route("/logout", post(logout))
 }
 

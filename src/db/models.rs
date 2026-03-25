@@ -229,6 +229,8 @@ impl std::fmt::Display for DiscStatus {
 #[sqlx(type_name = "user_role_enum")]
 pub enum UserRole {
     User,
+    #[sqlx(rename = "User+")]
+    #[serde(rename = "User+")]
     UserPlus,
     Moderator,
     Admin,
