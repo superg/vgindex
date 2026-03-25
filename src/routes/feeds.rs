@@ -33,15 +33,16 @@ async fn recent_rss(State(state): State<AppState>) -> Response {
     .unwrap_or_default();
 
     let base = &state.config.base_url;
-    let mut xml = String::from(
+    let site = &state.config.domain;
+    let mut xml = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
 <channel>
-<title>vgindex.org - Recent Dumps</title>
-<link>"#,
+<title>{site} - Recent Dumps</title>
+<link>{base}</link>
+<description>Recent disc dumps on {site}</description>
+"#,
     );
-    xml.push_str(base);
-    xml.push_str("</link>\n<description>Recent disc dumps on vgindex.org</description>\n");
 
     for row in &rows {
         xml.push_str("<item>\n<title>");

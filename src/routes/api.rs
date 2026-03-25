@@ -8,7 +8,6 @@ pub fn routes() -> Router<AppState> {
         .route("/api/online", get(online_users))
         .route("/api/online-html", get(online_users_html))
         .route("/api/news", get(news_feed))
-        .merge(crate::auth::oidc::routes())
 }
 
 async fn online_users(State(state): State<AppState>) -> Json<OnlineInfo> {

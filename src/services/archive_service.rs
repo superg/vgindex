@@ -22,7 +22,7 @@ pub async fn get_or_generate_archive(
     }
 
     let data = match archive_type {
-        "dat" => generate_datfile_archive(pool, system).await?,
+        "dat" => generate_datfile_archive(pool, &config.base_url, system).await?,
         "cue" => generate_cuesheet_archive(pool, system).await?,
         "sbi" => generate_sbi_archive(pool, system).await?,
         _ => return Err(AppError::NotFound),
@@ -40,7 +40,7 @@ pub async fn invalidate_cache(config: &Config, system: &str) {
     }
 }
 
-async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<u8>> {
+async fn generate_datfile_archive(pool: &PgPool, base_url: &str, system: &str) -> AppResult<Vec<u8>> {
     let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
@@ -65,12 +65,13 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Vec<
         <name>{}</name>
         <description>{}</description>
         <version>{}</version>
-        <homepage>https://vgindex.org</homepage>
+        <homepage>{}</homepage>
     </header>
 "#,
         html_escape(&sys.name),
         html_escape(&sys.name),
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+        html_escape(base_url),
     );
 
     for disc in &discs {

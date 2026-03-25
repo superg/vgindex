@@ -8,6 +8,7 @@ use axum::{
 };
 
 use crate::auth::middleware::CurrentUser;
+use crate::config::SiteConfig;
 use crate::services::archive_service;
 use crate::AppState;
 
@@ -24,6 +25,7 @@ struct DownloadsTemplate {
     current_user: Option<String>,
     systems: Vec<SystemDownload>,
 }
+impl SiteConfig for DownloadsTemplate {}
 
 struct SystemDownload {
     code: String,

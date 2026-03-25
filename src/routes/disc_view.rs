@@ -7,6 +7,7 @@ use axum::{
 };
 
 use crate::auth::middleware::CurrentUser;
+use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::AppResult;
 use crate::services::disc_service;
@@ -70,6 +71,7 @@ struct DiscViewTemplate {
     header_rows: Vec<HeaderRow>,
     bca_rows: Vec<HeaderRow>,
 }
+impl SiteConfig for DiscViewTemplate {}
 
 struct ProtectionRangeRow {
     num: usize,

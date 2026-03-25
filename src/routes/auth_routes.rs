@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::{header, HeaderMap},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -10,6 +10,7 @@ use serde::Deserialize;
 
 use crate::auth::middleware::CurrentUser;
 use crate::auth::session;
+use crate::config::SiteConfig;
 use crate::error::AppError;
 use crate::services::user_service;
 use crate::AppState;
@@ -26,6 +27,13 @@ pub fn routes() -> Router<AppState> {
 struct LoginTemplate {
     current_user: Option<String>,
     error: Option<String>,
+    return_to: Option<String>,
+}
+impl SiteConfig for LoginTemplate {}
+
+#[derive(Deserialize)]
+struct LoginQuery {
+    return_to: Option<String>,
 }
 
 #[derive(Template)]
@@ -35,11 +43,13 @@ struct RegisterTemplate {
     error: Option<String>,
     success: Option<String>,
 }
+impl SiteConfig for RegisterTemplate {}
 
 #[derive(Deserialize)]
 pub struct LoginForm {
     pub username: String,
     pub password: String,
+    pub return_to: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -50,7 +60,10 @@ pub struct RegisterForm {
     pub password_confirm: String,
 }
 
-async fn login_page(user: CurrentUser) -> impl IntoResponse {
+async fn login_page(
+    user: CurrentUser,
+    Query(query): Query<LoginQuery>,
+) -> impl IntoResponse {
     if user.is_logged_in() {
         return Redirect::to("/").into_response();
     }
@@ -58,6 +71,7 @@ async fn login_page(user: CurrentUser) -> impl IntoResponse {
         LoginTemplate {
             current_user: None,
             error: None,
+            return_to: query.return_to,
         }
         .render()
         .unwrap(),
@@ -89,11 +103,17 @@ async fn login_submit(
             .await
             .unwrap();
 
+            let redirect_target = form
+                .return_to
+                .as_deref()
+                .filter(|u| u.starts_with('/'))
+                .unwrap_or("/");
+
             let cookie = format!(
                 "session_id={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
                 14 * 86400
             );
-            let mut response = Redirect::to("/").into_response();
+            let mut response = Redirect::to(redirect_target).into_response();
             response.headers_mut().insert(
                 header::SET_COOKIE,
                 cookie.parse().unwrap(),
@@ -104,6 +124,7 @@ async fn login_submit(
             LoginTemplate {
                 current_user: None,
                 error: Some(msg),
+                return_to: form.return_to,
             }
             .render()
             .unwrap(),

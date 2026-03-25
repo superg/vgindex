@@ -19,6 +19,7 @@ use crate::config::Config;
 pub struct AppState {
     pub pool: PgPool,
     pub config: Arc<Config>,
+    pub oidc: auth::oidc::OidcProvider,
 }
 
 #[tokio::main]
@@ -33,6 +34,7 @@ async fn main() {
         .init();
 
     let config = Config::from_env();
+    config::init_site_config(&config);
     let pool = db::create_pool(&config.database_url)
         .await
         .expect("Failed to connect to database");
@@ -43,9 +45,12 @@ async fn main() {
 
     std::fs::create_dir_all(&config.data_dir).ok();
 
+    let oidc = auth::oidc::OidcProvider::new();
+
     let state = AppState {
         pool,
         config: Arc::new(config.clone()),
+        oidc,
     };
 
     let app = Router::new()

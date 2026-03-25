@@ -8,6 +8,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::middleware::{RequireAuth, RequireModerator};
+use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::AppResult;
 use crate::services::submission_service;
@@ -39,6 +40,7 @@ struct SubmissionsTemplate {
     page: i64,
     total_pages: i64,
 }
+impl SiteConfig for SubmissionsTemplate {}
 
 #[derive(Template)]
 #[template(path = "submission_detail.html")]
@@ -59,6 +61,7 @@ struct SubmissionDetailTemplate {
     data_json: String,
     dump_log: String,
 }
+impl SiteConfig for SubmissionDetailTemplate {}
 
 async fn submissions_list(
     State(state): State<AppState>,

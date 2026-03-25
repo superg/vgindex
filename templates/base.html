@@ -3,10 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}vgindex{% endblock %} - vgindex.org</title>
+    <title>{% block title %}Home{% endblock %} - {{ self.site_name() }}</title>
     <link rel="stylesheet" href="/static/css/pico.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
-    <link rel="alternate" type="application/rss+xml" title="vgindex.org - Recent Dumps" href="/feeds/recent/rss">
+    <link rel="alternate" type="application/rss+xml" title="{{ self.site_name() }} - Recent Dumps" href="/feeds/recent/rss">
     <script src="/static/js/htmx.min.js" defer></script>
     {% block head %}{% endblock %}
 </head>
@@ -14,7 +14,7 @@
     <header class="container">
         <nav>
             <ul>
-                <li><strong><a href="/">vgindex.org</a></strong></li>
+                <li><strong><a href="/">{{ self.site_name() }}</a></strong></li>
             </ul>
             <ul>
                 <li><a href="/discs/">Discs</a></li>
@@ -23,8 +23,8 @@
                 <li><a href="/disc/submit/">Add Disc</a></li>
                 <li><a href="/submissions/">Submissions</a></li>
                 {% endif %}
-                <li><a href="/forum/">Forum</a></li>
-                <li><a href="/wiki/">Wiki</a></li>
+                <li><a href="{{ self.forum_url() }}">Forum</a></li>
+                <li><a href="{{ self.wiki_url() }}">Wiki</a></li>
             </ul>
             <ul>
                 <li>
