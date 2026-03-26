@@ -145,32 +145,32 @@ write_install_config() {
     cat >/var/www/html/install/install-config.yml <<EOF
 installer:
   admin:
-    name: ${PHPBB_ADMIN_USER}
-    password: ${PHPBB_ADMIN_PASSWORD}
-    email: ${PHPBB_ADMIN_EMAIL}
+    name: "${PHPBB_ADMIN_USER}"
+    password: "${PHPBB_ADMIN_PASSWORD}"
+    email: "${PHPBB_ADMIN_EMAIL}"
 
   board:
     lang: en
-    name: ${PHPBB_BOARD_NAME}
-    description: ${PHPBB_BOARD_DESCRIPTION}
+    name: "${PHPBB_BOARD_NAME}"
+    description: "${PHPBB_BOARD_DESCRIPTION}"
 
   database:
     dbms: postgres
-    dbhost: ${PHPBB_DB_HOST}
+    dbhost: "${PHPBB_DB_HOST}"
     dbport: ${PHPBB_DB_PORT}
-    dbuser: ${PHPBB_DB_USER}
-    dbpasswd: ${PHPBB_DB_PASSWORD}
-    dbname: ${PHPBB_DB_NAME}
-    table_prefix: ${PHPBB_TABLE_PREFIX}
+    dbuser: "${PHPBB_DB_USER}"
+    dbpasswd: "${PHPBB_DB_PASSWORD}"
+    dbname: "${PHPBB_DB_NAME}"
+    table_prefix: "${PHPBB_TABLE_PREFIX}"
 
   email:
     enabled: false
 
   server:
     cookie_secure: ${cookie_secure}
-    server_protocol: ${PHPBB_SERVER_PROTOCOL}
+    server_protocol: "${PHPBB_SERVER_PROTOCOL}"
     force_server_vars: true
-    server_name: ${PHPBB_SERVER_NAME}
+    server_name: "${PHPBB_SERVER_NAME}"
     server_port: ${PHPBB_SERVER_PORT}
     script_path: /
 
@@ -185,12 +185,18 @@ prepare_writable_dirs
 if ! db_initialized; then
     echo "phpBB entrypoint: database not initialized, running CLI installer..."
     write_install_config
-    php /var/www/html/install/phpbbcli.php install --no-interaction --safe-mode /var/www/html/install/install-config.yml
+    echo "phpBB entrypoint: generated install config:"
+    cat /var/www/html/install/install-config.yml
+    php /var/www/html/install/phpbbcli.php install /var/www/html/install/install-config.yml --no-interaction
     rm -f /var/www/html/install/install-config.yml
-    echo "phpBB entrypoint: install completed."
-fi
 
-rm -rf /var/www/html/install
+    if ! db_initialized; then
+        echo "phpBB entrypoint: ERROR — installer exited 0 but tables were not created" >&2
+        exit 1
+    fi
+    echo "phpBB entrypoint: install completed, removing install dir."
+    rm -rf /var/www/html/install
+fi
 
 write_config_php
 configure_oidc_sso
