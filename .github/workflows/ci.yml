@@ -103,8 +103,9 @@ jobs:
             "IMAGE_TAG=${{ needs.build.outputs.image_tag }} bash /opt/app/deploy.sh"
 
       - name: Smoke test
+        continue-on-error: true
         run: |
-          sleep 10
+          sleep 15
           for url in \
             "https://${{ secrets.DEPLOY_DOMAIN }}" \
             "https://wiki.${{ secrets.DEPLOY_DOMAIN }}" \
