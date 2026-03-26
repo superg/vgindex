@@ -1,0 +1,2 @@
+CREATE DATABASE phpbb;
+CREATE DATABASE mediawiki;

@@ -1,0 +1,274 @@
+:root {
+    --status-verified: #2ecc40;
+    --status-good: #0074d9;
+    --status-questionable: #ffdc00;
+    --status-bad: #ff4136;
+}
+
+.container {
+    max-width: 100% !important;
+    padding-left: 2rem;
+    padding-right: 2rem;
+}
+
+
+/* Flag icons — sized to fill table row height without expanding it */
+.flag-icon {
+    height: 1lh;
+    width: auto;
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0 1px;
+    border: 1px solid rgba(0,0,0,0.1);
+}
+
+/* Status dots */
+.status-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+.status-dot.verified { background: var(--status-verified); }
+.status-dot.unverified { background: var(--status-good); }
+.status-dot.questionable { background: var(--status-questionable); }
+.status-dot.bad { background: var(--status-bad); }
+
+/* Scrollable table container with sticky header */
+.disc-scroll-container {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 80vh;
+}
+
+/* Compact tables for disc listing */
+.disc-table {
+    width: 100%;
+}
+.disc-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--pico-background-color, #fff);
+}
+.disc-table td, .disc-table th {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+.disc-table a {
+    text-decoration: none;
+}
+.disc-table a:hover {
+    text-decoration: underline;
+}
+
+/* Shrink-to-fit columns: Region(1), System(3), Status(7) */
+.disc-table th:nth-child(1),
+.disc-table td:nth-child(1),
+.disc-table th:nth-child(3),
+.disc-table td:nth-child(3),
+.disc-table th:nth-child(7),
+.disc-table td:nth-child(7) {
+    width: 1%;
+    white-space: nowrap;
+}
+
+/* Ellipsis truncation for Edition and Serial */
+.disc-table .truncate {
+    max-width: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Striped table rows for readability */
+table.striped tbody tr:nth-child(even) {
+    background: rgba(0,0,0,0.03);
+}
+
+/* Filter panel — compact inline grid layout */
+#filter-form {
+    display: inline-grid;
+    grid-template-columns: auto auto;
+    align-items: baseline;
+    gap: 0.25rem 0.5rem;
+    margin-bottom: 1rem;
+}
+#filter-form label {
+    display: contents;
+    font-size: 0.75rem;
+}
+#filter-form label span {
+    text-align: right;
+}
+#filter-form select {
+    font-size: 0.75rem;
+    margin-bottom: 0;
+    padding: 0.25rem 0.4rem;
+}
+
+/* Letter picker */
+.letter-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+}
+.letter-picker a {
+    padding: 0.15rem 0.5rem;
+    text-decoration: none;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    transition: background 0.15s;
+}
+.letter-picker a:hover {
+    background: var(--pico-secondary-background);
+}
+.letter-picker a.active {
+    background: var(--pico-primary);
+    color: var(--pico-primary-inverse);
+    border-color: var(--pico-primary);
+}
+
+/* Hex dump */
+.hex-dump {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.8rem;
+    white-space: pre;
+    overflow-x: auto;
+    background: var(--pico-code-background-color);
+    padding: 0.75rem;
+    border-radius: 4px;
+    line-height: 1.4;
+}
+
+/* SBI highlight */
+.sbi-highlight {
+    color: var(--status-bad);
+    font-weight: bold;
+}
+
+/* Disc view page — match disc list compact font */
+.disc-view {
+    font-size: 0.75rem;
+}
+.disc-view h2 { font-size: 1.25rem; }
+.disc-view h3 { font-size: 1rem; }
+.disc-view h4 { font-size: 0.875rem; }
+.disc-view table td,
+.disc-view table th {
+    padding: 0.25rem 0.5rem;
+}
+.disc-view table td:first-child {
+    text-align: right;
+    vertical-align: top;
+    white-space: nowrap;
+    width: 1%;
+}
+
+/* Preserve newlines in multiline text blocks */
+.pre-wrap { white-space: pre-wrap; }
+
+/* Foreign title — sits directly under main h2, slightly smaller */
+.disc-view h2.foreign-title {
+    margin-top: -0.75rem;
+    font-size: 1rem;
+}
+
+/* Ring code table */
+.ring-table th,
+.ring-table td {
+    width: auto;
+    white-space: nowrap;
+}
+.ring-group-start > td {
+    border-top: 2px solid var(--pico-muted-border-color);
+}
+.ring-entry-even > td {
+    background: rgba(0,0,0,0.04);
+}
+.ring-table .entry-num {
+    vertical-align: middle !important;
+    text-align: center;
+    font-weight: 600;
+}
+
+/* Quick search in nav */
+nav .quick-search {
+    display: flex;
+    align-items: center;
+    margin: 0;
+}
+nav .quick-search input[type="text"] {
+    margin: 0;
+    padding: 0.3rem 0.5rem;
+    height: auto;
+    font-size: 0.85rem;
+    width: 360px;
+}
+
+/* Recent dumps table */
+.recent-dumps td {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+/* Submission status colors */
+.submissions-table td, .submissions-table th {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+.submissions-table .status-pending { color: #f39c12; font-weight: 600; }
+.submissions-table .status-approved { color: var(--status-verified); font-weight: 600; }
+.submissions-table .status-denied { color: var(--status-bad); font-weight: 600; }
+
+/* Diff view */
+.diff-add { background: #e6ffec; }
+.diff-remove { background: #ffebe9; }
+
+/* Responsive nav adjustments */
+@media (max-width: 768px) {
+    nav ul {
+        flex-wrap: wrap;
+    }
+    nav .quick-search input[type="text"] {
+        width: 200px;
+    }
+    .disc-table {
+        font-size: 0.75rem;
+    }
+}
+
+/* Fieldset styling for forms */
+fieldset {
+    margin-bottom: 1rem;
+}
+fieldset legend {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+/* Code blocks in submission detail */
+pre code {
+    font-size: 0.8rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* Footer online users */
+#online-users a {
+    text-decoration: none;
+}
+#online-users a:hover {
+    text-decoration: underline;
+}
+
+/* HTMX loading indicator */
+.htmx-indicator {
+    display: none;
+}
+.htmx-request .htmx-indicator {
+    display: inline;
+}

@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="disc-view">
+<h2>{{ title }}</h2>
+{% if !title_foreign.is_empty() %}
+<h2 class="foreign-title">{{ title_foreign }}</h2>
+{% endif %}
+
+<div class="grid">
+    <section>
+        <h3>Disc</h3>
+        <table>
+            <tr><td><strong>System</strong></td><td><a href="/discs/?system={{ system_code }}">{{ system_name }}</a></td></tr>
+            <tr><td><strong>Media</strong></td><td>{{ media_type }}</td></tr>
+            <tr><td><strong>Category</strong></td><td>{{ category }}</td></tr>
+            {% if !regions.is_empty() %}
+            <tr><td><strong>{% if regions.len() == 1 %}Region{% else %}Regions{% endif %}</strong></td><td>
+                {% for r in regions %}
+                <a href="/discs/?region={{ r.region_code }}"><img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}"></a>
+                {% endfor %}
+            </td></tr>
+            {% endif %}
+            {% if !lang_flags.is_empty() %}
+            <tr><td><strong>{% if lang_flags.len() == 1 %}Language{% else %}Languages{% endif %}</strong></td><td>
+                {% for lang in lang_flags %}
+                <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
+                {% endfor %}
+            </td></tr>
+            {% endif %}
+            {% if !serial.is_empty() %}
+            <tr><td><strong>{% if serial_count == 1 %}Serial{% else %}Serials{% endif %}</strong></td><td>{{ serial|safe }}</td></tr>
+            {% endif %}
+            {% if !version.is_empty() %}
+            <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
+            {% endif %}
+            {% if !edition.is_empty() %}
+            <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td>{{ edition|safe }}</td></tr>
+            {% endif %}
+            {% if !barcode.is_empty() %}
+            <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{{ barcode|safe }}</td></tr>
+            {% endif %}
+            {% if !layerbreaks.is_empty() %}
+            <tr><td><strong>Layerbreak</strong></td><td>{{ layerbreaks }}</td></tr>
+            {% endif %}
+            {% if !disc_key.is_empty() %}
+            <tr><td><strong>Disc Key</strong></td><td>{{ disc_key }}</td></tr>
+            {% endif %}
+            {% if !disc_id_hex.is_empty() %}
+            <tr><td><strong>Disc ID</strong></td><td>{{ disc_id_hex }}</td></tr>
+            {% endif %}
+            {% if !error_count.is_empty() %}
+            <tr><td><strong>Errors</strong></td><td>{{ error_count }}</td></tr>
+            {% endif %}
+            {% if !exe_date.is_empty() %}
+            <tr><td><strong>EXE Date</strong></td><td>{{ exe_date }}</td></tr>
+            {% endif %}
+            {% if !edc_display.is_empty() %}
+            <tr><td><strong>EDC</strong></td><td>{{ edc_display }}</td></tr>
+            {% endif %}
+        </table>
+    </section>
+
+    <section>
+        <h3>Dump</h3>
+        <table>
+            <tr>
+                <td><strong>Status</strong></td>
+                <td>{{ status_emoji }} {{ status_display }}</td>
+            </tr>
+            {% if !created_at.is_empty() %}
+            <tr><td><strong>Added</strong></td><td>{{ created_at }}</td></tr>
+            {% endif %}
+            {% if !updated_at.is_empty() %}
+            <tr><td><strong>Modified</strong></td><td>{{ updated_at }}</td></tr>
+            {% endif %}
+            <tr>
+                <td><strong>{% if dumper_count <= 1 %}Dumper{% else %}Dumpers{% endif %}</strong></td>
+                <td>{{ dumpers_display|safe }}</td>
+            </tr>
+        </table>
+    </section>
+
+    {% if !protection.is_empty() || !contents.is_empty() || !comments.is_empty() %}
+    <section>
+        {% if !protection.is_empty() %}
+        <h3>Protection</h3>
+        <p class="pre-wrap">{{ protection }}</p>
+        {% endif %}
+
+        {% if !comments.is_empty() %}
+        <h3>Comments</h3>
+        <p class="pre-wrap">{{ comments|safe }}</p>
+        {% endif %}
+
+        {% if !contents.is_empty() %}
+        <details>
+            <summary><h3>Contents</h3></summary>
+            <p class="pre-wrap">{{ contents|safe }}</p>
+        </details>
+        {% endif %}
+    </section>
+    {% endif %}
+</div>
+
+{% if !ring_rows.is_empty() %}
+<section>
+    <h3>Rings</h3>
+    <div style="overflow-x: auto;">
+    <table class="disc-table ring-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                {% if ring_vis.layer %}<th>L</th>{% endif %}
+                {% if ring_vis.mastering_code %}<th>Mastering Code</th>{% endif %}
+                {% if ring_vis.mastering_sid %}<th>Mastering SID</th>{% endif %}
+                {% if ring_vis.mould_sids %}<th>Mould SID(s)</th>{% endif %}
+                {% if ring_vis.additional_moulds %}<th>Additional Mould(s)</th>{% endif %}
+                {% if ring_vis.toolstamps %}<th>Toolstamp(s)</th>{% endif %}
+                {% if ring_vis.offset_value %}<th>Offset</th>{% endif %}
+                {% if ring_vis.sample_data_start %}<th>Sample Start</th>{% endif %}
+                {% if ring_vis.comment %}<th>Comment</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in ring_rows %}
+            <tr class="{% if row.first_in_entry && row.entry_num > 1 %}ring-group-start{% endif %}{% if row.entry_even %} ring-entry-even{% endif %}">
+                {% if row.entry_rowspan > 0 %}<td class="entry-num"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
+                {% if ring_vis.layer %}<td>{{ row.layer }}</td>{% endif %}
+                {% if ring_vis.mastering_code %}<td>{{ row.mastering_code }}</td>{% endif %}
+                {% if ring_vis.mastering_sid %}<td>{{ row.mastering_sid }}</td>{% endif %}
+                {% if ring_vis.mould_sids %}<td>{{ row.mould_sids }}</td>{% endif %}
+                {% if ring_vis.additional_moulds %}<td>{{ row.additional_moulds }}</td>{% endif %}
+                {% if ring_vis.toolstamps %}<td>{{ row.toolstamps }}</td>{% endif %}
+                {% if ring_vis.offset_value %}<td>{{ row.offset_value }}</td>{% endif %}
+                {% if ring_vis.sample_data_start %}<td>{{ row.sample_data_start }}</td>{% endif %}
+                {% if ring_vis.comment %}<td>{{ row.comment }}</td>{% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+{% if !pvd_rows.is_empty() %}
+<section>
+    <h3>PVD</h3>
+    <div style="overflow-x: auto;">
+    <table class="striped" style="width: auto; white-space: nowrap;">
+        <thead>
+            <tr><th>Record / Entry</th><th>Contents</th><th>Date</th><th>Time</th><th>GMT</th></tr>
+        </thead>
+        <tbody>
+            {% for row in pvd_rows %}
+            <tr>
+                <td>{{ row.label }}</td>
+                <td><code>{{ row.hex_contents }}</code></td>
+                <td>{{ row.date }}</td>
+                <td>{{ row.time }}</td>
+                <td>{{ row.gmt }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+{% if !protection_ranges.is_empty() %}
+<section>
+    <h3>Protection</h3>
+    <div style="overflow-x: auto;">
+    <table class="striped" style="width: auto; white-space: nowrap;">
+        <thead>
+            <tr><th>#</th><th>Start</th><th>End</th></tr>
+        </thead>
+        <tbody>
+            {% for r in protection_ranges %}
+            <tr>
+                <td>{{ r.num }}</td>
+                <td>{{ r.start }}</td>
+                <td>{{ r.end }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+{% if !pic_rows.is_empty() %}
+<section>
+    <h3>PIC</h3>
+    <div style="overflow-x: auto;">
+    <table class="striped" style="width: auto; white-space: nowrap;">
+        <thead>
+            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+        </thead>
+        <tbody>
+            {% for row in pic_rows %}
+            <tr>
+                <td><code>{{ row.offset }}</code></td>
+                <td><code>{{ row.hex_contents }}</code></td>
+                <td><code>{{ row.ascii }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+{% if !sbi_rows.is_empty() %}
+<section>
+    <h3>SBI</h3>
+    <div style="overflow-x: auto;">
+    <table class="striped" style="width: auto; white-space: nowrap;">
+        <thead>
+            <tr><th>Sector</th><th>MSF</th><th>Contents</th><th>XOR</th></tr>
+        </thead>
+        <tbody>
+            {% for row in sbi_rows %}
+            <tr>
+                <td>{{ row.sector }}</td>
+                <td><code>{{ row.msf }}</code></td>
+                <td><code>{{ row.contents|safe }}</code></td>
+                <td><code>{{ row.xor }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p><a href="/disc/{{ disc_id }}/sbi">Download .sbi</a></p>
+</section>
+{% endif %}
+
+{% if !header_rows.is_empty() %}
+<section>
+    <h3>Header</h3>
+    <div style="overflow-x: auto;">
+    <table class="striped" style="width: auto; white-space: nowrap;">
+        <thead>
+            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+        </thead>
+        <tbody>
+            {% for row in header_rows %}
+            <tr>
+                <td><code>{{ row.offset }}</code></td>
+                <td><code>{{ row.hex_contents }}</code></td>
+                <td><code>{{ row.ascii }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+{% if !bca_rows.is_empty() %}
+<section>
+    <h3>BCA</h3>
+    <div style="overflow-x: auto;">
+    <table class="striped" style="width: auto; white-space: nowrap;">
+        <thead>
+            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+        </thead>
+        <tbody>
+            {% for row in bca_rows %}
+            <tr>
+                <td><code>{{ row.offset }}</code></td>
+                <td><code>{{ row.hex_contents }}</code></td>
+                <td><code>{{ row.ascii }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+{% if can_edit %}
+<p><a href="/disc/{{ disc_id }}/edit/" role="button" class="outline">Edit this disc</a></p>
+{% endif %}
+
+<section>
+    <h3>Files</h3>
+    <div style="overflow-x: auto;">
+    <table class="disc-table striped">
+        <thead>
+            <tr><th style="text-align: left;">Name</th><th>Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th></tr>
+        </thead>
+        <tbody>
+            {% for file in files %}
+            <tr>
+                <td style="text-align: left;">{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.name }}</a>{% else %}{{ file.name }}{% endif %}</td>
+                <td>{{ file.size }}</td>
+                <td><code>{{ file.crc32 }}</code></td>
+                <td><code>{{ file.md5 }}</code></td>
+                <td><code>{{ file.sha1 }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+</div>
+{% endblock %}

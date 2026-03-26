@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Home{% endblock %} - {{ self.site_name() }}</title>
+    <link rel="stylesheet" href="/static/css/pico.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="alternate" type="application/rss+xml" title="{{ self.site_name() }} - Recent Dumps" href="/feeds/recent/rss">
+    <script src="/static/js/htmx.min.js" defer></script>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <header class="container">
+        <nav>
+            <ul>
+                <li><strong><a href="/">{{ self.site_name() }}</a></strong></li>
+            </ul>
+            <ul>
+                <li><a href="/discs/">Discs</a></li>
+                <li><a href="/downloads/">Downloads</a></li>
+                {% if current_user.is_some() %}
+                <li><a href="/disc/submit/">Add Disc</a></li>
+                <li><a href="/submissions/">Submissions</a></li>
+                {% endif %}
+                <li><a href="{{ self.forum_url() }}">Forum</a></li>
+                <li><a href="{{ self.wiki_url() }}">Wiki</a></li>
+            </ul>
+            <ul>
+                <li>
+                    <form class="quick-search" method="get" action="/discs/">
+                        <input type="text" name="q" placeholder="Search discs..."
+                               aria-label="Search">
+                    </form>
+                </li>
+                {% match current_user %}
+                {% when Some with (user) %}
+                <li>{{ user }}</li>
+                <li><form method="post" action="/logout" style="margin:0"><button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;margin:0">Logout</button></form></li>
+                {% when None %}
+                <li><a href="/login" role="button" class="outline">Login</a></li>
+                {# Demo/public mode: disable self-registration link.
+                   Re-enable by uncommenting the line below.
+                <li><a href="/register" role="button">Register</a></li>
+                #}
+                {% endmatch %}
+            </ul>
+        </nav>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="container">
+        <hr>
+        <p>
+            <small id="online-users"
+                   hx-get="/api/online-html"
+                   hx-trigger="load, every 60s"
+                   hx-swap="innerHTML">
+            </small>
+        </p>
+    </footer>
+</body>
+</html>

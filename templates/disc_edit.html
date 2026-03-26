@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Edit: {{ disc_title }}{% endblock %}
+
+{% block content %}
+<h2>Edit: {{ disc_title }}</h2>
+
+<form method="post" action="/disc/{{ disc_id }}/edit/">
+    <fieldset>
+        <legend>Common Info</legend>
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" value="{{ disc_title }}" required>
+
+        <label for="category">Category</label>
+        <select id="category" name="category">
+            {% for cat in categories %}
+            <option value="{{ cat.value }}" {% if cat.selected %}selected{% endif %}>{{ cat.value }}</option>
+            {% endfor %}
+        </select>
+
+        <fieldset>
+            <legend>Regions</legend>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+            {% for r in regions %}
+            <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
+                <input type="checkbox" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
+                <img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}">
+            </label>
+            {% endfor %}
+            </div>
+        </fieldset>
+
+        <fieldset>
+            <legend>Languages</legend>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+            {% for lang in languages %}
+            <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
+                <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}>
+                <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
+            </label>
+            {% endfor %}
+            </div>
+        </fieldset>
+
+        {% if show_barcode %}
+        <label for="barcode">Barcode</label>
+        <input type="text" id="barcode" name="barcode" value="{{ barcode }}">
+        {% endif %}
+
+        <label for="comments">Comments</label>
+        <textarea id="comments" name="comments" rows="3">{{ comments }}</textarea>
+    </fieldset>
+
+    {% if show_version || show_edition %}
+    <fieldset>
+        <legend>{% if show_version %}Version{% endif %}{% if show_version && show_edition %} / {% endif %}{% if show_edition %}Edition{% endif %}</legend>
+        <div class="grid">
+            {% if show_version %}
+            <label>Version <input type="text" name="version" value="{{ version }}"></label>
+            {% endif %}
+            {% if show_edition %}
+            <label>Edition <input type="text" name="edition" value="{{ edition }}"></label>
+            {% endif %}
+        </div>
+    </fieldset>
+    {% endif %}
+
+    {% if show_date_field %}
+    <label for="exe_date">EXE Date</label>
+    <input type="date" id="exe_date" name="exe_date" value="{{ exe_date }}">
+    {% endif %}
+
+    {% if show_edc_field %}
+    <label for="edc">EDC</label>
+    <select id="edc" name="edc">
+        <option value="">Unknown</option>
+        <option value="true" {% if edc_value == "true" %}selected{% endif %}>Yes</option>
+        <option value="false" {% if edc_value == "false" %}selected{% endif %}>No</option>
+    </select>
+    {% endif %}
+
+    {% if show_protection %}
+    <label for="protection">Protection</label>
+    <input type="text" id="protection" name="protection" value="{{ protection }}">
+    {% endif %}
+
+    {% if show_error_count %}
+    <label for="error_count">Error Count</label>
+    <input type="number" id="error_count" name="error_count" value="{{ error_count }}">
+    {% endif %}
+
+    {% if show_pvd %}
+    <label for="pvd">PVD</label>
+    <textarea id="pvd" name="pvd" rows="6" class="hex-dump-input" spellcheck="false">{{ pvd_hex }}</textarea>
+    {% endif %}
+
+    {% if show_header %}
+    <label for="header">Header</label>
+    <textarea id="header" name="header" rows="16" class="hex-dump-input" spellcheck="false">{{ header_hex }}</textarea>
+    {% endif %}
+
+    <button type="submit">Save Changes</button>
+</form>
+{% endblock %}
