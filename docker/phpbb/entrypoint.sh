@@ -141,6 +141,7 @@ write_install_config() {
         cookie_secure=false
     fi
 
+    mkdir -p /var/www/html/install
     cat >/var/www/html/install/install-config.yml <<EOF
 installer:
   admin:
