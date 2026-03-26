@@ -1,0 +1,37 @@
+[package]
+name = "vgindex"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.8", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid", "json"] }
+askama = { version = "0.12", features = ["with-axum"] }
+askama_axum = "0.4"
+argon2 = "0.5"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+base64 = "0.22"
+hex = "0.4"
+sha2 = "0.10"
+hmac = "0.12"
+cookie = "0.18"
+http = "1"
+crc32fast = "1"
+md-5 = "0.10"
+sha1 = "0.10"
+crc = "3.4.0"
+jsonwebtoken = "8"
+rsa = "0.9"
+urlencoding = "2"

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Discs{% endblock %}
+
+{% block content %}
+{% if !filter_dumper_name.is_empty() %}
+<h2>Discs dumped by {{ filter_dumper_name }}</h2>
+{% else %}
+<h2>Disc Database</h2>
+{% endif %}
+
+<details open>
+    <summary>Filters</summary>
+    <form method="get" action="/discs/" id="filter-form">
+        <label>
+            <span>System</span>
+            <select name="system" onchange="this.form.submit()">
+                <option value="">All Systems</option>
+                {% for sys in systems %}
+                <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Region</span>
+            <select name="region" onchange="this.form.submit()">
+                <option value="">All Regions</option>
+                {% for r in regions %}
+                <option value="{{ r.code }}" {% if r.selected %}selected{% endif %}>{{ r.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Status</span>
+            <select name="status" onchange="this.form.submit()">
+                <option value="">All Statuses (🟢🔵🟡)</option>
+                <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🔵🟡🔴)</option>
+                <option value="Verified" {% if filter_status == "Verified" %}selected{% endif %}>Verified (🟢)</option>
+                <option value="Unverified" {% if filter_status == "Unverified" %}selected{% endif %}>Unverified (🔵)</option>
+                <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable (🟡)</option>
+                <option value="Disabled" {% if filter_status == "Disabled" %}selected{% endif %}>Disabled (🔴)</option>
+            </select>
+        </label>
+        <input type="hidden" name="q" value="{{ filter_q }}">
+        <input type="hidden" name="sort" value="{{ sort_column }}">
+        <input type="hidden" name="order" value="{{ sort_order }}">
+        {% if !filter_dumper.is_empty() %}
+        <input type="hidden" name="dumper" value="{{ filter_dumper }}">
+        {% endif %}
+    </form>
+
+    <div class="letter-picker">
+        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
+        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter=%23{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
+        {% for c in letters %}
+        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ c.0 }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
+        {% endfor %}
+    </div>
+</details>
+
+<p><small>{{ total_count }} disc(s) found.</small></p>
+
+<div id="disc-results">
+    {% if total_pages > 1 %}
+    <nav aria-label="Pagination">
+        <ul>
+            {% if page > 1 %}
+            <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">&laquo; Previous</a></li>
+            {% endif %}
+            <li>Page {{ page }} of {{ total_pages }}</li>
+            {% if page < total_pages %}
+            <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Next &raquo;</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+
+    <div class="disc-scroll-container">
+    <table class="disc-table striped">
+        <thead>
+            <tr>
+                <th><a href="/discs/?sort=region&amp;order={{ next_region_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=system&amp;order={{ next_system_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=edition&amp;order={{ next_edition_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Edition{% if sort_column == "edition" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=language&amp;order={{ next_language_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=serial&amp;order={{ next_serial_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Serial{% if sort_column == "serial" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=status&amp;order={{ next_status_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for disc in discs %}
+            <tr>
+                <td>
+                    {% for rf in disc.region_flags %}
+                    <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg"
+                         title="{{ rf.name }}"
+                         alt="{{ rf.name }}">
+                    {% endfor %}
+                </td>
+                <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
+                <td>{{ disc.system_code }}</td>
+                <td class="truncate" title="{{ disc.edition_display }}">{{ disc.edition_display }}</td>
+                <td>
+                    {% for lang in disc.language_flags %}
+                    <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg"
+                         title="{{ lang.name }}" alt="{{ lang.name }}">
+                    {% endfor %}
+                </td>
+                <td class="truncate" title="{{ disc.serial }}"><small>{{ disc.serial }}</small></td>
+                <td title="{{ disc.status_display }}">{{ disc.status_emoji }}</td>
+            </tr>
+            {% endfor %}
+            {% if discs.is_empty() %}
+            <tr><td colspan="7">No discs found.</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <nav aria-label="Pagination">
+        <ul>
+            {% if page > 1 %}
+            <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">&laquo; Previous</a></li>
+            {% endif %}
+            <li>Page {{ page }} of {{ total_pages }}</li>
+            {% if page < total_pages %}
+            <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Next &raquo;</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

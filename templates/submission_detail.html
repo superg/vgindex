@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Submission #{{ sub_id }}{% endblock %}
+
+{% block content %}
+<h2>Submission #{{ sub_id }}</h2>
+
+<table>
+    <tr><td><strong>Type</strong></td><td>{{ sub_type }}</td></tr>
+    <tr><td><strong>Submitter</strong></td><td>{{ submitter_name }}</td></tr>
+    <tr><td><strong>Status</strong></td><td><span class="{{ status_class }}">{{ status_display }}</span></td></tr>
+    <tr><td><strong>Date</strong></td><td>{{ created_at }}</td></tr>
+    {% if !disc_title.is_empty() %}
+    <tr><td><strong>Disc</strong></td><td>
+        {% if has_target_disc %}
+        <a href="/disc/{{ target_disc_id }}/">{{ disc_title }}</a>
+        {% else %}
+        {{ disc_title }} (new)
+        {% endif %}
+    </td></tr>
+    {% endif %}
+    {% if !review_comment.is_empty() %}
+    <tr><td><strong>Review Comment</strong></td><td>{{ review_comment }}</td></tr>
+    {% endif %}
+</table>
+
+<h3>Proposed Data</h3>
+<pre><code>{{ data_json }}</code></pre>
+
+{% if !dump_log.is_empty() %}
+<h3>Dump Log</h3>
+<pre><code>{{ dump_log }}</code></pre>
+{% endif %}
+
+{% if is_moderator && is_pending %}
+<h3>Review</h3>
+<form method="post" action="/submissions/{{ sub_id }}/review">
+    <label for="comment">Comment (optional)</label>
+    <textarea id="comment" name="comment" rows="3"></textarea>
+    <div class="grid">
+        <button type="submit" name="action" value="approve" class="contrast">Approve</button>
+        <button type="submit" name="action" value="deny" class="secondary">Deny</button>
+    </div>
+</form>
+{% endif %}
+{% endblock %}

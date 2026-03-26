@@ -1,0 +1,7 @@
+/target
+.env
+*.swp
+*.swo
+*~
+.venv/
+__pycache__/
