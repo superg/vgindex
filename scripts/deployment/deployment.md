@@ -24,9 +24,10 @@ Each image is tagged with `sha-<commit>` (immutable) and `main` (moving).
 bash scripts/deployment/setup-deploy-user.sh
 ```
 
-2. Log in to the container registry on the server so `docker compose pull` can fetch images:
+2. Log in to the container registry **as the deploy user** so `docker compose pull` can fetch images:
 
 ```bash
+su - deploy
 echo "<TOKEN>" | docker login <registry> -u <user> --password-stdin
 ```
 
