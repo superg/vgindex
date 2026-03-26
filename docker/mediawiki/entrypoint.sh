@@ -1,15 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 
-: "${MEDIAWIKI_DB_HOST:=postgres}"
-: "${MEDIAWIKI_DB_PORT:=5432}"
-: "${MEDIAWIKI_DB_NAME:=mediawiki}"
-: "${MEDIAWIKI_DB_USER:=vgindex}"
-: "${MEDIAWIKI_DB_PASSWORD:=changeme}"
-: "${MEDIAWIKI_ADMIN_USER:=admin}"
-: "${MEDIAWIKI_ADMIN_PASSWORD:=changeme}"
-: "${SITE_DOMAIN:=localhost}"
-: "${HTTPS_PORT:=8443}"
+required_vars=(
+    MEDIAWIKI_DB_HOST MEDIAWIKI_DB_PORT MEDIAWIKI_DB_NAME
+    MEDIAWIKI_DB_USER MEDIAWIKI_DB_PASSWORD
+    MEDIAWIKI_ADMIN_USER MEDIAWIKI_ADMIN_PASSWORD
+    SITE_DOMAIN HTTPS_PORT
+)
+missing=()
+for var in "${required_vars[@]}"; do
+    if [ -z "${!var+x}" ]; then
+        missing+=("$var")
+    fi
+done
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "MediaWiki entrypoint: ERROR - missing required environment variables: ${missing[*]}" >&2
+    exit 1
+fi
 
 if [ "$HTTPS_PORT" = "443" ]; then
     MEDIAWIKI_SERVER="https://wiki.${SITE_DOMAIN}"

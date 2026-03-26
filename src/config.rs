@@ -1,6 +1,8 @@
 use std::env;
 use std::sync::OnceLock;
 
+pub const DATA_DIR: &str = "./data";
+
 static SITE_NAME: OnceLock<String> = OnceLock::new();
 static WIKI_URL: OnceLock<String> = OnceLock::new();
 static FORUM_URL: OnceLock<String> = OnceLock::new();
@@ -28,17 +30,10 @@ pub struct Config {
     pub domain: String,
     pub https_port: u16,
     pub database_url: String,
-    pub secret_key: String,
     pub base_url: String,
     pub wiki_url: String,
     pub forum_url: String,
     pub port: u16,
-    pub smtp_host: Option<String>,
-    pub smtp_port: u16,
-    pub smtp_user: Option<String>,
-    pub smtp_password: Option<String>,
-    pub smtp_from: Option<String>,
-    pub data_dir: String,
     /// Used as the OIDC issuer and base for back-channel endpoints (token,
     /// userinfo, jwks). Defaults to `base_url`. In Docker set this to the
     /// internal service URL (e.g. `http://app:3000`) so MediaWiki/phpBB can
@@ -56,11 +51,11 @@ fn public_url(subdomain: &str, domain: &str, port: u16) -> String {
 
 impl Config {
     pub fn from_env() -> Self {
-        let domain = env::var("DOMAIN").unwrap_or_else(|_| "localhost".into());
+        let domain = env::var("DOMAIN").expect("DOMAIN must be set");
         let https_port: u16 = env::var("HTTPS_PORT")
-            .ok()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(8443);
+            .expect("HTTPS_PORT must be set")
+            .parse()
+            .expect("HTTPS_PORT must be a valid port number");
 
         let base_url = public_url("www", &domain, https_port);
         let wiki_url = public_url("wiki", &domain, https_port);
@@ -74,23 +69,18 @@ impl Config {
             base_url,
             wiki_url,
             forum_url,
-            database_url: env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgres://vgindex:changeme@localhost:5432/vgindex".into()),
-            secret_key: env::var("APP_SECRET_KEY")
-                .unwrap_or_else(|_| "devsecretkey0000000000000000000000000000000000000000000000000000".into()),
+            database_url: format!(
+                "postgres://{}:{}@{}:{}/{}",
+                env::var("POSTGRES_USER").expect("POSTGRES_USER must be set"),
+                env::var("POSTGRES_PASSWORD").expect("POSTGRES_PASSWORD must be set"),
+                env::var("POSTGRES_HOST").unwrap_or_else(|_| "localhost".into()),
+                env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".into()),
+                env::var("POSTGRES_DB").expect("POSTGRES_DB must be set"),
+            ),
             port: env::var("APP_PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(3000),
-            smtp_host: env::var("SMTP_HOST").ok().filter(|s| !s.is_empty()),
-            smtp_port: env::var("SMTP_PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(587),
-            smtp_user: env::var("SMTP_USER").ok().filter(|s| !s.is_empty()),
-            smtp_password: env::var("SMTP_PASSWORD").ok().filter(|s| !s.is_empty()),
-            smtp_from: env::var("SMTP_FROM").ok().filter(|s| !s.is_empty()),
-            data_dir: env::var("DATA_DIR").unwrap_or_else(|_| "./data".into()),
+                .expect("APP_PORT must be set")
+                .parse()
+                .expect("APP_PORT must be a valid port number"),
         }
     }
 }

@@ -1,23 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
-: "${PHPBB_DB_HOST:=postgres}"
-: "${PHPBB_DB_PORT:=5432}"
-: "${PHPBB_DB_NAME:=phpbb}"
-: "${PHPBB_DB_USER:=vgindex}"
-: "${PHPBB_DB_PASSWORD:=changeme}"
-: "${PHPBB_TABLE_PREFIX:=phpbb_}"
-: "${PHPBB_ADMIN_USER:=admin}"
-: "${PHPBB_ADMIN_PASSWORD:=changeme}"
-: "${PHPBB_ADMIN_EMAIL:=admin@example.com}"
-: "${PHPBB_BOARD_NAME:=phpBB Forum}"
-: "${PHPBB_BOARD_DESCRIPTION:=Forum}"
-: "${PHPBB_OIDC_CLIENT_ID:=phpbb-client}"
-: "${PHPBB_OIDC_CLIENT_SECRET:=change-this-secret-phpbb}"
-: "${APP_DB_NAME:=vgindex}"
-: "${OIDC_ISSUER_URL:=http://app:3000}"
-: "${DOMAIN:=localhost}"
-: "${HTTPS_PORT:=8443}"
+required_vars=(
+    PHPBB_DB_HOST PHPBB_DB_PORT PHPBB_DB_NAME PHPBB_DB_USER PHPBB_DB_PASSWORD
+    PHPBB_TABLE_PREFIX PHPBB_ADMIN_USER PHPBB_ADMIN_PASSWORD PHPBB_ADMIN_EMAIL
+    PHPBB_BOARD_NAME PHPBB_BOARD_DESCRIPTION
+    PHPBB_OIDC_CLIENT_ID PHPBB_OIDC_CLIENT_SECRET
+    POSTGRES_DB OIDC_ISSUER_URL DOMAIN HTTPS_PORT
+)
+missing=()
+for var in "${required_vars[@]}"; do
+    if [ -z "${!var+x}" ]; then
+        missing+=("$var")
+    fi
+done
+if [ ${#missing[@]} -gt 0 ]; then
+    echo "phpBB entrypoint: ERROR - missing required environment variables: ${missing[*]}" >&2
+    exit 1
+fi
+
 : "${PHPBB_SERVER_NAME:=forum.${DOMAIN}}"
 : "${PHPBB_SERVER_PORT:=${HTTPS_PORT}}"
 : "${PHPBB_SERVER_PROTOCOL:=https://}"
@@ -122,14 +123,14 @@ configure_oidc_sso() {
         -h "$PHPBB_DB_HOST" \
         -p "$PHPBB_DB_PORT" \
         -U "$PHPBB_DB_USER" \
-        -d "$APP_DB_NAME" \
+        -d "$POSTGRES_DB" \
         -v ON_ERROR_STOP=1 \
         -c "INSERT INTO oauth_clients (client_id, client_secret, redirect_uri, name) VALUES ('$client_id_sql', '$client_secret_sql', '$redirect_uri_sql', 'phpBB Forum')
             ON CONFLICT (client_id) DO UPDATE SET
               client_secret = EXCLUDED.client_secret,
               redirect_uri = EXCLUDED.redirect_uri,
               name = EXCLUDED.name;" >/dev/null 2>&1; then
-        echo "phpBB entrypoint: warning - could not upsert oauth client in app DB (${APP_DB_NAME})."
+        echo "phpBB entrypoint: warning - could not upsert oauth client in app DB (${POSTGRES_DB})."
     fi
 }
 

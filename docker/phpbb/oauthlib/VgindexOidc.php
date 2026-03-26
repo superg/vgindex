@@ -92,8 +92,10 @@ class VgindexOidc extends AbstractService
             return rtrim($explicit, '/');
         }
 
-        $domain = getenv('DOMAIN') ?: 'localhost';
-        $port = getenv('HTTPS_PORT') ?: '8443';
+        $domain = getenv('DOMAIN');
+        if (!$domain) { throw new \RuntimeException('DOMAIN env var is not set'); }
+        $port = getenv('HTTPS_PORT');
+        if (!$port) { throw new \RuntimeException('HTTPS_PORT env var is not set'); }
         if ((string) $port === '443')
         {
             return 'https://www.' . $domain;
@@ -106,7 +108,7 @@ class VgindexOidc extends AbstractService
         $issuer = getenv('OIDC_ISSUER_URL');
         if (!$issuer)
         {
-            $issuer = 'http://app:3000';
+            throw new \RuntimeException('OIDC_ISSUER_URL env var is not set');
         }
         return rtrim($issuer, '/');
     }
