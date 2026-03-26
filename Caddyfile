@@ -1,3 +1,7 @@
+{
+    {$CADDY_ACME_EMAIL}
+}
+
 www.{$DOMAIN} {
     reverse_proxy {$APP_HOST}:{$APP_PORT}
 }

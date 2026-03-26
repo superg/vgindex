@@ -13,6 +13,7 @@ services:
       - DOMAIN=${DOMAIN:-localhost}
       - APP_HOST=${APP_HOST:-app}
       - APP_PORT=${APP_PORT:-3000}
+      - CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL:-}
     depends_on:
       - app
       - mediawiki
