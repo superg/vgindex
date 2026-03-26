@@ -18,8 +18,8 @@ fi
 if id "$DEPLOY_USER" &>/dev/null; then
     echo "User '$DEPLOY_USER' already exists — skipping creation."
 else
-    useradd --create-home --shell /usr/sbin/nologin "$DEPLOY_USER"
-    echo "Created user '$DEPLOY_USER' (shell disabled)."
+    useradd --create-home --shell /bin/bash "$DEPLOY_USER"
+    echo "Created user '$DEPLOY_USER'."
 fi
 
 usermod -aG docker "$DEPLOY_USER"
