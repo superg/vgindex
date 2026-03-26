@@ -3,16 +3,16 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "${HTTPS_PORT}:443"
-      - "${HTTP_PORT}:80"
+      - "${HTTPS_PORT:-8443}:443"
+      - "${HTTP_PORT:-8080}:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      - DOMAIN=${DOMAIN}
-      - APP_HOST=${APP_HOST}
-      - APP_PORT=${APP_PORT}
+      - DOMAIN=${DOMAIN:-localhost}
+      - APP_HOST=${APP_HOST:-app}
+      - APP_PORT=${APP_PORT:-3000}
     depends_on:
       - app
       - mediawiki
@@ -20,16 +20,17 @@ services:
 
   app:
     build: .
+    image: ${APP_IMAGE:-app}:${IMAGE_TAG:-dev}
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-myapp}
       - POSTGRES_HOST=postgres
-      - DOMAIN=${DOMAIN}
-      - HTTPS_PORT=${HTTPS_PORT}
-      - APP_PORT=${APP_PORT}
-      - OIDC_ISSUER_URL=http://${APP_HOST}:${APP_PORT}
+      - DOMAIN=${DOMAIN:-localhost}
+      - HTTPS_PORT=${HTTPS_PORT:-8443}
+      - APP_PORT=${APP_PORT:-3000}
+      - OIDC_ISSUER_URL=http://${APP_HOST:-app}:${APP_PORT:-3000}
     volumes:
       - archive_cache:/app/data
     depends_on:
@@ -42,14 +43,14 @@ services:
     ports:
       - "5432:5432"
     environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-myapp}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-myapp}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -58,26 +59,27 @@ services:
     build:
       context: .
       dockerfile: docker/phpbb/Dockerfile
+    image: ${PHPBB_IMAGE:-phpbb}:${IMAGE_TAG:-dev}
     restart: unless-stopped
     environment:
       - PHPBB_DB_HOST=postgres
       - PHPBB_DB_PORT=5432
       - PHPBB_DB_NAME=phpbb
-      - PHPBB_DB_USER=${POSTGRES_USER}
-      - PHPBB_DB_PASSWORD=${POSTGRES_PASSWORD}
-      - PHPBB_TABLE_PREFIX=${PHPBB_TABLE_PREFIX}
-      - PHPBB_ADMIN_USER=${PHPBB_ADMIN_USER}
-      - PHPBB_ADMIN_PASSWORD=${PHPBB_ADMIN_PASSWORD}
-      - PHPBB_ADMIN_EMAIL=${PHPBB_ADMIN_EMAIL}
-      - PHPBB_BOARD_NAME=${DOMAIN} Forum
+      - PHPBB_DB_USER=${POSTGRES_USER:-admin}
+      - PHPBB_DB_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
+      - PHPBB_TABLE_PREFIX=${PHPBB_TABLE_PREFIX:-phpbb_}
+      - PHPBB_ADMIN_USER=${PHPBB_ADMIN_USER:-admin}
+      - PHPBB_ADMIN_PASSWORD=${PHPBB_ADMIN_PASSWORD:-changeme-phpbb}
+      - PHPBB_ADMIN_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@example.com}
+      - PHPBB_BOARD_NAME=${DOMAIN:-localhost} Forum
       - PHPBB_BOARD_DESCRIPTION=Disc Preservation Community
-      - DOMAIN=${DOMAIN}
-      - HTTPS_PORT=${HTTPS_PORT}
-      - PHPBB_SERVER_NAME=forum.${DOMAIN}
-      - PHPBB_OIDC_CLIENT_ID=${PHPBB_OIDC_CLIENT_ID}
-      - PHPBB_OIDC_CLIENT_SECRET=${PHPBB_OIDC_CLIENT_SECRET}
-      - OIDC_ISSUER_URL=http://${APP_HOST}:${APP_PORT}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - DOMAIN=${DOMAIN:-localhost}
+      - HTTPS_PORT=${HTTPS_PORT:-8443}
+      - PHPBB_SERVER_NAME=forum.${DOMAIN:-localhost}
+      - PHPBB_OIDC_CLIENT_ID=${PHPBB_OIDC_CLIENT_ID:-phpbb-client}
+      - PHPBB_OIDC_CLIENT_SECRET=${PHPBB_OIDC_CLIENT_SECRET:-changeme-phpbb-oidc}
+      - OIDC_ISSUER_URL=http://${APP_HOST:-app}:${APP_PORT:-3000}
+      - POSTGRES_DB=${POSTGRES_DB:-myapp}
     volumes:
       - phpbb_files:/var/www/html/files
       - phpbb_store:/var/www/html/store
@@ -90,24 +92,25 @@ services:
     build:
       context: .
       dockerfile: docker/mediawiki/Dockerfile
+    image: ${MEDIAWIKI_IMAGE:-mediawiki}:${IMAGE_TAG:-dev}
     restart: unless-stopped
     environment:
       - MEDIAWIKI_DB_HOST=postgres
       - MEDIAWIKI_DB_PORT=5432
       - MEDIAWIKI_DB_SCHEMA=public
       - MEDIAWIKI_DB_NAME=mediawiki
-      - MEDIAWIKI_DB_USER=${POSTGRES_USER}
-      - MEDIAWIKI_DB_PASSWORD=${POSTGRES_PASSWORD}
+      - MEDIAWIKI_DB_USER=${POSTGRES_USER:-admin}
+      - MEDIAWIKI_DB_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
       - MEDIAWIKI_DB_TYPE=postgres
-      - MEDIAWIKI_SECRET_KEY=${MEDIAWIKI_SECRET_KEY}
-      - MEDIAWIKI_UPGRADE_KEY=${MEDIAWIKI_UPGRADE_KEY}
-      - SITE_DOMAIN=${DOMAIN}
-      - HTTPS_PORT=${HTTPS_PORT}
-      - MEDIAWIKI_ADMIN_USER=${MEDIAWIKI_ADMIN_USER}
-      - MEDIAWIKI_ADMIN_PASSWORD=${MEDIAWIKI_ADMIN_PASSWORD}
-      - OIDC_PROVIDER_URL=http://${APP_HOST}:${APP_PORT}
-      - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID}
-      - MEDIAWIKI_OIDC_CLIENT_SECRET=${MEDIAWIKI_OIDC_CLIENT_SECRET}
+      - MEDIAWIKI_SECRET_KEY=${MEDIAWIKI_SECRET_KEY:-00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff}
+      - MEDIAWIKI_UPGRADE_KEY=${MEDIAWIKI_UPGRADE_KEY:-0011223344556677}
+      - SITE_DOMAIN=${DOMAIN:-localhost}
+      - HTTPS_PORT=${HTTPS_PORT:-8443}
+      - MEDIAWIKI_ADMIN_USER=${MEDIAWIKI_ADMIN_USER:-admin}
+      - MEDIAWIKI_ADMIN_PASSWORD=${MEDIAWIKI_ADMIN_PASSWORD:-changeme-mediawiki}
+      - OIDC_PROVIDER_URL=http://${APP_HOST:-app}:${APP_PORT:-3000}
+      - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
+      - MEDIAWIKI_OIDC_CLIENT_SECRET=${MEDIAWIKI_OIDC_CLIENT_SECRET:-changeme-mediawiki-oidc}
     volumes:
       - mediawiki_uploads:/var/www/html/images
       - ./docker/mediawiki/LocalSettings.php:/etc/mediawiki/LocalSettings.php:ro
