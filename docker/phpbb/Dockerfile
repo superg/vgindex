@@ -42,5 +42,7 @@ COPY docker/phpbb/ext/vgindex/oidc /var/www/html/ext/vgindex/oidc
 COPY docker/phpbb/entrypoint.sh /usr/local/bin/phpbb-entrypoint.sh
 RUN chmod +x /usr/local/bin/phpbb-entrypoint.sh
 
+WORKDIR /var/www/html
+
 ENTRYPOINT ["phpbb-entrypoint.sh"]
 CMD ["apache2-foreground"]
