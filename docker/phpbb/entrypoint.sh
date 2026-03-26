@@ -186,7 +186,7 @@ if ! db_initialized; then
     echo "phpBB entrypoint: database not initialized, running CLI installer..."
     write_install_config
     cd /var/www/html
-    php install/phpbbcli.php install --no-interaction --safe-mode /var/www/html/install/install-config.yml
+    php bin/phpbbcli.php install --no-interaction --safe-mode /var/www/html/install/install-config.yml
     rm -f /var/www/html/install/install-config.yml
     echo "phpBB entrypoint: install completed."
 fi

@@ -48,27 +48,38 @@ docker compose --env-file "$ENV_FILE" pull app phpbb mediawiki
 # ── Bring up new containers ─────────────────────────────────────────
 docker compose --env-file "$ENV_FILE" up -d --no-build --remove-orphans
 
-# ── Health checks ───────────────────────────────────────────────────
+# ── Health checks (retry up to 60s) ────────────────────────────────
+SERVICES=(app postgres caddy phpbb mediawiki)
+MAX_ATTEMPTS=12
+INTERVAL=5
+
 echo "Waiting for services to become healthy..."
-sleep 5
 
-HEALTHY=true
+for attempt in $(seq 1 $MAX_ATTEMPTS); do
+    HEALTHY=true
+    for svc in "${SERVICES[@]}"; do
+        if ! docker compose ps --format json "$svc" 2>/dev/null | grep -q '"running"'; then
+            HEALTHY=false
+            break
+        fi
+    done
 
-check_container() {
-    local svc="$1"
+    if [[ "$HEALTHY" == "true" ]]; then
+        break
+    fi
+
+    echo "  attempt $attempt/$MAX_ATTEMPTS — not all services ready, retrying in ${INTERVAL}s..."
+    sleep "$INTERVAL"
+done
+
+for svc in "${SERVICES[@]}"; do
     if docker compose ps --format json "$svc" 2>/dev/null | grep -q '"running"'; then
         echo "  ✓ $svc running"
     else
         echo "  ✗ $svc NOT running" >&2
         HEALTHY=false
     fi
-}
-
-check_container app
-check_container postgres
-check_container caddy
-check_container phpbb
-check_container mediawiki
+done
 
 if [[ "$HEALTHY" == "true" ]]; then
     echo "$IMAGE_TAG" > "$RELEASE_FILE"
