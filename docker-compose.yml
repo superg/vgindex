@@ -13,6 +13,7 @@ services:
       - DOMAIN=${DOMAIN:-localhost}
       - APP_HOST=${APP_HOST:-app}
       - APP_PORT=${APP_PORT:-3000}
+      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
 
     depends_on:
       - app
