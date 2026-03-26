@@ -12,7 +12,7 @@ pub async fn get_or_generate_archive(
     system: &str,
     archive_type: &str,
 ) -> AppResult<Vec<u8>> {
-    let cache_dir = format!("{}/archives", config.data_dir);
+    let cache_dir = format!("{}/archives", crate::config::DATA_DIR);
     std::fs::create_dir_all(&cache_dir).ok();
 
     let cache_path = format!("{cache_dir}/{system}-{archive_type}.zip");
@@ -32,8 +32,8 @@ pub async fn get_or_generate_archive(
     Ok(data)
 }
 
-pub async fn invalidate_cache(config: &Config, system: &str) {
-    let cache_dir = format!("{}/archives", config.data_dir);
+pub async fn invalidate_cache(_config: &Config, system: &str) {
+    let cache_dir = format!("{}/archives", crate::config::DATA_DIR);
     for ext in &["dat", "cue", "sbi"] {
         let path = format!("{cache_dir}/{system}-{ext}.zip");
         std::fs::remove_file(&path).ok();

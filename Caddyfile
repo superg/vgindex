@@ -1,15 +1,15 @@
-www.{$DOMAIN:localhost} {
-    reverse_proxy app:3000
+www.{$DOMAIN} {
+    reverse_proxy {$APP_HOST}:{$APP_PORT}
 }
 
-wiki.{$DOMAIN:localhost} {
+wiki.{$DOMAIN} {
     reverse_proxy mediawiki:80
 }
 
-forum.{$DOMAIN:localhost} {
+forum.{$DOMAIN} {
     reverse_proxy phpbb:80
 }
 
-{$DOMAIN:localhost} {
-    reverse_proxy app:3000
+{$DOMAIN} {
+    reverse_proxy {$APP_HOST}:{$APP_PORT}
 }

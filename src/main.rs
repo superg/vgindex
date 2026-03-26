@@ -43,7 +43,7 @@ async fn main() {
         .await
         .expect("Failed to run migrations");
 
-    std::fs::create_dir_all(&config.data_dir).ok();
+    std::fs::create_dir_all(config::DATA_DIR).ok();
 
     let oidc = auth::oidc::OidcProvider::new();
 

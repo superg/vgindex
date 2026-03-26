@@ -69,12 +69,12 @@ async fn online_users_html(State(state): State<AppState>, _user: CurrentUser) ->
 /// News feed from phpBB. Tries to read from the phpBB database directly.
 /// Falls back to a static message if phpBB DB is not available.
 async fn news_feed(State(state): State<AppState>) -> Html<String> {
-    // Try to connect to the phpBB database and read recent topics from a "News" forum.
-    // The phpBB database is on the same PostgreSQL server but different database.
-    // This requires a separate connection or cross-database query.
-    // For simplicity, we'll use a placeholder that can be connected later.
     let phpbb_url = state.config.database_url
-        .replace("/vgindex", "/phpbb");
+        .rsplitn(2, '/')
+        .last()
+        .unwrap_or(&state.config.database_url)
+        .to_owned()
+        + "/phpbb";
     let forum_base = state.config.forum_url.trim_end_matches('/');
 
     if let Ok(phpbb_pool) = crate::db::create_pool(&phpbb_url).await {

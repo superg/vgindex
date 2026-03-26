@@ -2,8 +2,16 @@
 # MediaWiki LocalSettings
 # Site name and server URL are derived from SITE_DOMAIN and HTTPS_PORT env vars.
 
-$siteDomain = getenv('SITE_DOMAIN') ?: 'localhost';
-$httpsPort = getenv('HTTPS_PORT') ?: '8443';
+function requireEnv(string $name): string {
+    $val = getenv($name);
+    if ($val === false || $val === '') {
+        throw new RuntimeException("Required environment variable $name is not set");
+    }
+    return $val;
+}
+
+$siteDomain = requireEnv('SITE_DOMAIN');
+$httpsPort = requireEnv('HTTPS_PORT');
 $portSuffix = ($httpsPort === '443') ? '' : ":$httpsPort";
 
 $wgSitename = "$siteDomain Wiki";
@@ -14,17 +22,17 @@ $wgArticlePath = "/$1";
 
 # Database settings (PostgreSQL)
 $wgDBtype = "postgres";
-$wgDBserver = getenv('MEDIAWIKI_DB_HOST') ?: "postgres";
-$wgDBport = getenv('MEDIAWIKI_DB_PORT') ?: "5432";
-$wgDBname = getenv('MEDIAWIKI_DB_NAME') ?: "mediawiki";
-$wgDBmwschema = getenv('MEDIAWIKI_DB_SCHEMA') ?: "public";
-$wgDBuser = getenv('MEDIAWIKI_DB_USER') ?: "vgindex";
-$wgDBpassword = getenv('MEDIAWIKI_DB_PASSWORD') ?: "changeme";
+$wgDBserver = requireEnv('MEDIAWIKI_DB_HOST');
+$wgDBport = requireEnv('MEDIAWIKI_DB_PORT');
+$wgDBname = requireEnv('MEDIAWIKI_DB_NAME');
+$wgDBmwschema = requireEnv('MEDIAWIKI_DB_SCHEMA');
+$wgDBuser = requireEnv('MEDIAWIKI_DB_USER');
+$wgDBpassword = requireEnv('MEDIAWIKI_DB_PASSWORD');
 $wgDBprefix = "";
 
 # Security
-$wgSecretKey = getenv('MEDIAWIKI_SECRET_KEY') ?: "change-this-secret-key-in-production";
-$wgUpgradeKey = getenv('MEDIAWIKI_UPGRADE_KEY') ?: "change-this-upgrade-key";
+$wgSecretKey = requireEnv('MEDIAWIKI_SECRET_KEY');
+$wgUpgradeKey = requireEnv('MEDIAWIKI_UPGRADE_KEY');
 
 # Default skin
 $wgDefaultSkin = "vector-2022";
@@ -54,9 +62,9 @@ wfLoadExtension('OpenIDConnect');
 $wgPluggableAuth_Config['sso'] = [
     'plugin' => 'OpenIDConnect',
     'data' => [
-        'providerURL' => getenv('OIDC_PROVIDER_URL') ?: 'http://app:3000',
-        'clientID' => getenv('OIDC_CLIENT_ID') ?: 'mediawiki-client',
-        'clientsecret' => getenv('OIDC_CLIENT_SECRET') ?: 'change-this-secret-mediawiki',
+        'providerURL' => requireEnv('OIDC_PROVIDER_URL'),
+        'clientID' => requireEnv('MEDIAWIKI_OIDC_CLIENT_ID'),
+        'clientsecret' => requireEnv('MEDIAWIKI_OIDC_CLIENT_SECRET'),
     ],
 ];
 
