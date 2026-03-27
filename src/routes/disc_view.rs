@@ -13,6 +13,15 @@ use crate::error::AppResult;
 use crate::services::disc_service;
 use crate::AppState;
 
+fn ring_tab_replace(s: &str) -> String {
+    let escaped = s
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;");
+    escaped.replace('\t', "<span style=\"color:#0074d9\">┃</span>")
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/disc/{id}", get(disc_view))
@@ -87,7 +96,7 @@ struct ViewFlag {
 
 struct ViewRingRow {
     entry_num: usize,
-    layer: i32,
+    layer: String,
     mastering_code: String,
     mastering_sid: String,
     mould_sids: String,
@@ -200,12 +209,12 @@ async fn disc_view(
         let layer_count = e.layers.len();
         e.layers.iter().enumerate().map(move |(li, l)| ViewRingRow {
             entry_num,
-            layer: l.layer,
-            mastering_code: l.mastering_code.clone().unwrap_or_default().replace('\t', "▮"),
-            mastering_sid: l.mastering_sid.clone().unwrap_or_default().replace('\t', "▮"),
-            mould_sids: { let mut v = l.mould_sids.clone(); v.sort_unstable(); v.join(", ").replace('\t', "▮") },
-            additional_moulds: { let mut v = l.additional_moulds.clone(); v.sort_unstable(); v.join(", ").replace('\t', "▮") },
-            toolstamps: { let mut v = l.toolstamps.clone(); v.sort_unstable(); v.join(", ").replace('\t', "▮") },
+            layer: format!("L{li}"),
+            mastering_code: ring_tab_replace(&l.mastering_code.clone().unwrap_or_default()),
+            mastering_sid: ring_tab_replace(&l.mastering_sid.clone().unwrap_or_default()),
+            mould_sids: { let mut v = l.mould_sids.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
+            additional_moulds: { let mut v = l.additional_moulds.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
+            toolstamps: { let mut v = l.toolstamps.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
             offset_value: offset_value.clone(),
             sample_data_start: sample_data_start.clone(),
             comment: comment.clone(),

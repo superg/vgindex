@@ -13,6 +13,19 @@ pub fn routes() -> Router<AppState> {
         .route("/discs/", get(discs_page))
 }
 
+fn empty_string_as_none<'de, D, T>(de: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    let opt = Option::<String>::deserialize(de)?;
+    match opt.as_deref() {
+        None | Some("") => Ok(None),
+        Some(s) => s.parse().map(Some).map_err(serde::de::Error::custom),
+    }
+}
+
 #[derive(Deserialize, Default)]
 pub struct DiscsQuery {
     pub system: Option<String>,
@@ -22,7 +35,9 @@ pub struct DiscsQuery {
     pub q: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
+    #[serde(default, deserialize_with = "empty_string_as_none")]
     pub page: Option<i64>,
+    #[serde(default, deserialize_with = "empty_string_as_none")]
     pub dumper: Option<i32>,
 }
 
@@ -38,6 +53,7 @@ struct DiscsTemplate {
     discs: Vec<DiscRow>,
     systems: Vec<SystemOption>,
     regions: Vec<RegionOption>,
+    dumpers: Vec<DumperOption>,
     letters: Vec<(String, bool)>,
     filter_system: String,
     filter_region: String,
@@ -97,6 +113,12 @@ struct RegionOption {
     selected: bool,
 }
 
+struct DumperOption {
+    id: i32,
+    name: String,
+    selected: bool,
+}
+
 const PAGE_SIZE: i64 = 500;
 
 async fn discs_page(
@@ -111,7 +133,7 @@ async fn discs_page(
     let filter_region = query.region.clone().unwrap_or_default();
     let filter_status = query.status.clone().unwrap_or_default();
     let filter_letter = query.letter.clone().unwrap_or_default();
-    let filter_q = query.q.clone().unwrap_or_default();
+    let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
     let filter_dumper_id = query.dumper;
     let filter_dumper = filter_dumper_id.map(|id| id.to_string()).unwrap_or_default();
 
@@ -127,7 +149,7 @@ async fn discs_page(
     };
 
     let sys_rows: Vec<SysRow> =
-        sqlx::query_as("SELECT code, name FROM systems ORDER BY sort_order, name")
+        sqlx::query_as("SELECT code, name FROM systems ORDER BY LOWER(name)")
             .fetch_all(&state.pool)
             .await
             .unwrap_or_default();
@@ -139,7 +161,7 @@ async fn discs_page(
     }).collect();
 
     let region_rows: Vec<SysRow> =
-        sqlx::query_as("SELECT code, name FROM regions ORDER BY sort_order")
+        sqlx::query_as("SELECT code, name FROM regions ORDER BY LOWER(name)")
             .fetch_all(&state.pool)
             .await
             .unwrap_or_default();
@@ -148,6 +170,22 @@ async fn discs_page(
         selected: r.code.trim() == filter_region,
         code: r.code.trim().to_string(),
         name: r.name,
+    }).collect();
+
+    let dumper_rows: Vec<DumperRow> = sqlx::query_as(
+        "SELECT u.id, u.username AS name
+         FROM users u
+         WHERE EXISTS (SELECT 1 FROM disc_dumpers dd WHERE dd.user_id = u.id)
+         ORDER BY LOWER(u.username)"
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    let dumpers: Vec<DumperOption> = dumper_rows.into_iter().map(|d| DumperOption {
+        selected: filter_dumper_id == Some(d.id),
+        id: d.id,
+        name: d.name,
     }).collect();
 
     let mut where_clauses = vec!["1=1".to_string()];
@@ -185,10 +223,21 @@ async fn discs_page(
     if !filter_q.is_empty() {
         bind_idx += 1;
         where_clauses.push(format!(
-            "(d.search_vector @@ plainto_tsquery('english', ${bind_idx}) \
-             OR d.title ILIKE '%' || ${bind_idx} || '%' \
-             OR EXISTS (SELECT 1 FROM unnest(d.serial) elem WHERE elem ILIKE '%' || ${bind_idx} || '%') \
-             OR EXISTS (SELECT 1 FROM files f WHERE f.disc_id = d.id AND (f.crc32 ILIKE ${bind_idx} OR f.md5 ILIKE ${bind_idx} OR f.sha1 ILIKE ${bind_idx})))"
+            r#"(d.title ILIKE '%' || ${bind_idx} || '%'
+             OR COALESCE(d.title_foreign, '') ILIKE '%' || ${bind_idx} || '%'
+             OR COALESCE(d.title_disc, '') ILIKE '%' || ${bind_idx} || '%'
+             OR EXISTS (
+                 SELECT 1
+                 FROM unnest(d.serial) elem
+                 WHERE regexp_replace(elem, '\s', '', 'g')
+                       ILIKE '%' || regexp_replace(${bind_idx}, '\s', '', 'g') || '%'
+             )
+             OR EXISTS (
+                 SELECT 1
+                 FROM unnest(d.barcode) elem
+                 WHERE regexp_replace(elem, '\s', '', 'g')
+                       ILIKE '%' || regexp_replace(${bind_idx}, '\s', '', 'g') || '%'
+             ))"#
         ));
     }
     if filter_dumper_id.is_some() {
@@ -339,6 +388,7 @@ async fn discs_page(
             discs,
             systems,
             regions,
+            dumpers,
             letters: LETTERS.iter().map(|s| (s.to_string(), filter_letter == *s)).collect(),
             filter_system,
             filter_region,
@@ -393,5 +443,11 @@ struct RawDiscRow {
 #[derive(sqlx::FromRow)]
 struct LangRow {
     code: String,
+    name: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct DumperRow {
+    id: i32,
     name: String,
 }

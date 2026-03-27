@@ -31,6 +31,15 @@
             </select>
         </label>
         <label>
+            <span>Dumper</span>
+            <select name="dumper" onchange="this.form.submit()">
+                <option value="">All Dumpers</option>
+                {% for d in dumpers %}
+                <option value="{{ d.id }}" {% if d.selected %}selected{% endif %}>{{ d.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
             <span>Status</span>
             <select name="status" onchange="this.form.submit()">
                 <option value="">All Statuses (🟢🔵🟡)</option>
@@ -44,9 +53,6 @@
         <input type="hidden" name="q" value="{{ filter_q }}">
         <input type="hidden" name="sort" value="{{ sort_column }}">
         <input type="hidden" name="order" value="{{ sort_order }}">
-        {% if !filter_dumper.is_empty() %}
-        <input type="hidden" name="dumper" value="{{ filter_dumper }}">
-        {% endif %}
     </form>
 
     <div class="letter-picker">
@@ -75,7 +81,6 @@
     </nav>
     {% endif %}
 
-    <div class="disc-scroll-container">
     <table class="disc-table striped">
         <thead>
             <tr>
@@ -91,22 +96,11 @@
         <tbody>
             {% for disc in discs %}
             <tr>
-                <td>
-                    {% for rf in disc.region_flags %}
-                    <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg"
-                         title="{{ rf.name }}"
-                         alt="{{ rf.name }}">
-                    {% endfor %}
-                </td>
+                <td>{% for rf in disc.region_flags %}<img class="flag-icon" src="/static/flags/{{ rf.code }}.svg" title="{{ rf.name }}" alt="{{ rf.name }}">{% endfor %}</td>
                 <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
                 <td>{{ disc.system_code }}</td>
                 <td class="truncate" title="{{ disc.edition_display }}">{{ disc.edition_display }}</td>
-                <td>
-                    {% for lang in disc.language_flags %}
-                    <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg"
-                         title="{{ lang.name }}" alt="{{ lang.name }}">
-                    {% endfor %}
-                </td>
+                <td>{% for lang in disc.language_flags %}<img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">{% endfor %}</td>
                 <td class="truncate" title="{{ disc.serial }}"><small>{{ disc.serial }}</small></td>
                 <td title="{{ disc.status_display }}">{{ disc.status_emoji }}</td>
             </tr>
@@ -116,7 +110,6 @@
             {% endif %}
         </tbody>
     </table>
-    </div>
 
     {% if total_pages > 1 %}
     <nav aria-label="Pagination">

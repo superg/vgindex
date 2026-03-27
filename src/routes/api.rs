@@ -3,6 +3,8 @@ use axum::{extract::State, response::Html, routing::get, Json, Router};
 use crate::auth::middleware::CurrentUser;
 use crate::AppState;
 
+const ACTIVE_WINDOW_MINUTES: i32 = 2;
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/online", get(online_users))
@@ -11,28 +13,17 @@ pub fn routes() -> Router<AppState> {
 }
 
 async fn online_users(State(state): State<AppState>) -> Json<OnlineInfo> {
-    let registered: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT user_id) FROM sessions
-         WHERE user_id IS NOT NULL AND last_active_at > NOW() - INTERVAL '15 minutes'"
-    )
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(0);
-
-    let guests: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sessions
-         WHERE user_id IS NULL AND last_active_at > NOW() - INTERVAL '15 minutes'"
-    )
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(0);
+    let (registered, guests) = fetch_online_counts(&state).await;
 
     let usernames: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT u.username FROM sessions s
          JOIN users u ON u.id = s.user_id
-         WHERE s.last_active_at > NOW() - INTERVAL '15 minutes'
+         WHERE s.user_id IS NOT NULL
+           AND s.expires_at > NOW()
+           AND s.last_active_at > NOW() - ($1 * INTERVAL '1 minute')
          ORDER BY u.username"
     )
+    .bind(ACTIVE_WINDOW_MINUTES)
     .fetch_all(&state.pool)
     .await
     .unwrap_or_default();
@@ -45,25 +36,26 @@ async fn online_users(State(state): State<AppState>) -> Json<OnlineInfo> {
 }
 
 async fn online_users_html(State(state): State<AppState>, _user: CurrentUser) -> Html<String> {
-    let registered: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT user_id) FROM sessions
-         WHERE user_id IS NOT NULL AND last_active_at > NOW() - INTERVAL '15 minutes'"
-    )
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(0);
+    let (registered, guests) = fetch_online_counts(&state).await;
 
-    let guests: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sessions
-         WHERE user_id IS NULL AND last_active_at > NOW() - INTERVAL '15 minutes'"
-    )
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(0);
-
-    let html = format!("Users: {registered} Guests: {guests}");
+    let html = format!("Users: {registered}, Guests: {guests}");
 
     Html(html)
+}
+
+async fn fetch_online_counts(state: &AppState) -> (i64, i64) {
+    sqlx::query_as::<_, (i64, i64)>(
+        "SELECT
+             COUNT(DISTINCT user_id) FILTER (WHERE user_id IS NOT NULL) AS registered,
+             COUNT(*) FILTER (WHERE user_id IS NULL) AS guests
+         FROM sessions
+         WHERE expires_at > NOW()
+           AND last_active_at > NOW() - ($1 * INTERVAL '1 minute')",
+    )
+    .bind(ACTIVE_WINDOW_MINUTES)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or((0, 0))
 }
 
 /// News feed from phpBB. Tries to read from the phpBB database directly.

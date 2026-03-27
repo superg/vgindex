@@ -137,10 +137,19 @@ pub async fn guest_session_layer(
     request: Request,
     next: Next,
 ) -> Response {
-    let has_session = extract_session_cookie(request.headers()).is_some();
+    let session_id = extract_session_cookie(request.headers());
+    let has_valid_session = if let Some(ref sid) = session_id {
+        crate::auth::session::validate_session(&state.pool, sid)
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+    } else {
+        false
+    };
     let is_static = request.uri().path().starts_with("/static/");
 
-    let (ip, ua) = if !has_session && !is_static {
+    let (ip, ua) = if !has_valid_session && !is_static {
         let ip = request.headers().get("x-forwarded-for")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
@@ -152,26 +161,36 @@ pub async fn guest_session_layer(
         (None, None)
     };
 
+    // Create a guest session before handling the request so this very request
+    // can be counted in online stats.
+    let created_guest_sid = if !has_valid_session && !is_static {
+        crate::auth::session::create_guest_session(
+            &state.pool,
+            ip.as_deref(),
+            ua.as_deref(),
+        )
+        .await
+        .ok()
+    } else {
+        None
+    };
+
     let mut response = next.run(request).await;
 
-    if !has_session && !is_static {
+    if let Some(sid) = created_guest_sid {
         let already_set = response.headers()
             .get_all(header::SET_COOKIE)
             .iter()
             .any(|v| v.to_str().map(|s| s.starts_with("session_id=")).unwrap_or(false));
 
-        if !already_set {
-            if let Ok(sid) = crate::auth::session::create_guest_session(
-                &state.pool,
-                ip.as_deref(),
-                ua.as_deref(),
-            ).await {
-                let cookie = format!(
-                    "session_id={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400"
-                );
-                if let Ok(val) = cookie.parse() {
-                    response.headers_mut().append(header::SET_COOKIE, val);
-                }
+        if already_set {
+            let _ = crate::auth::session::delete_session(&state.pool, &sid).await;
+        } else {
+            let cookie = format!(
+                "session_id={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400"
+            );
+            if let Ok(val) = cookie.parse() {
+                response.headers_mut().append(header::SET_COOKIE, val);
             }
         }
     }
