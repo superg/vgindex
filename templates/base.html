@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Home{% endblock %} - {{ self.site_name() }}</title>
+    <link rel="icon" href="/static/favicon.ico" sizes="any">
+    <link rel="shortcut icon" href="/static/favicon.ico">
     <link rel="stylesheet" href="/static/css/pico.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
     <link rel="alternate" type="application/rss+xml" title="{{ self.site_name() }} - Recent Dumps" href="/feeds/recent/rss">
@@ -12,11 +14,12 @@
 </head>
 <body>
     <header class="container">
-        <nav>
+        <nav class="site-nav">
+            <a class="site-banner" href="/" aria-label="Home">
+                <img src="/static/images/branding/vgindex_logo_v4.webp" alt="{{ self.site_name() }}">
+            </a>
             <ul>
-                <li><strong><a href="/">{{ self.site_name() }}</a></strong></li>
-            </ul>
-            <ul>
+                <li><a href="/">Home</a></li>
                 <li><a href="/discs/">Discs</a></li>
                 <li><a href="/downloads/">Downloads</a></li>
                 {% if current_user.is_some() %}

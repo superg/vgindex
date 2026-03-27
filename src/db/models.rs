@@ -619,7 +619,7 @@ pub fn build_rom_base_name(
                 }
             })
             .collect();
-        name.push_str(&format!(" ({})", capitalized.join(", ")));
+        name.push_str(&format!(" ({})", capitalized.join(",")));
     }
     if let Some(n) = title_disc_number {
         if !n.is_empty() {

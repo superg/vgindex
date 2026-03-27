@@ -12,7 +12,7 @@
 <div class="grid">
     <section>
         <h3>Disc</h3>
-        <table>
+        <table class="table-compact">
             <tr><td><strong>System</strong></td><td><a href="/discs/?system={{ system_code }}">{{ system_name }}</a></td></tr>
             <tr><td><strong>Media</strong></td><td>{{ media_type }}</td></tr>
             <tr><td><strong>Category</strong></td><td>{{ category }}</td></tr>
@@ -65,7 +65,7 @@
 
     <section>
         <h3>Dump</h3>
-        <table>
+        <table class="table-compact">
             <tr>
                 <td><strong>Status</strong></td>
                 <td>{{ status_emoji }} {{ status_display }}</td>
@@ -108,17 +108,17 @@
 {% if !ring_rows.is_empty() %}
 <section>
     <h3>Rings</h3>
-    <div style="overflow-x: auto;">
+    <div class="table-scroll table-scroll-compact">
     <table class="disc-table ring-table">
         <thead>
             <tr>
                 <th>#</th>
-                {% if ring_vis.layer %}<th>L</th>{% endif %}
+                {% if ring_vis.layer %}<th></th>{% endif %}
                 {% if ring_vis.mastering_code %}<th>Mastering Code</th>{% endif %}
                 {% if ring_vis.mastering_sid %}<th>Mastering SID</th>{% endif %}
+                {% if ring_vis.toolstamps %}<th>Toolstamp(s)</th>{% endif %}
                 {% if ring_vis.mould_sids %}<th>Mould SID(s)</th>{% endif %}
                 {% if ring_vis.additional_moulds %}<th>Additional Mould(s)</th>{% endif %}
-                {% if ring_vis.toolstamps %}<th>Toolstamp(s)</th>{% endif %}
                 {% if ring_vis.offset_value %}<th>Offset</th>{% endif %}
                 {% if ring_vis.sample_data_start %}<th>Sample Start</th>{% endif %}
                 {% if ring_vis.comment %}<th>Comment</th>{% endif %}
@@ -128,12 +128,12 @@
             {% for row in ring_rows %}
             <tr class="{% if row.first_in_entry && row.entry_num > 1 %}ring-group-start{% endif %}{% if row.entry_even %} ring-entry-even{% endif %}">
                 {% if row.entry_rowspan > 0 %}<td class="entry-num"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
-                {% if ring_vis.layer %}<td>{{ row.layer }}</td>{% endif %}
-                {% if ring_vis.mastering_code %}<td>{{ row.mastering_code }}</td>{% endif %}
-                {% if ring_vis.mastering_sid %}<td>{{ row.mastering_sid }}</td>{% endif %}
-                {% if ring_vis.mould_sids %}<td>{{ row.mould_sids }}</td>{% endif %}
-                {% if ring_vis.additional_moulds %}<td>{{ row.additional_moulds }}</td>{% endif %}
-                {% if ring_vis.toolstamps %}<td>{{ row.toolstamps }}</td>{% endif %}
+                {% if ring_vis.layer %}<td><strong>{{ row.layer }}</strong></td>{% endif %}
+                {% if ring_vis.mastering_code %}<td>{{ row.mastering_code|safe }}</td>{% endif %}
+                {% if ring_vis.mastering_sid %}<td>{{ row.mastering_sid|safe }}</td>{% endif %}
+                {% if ring_vis.toolstamps %}<td>{{ row.toolstamps|safe }}</td>{% endif %}
+                {% if ring_vis.mould_sids %}<td>{{ row.mould_sids|safe }}</td>{% endif %}
+                {% if ring_vis.additional_moulds %}<td>{{ row.additional_moulds|safe }}</td>{% endif %}
                 {% if ring_vis.offset_value %}<td>{{ row.offset_value }}</td>{% endif %}
                 {% if ring_vis.sample_data_start %}<td>{{ row.sample_data_start }}</td>{% endif %}
                 {% if ring_vis.comment %}<td>{{ row.comment }}</td>{% endif %}
@@ -148,8 +148,8 @@
 {% if !pvd_rows.is_empty() %}
 <section>
     <h3>PVD</h3>
-    <div style="overflow-x: auto;">
-    <table class="striped" style="width: auto; white-space: nowrap;">
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
         <thead>
             <tr><th>Record / Entry</th><th>Contents</th><th>Date</th><th>Time</th><th>GMT</th></tr>
         </thead>
@@ -172,8 +172,8 @@
 {% if !protection_ranges.is_empty() %}
 <section>
     <h3>Protection</h3>
-    <div style="overflow-x: auto;">
-    <table class="striped" style="width: auto; white-space: nowrap;">
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
         <thead>
             <tr><th>#</th><th>Start</th><th>End</th></tr>
         </thead>
@@ -194,8 +194,8 @@
 {% if !pic_rows.is_empty() %}
 <section>
     <h3>PIC</h3>
-    <div style="overflow-x: auto;">
-    <table class="striped" style="width: auto; white-space: nowrap;">
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
         <thead>
             <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
         </thead>
@@ -216,8 +216,8 @@
 {% if !sbi_rows.is_empty() %}
 <section>
     <h3>SBI</h3>
-    <div style="overflow-x: auto;">
-    <table class="striped" style="width: auto; white-space: nowrap;">
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
         <thead>
             <tr><th>Sector</th><th>MSF</th><th>Contents</th><th>XOR</th></tr>
         </thead>
@@ -240,8 +240,8 @@
 {% if !header_rows.is_empty() %}
 <section>
     <h3>Header</h3>
-    <div style="overflow-x: auto;">
-    <table class="striped" style="width: auto; white-space: nowrap;">
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
         <thead>
             <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
         </thead>
@@ -262,8 +262,8 @@
 {% if !bca_rows.is_empty() %}
 <section>
     <h3>BCA</h3>
-    <div style="overflow-x: auto;">
-    <table class="striped" style="width: auto; white-space: nowrap;">
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
         <thead>
             <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
         </thead>
@@ -287,8 +287,8 @@
 
 <section>
     <h3>Files</h3>
-    <div style="overflow-x: auto;">
-    <table class="disc-table striped">
+    <div class="table-scroll table-scroll-compact">
+    <table class="disc-table striped table-nowrap">
         <thead>
             <tr><th style="text-align: left;">Name</th><th>Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th></tr>
         </thead>

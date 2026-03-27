@@ -36,31 +36,57 @@
 .status-dot.bad { background: var(--status-bad); }
 
 /* Scrollable table container with sticky header */
-.disc-scroll-container {
-    overflow-x: auto;
-    overflow-y: auto;
-    max-height: 80vh;
-}
-
 /* Compact tables for disc listing */
 .disc-table {
     width: 100%;
 }
-.disc-table thead th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background: var(--pico-background-color, #fff);
+
+/* Reusable horizontal scroll wrapper for tables */
+.table-scroll {
+    overflow-x: auto;
+}
+
+/* Keep specific tables content-width instead of full width */
+.table-scroll-compact > table {
+    display: inline-table;
+    width: max-content;
+    max-width: none;
+}
+
+/* Compact standalone tables without a scroll wrapper */
+.table-compact {
+    display: inline-table;
+    width: max-content;
+    max-width: none;
+}
+
+.table-nowrap th,
+.table-nowrap td {
+    white-space: nowrap;
 }
 .disc-table td, .disc-table th {
     padding: 0.25rem 0.5rem;
     font-size: 0.75rem;
 }
-.disc-table a {
+.disc-table td a {
     text-decoration: none;
 }
-.disc-table a:hover {
+.disc-table td a:hover {
     text-decoration: underline;
+}
+.disc-table td:nth-child(2) a {
+    color: inherit;
+}
+
+/* Merge flags in region and language columns */
+.disc-table td:nth-child(1) .flag-icon,
+.disc-table td:nth-child(5) .flag-icon {
+    margin: 0 -1px 0 0;
+}
+
+/* Keep language flags compact but not touching */
+.disc-table td:nth-child(5) .flag-icon {
+    margin-right: 1px;
 }
 
 /* Shrink-to-fit columns: Region(1), System(3), Status(7) */
@@ -161,6 +187,21 @@ table.striped tbody tr:nth-child(even) {
 .disc-view table th {
     padding: 0.25rem 0.5rem;
 }
+.disc-view .table-compact td,
+.disc-view .table-compact th,
+.disc-view .table-scroll-compact > table td,
+.disc-view .table-scroll-compact > table th {
+    padding: 0.2rem 0.45rem;
+    vertical-align: top;
+}
+.disc-view .table-compact th,
+.disc-view .table-scroll-compact > table th {
+    text-align: left;
+}
+.disc-view .binary-table code {
+    font-size: 0.72rem;
+    letter-spacing: 0.01em;
+}
 .disc-view table td:first-child {
     text-align: right;
     vertical-align: top;
@@ -196,6 +237,25 @@ table.striped tbody tr:nth-child(even) {
 }
 
 /* Quick search in nav */
+.site-nav {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+.site-nav .site-banner {
+    display: inline-flex;
+    align-items: center;
+    line-height: 0;
+    margin-right: 0.25rem;
+}
+.site-nav .site-banner img {
+    display: block;
+    height: 48px;
+    width: auto;
+}
+.site-nav > ul:first-of-type {
+    margin-right: auto;
+}
 nav .quick-search {
     display: flex;
     align-items: center;
@@ -232,6 +292,12 @@ nav .quick-search input[type="text"] {
 @media (max-width: 768px) {
     nav ul {
         flex-wrap: wrap;
+    }
+    .site-nav {
+        gap: 0.5rem;
+    }
+    .site-nav .site-banner img {
+        height: 36px;
     }
     nav .quick-search input[type="text"] {
         width: 200px;
