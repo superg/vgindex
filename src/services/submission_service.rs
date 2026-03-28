@@ -88,6 +88,22 @@ fn extract_xml_attr(line: &str, attr: &str) -> Option<String> {
     Some(line[start..end].to_string())
 }
 
+pub async fn mark_submission_approved(
+    pool: &PgPool,
+    submission_id: i32,
+    reviewer_id: i32,
+) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1, reviewed_at = NOW()
+         WHERE id = $2"
+    )
+    .bind(reviewer_id)
+    .bind(submission_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn review_submission(
     pool: &PgPool,
     submission_id: i32,

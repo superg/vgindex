@@ -1,104 +1,281 @@
 {% extends "base.html" %}
 
-{% block title %}Edit: {{ disc_title }}{% endblock %}
+{% block title %}Edit {{ page_title }}{% endblock %}
+
+{% block head %}
+<script>
+const RING_CODES = {{ ring_codes_json|safe }};
+const MAX_LAYERS = {{ max_layers }};
+const MEDIA_LAYERS = {{ media_layers_json|safe }};
+const SYSTEMS_MEDIA = {{ systems_media_json|safe }};
+const HAS_SAMPLE_START = {{ has_sample_start }};
+const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{% endif %}{% endfor %}];
+</script>
+<script src="/static/js/disc_edit.js" defer></script>
+{% endblock %}
 
 {% block content %}
-<h2>Edit: {{ disc_title }}</h2>
+<form method="post" action="/disc/{{ disc_id }}/edit/" id="disc-edit-form" class="disc-edit">
 
-<form method="post" action="/disc/{{ disc_id }}/edit/">
-    <fieldset>
-        <legend>Common Info</legend>
-        <label for="title">Title</label>
-        <input type="text" id="title" name="title" value="{{ disc_title }}" required>
+    <div class="grid">
+        <label>System
+            <select name="system_code" id="system-select">
+                {% for sys in systems %}
+                <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Media
+            <select name="media_type" id="media-select">
+                {% for mt in media_types_all %}
+                <option value="{{ mt.code }}" {% if mt.selected %}selected{% endif %}>{{ mt.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Category
+            <select name="category">
+                {% for cat in categories %}
+                <option value="{{ cat.value }}" {% if cat.selected %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </div>
 
-        <label for="category">Category</label>
-        <select id="category" name="category">
-            {% for cat in categories %}
-            <option value="{{ cat.value }}" {% if cat.selected %}selected{% endif %}>{{ cat.value }}</option>
-            {% endfor %}
-        </select>
+    <div class="grid">
+        <label>Title
+            <input type="text" name="title" value="{{ title }}" required>
+        </label>
+        {% if show_title_foreign %}
+        <label>Foreign Title
+            <input type="text" name="title_foreign" value="{{ title_foreign }}">
+        </label>
+        {% endif %}
+    </div>
 
+    <div class="grid">
+        {% if show_title_disc_number %}
+        <label>Disc Number
+            <input type="text" name="title_disc_number" value="{{ title_disc_number }}">
+        </label>
+        {% endif %}
+        {% if show_title_disc %}
+        <label>Disc Title
+            <input type="text" name="title_disc" value="{{ title_disc }}">
+        </label>
+        {% endif %}
+        <label>Filename Suffix
+            <input type="text" name="filename_suffix" value="{{ filename_suffix }}">
+        </label>
+    </div>
+
+    <div class="grid">
         <fieldset>
             <legend>Regions</legend>
-            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+            <div class="flag-check-list">
             {% for r in regions %}
-            <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
-                <input type="checkbox" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
-                <img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}">
-            </label>
+                <label class="flag-check">
+                    <input type="checkbox" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
+                    <img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}">
+                    <span>{{ r.name }}</span>
+                </label>
             {% endfor %}
             </div>
         </fieldset>
-
         <fieldset>
             <legend>Languages</legend>
-            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+            <div class="flag-check-list">
             {% for lang in languages %}
-            <label style="display:inline-flex;align-items:center;gap:0.25rem;width:auto;">
-                <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}>
-                <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
-            </label>
+                <label class="flag-check">
+                    <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}>
+                    <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
+                    <span>{{ lang.name }}</span>
+                </label>
             {% endfor %}
             </div>
         </fieldset>
+    </div>
 
-        {% if show_barcode %}
-        <label for="barcode">Barcode</label>
-        <input type="text" id="barcode" name="barcode" value="{{ barcode }}">
-        {% endif %}
-
-        <label for="comments">Comments</label>
-        <textarea id="comments" name="comments" rows="3">{{ comments }}</textarea>
-    </fieldset>
-
-    {% if show_version || show_edition %}
-    <fieldset>
-        <legend>{% if show_version %}Version{% endif %}{% if show_version && show_edition %} / {% endif %}{% if show_edition %}Edition{% endif %}</legend>
-        <div class="grid">
-            {% if show_version %}
-            <label>Version <input type="text" name="version" value="{{ version }}"></label>
-            {% endif %}
-            {% if show_edition %}
-            <label>Edition <input type="text" name="edition" value="{{ edition }}"></label>
-            {% endif %}
+    {% if show_serial %}
+    <div class="inline-field">
+        <span class="inline-field-label">Serials</span>
+        <div id="serial-list" class="inline-field-values">
+            {% for s in serials %}
+            <input type="text" name="serial" value="{{ s }}">
+            {% endfor %}
+            <input type="text" name="serial" value="">
         </div>
-    </fieldset>
+        <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('serial-list','serial')">+</button>
+    </div>
     {% endif %}
 
-    {% if show_date_field %}
-    <label for="exe_date">EXE Date</label>
-    <input type="date" id="exe_date" name="exe_date" value="{{ exe_date }}">
+    {% if show_edition %}
+    <div class="inline-field">
+        <span class="inline-field-label">Editions</span>
+        <div id="edition-list" class="inline-field-values">
+            {% for e in editions %}
+            <input type="text" name="edition" value="{{ e }}">
+            {% endfor %}
+            <input type="text" name="edition" value="">
+        </div>
+        <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('edition-list','edition')">+</button>
+    </div>
     {% endif %}
 
-    {% if show_edc_field %}
-    <label for="edc">EDC</label>
-    <select id="edc" name="edc">
-        <option value="">Unknown</option>
-        <option value="true" {% if edc_value == "true" %}selected{% endif %}>Yes</option>
-        <option value="false" {% if edc_value == "false" %}selected{% endif %}>No</option>
-    </select>
+    {% if show_barcode %}
+    <div class="inline-field">
+        <span class="inline-field-label">Barcodes</span>
+        <div id="barcode-list" class="inline-field-values">
+            {% for b in barcodes %}
+            <input type="text" name="barcode" value="{{ b }}">
+            {% endfor %}
+            <input type="text" name="barcode" value="">
+        </div>
+        <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('barcode-list','barcode')">+</button>
+    </div>
     {% endif %}
 
-    {% if show_protection %}
-    <label for="protection">Protection</label>
-    <input type="text" id="protection" name="protection" value="{{ protection }}">
+    {% if show_version %}
+    <div class="inline-field">
+        <span class="inline-field-label">Version</span>
+        <div class="inline-field-values">
+            <input type="text" name="version" value="{{ version }}">
+        </div>
+    </div>
     {% endif %}
 
     {% if show_error_count %}
-    <label for="error_count">Error Count</label>
-    <input type="number" id="error_count" name="error_count" value="{{ error_count }}">
+    <div class="inline-field">
+        <span class="inline-field-label">Error Count</span>
+        <div class="inline-field-values">
+            <input type="number" name="error_count" value="{{ error_count }}">
+        </div>
+    </div>
+    {% endif %}
+
+    {% if show_exe_date %}
+    <div class="inline-field">
+        <span class="inline-field-label">EXE Date</span>
+        <div class="inline-field-values">
+            <input type="text" name="exe_date" value="{{ exe_date }}" placeholder="YYYY-MM-DD">
+        </div>
+    </div>
+    {% endif %}
+
+    {% if show_edc %}
+    <div class="inline-field">
+        <span class="inline-field-label">EDC</span>
+        <div class="inline-field-values inline-radios">
+            <label><input type="radio" name="edc" value="false" {% if edc_value == "false" || edc_value.is_empty() %}checked{% endif %}> No</label>
+            <label><input type="radio" name="edc" value="true" {% if edc_value == "true" %}checked{% endif %}> Yes</label>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if show_protection %}
+    <div class="inline-field">
+        <span class="inline-field-label">Disc Key / ID</span>
+        <div class="inline-field-values">
+            <input type="text" name="protection_key_disc_key" value="{{ protection_key_disc_key }}">
+            <input type="text" name="protection_key_disc_id" value="{{ protection_key_disc_id }}">
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="inline-field" id="layerbreak-row" style="display:none">
+        <span class="inline-field-label">Layerbreaks</span>
+        <div id="layerbreak-list" class="inline-field-values"></div>
+    </div>
+
+    <fieldset>
+        <legend>Ring Codes</legend>
+        <div class="table-scroll table-scroll-compact">
+        <table class="disc-table ring-table ring-edit-table" id="ring-editor">
+            <thead id="ring-thead"></thead>
+            <tbody id="ring-tbody"></tbody>
+        </table>
+        </div>
+        <button type="button" class="outline secondary array-add-btn" onclick="addRingEntry()">+</button>
+        <input type="hidden" name="ring_codes_json" id="ring-codes-json">
+    </fieldset>
+
+    <label>Comments
+        <textarea name="comments" rows="2" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
+    </label>
+
+    <label>Contents
+        <textarea name="contents" rows="2" class="hex-dump-input auto-expand fixed-80">{{ contents }}</textarea>
+    </label>
+
+    {% if show_protection %}
+    <label>Protection
+        <textarea name="protection" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection }}</textarea>
+    </label>
+    {% endif %}
+
+    {% if show_protection_ranges %}
+    <label>Sector Ranges
+        <textarea name="protection_ranges" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection_ranges_text }}</textarea>
+    </label>
+    {% endif %}
+
+    {% if show_protection_sbi %}
+    <label>SBI
+        <textarea name="protection_sbi" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection_sbi }}</textarea>
+    </label>
     {% endif %}
 
     {% if show_pvd %}
-    <label for="pvd">PVD</label>
-    <textarea id="pvd" name="pvd" rows="6" class="hex-dump-input" spellcheck="false">{{ pvd_hex }}</textarea>
+    <label>PVD
+        <textarea name="pvd" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pvd_hex }}</textarea>
+    </label>
+    {% endif %}
+
+    {% if show_pic %}
+    <label>PIC
+        <textarea name="pic" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>
+    </label>
+    {% endif %}
+
+    {% if show_bca %}
+    <label>BCA
+        <textarea name="bca" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ bca_hex }}</textarea>
+    </label>
     {% endif %}
 
     {% if show_header %}
-    <label for="header">Header</label>
-    <textarea id="header" name="header" rows="16" class="hex-dump-input" spellcheck="false">{{ header_hex }}</textarea>
+    <label>Header
+        <textarea name="header" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ header_hex }}</textarea>
+    </label>
     {% endif %}
 
-    <button type="submit">Save Changes</button>
+
+    <label>Cuesheet
+        <textarea name="cue" rows="2" spellcheck="false" class="hex-dump-input auto-expand fixed-80">{{ cue }}</textarea>
+    </label>
+
+    <label>Dat
+        <textarea name="files_xml" rows="2" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ files_xml }}</textarea>
+    </label>
+
+    <div class="grid">
+        <label>
+            <input type="checkbox" name="enabled" value="true" {% if enabled %}checked{% endif %}>
+            Enabled
+        </label>
+        <label>
+            <input type="checkbox" name="questionable" value="true" {% if questionable %}checked{% endif %}>
+            Questionable
+        </label>
+    </div>
+
+    <label>Submission Comment
+        <textarea name="submission_comment" rows="2" placeholder="Optional comment about this edit"></textarea>
+    </label>
+
+    {% if can_edit_directly %}
+    <button type="submit">Save</button>
+    {% else %}
+    <button type="submit">Submit Request</button>
+    {% endif %}
 </form>
 {% endblock %}

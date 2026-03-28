@@ -4,120 +4,39 @@ use sha1::Digest;
 
 // --- Enums ---
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MediaType {
-    Cd,
-    GdRom,
-    Dvd5,
-    Dvd9,
-    Hdvd15,
-    Hdvd30,
-    Bd25,
-    Bd50,
-    Bd66,
-    Bd100,
-    Umd1,
-    Umd2,
-    Dvd5Gc,
-    Dvd5Wii,
-    Dvd9Wii,
-    Bd25WiiU,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaType {
+    code: String,
+    name: String,
+    layer_count: i32,
+    rom_extension: String,
 }
 
 impl MediaType {
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::Cd => "cd",
-            Self::GdRom => "gdrom",
-            Self::Dvd5 => "dvd5",
-            Self::Dvd9 => "dvd9",
-            Self::Hdvd15 => "hdvd15",
-            Self::Hdvd30 => "hdvd30",
-            Self::Bd25 => "bd25",
-            Self::Bd50 => "bd50",
-            Self::Bd66 => "bd66",
-            Self::Bd100 => "bd100",
-            Self::Umd1 => "umd1",
-            Self::Umd2 => "umd2",
-            Self::Dvd5Gc => "dvd5gc",
-            Self::Dvd5Wii => "dvd5wii",
-            Self::Dvd9Wii => "dvd9wii",
-            Self::Bd25WiiU => "bd25wiiu",
-        }
+    pub fn code(&self) -> &str {
+        &self.code
     }
 
-    pub fn from_code(code: &str) -> Option<Self> {
-        match code.trim() {
-            "cd" => Some(Self::Cd),
-            "gdrom" => Some(Self::GdRom),
-            "dvd5" => Some(Self::Dvd5),
-            "dvd9" => Some(Self::Dvd9),
-            "hdvd15" => Some(Self::Hdvd15),
-            "hdvd30" => Some(Self::Hdvd30),
-            "bd25" => Some(Self::Bd25),
-            "bd50" => Some(Self::Bd50),
-            "bd66" => Some(Self::Bd66),
-            "bd100" => Some(Self::Bd100),
-            "umd1" => Some(Self::Umd1),
-            "umd2" => Some(Self::Umd2),
-            "dvd5gc" => Some(Self::Dvd5Gc),
-            "dvd5wii" => Some(Self::Dvd5Wii),
-            "dvd9wii" => Some(Self::Dvd9Wii),
-            "bd25wiiu" => Some(Self::Bd25WiiU),
-            _ => None,
-        }
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn is_cd(&self) -> bool {
-        matches!(self, Self::Cd | Self::GdRom)
+        self.rom_extension == "bin"
     }
 
-    pub fn rom_extension(&self) -> &'static str {
-        match self {
-            Self::Cd | Self::GdRom => "bin",
-            _ => "iso",
-        }
+    pub fn rom_extension(&self) -> &str {
+        &self.rom_extension
     }
 
     pub fn max_layers(&self) -> u32 {
-        match self {
-            Self::Cd | Self::GdRom | Self::Umd1 | Self::Umd2
-                | Self::Dvd5Gc | Self::Bd25WiiU => 1,
-            Self::Dvd5 | Self::Dvd9 | Self::Hdvd15 | Self::Hdvd30
-                | Self::Dvd5Wii | Self::Dvd9Wii => 2,
-            Self::Bd25 | Self::Bd50 | Self::Bd66 | Self::Bd100 => 4,
-        }
+        self.layer_count as u32
     }
-
-    pub const ALL: &[MediaType] = &[
-        Self::Cd, Self::GdRom, Self::Dvd5, Self::Dvd9,
-        Self::Hdvd15, Self::Hdvd30,
-        Self::Bd25, Self::Bd50, Self::Bd66, Self::Bd100,
-        Self::Umd1, Self::Umd2,
-        Self::Dvd5Gc, Self::Dvd5Wii, Self::Dvd9Wii, Self::Bd25WiiU,
-    ];
 }
 
 impl std::fmt::Display for MediaType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Cd => write!(f, "CD"),
-            Self::GdRom => write!(f, "GD-ROM"),
-            Self::Dvd5 => write!(f, "DVD-5"),
-            Self::Dvd9 => write!(f, "DVD-9"),
-            Self::Hdvd15 => write!(f, "HD DVD (SL)"),
-            Self::Hdvd30 => write!(f, "HD DVD (DL)"),
-            Self::Bd25 => write!(f, "BD-25"),
-            Self::Bd50 => write!(f, "BD-50"),
-            Self::Bd66 => write!(f, "BD-66"),
-            Self::Bd100 => write!(f, "BD-100"),
-            Self::Umd1 => write!(f, "UMD (SL)"),
-            Self::Umd2 => write!(f, "UMD (DL)"),
-            Self::Dvd5Gc => write!(f, "Nintendo GameCube Game Disc"),
-            Self::Dvd5Wii => write!(f, "Wii Optical Disc (SL)"),
-            Self::Dvd9Wii => write!(f, "Wii Optical Disc (DL)"),
-            Self::Bd25WiiU => write!(f, "Wii U Optical Disc (SL)"),
-        }
+        write!(f, "{}", self.name)
     }
 }
 
@@ -133,8 +52,13 @@ impl sqlx::Type<sqlx::Postgres> for MediaType {
 
 impl<'r> sqlx::Decode<'r, sqlx::Postgres> for MediaType {
     fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let s = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
-        Self::from_code(&s).ok_or_else(|| format!("unknown media type code: {s}").into())
+        let code = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(Self {
+            code: code.trim().to_string(),
+            name: String::new(),
+            layer_count: 1,
+            rom_extension: String::new(),
+        })
     }
 }
 
@@ -143,7 +67,26 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for MediaType {
         &self,
         buf: &mut sqlx::postgres::PgArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
-        <&str as sqlx::Encode<sqlx::Postgres>>::encode(self.code(), buf)
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(&self.code, buf)
+    }
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct MediaTypeRow {
+    pub code: String,
+    pub name: String,
+    pub layer_count: i32,
+    pub rom_extension: String,
+}
+
+impl From<MediaTypeRow> for MediaType {
+    fn from(row: MediaTypeRow) -> Self {
+        Self {
+            code: row.code,
+            name: row.name,
+            layer_count: row.layer_count,
+            rom_extension: row.rom_extension,
+        }
     }
 }
 
@@ -338,6 +281,7 @@ pub struct System {
     pub has_protection_ranges: bool,
     pub has_header: bool,
     pub has_bca: bool,
+    pub has_sample_start: bool,
     pub sort_order: i32,
 }
 

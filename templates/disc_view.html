@@ -4,6 +4,9 @@
 
 {% block content %}
 <div class="disc-view">
+{% if can_edit %}
+<p><a href="/disc/{{ disc_id }}/edit/" role="button" class="outline">Edit Disc</a></p>
+{% endif %}
 <h2>{{ title }}</h2>
 {% if !title_foreign.is_empty() %}
 <h2 class="foreign-title">{{ title_foreign }}</h2>
@@ -12,19 +15,19 @@
 <div class="grid">
     <section>
         <h3>Disc</h3>
-        <table class="table-compact">
+        <table class="table-compact table-fit-section">
             <tr><td><strong>System</strong></td><td><a href="/discs/?system={{ system_code }}">{{ system_name }}</a></td></tr>
             <tr><td><strong>Media</strong></td><td>{{ media_type }}</td></tr>
             <tr><td><strong>Category</strong></td><td>{{ category }}</td></tr>
             {% if !regions.is_empty() %}
-            <tr><td><strong>{% if regions.len() == 1 %}Region{% else %}Regions{% endif %}</strong></td><td>
+            <tr><td><strong>{% if regions.len() == 1 %}Region{% else %}Regions{% endif %}</strong></td><td class="flags-inline flags-region">
                 {% for r in regions %}
                 <a href="/discs/?region={{ r.region_code }}"><img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}"></a>
                 {% endfor %}
             </td></tr>
             {% endif %}
             {% if !lang_flags.is_empty() %}
-            <tr><td><strong>{% if lang_flags.len() == 1 %}Language{% else %}Languages{% endif %}</strong></td><td>
+            <tr><td><strong>{% if lang_flags.len() == 1 %}Language{% else %}Languages{% endif %}</strong></td><td class="flags-inline flags-language">
                 {% for lang in lang_flags %}
                 <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
                 {% endfor %}
@@ -279,10 +282,6 @@
     </table>
     </div>
 </section>
-{% endif %}
-
-{% if can_edit %}
-<p><a href="/disc/{{ disc_id }}/edit/" role="button" class="outline">Edit this disc</a></p>
 {% endif %}
 
 <section>

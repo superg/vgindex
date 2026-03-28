@@ -49,6 +49,7 @@ CREATE TABLE systems (
     has_protection BOOLEAN NOT NULL DEFAULT FALSE,
     has_protection_ranges BOOLEAN NOT NULL DEFAULT FALSE,
     has_protection_sbi BOOLEAN NOT NULL DEFAULT FALSE,
+    has_sample_start BOOLEAN NOT NULL DEFAULT FALSE,
 
     sort_order INT NOT NULL DEFAULT 0
 );

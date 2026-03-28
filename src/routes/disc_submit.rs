@@ -60,6 +60,9 @@ async fn submit_page(
     let langs: Vec<Language> =
         sqlx::query_as("SELECT * FROM languages ORDER BY sort_order")
             .fetch_all(&state.pool).await?;
+    let all_media_types: Vec<MediaTypeRow> =
+        sqlx::query_as("SELECT code, name, layer_count, rom_extension FROM media_types ORDER BY sort_order")
+            .fetch_all(&state.pool).await?;
 
     Ok(Html(
         DiscSubmitTemplate {
@@ -76,9 +79,9 @@ async fn submit_page(
                 name: l.name.clone(),
             }).collect(),
             categories: Category::ALL.iter().map(|c| c.to_string()).collect(),
-            media_types: MediaType::ALL.iter().map(|m| MediaTypeOption {
-                code: m.code().to_string(),
-                name: m.to_string(),
+            media_types: all_media_types.iter().map(|m| MediaTypeOption {
+                code: m.code.clone(),
+                name: m.name.clone(),
             }).collect(),
         }
         .render()
