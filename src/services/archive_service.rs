@@ -6,6 +6,20 @@ use crate::config::Config;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 
+async fn system_has_cd_media(pool: &PgPool, media_type_codes: &[String]) -> bool {
+    if media_type_codes.is_empty() {
+        return false;
+    }
+    let result: Option<bool> = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM media_types WHERE code = ANY($1) AND rom_extension = 'bin')",
+    )
+    .bind(media_type_codes)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(Some(false));
+    result.unwrap_or(false)
+}
+
 pub async fn get_or_generate_archive(
     pool: &PgPool,
     config: &Config,
@@ -74,6 +88,7 @@ async fn generate_datfile_archive(pool: &PgPool, base_url: &str, system: &str) -
         html_escape(base_url),
     );
 
+    let is_cd_system = system_has_cd_media(pool, &sys.media_types).await;
     for disc in &discs {
         let files: Vec<File> = sqlx::query_as(
             "SELECT * FROM files WHERE disc_id = $1 ORDER BY track_number"
@@ -93,11 +108,7 @@ async fn generate_datfile_archive(pool: &PgPool, base_url: &str, system: &str) -
 
         for file in &files {
             let ext = if file.track_number.is_some() {
-                if sys.media_types.iter().any(|s| MediaType::from_code(s).map_or(false, |m| m.is_cd())) {
-                    "bin"
-                } else {
-                    "iso"
-                }
+                if is_cd_system { "bin" } else { "iso" }
             } else {
                 "cue"
             };
@@ -143,7 +154,7 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Vec
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if !sys.media_types.iter().any(|s| MediaType::from_code(s).map_or(false, |m| m.is_cd())) {
+    if !system_has_cd_media(pool, &sys.media_types).await {
         return Err(AppError::NotFound);
     }
 

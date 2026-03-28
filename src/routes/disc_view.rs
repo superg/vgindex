@@ -19,7 +19,7 @@ fn ring_tab_replace(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;");
-    escaped.replace('\t', "<span style=\"color:#0074d9\">┃</span>")
+    escaped.replace('\t', "<span class=\"ring-tab-marker\" title=\"Tab\"></span>")
 }
 
 pub fn routes() -> Router<AppState> {
@@ -123,7 +123,7 @@ struct RingColVis {
 }
 
 impl RingColVis {
-    fn from_rows(rows: &[ViewRingRow]) -> Self {
+    fn from_rows(rows: &[ViewRingRow], has_sample_start: bool) -> Self {
         Self {
             layer: rows.iter().any(|r| r.entry_rowspan > 1),
             mastering_code: rows.iter().any(|r| !r.mastering_code.is_empty()),
@@ -132,7 +132,7 @@ impl RingColVis {
             additional_moulds: rows.iter().any(|r| !r.additional_moulds.is_empty()),
             toolstamps: rows.iter().any(|r| !r.toolstamps.is_empty()),
             offset_value: rows.iter().any(|r| !r.offset_value.is_empty()),
-            sample_data_start: rows.iter().any(|r| !r.sample_data_start.is_empty()),
+            sample_data_start: has_sample_start && rows.iter().any(|r| !r.sample_data_start.is_empty()),
             comment: rows.iter().any(|r| !r.comment.is_empty()),
         }
     }
@@ -361,7 +361,7 @@ async fn disc_view(
                     .collect::<Vec<_>>()
                     .join("<br>")
             },
-            ring_vis: RingColVis::from_rows(&ring_rows),
+            ring_vis: RingColVis::from_rows(&ring_rows, detail.system.has_sample_start),
             ring_rows,
             files,
             sbi_rows,

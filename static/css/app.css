@@ -198,6 +198,11 @@ table.striped tbody tr:nth-child(even) {
 .disc-view .table-scroll-compact > table th {
     text-align: left;
 }
+.disc-view .table-fit-section {
+    display: table;
+    width: 100%;
+    max-width: 100%;
+}
 .disc-view .binary-table code {
     font-size: 0.72rem;
     letter-spacing: 0.01em;
@@ -207,6 +212,18 @@ table.striped tbody tr:nth-child(even) {
     vertical-align: top;
     white-space: nowrap;
     width: 1%;
+}
+.disc-view .flags-inline .flag-icon {
+    margin: 0;
+}
+.disc-view .flags-language .flag-icon {
+    margin: 0;
+}
+.disc-view .flags-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    align-items: center;
 }
 
 /* Preserve newlines in multiline text blocks */
@@ -234,6 +251,14 @@ table.striped tbody tr:nth-child(even) {
     vertical-align: middle !important;
     text-align: center;
     font-weight: 600;
+}
+.ring-tab-marker {
+    display: inline-block;
+    width: 3ch;
+    height: 1em;
+    vertical-align: -0.1em;
+    background: #dddfff;
+    border-radius: 2px;
 }
 
 /* Quick search in nav */
@@ -337,4 +362,172 @@ pre code {
 }
 .htmx-request .htmx-indicator {
     display: inline;
+}
+
+/* Edit form — compact sizing to match disc list/view */
+.disc-edit {
+    font-size: 0.75rem;
+}
+.disc-edit label,
+.disc-edit fieldset legend {
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+.disc-edit input[type="text"],
+.disc-edit input[type="number"],
+.disc-edit select,
+.disc-edit textarea {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.4rem;
+    margin-bottom: 0.25rem;
+    height: auto;
+}
+.disc-edit fieldset {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+}
+.disc-edit fieldset legend {
+    font-size: 0.75rem;
+}
+.disc-edit .grid {
+    gap: 0.5rem;
+}
+.disc-edit button[type="submit"] {
+    font-size: 0.8rem;
+    padding: 0.35rem 1rem;
+}
+.disc-edit input[type="radio"] {
+    margin: 0;
+}
+
+/* Edit form — flag checkbox lists */
+.flag-check-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+.flag-check {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 0.35rem;
+    width: auto;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+.flag-check input[type="checkbox"] {
+    margin: 0;
+}
+.flag-check .flag-icon {
+    height: 1em;
+}
+.flag-check span {
+    white-space: nowrap;
+    font-weight: normal;
+}
+
+/* Inline label + values row */
+.inline-field {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+.inline-field:last-child {
+    border-bottom: none;
+}
+.inline-radios {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+.inline-radios label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: normal;
+    margin-bottom: 0;
+}
+#layerbreak-row {
+    border-bottom: none;
+}
+.inline-field-label {
+    font-weight: 600;
+    white-space: nowrap;
+    min-width: 5rem;
+    text-align: right;
+}
+.inline-field-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    flex: 1;
+}
+.inline-field-values input {
+    margin-bottom: 0;
+    flex: 0 0 auto;
+}
+.inline-field .array-add-btn {
+    flex-shrink: 0;
+}
+
+/* Repeatable array fields (layerbreaks, etc.) */
+.array-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+.array-entry {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+.array-entry input {
+    margin-bottom: 0;
+}
+.array-entry .remove-entry {
+    padding: 0.15rem 0.4rem;
+    margin: 0;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+}
+.array-add-btn {
+    width: fit-content;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.7rem;
+}
+
+/* Ring code edit table */
+.ring-edit-table input[type="text"] {
+    margin-bottom: 0;
+    padding: 0.15rem 0.25rem;
+    font-size: 0.72rem;
+    height: auto;
+}
+.ring-edit-table .remove-entry {
+    padding: 0.1rem 0.35rem;
+    font-size: 0.7rem;
+    margin: 0;
+}
+
+/* Hex dump textarea */
+.hex-dump-input {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.72rem;
+    line-height: 1.3;
+}
+
+/* Auto-expanding textareas */
+textarea.auto-expand {
+    overflow: hidden;
+    resize: vertical;
+}
+textarea.fit-width {
+    width: auto;
+}
+textarea.fixed-80 {
+    width: 80ch;
 }
