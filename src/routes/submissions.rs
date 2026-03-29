@@ -128,7 +128,7 @@ async fn submission_detail(
             .await?
             .unwrap_or_default()
     } else {
-        sub.data.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string()
+        sub.changes.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string()
     };
 
     Ok(Html(
@@ -146,7 +146,7 @@ async fn submission_detail(
             has_target_disc: sub.target_disc_id.is_some(),
             target_disc_id: sub.target_disc_id.unwrap_or(0),
             review_comment: sub.review_comment.unwrap_or_default(),
-            data_json: serde_json::to_string_pretty(&sub.data).unwrap_or_default(),
+            data_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
             dump_log: sub.dump_log.unwrap_or_default(),
         }
         .render()
@@ -168,7 +168,7 @@ async fn review_submission(
 ) -> AppResult<Redirect> {
     let new_status = match form.action.as_str() {
         "approve" => SubmissionStatus::Approved,
-        "deny" => SubmissionStatus::Denied,
+        "reject" | "deny" => SubmissionStatus::Rejected,
         _ => return Err(crate::error::AppError::BadRequest("Invalid action".into())),
     };
 

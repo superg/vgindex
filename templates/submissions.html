@@ -13,15 +13,14 @@
                 <option value="">All</option>
                 <option value="Pending" {% match query.status %}{% when Some with (st) %}{% if st == "Pending" %}selected{% endif %}{% when None %}{% endmatch %}>Pending</option>
                 <option value="Approved" {% match query.status %}{% when Some with (st) %}{% if st == "Approved" %}selected{% endif %}{% when None %}{% endmatch %}>Approved</option>
-                <option value="Denied" {% match query.status %}{% when Some with (st) %}{% if st == "Denied" %}selected{% endif %}{% when None %}{% endmatch %}>Denied</option>
+                <option value="Rejected" {% match query.status %}{% when Some with (st) %}{% if st == "Rejected" %}selected{% endif %}{% when None %}{% endmatch %}>Rejected</option>
             </select>
         </label>
         <label>
             Type
             <select name="sub_type">
                 <option value="">All</option>
-                <option value="New Dump" {% match query.sub_type %}{% when Some with (t) %}{% if t == "New Dump" %}selected{% endif %}{% when None %}{% endmatch %}>New Dump</option>
-                <option value="Verification" {% match query.sub_type %}{% when Some with (t) %}{% if t == "Verification" %}selected{% endif %}{% when None %}{% endmatch %}>Verification</option>
+                <option value="Disc" {% match query.sub_type %}{% when Some with (t) %}{% if t == "Disc" %}selected{% endif %}{% when None %}{% endmatch %}>Disc</option>
                 <option value="Edit" {% match query.sub_type %}{% when Some with (t) %}{% if t == "Edit" %}selected{% endif %}{% when None %}{% endmatch %}>Edit</option>
             </select>
         </label>

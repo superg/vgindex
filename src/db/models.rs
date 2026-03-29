@@ -215,18 +215,14 @@ impl std::fmt::Display for UserRole {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "submission_type_enum")]
 pub enum SubmissionType {
-    #[sqlx(rename = "New Dump")]
-    #[serde(rename = "New Dump")]
-    NewDump,
-    Verification,
+    Disc,
     Edit,
 }
 
 impl std::fmt::Display for SubmissionType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NewDump => write!(f, "New Dump"),
-            Self::Verification => write!(f, "Verification"),
+            Self::Disc => write!(f, "Disc"),
             Self::Edit => write!(f, "Edit"),
         }
     }
@@ -237,7 +233,7 @@ impl std::fmt::Display for SubmissionType {
 pub enum SubmissionStatus {
     Pending,
     Approved,
-    Denied,
+    Rejected,
 }
 
 impl SubmissionStatus {
@@ -245,7 +241,7 @@ impl SubmissionStatus {
         match self {
             Self::Pending => "status-pending",
             Self::Approved => "status-approved",
-            Self::Denied => "status-denied",
+            Self::Rejected => "status-rejected",
         }
     }
 }
@@ -405,9 +401,9 @@ pub struct DiscSubmission {
     pub submission_type: SubmissionType,
     pub submitter_id: i32,
     pub target_disc_id: Option<i32>,
-    pub data: serde_json::Value,
+    pub changes: serde_json::Value,
     pub dump_log: Option<String>,
-    pub extra_files_path: Option<String>,
+    pub extra_upload_url: Option<String>,
     pub status: SubmissionStatus,
     pub reviewer_id: Option<i32>,
     pub review_comment: Option<String>,

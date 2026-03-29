@@ -508,7 +508,10 @@ def parse_ring_entry(ring_obj):
         if not m:
             continue
         prefix, layer_str, suffix = m.group(1), m.group(2), m.group(3)
-        layer_num = int(layer_str)
+        raw_layer_num = int(layer_str)
+        # Redump ring keys are typically 1-based (ma1, mo1_sid, ...).
+        # Store layers zero-based in DB for consistency with app editing logic.
+        layer_num = raw_layer_num - 1 if raw_layer_num > 0 else raw_layer_num
         if layer_num not in layers:
             layers[layer_num] = {
                 "mastering_code": None,
@@ -893,7 +896,7 @@ def process_all(data_dir, output_path, max_disc_id=None):
             "(disc_id, user_id)", dumper_inserts)
 
         _write_batched(out, "disc_submissions",
-            "(submission_type, submitter_id, target_disc_id, data, status, "
+            "(submission_type, submitter_id, target_disc_id, changes, status, "
             "reviewer_id, review_comment, created_at, reviewed_at)",
             submission_inserts)
 

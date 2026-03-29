@@ -140,16 +140,11 @@ async fn submit_handler(
         "languages": form.languages,
     });
 
-    let sub_type = submission_service::detect_submission_type(&state.pool, &data).await;
-    let target_disc_id = if sub_type == SubmissionType::Verification {
-        submission_service::find_matching_disc(&state.pool, &data).await
-    } else {
-        None
-    };
+    let target_disc_id = submission_service::find_matching_disc(&state.pool, &data).await;
 
     let sub = submission_service::create_submission(
         &state.pool,
-        sub_type,
+        SubmissionType::Disc,
         user.id,
         target_disc_id,
         data,

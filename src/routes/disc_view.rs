@@ -212,7 +212,7 @@ async fn disc_view(
         let layer_count = e.layers.len();
         e.layers.iter().enumerate().map(move |(li, l)| ViewRingRow {
             entry_num,
-            layer: format!("L{li}"),
+            layer: format!("L{}", l.layer),
             mastering_code: ring_tab_replace(&l.mastering_code.clone().unwrap_or_default()),
             mastering_sid: ring_tab_replace(&l.mastering_sid.clone().unwrap_or_default()),
             mould_sids: { let mut v = l.mould_sids.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },

@@ -700,7 +700,7 @@ ON CONFLICT (id) DO NOTHING;\n""")
         if stats.max_changes_count > 0:
             out.write(f"-- Disc submissions ({stats.max_changes_count} Approved rows)\n")
             out.write("INSERT INTO disc_submissions\n")
-            out.write("    (submission_type, submitter_id, target_disc_id, data, status,\n")
+            out.write("    (submission_type, submitter_id, target_disc_id, changes, status,\n")
             out.write("     reviewer_id, review_comment, created_at, reviewed_at)\nVALUES\n")
 
             submission_vals = []
