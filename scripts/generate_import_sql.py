@@ -479,23 +479,25 @@ def parse_ss_ranges(text):
 def parse_ring_entry(ring_obj):
     """Parse a ring object into entry-level and layer-level data.
 
-    Returns: (offset_values, layers_dict)
-        offset_values: list of int offsets (from 0_value, 1_value, ...)
+    Returns: (offset, offset_extra, layers_dict)
+        offset: int offset from 0_value (or None)
+        offset_extra: int offset from 1_value (or None)
         layers_dict: {layer_num: {mastering_code, mastering_sid, mould_sids, toolstamps, additional_moulds}}
     """
-    offset_values = []
+    offset = None
+    offset_extra = None
     layers = {}
 
     for key, val in ring_obj.items():
         if key == "0_value":
             try:
-                offset_values.append(int(val))
+                offset = int(val)
             except (ValueError, TypeError):
                 pass
             continue
         if key == "1_value":
             try:
-                offset_values.append(int(val))
+                offset_extra = int(val)
             except (ValueError, TypeError):
                 pass
             continue
@@ -529,7 +531,7 @@ def parse_ring_entry(ring_obj):
         elif prefix == "mo" and suffix is None:
             layer["additional_moulds"] = [s.strip() for s in val_str.split(",") if s.strip()]
 
-    return offset_values, layers
+    return offset, offset_extra, layers
 
 # ---------------------------------------------------------------------------
 # Change date parsing
@@ -613,15 +615,15 @@ def build_protection(data):
     return ", ".join(parts) if parts else None
 
 
-def build_protection_keys(data):
+def build_keys(data):
     """Collect d_d1_key and d_d2_key into a text array."""
     keys = []
     d1 = data.get("d_d1_key", "")
     d2 = data.get("d_d2_key", "")
     if d1:
-        keys.append(d1.strip())
+        keys.append(d1.strip().replace(" ", ""))
     if d2:
-        keys.append(d2.strip())
+        keys.append(d2.strip().replace(" ", ""))
     return keys if keys else None
 
 # ---------------------------------------------------------------------------
@@ -799,17 +801,18 @@ def process_all(data_dir, output_path, max_disc_id=None):
             if rings:
                 for ring_obj in rings:
                     ring_entry_id += 1
-                    entry_offsets, layers_dict = parse_ring_entry(ring_obj)
+                    entry_offset, entry_offset_extra, layers_dict = parse_ring_entry(ring_obj)
                     comment = None
 
                     # Apply offset inheritance
-                    if not entry_offsets and len(offsets) == 1:
-                        entry_offsets = list(offsets)
+                    if entry_offset is None and len(offsets) == 1:
+                        entry_offset = offsets[0]
                         comment = "offset inherited"
 
                     ring_entry_inserts.append(
                         f"({ring_entry_id}, {disc_id}, "
-                        f"{sql_int_array(entry_offsets)}, "
+                        f"{sql_int(entry_offset)}, "
+                        f"{sql_int(entry_offset_extra)}, "
                         f"NULL, "  # sample_data_start
                         f"{sql_str_or_null(comment)})"
                     )
@@ -830,7 +833,8 @@ def process_all(data_dir, output_path, max_disc_id=None):
                     ring_entry_id += 1
                     ring_entry_inserts.append(
                         f"({ring_entry_id}, {disc_id}, "
-                        f"{sql_int_array([off_val])}, "
+                        f"{sql_int(off_val)}, "
+                        f"NULL, "
                         f"NULL, "
                         f"{sql_str('offset inherited')})"
                     )
@@ -860,10 +864,10 @@ def process_all(data_dir, output_path, max_disc_id=None):
         # Write disc inserts
         _write_batched(out, "discs",
             "(id, enabled, media_type_code, category_id, system_code, title, "
-            "filename_suffix, comments, contents, title_foreign, title_disc, "
-            "title_disc_number, serial, version, edition, barcode, error_count, "
-            "exe_date, m2f2_edc, layerbreaks, pvd, pic, bca, header, protection, "
-            "protection_ranges, protection_sbi, protection_keys, cue, "
+            "filename_suffix, comments, contents, title_foreign, disc_title, "
+            "disc_number, serial, version, edition, barcode, error_count, "
+            "exe_date, edc, layerbreaks, pvd, pic, bca, header, protection, "
+            "sector_ranges, sbi, keys, cue, "
             "questionable) OVERRIDING SYSTEM VALUE",
             disc_inserts,
         )
@@ -878,7 +882,7 @@ def process_all(data_dir, output_path, max_disc_id=None):
             "(disc_id, track_number, size, crc32, md5, sha1)", file_inserts)
 
         _write_batched(out, "disc_ring_code_entries",
-            "(id, disc_id, offset_value, sample_data_start, comment) OVERRIDING SYSTEM VALUE",
+            "(id, disc_id, offset_value, offset_extra_value, sample_data_start, comment) OVERRIDING SYSTEM VALUE",
             ring_entry_inserts)
 
         _write_batched(out, "disc_ring_code_layers",
@@ -960,11 +964,11 @@ def _build_disc_insert(disc_id, data):
 
     # EDC
     edc = data.get("d_edc", "")
-    m2f2_edc = None
+    edc_value = None
     if edc.lower() == "yes":
-        m2f2_edc = True
+        edc_value = True
     elif edc.lower() == "no":
-        m2f2_edc = False
+        edc_value = False
 
     # Layerbreaks
     layerbreaks = None
@@ -996,16 +1000,16 @@ def _build_disc_insert(disc_id, data):
     # Protection
     protection = build_protection(data)
 
-    # Protection ranges
-    protection_ranges = None
+    # Sector ranges
+    sector_ranges = None
     if data.get("d_ssranges"):
-        protection_ranges = parse_ss_ranges(data["d_ssranges"])
+        sector_ranges = parse_ss_ranges(data["d_ssranges"])
 
-    # Protection SBI
-    protection_sbi = data.get("d_libcrypt") or data.get("d_securom") or None
+    # SBI
+    sbi = data.get("d_libcrypt") or data.get("d_securom") or None
 
-    # Protection keys
-    protection_keys = build_protection_keys(data)
+    # Keys
+    keys = build_keys(data)
 
     # Cue
     cue = data.get("d_cue") or None
@@ -1026,16 +1030,16 @@ def _build_disc_insert(disc_id, data):
         f"{sql_text_array(split_csv(data.get('d_barcode')))}, "
         f"{sql_int(error_count)}, "
         f"{sql_str_or_null(data.get('d_date'))}, "
-        f"{sql_bool(m2f2_edc)}, "
+        f"{sql_bool(edc_value)}, "
         f"{sql_int_array(layerbreaks) if layerbreaks else 'NULL'}, "
         f"{sql_bytea(pvd_bytes)}, "
         f"{sql_bytea(pic_bytes)}, "
         f"{sql_bytea(bca_bytes)}, "
         f"{sql_bytea(header_bytes)}, "
         f"{sql_str_or_null(protection)}, "
-        f"{sql_int4range_array(protection_ranges) if protection_ranges else 'NULL'}, "
-        f"{sql_str_or_null(protection_sbi)}, "
-        f"{sql_text_array(protection_keys) if protection_keys else 'NULL'}, "
+        f"{sql_int4range_array(sector_ranges) if sector_ranges else 'NULL'}, "
+        f"{sql_str_or_null(sbi)}, "
+        f"{sql_text_array(keys) if keys else 'NULL'}, "
         f"{sql_str_or_null(cue)}, "
         f"{sql_bool(questionable)})"
     )

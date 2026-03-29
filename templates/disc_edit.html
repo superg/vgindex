@@ -8,6 +8,7 @@ const RING_CODES = {{ ring_codes_json|safe }};
 const MAX_LAYERS = {{ max_layers }};
 const MEDIA_LAYERS = {{ media_layers_json|safe }};
 const SYSTEMS_MEDIA = {{ systems_media_json|safe }};
+const SYSTEMS_HAS_OFFSET_EXTRA = {{ systems_has_offset_extra_json|safe }};
 const HAS_SAMPLE_START = {{ has_sample_start }};
 const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{% endif %}{% endfor %}];
 </script>
@@ -53,14 +54,14 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </div>
 
     <div class="grid">
-        {% if show_title_disc_number %}
+        {% if show_disc_number %}
         <label>Disc Number
-            <input type="text" name="title_disc_number" value="{{ title_disc_number }}">
+            <input type="text" name="disc_number" value="{{ disc_number }}">
         </label>
         {% endif %}
-        {% if show_title_disc %}
+        {% if show_disc_title %}
         <label>Disc Title
-            <input type="text" name="title_disc" value="{{ title_disc }}">
+            <input type="text" name="disc_title" value="{{ disc_title }}">
         </label>
         {% endif %}
         <label>Filename Suffix
@@ -171,6 +172,11 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </div>
     {% endif %}
 
+    <div class="inline-field" id="layerbreak-row" style="display:none">
+        <span class="inline-field-label">Layerbreaks</span>
+        <div id="layerbreak-list" class="inline-field-values"></div>
+    </div>
+
     {% if show_protection %}
     <div class="inline-field">
         <span class="inline-field-label">Disc Key / ID</span>
@@ -180,11 +186,6 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
         </div>
     </div>
     {% endif %}
-
-    <div class="inline-field" id="layerbreak-row" style="display:none">
-        <span class="inline-field-label">Layerbreaks</span>
-        <div id="layerbreak-list" class="inline-field-values"></div>
-    </div>
 
     <fieldset>
         <legend>Ring Codes</legend>
@@ -212,15 +213,15 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </label>
     {% endif %}
 
-    {% if show_protection_ranges %}
+    {% if show_sector_ranges %}
     <label>Sector Ranges
-        <textarea name="protection_ranges" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection_ranges_text }}</textarea>
+        <textarea name="sector_ranges" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sector_ranges_text }}</textarea>
     </label>
     {% endif %}
 
-    {% if show_protection_sbi %}
+    {% if show_sbi %}
     <label>SBI
-        <textarea name="protection_sbi" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection_sbi }}</textarea>
+        <textarea name="sbi" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sbi }}</textarea>
     </label>
     {% endif %}
 
@@ -230,9 +231,9 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </label>
     {% endif %}
 
-    {% if show_pic %}
-    <label>PIC
-        <textarea name="pic" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>
+    {% if show_header %}
+    <label>Header
+        <textarea name="header" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ header_hex }}</textarea>
     </label>
     {% endif %}
 
@@ -242,9 +243,9 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </label>
     {% endif %}
 
-    {% if show_header %}
-    <label>Header
-        <textarea name="header" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ header_hex }}</textarea>
+    {% if show_pic %}
+    <label>PIC
+        <textarea name="pic" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>
     </label>
     {% endif %}
 

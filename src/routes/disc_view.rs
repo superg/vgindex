@@ -44,8 +44,8 @@ struct DiscViewTemplate {
     regions: Vec<ViewFlag>,
     lang_flags: Vec<ViewFlag>,
     title_foreign: String,
-    title_disc: String,
-    title_disc_number: String,
+    disc_title: String,
+    disc_number: String,
     serial: String,
     serial_count: usize,
     exe_date: String,
@@ -76,7 +76,7 @@ struct DiscViewTemplate {
     pic_rows: Vec<HeaderRow>,
     disc_key: String,
     disc_id_hex: String,
-    protection_ranges: Vec<ProtectionRangeRow>,
+    sector_ranges: Vec<ProtectionRangeRow>,
     header_rows: Vec<HeaderRow>,
     bca_rows: Vec<HeaderRow>,
 }
@@ -102,7 +102,8 @@ struct ViewRingRow {
     mould_sids: String,
     additional_moulds: String,
     toolstamps: String,
-    offset_value: String,
+    offset: String,
+    offset_extra: String,
     sample_data_start: String,
     comment: String,
     first_in_entry: bool,
@@ -117,13 +118,14 @@ struct RingColVis {
     mould_sids: bool,
     additional_moulds: bool,
     toolstamps: bool,
-    offset_value: bool,
+    offset: bool,
+    offset_extra: bool,
     sample_data_start: bool,
     comment: bool,
 }
 
 impl RingColVis {
-    fn from_rows(rows: &[ViewRingRow], has_sample_start: bool) -> Self {
+    fn from_rows(rows: &[ViewRingRow], has_sample_start: bool, has_offset_extra: bool) -> Self {
         Self {
             layer: rows.iter().any(|r| r.entry_rowspan > 1),
             mastering_code: rows.iter().any(|r| !r.mastering_code.is_empty()),
@@ -131,7 +133,8 @@ impl RingColVis {
             mould_sids: rows.iter().any(|r| !r.mould_sids.is_empty()),
             additional_moulds: rows.iter().any(|r| !r.additional_moulds.is_empty()),
             toolstamps: rows.iter().any(|r| !r.toolstamps.is_empty()),
-            offset_value: rows.iter().any(|r| !r.offset_value.is_empty()),
+            offset: rows.iter().any(|r| !r.offset.is_empty()),
+            offset_extra: has_offset_extra,
             sample_data_start: has_sample_start && rows.iter().any(|r| !r.sample_data_start.is_empty()),
             comment: rows.iter().any(|r| !r.comment.is_empty()),
         }
@@ -200,9 +203,9 @@ async fn disc_view(
     });
 
     let ring_rows: Vec<ViewRingRow> = sorted_entries.iter().enumerate().flat_map(|(i, e)| {
-        let offset_value = e.offset_value.as_deref().unwrap_or_default()
-            .iter().map(|v| if *v > 0 { format!("+{v}") } else { v.to_string() }).collect::<Vec<_>>().join(", ");
-        let sample_data_start = e.sample_data_start.clone().unwrap_or_default();
+        let offset = format_signed_offset(e.offset_value);
+        let offset_extra = format_signed_offset(e.offset_extra_value);
+        let sample_data_start = e.sample_data_start.map(|v| v.to_string()).unwrap_or_default();
         let comment = e.comment.clone().unwrap_or_default();
         let entry_num = i + 1;
         let entry_even = entry_num % 2 == 0;
@@ -215,7 +218,8 @@ async fn disc_view(
             mould_sids: { let mut v = l.mould_sids.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
             additional_moulds: { let mut v = l.additional_moulds.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
             toolstamps: { let mut v = l.toolstamps.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
-            offset_value: offset_value.clone(),
+            offset: offset.clone(),
+            offset_extra: offset_extra.clone(),
             sample_data_start: sample_data_start.clone(),
             comment: comment.clone(),
             first_in_entry: li == 0,
@@ -231,8 +235,8 @@ async fn disc_view(
         &detail.disc.title,
         &region_names,
         &language_codes,
-        detail.disc.title_disc_number.as_deref(),
-        detail.disc.title_disc.as_deref(),
+        detail.disc.disc_number.as_deref(),
+        detail.disc.disc_title.as_deref(),
         detail.disc.filename_suffix.as_deref(),
     );
 
@@ -255,7 +259,7 @@ async fn disc_view(
         }
     }).collect();
 
-    let sbi_rows = detail.disc.protection_sbi.as_deref()
+    let sbi_rows = detail.disc.sbi.as_deref()
         .map(|text| parse_sbi_display(text))
         .unwrap_or_default();
 
@@ -267,11 +271,11 @@ async fn disc_view(
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
 
-    let keys = detail.disc.protection_keys.as_deref().unwrap_or_default();
-    let disc_key = keys.first().map(|s| s.replace(' ', "")).unwrap_or_default();
-    let disc_id_hex = keys.get(1).map(|s| s.replace(' ', "")).unwrap_or_default();
+    let keys = detail.disc.keys.as_deref().unwrap_or_default();
+    let disc_key = keys.first().cloned().unwrap_or_default();
+    let disc_id_hex = keys.get(1).cloned().unwrap_or_default();
 
-    let protection_ranges: Vec<ProtectionRangeRow> = detail.protection_ranges.iter()
+    let sector_ranges: Vec<ProtectionRangeRow> = detail.sector_ranges.iter()
         .enumerate()
         .map(|(i, r)| ProtectionRangeRow { num: i + 1, start: r.range_start, end: r.range_end })
         .collect();
@@ -291,8 +295,8 @@ async fn disc_view(
             disc_id: id,
             title: format_display_title(
                 &detail.disc.title,
-                detail.disc.title_disc_number.as_deref(),
-                detail.disc.title_disc.as_deref(),
+                detail.disc.disc_number.as_deref(),
+                detail.disc.disc_title.as_deref(),
                 detail.disc.filename_suffix.as_deref(),
             ),
             system_name: detail.system.name.clone(),
@@ -310,8 +314,8 @@ async fn disc_view(
                 name: l.name.clone(),
             }).collect(),
             title_foreign: detail.disc.title_foreign.clone().unwrap_or_default(),
-            title_disc: detail.disc.title_disc.clone().unwrap_or_default(),
-            title_disc_number: detail.disc.title_disc_number.clone().unwrap_or_default(),
+            disc_title: detail.disc.disc_title.clone().unwrap_or_default(),
+            disc_number: detail.disc.disc_number.clone().unwrap_or_default(),
             serial_count: detail.disc.serial.len(),
             serial: detail.disc.serial.join("<br>"),
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
@@ -324,7 +328,7 @@ async fn disc_view(
                 .iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "),
             comments: format_comments(&detail.disc.comments.clone().unwrap_or_default()),
             contents: format_comments(&detail.disc.contents.clone().unwrap_or_default()),
-            edc_display: detail.disc.m2f2_edc.map(|e| if e { "Yes" } else { "No" }.to_string()).unwrap_or_default(),
+            edc_display: detail.disc.edc.map(|e| if e { "Yes" } else { "No" }.to_string()).unwrap_or_default(),
             protection: detail.disc.protection.clone().unwrap_or_default(),
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             file_count: detail.files.len(),
@@ -361,7 +365,11 @@ async fn disc_view(
                     .collect::<Vec<_>>()
                     .join("<br>")
             },
-            ring_vis: RingColVis::from_rows(&ring_rows, detail.system.has_sample_start),
+            ring_vis: RingColVis::from_rows(
+                &ring_rows,
+                detail.system.has_sample_start,
+                detail.system.has_offset_extra,
+            ),
             ring_rows,
             files,
             sbi_rows,
@@ -369,13 +377,21 @@ async fn disc_view(
             pic_rows,
             disc_key,
             disc_id_hex,
-            protection_ranges,
+            sector_ranges,
             header_rows,
             bca_rows,
         }
         .render()
         .unwrap(),
     ))
+}
+
+fn format_signed_offset(offset: Option<i32>) -> String {
+    match offset {
+        Some(v) if v > 0 => format!("+{v}"),
+        Some(v) => v.to_string(),
+        None => String::new(),
+    }
 }
 
 fn format_comments(raw: &str) -> String {
@@ -713,8 +729,8 @@ async fn disc_cue_download(
         &detail.disc.title,
         &region_names,
         &language_codes,
-        detail.disc.title_disc_number.as_deref(),
-        detail.disc.title_disc.as_deref(),
+        detail.disc.disc_number.as_deref(),
+        detail.disc.disc_title.as_deref(),
         detail.disc.filename_suffix.as_deref(),
     );
     let filename = format!("{rom_base_name}.cue");
@@ -735,7 +751,7 @@ async fn disc_sbi_download(
 ) -> AppResult<impl IntoResponse> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
 
-    let sbi_text = detail.disc.protection_sbi
+    let sbi_text = detail.disc.sbi
         .filter(|s| !s.is_empty())
         .ok_or(crate::error::AppError::NotFound)?;
 
@@ -769,8 +785,8 @@ async fn disc_sbi_download(
         &detail.disc.title,
         &region_names,
         &language_codes,
-        detail.disc.title_disc_number.as_deref(),
-        detail.disc.title_disc.as_deref(),
+        detail.disc.disc_number.as_deref(),
+        detail.disc.disc_title.as_deref(),
         detail.disc.filename_suffix.as_deref(),
     );
     let filename = format!("{rom_base_name}.sbi");

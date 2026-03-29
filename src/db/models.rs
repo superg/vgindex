@@ -265,12 +265,12 @@ pub struct System {
     pub name: String,
     pub media_types: Vec<String>,
     pub has_exe_date: bool,
-    pub has_protection_sbi: bool,
+    pub has_sbi: bool,
     pub has_pvd: bool,
-    pub has_m2f2_edc: bool,
+    pub has_edc: bool,
     pub has_title_foreign: bool,
-    pub has_title_disc: bool,
-    pub has_title_disc_number: bool,
+    pub has_disc_title: bool,
+    pub has_disc_number: bool,
     pub has_serial: bool,
     pub has_barcode: bool,
     pub has_version: bool,
@@ -278,11 +278,11 @@ pub struct System {
     pub has_error_count: bool,
     pub has_protection: bool,
     pub has_pic: bool,
-    pub has_protection_ranges: bool,
+    pub has_sector_ranges: bool,
     pub has_header: bool,
     pub has_bca: bool,
     pub has_sample_start: bool,
-    pub sort_order: i32,
+    pub has_offset_extra: bool,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
@@ -339,8 +339,8 @@ pub struct Disc {
     pub media_type: MediaType,
     pub title: String,
     pub title_foreign: Option<String>,
-    pub title_disc: Option<String>,
-    pub title_disc_number: Option<String>,
+    pub disc_title: Option<String>,
+    pub disc_number: Option<String>,
     pub serial: Vec<String>,
     #[sqlx(rename = "category_id")]
     pub category: Category,
@@ -352,11 +352,11 @@ pub struct Disc {
     pub filename_suffix: Option<String>,
     pub error_count: Option<i32>,
     pub exe_date: Option<String>,
-    pub m2f2_edc: Option<bool>,
+    pub edc: Option<bool>,
     pub layerbreaks: Option<Vec<i32>>,
     pub protection: Option<String>,
-    pub protection_sbi: Option<String>,
-    pub protection_keys: Option<Vec<String>>,
+    pub sbi: Option<String>,
+    pub keys: Option<Vec<String>>,
     pub cue: Option<String>,
     pub pvd: Option<Vec<u8>>,
     pub pic: Option<Vec<u8>>,
@@ -370,8 +370,9 @@ pub struct Disc {
 pub struct DiscRingCodeEntry {
     pub id: i32,
     pub disc_id: i32,
-    pub offset_value: Option<Vec<i32>>,
-    pub sample_data_start: Option<String>,
+    pub offset_value: Option<i32>,
+    pub offset_extra_value: Option<i32>,
+    pub sample_data_start: Option<i32>,
     pub comment: Option<String>,
 }
 
@@ -457,7 +458,7 @@ pub struct DiscDetail {
     pub ring_entries: Vec<RingEntryView>,
     pub files: Vec<File>,
     pub dumpers: Vec<DumperInfo>,
-    pub protection_ranges: Vec<ProtectionRange>,
+    pub sector_ranges: Vec<ProtectionRange>,
     pub added_at: Option<DateTime<Utc>>,
     pub modified_at: Option<DateTime<Utc>>,
 }
@@ -470,8 +471,9 @@ pub struct ProtectionRange {
 
 #[derive(Debug, Clone)]
 pub struct RingEntryView {
-    pub offset_value: Option<Vec<i32>>,
-    pub sample_data_start: Option<String>,
+    pub offset_value: Option<i32>,
+    pub offset_extra_value: Option<i32>,
+    pub sample_data_start: Option<i32>,
     pub comment: Option<String>,
     pub layers: Vec<DiscRingCodeLayer>,
 }
@@ -484,17 +486,17 @@ pub struct DumperInfo {
 
 pub fn format_display_title(
     title: &str,
-    title_disc_number: Option<&str>,
-    title_disc: Option<&str>,
+    disc_number: Option<&str>,
+    disc_title: Option<&str>,
     filename_suffix: Option<&str>,
 ) -> String {
     let mut result = title.to_string();
-    if let Some(n) = title_disc_number {
+    if let Some(n) = disc_number {
         if !n.is_empty() {
             result.push_str(&format!(" (Disc {n})"));
         }
     }
-    if let Some(d) = title_disc {
+    if let Some(d) = disc_title {
         if !d.is_empty() {
             result.push_str(&format!(" ({d})"));
         }
@@ -542,8 +544,8 @@ pub fn build_rom_base_name(
     title: &str,
     region_names: &[String],
     language_codes: &[String],
-    title_disc_number: Option<&str>,
-    title_disc: Option<&str>,
+    disc_number: Option<&str>,
+    disc_title: Option<&str>,
     filename_suffix: Option<&str>,
 ) -> String {
     let mut name = title.to_string();
@@ -565,12 +567,12 @@ pub fn build_rom_base_name(
             .collect();
         name.push_str(&format!(" ({})", capitalized.join(",")));
     }
-    if let Some(n) = title_disc_number {
+    if let Some(n) = disc_number {
         if !n.is_empty() {
             name.push_str(&format!(" (Disc {n})"));
         }
     }
-    if let Some(d) = title_disc {
+    if let Some(d) = disc_title {
         if !d.is_empty() {
             name.push_str(&format!(" ({d})"));
         }

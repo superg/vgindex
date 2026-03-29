@@ -1,93 +1,93 @@
 INSERT INTO media_types
-    (code,       name,                  layer_count, rom_extension, sort_order) VALUES
-    ('cd',       'CD',                           1, 'bin',  1),
-    ('gdrom',    'GD-ROM',                       1, 'bin',  2),
-    ('dvd5',     'DVD-5',                        1, 'iso',  3),
-    ('dvd5gc',   'Nintendo GameCube Game Disc',  1, 'iso',  4),
-    ('dvd5wii',  'Wii Optical Disc (SL)',        1, 'iso',  5),
-    ('dvd9',     'DVD-9',                        2, 'iso',  6),
-    ('dvd9wii',  'Wii Optical Disc (DL)',        2, 'iso',  7),
-    ('hdvd15',   'HD DVD (SL)',                  1, 'iso',  8),
-    ('hdvd30',   'HD DVD (DL)',                  2, 'iso',  9),
-    ('bd25',     'BD-25',                        1, 'iso', 10),
-    ('bd25wiiu', 'Wii U Optical Disc (SL)',      1, 'iso', 11),
-    ('bd50',     'BD-50',                        2, 'iso', 12),
-    ('bd66',     'BD-66',                        2, 'iso', 13),
-    ('bd100',    'BD-100',                       3, 'iso', 14),
-    ('umd1',     'UMD (SL)',                     1, 'iso', 15),
-    ('umd2',     'UMD (DL)',                     2, 'iso', 16);
+    (code,       name,                layer_count, rom_extension) VALUES
+    ('cd',       'CD',                          1, 'bin'),
+    ('gdrom',    'GD-ROM',                      1, 'bin'),
+    ('dvd5',     'DVD-5',                       1, 'iso'),
+    ('dvd5gc',   'Nintendo GameCube Game Disc', 1, 'iso'),
+    ('dvd5wii',  'Wii Optical Disc (SL)',       1, 'iso'),
+    ('dvd9',     'DVD-9',                       2, 'iso'),
+    ('dvd9wii',  'Wii Optical Disc (DL)',       2, 'iso'),
+    ('hdvd15',   'HD DVD (SL)',                 1, 'iso'),
+    ('hdvd30',   'HD DVD (DL)',                 2, 'iso'),
+    ('bd25',     'BD-25',                       1, 'iso'),
+    ('bd25wiiu', 'Wii U Optical Disc (SL)',     1, 'iso'),
+    ('bd50',     'BD-50',                       2, 'iso'),
+    ('bd66',     'BD-66',                       2, 'iso'),
+    ('bd100',    'BD-100',                      3, 'iso'),
+    ('umd1',     'UMD (SL)',                    1, 'iso'),
+    ('umd2',     'UMD (DL)',                    2, 'iso');
 
 INSERT INTO categories
-    (name,    sort_order) VALUES
-    ('Games',          1),
-    ('Demos',          2),
-    ('Coverdiscs',     3),
-    ('Bonus Discs',    4),
-    ('Applications',   5),
-    ('Multimedia',     6),
-    ('Add-Ons',        7),
-    ('Educational',    8),
-    ('Preproduction',  9),
-    ('Video',         10),
-    ('Audio',         11);
+    (name) VALUES
+    ('Games'),
+    ('Demos'),
+    ('Coverdiscs'),
+    ('Bonus Discs'),
+    ('Applications'),
+    ('Multimedia'),
+    ('Add-Ons'),
+    ('Educational'),
+    ('Preproduction'),
+    ('Video'),
+    ('Audio');
 
 -- Regions: ISO 3166-1 alpha-2 (or X* user-assigned for non-country entries), ordered by dat priority
 -- flag_code = ISO 3166-1 alpha-2 country code for the flag SVG (or special code for non-country entries)
 INSERT INTO regions
     (code, name,                   flag_code, sort_order) VALUES
-    ('us', 'USA',                  'us',      1),
-    ('jp', 'Japan',                'jp',      2),
-    ('xe', 'Europe',               'eu',      3),
-    ('xa', 'Asia',                 'xa',      4),
-    ('gb', 'UK',                   'gb',      5),
-    ('fr', 'France',               'fr',      6),
-    ('es', 'Spain',                'es',      7),
-    ('ae', 'United Arab Emirates', 'ae',      8),
-    ('ar', 'Argentina',            'ar',      9),
-    ('at', 'Austria',              'at',     10),
-    ('au', 'Australia',            'au',     11),
-    ('be', 'Belgium',              'be',     12),
-    ('bg', 'Bulgaria',             'bg',     13),
-    ('br', 'Brazil',               'br',     14),
-    ('by', 'Belarus',              'by',     15),
-    ('ca', 'Canada',               'ca',     16),
-    ('ch', 'Switzerland',          'ch',     17),
-    ('cn', 'China',                'cn',     18),
-    ('cz', 'Czech',                'cz',     19),
-    ('de', 'Germany',              'de',     20),
-    ('dk', 'Denmark',              'dk',     21),
-    ('ee', 'Estonia',              'ee',     22),
-    ('fi', 'Finland',              'fi',     23),
-    ('gr', 'Greece',               'gr',     24),
-    ('hr', 'Croatia',              'hr',     25),
-    ('hu', 'Hungary',              'hu',     26),
-    ('ie', 'Ireland',              'ie',     27),
-    ('il', 'Israel',               'il',     28),
-    ('in', 'India',                'in',     29),
-    ('is', 'Iceland',              'is',     30),
-    ('it', 'Italy',                'it',     31),
-    ('kr', 'Korea',                'kr',     32),
-    ('lt', 'Lithuania',            'lt',     33),
-    ('nl', 'Netherlands',          'nl',     34),
-    ('no', 'Norway',               'no',     35),
-    ('nz', 'New Zealand',          'nz',     36),
-    ('pl', 'Poland',               'pl',     37),
-    ('pt', 'Portugal',             'pt',     38),
-    ('ro', 'Romania',              'ro',     39),
-    ('rs', 'Serbia',               'rs',     40),
-    ('ru', 'Russia',               'ru',     41),
-    ('se', 'Sweden',               'se',     42),
-    ('sg', 'Singapore',            'sg',     43),
-    ('sk', 'Slovakia',             'sk',     44),
-    ('th', 'Thailand',             'th',     45),
-    ('tr', 'Turkey',               'tr',     46),
-    ('tw', 'Taiwan',               'tw',     47),
-    ('ua', 'Ukraine',              'ua',     48),
-    ('xl', 'Latin America',        'xl',     49),
-    ('xp', 'Export',               'xp',     50),
-    ('xs', 'Scandinavia',          'xs',     51),
-    ('xw', 'World',                'un',     52),
-    ('za', 'South Africa',         'za',     53);
+    ('us', 'USA',                  'us',       1),
+    ('jp', 'Japan',                'jp',       2),
+    ('xe', 'Europe',               'eu',       3),
+    ('xa', 'Asia',                 'xa',       4),
+    ('gb', 'UK',                   'gb',       5),
+    ('fr', 'France',               'fr',       6),
+    ('es', 'Spain',                'es',       7),
+    ('ae', 'United Arab Emirates', 'ae',       8),
+    ('ar', 'Argentina',            'ar',       9),
+    ('at', 'Austria',              'at',      10),
+    ('au', 'Australia',            'au',      11),
+    ('be', 'Belgium',              'be',      12),
+    ('bg', 'Bulgaria',             'bg',      13),
+    ('br', 'Brazil',               'br',      14),
+    ('by', 'Belarus',              'by',      15),
+    ('ca', 'Canada',               'ca',      16),
+    ('ch', 'Switzerland',          'ch',      17),
+    ('cn', 'China',                'cn',      18),
+    ('cz', 'Czech',                'cz',      19),
+    ('de', 'Germany',              'de',      20),
+    ('dk', 'Denmark',              'dk',      21),
+    ('ee', 'Estonia',              'ee',      22),
+    ('fi', 'Finland',              'fi',      23),
+    ('gr', 'Greece',               'gr',      24),
+    ('hr', 'Croatia',              'hr',      25),
+    ('hu', 'Hungary',              'hu',      26),
+    ('ie', 'Ireland',              'ie',      27),
+    ('il', 'Israel',               'il',      28),
+    ('in', 'India',                'in',      29),
+    ('is', 'Iceland',              'is',      30),
+    ('it', 'Italy',                'it',      31),
+    ('kr', 'Korea',                'kr',      32),
+    ('lt', 'Lithuania',            'lt',      33),
+    ('nl', 'Netherlands',          'nl',      34),
+    ('no', 'Norway',               'no',      35),
+    ('nz', 'New Zealand',          'nz',      36),
+    ('pl', 'Poland',               'pl',      37),
+    ('pt', 'Portugal',             'pt',      38),
+    ('ro', 'Romania',              'ro',      39),
+    ('rs', 'Serbia',               'rs',      40),
+    ('ru', 'Russia',               'ru',      41),
+    ('se', 'Sweden',               'se',      42),
+    ('sg', 'Singapore',            'sg',      43),
+    ('sk', 'Slovakia',             'sk',      44),
+    ('th', 'Thailand',             'th',      45),
+    ('tr', 'Turkey',               'tr',      46),
+    ('tw', 'Taiwan',               'tw',      47),
+    ('ua', 'Ukraine',              'ua',      48),
+    ('xl', 'Latin America',        'xl',      49),
+    ('xp', 'Export',               'xp',      50),
+    ('xs', 'Scandinavia',          'xs',      51),
+    ('xw', 'World',                'un',      52),
+    ('za', 'South Africa',         'za',      53);
 
 -- Languages: IETF BCP 47 two-letter codes, ordered by dat priority
 -- flag_code = ISO 3166-1 alpha-2 country code for the flag SVG
@@ -142,85 +142,164 @@ INSERT INTO languages
     ('vi', 'Vietnamese',  'vn', 47),
     ('bg', 'Bulgarian',   'bg', 48);
 
--- Systems: Redump `code`; sort_order = first scrape appearance (min disc_id). `ecd` vs `audio-cd` for PK.
--- has_* = OR over scraped discs: has_exe_date=d_date, has_protection_sbi=d_libcrypt|d_securom, has_pvd=d_pvd, has_m2f2_edc=d_edc (non-empty).
+-- Systems: Redump `code`; `ecd` vs `audio-cd` for PK.
+-- has_* = OR over scraped discs: has_exe_date=d_date, has_sbi=d_libcrypt|d_securom, has_pvd=d_pvd, has_edc=d_edc (non-empty).
+-- Systems: Redump `code`; `ecd` vs `audio-cd` for PK.
+-- has_* = OR over scraped discs: has_exe_date=d_date, has_sbi=d_libcrypt|d_securom, has_pvd=d_pvd, has_edc=d_edc (non-empty).
 INSERT INTO systems
-    (code,          name,                                                media_types, has_title_foreign, has_title_disc, has_title_disc_number, has_serial, has_version, has_edition, has_barcode, has_error_count, has_exe_date, has_m2f2_edc, has_pvd, has_pic, has_bca, has_header, has_protection, has_protection_ranges, has_protection_sbi, has_sample_start, sort_order) VALUES
-    ('PSX',         'Sony PlayStation',                                  '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,    true,    true,    true,   false,   false,   false,    true,   false,    true,   false,               1),
-    ('PS2',         'Sony PlayStation 2',                                '{cd,dvd5,dvd9}',            true,    true,    true,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,               2),
-    ('DVD-VIDEO',   'DVD-Video',                                         '{dvd5,dvd9}',               true,    true,    true,    true,   false,    true,    true,   false,   false,   false,    true,   false,   false,   false,    true,   false,   false,   false,               3),
-    ('PSP',         'Sony PlayStation Portable',                         '{dvd5,umd1,umd2}',          true,    true,    true,    true,    true,    true,    true,   false,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,               4),
-    ('MCD',         'Sega Mega CD & Sega CD',                            '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,               5),
-    ('GC',          'Nintendo GameCube',                                 '{dvd5gc}',                  true,    true,    true,    true,    true,    true,    true,   false,   false,   false,   false,   false,    true,   false,   false,   false,   false,   false,               6),
-    ('DC',          'Sega Dreamcast',                                    '{cd,gdrom}',                true,    true,    true,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,               7),
-    ('WII',         'Nintendo Wii',                                      '{dvd5wii,dvd9wii}',         true,    true,    true,    true,    true,    true,    true,   false,   false,   false,   false,   false,    true,   false,   false,   false,   false,   false,               8),
-    ('SS',          'Sega Saturn',                                       '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,               9),
-    ('3DO',         'Panasonic 3DO Interactive Multiplayer',             '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              10),
-    ('PC',          'IBM PC compatible',                                 '{cd,dvd5,dvd9,bd50}',       true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,    true,   false,   false,    true,   false,    true,   false,              11),
-    ('PCE',         'NEC PC Engine CD & TurboGrafx CD',                  '{cd}',                      true,   false,    true,    true,    true,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              12),
-    ('CDTV',        'Commodore Amiga CDTV',                              '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              13),
-    ('CD32',        'Commodore Amiga CD32',                              '{cd}',                      true,    true,   false,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              14),
-    ('ACD',         'Commodore Amiga CD',                                '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              15),
-    ('AUDIO-CD',    'Audio CD',                                          '{cd}',                      true,    true,    true,    true,   false,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,    true,              16),
-    ('QIS',         'Bandai Playdia Quick Interactive System',           '{cd}',                      true,   false,   false,    true,   false,    true,    true,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              17),
-    ('PIPPIN',      'Bandai Pippin',                                     '{cd}',                      true,   false,    true,    true,    true,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              18),
-    ('PC-98',       'NEC PC-98 series',                                  '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              19),
-    ('PS3',         'Sony PlayStation 3',                                '{cd,dvd5,dvd9,bd25,bd50}',  true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,    true,   false,   false,   false,   false,   false,   false,              20),
-    ('XBOX',        'Microsoft Xbox',                                    '{cd,dvd5,dvd9}',            true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,    true,   false,   false,              21),
-    ('XBOX360',     'Microsoft Xbox 360',                                '{cd,dvd5,dvd9}',            true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,    true,   false,   false,              22),
-    ('MAC',         'Apple Macintosh',                                   '{cd,dvd5,dvd9}',            true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,    true,   false,    true,   false,              23),
-    ('FMT',         'Fujitsu FM Towns series',                           '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              24),
-    ('HS',          'Mattel HyperScan',                                  '{cd}',                     false,   false,   false,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              25),
-    ('CDI',         'Philips CD-i',                                      '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              26),
-    ('VCD',         'Video CD',                                          '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              27),
-    ('NAOMI',       'Sega Naomi',                                        '{gdrom}',                   true,   false,   false,    true,    true,    true,   false,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,              28),
-    ('TRF',         'Namco · Sega · Nintendo Triforce',                  '{gdrom}',                   true,   false,   false,    true,    true,    true,   false,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,              29),
-    ('CHIHIRO',     'Sega Chihiro',                                      '{gdrom}',                   true,   false,   false,    true,    true,    true,   false,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,              30),
-    ('PC-FX',       'NEC PC-FX & PC-FXGA',                               '{cd}',                      true,    true,    true,    true,   false,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              31),
-    ('VFLASH',      'VTech V.Flash & V.Smile Pro',                       '{cd}',                      true,   false,   false,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              32),
-    ('NGCD',        'Neo Geo CD',                                        '{cd}',                      true,   false,   false,    true,    true,    true,    true,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              33),
-    ('BD-VIDEO',    'BD-Video',                                          '{bd25,bd50}',               true,    true,    true,    true,    true,    true,    true,   false,   false,   false,    true,    true,   false,   false,    true,   false,   false,   false,              34),
-    ('PALM',        'Palm OS',                                           '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              35),
-    ('PHOTO-CD',    'Photo CD',                                          '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              36),
-    ('LINDBERGH',   'Sega Lindbergh',                                    '{dvd5}',                    true,   false,   false,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              37),
-    ('PS4',         'Sony PlayStation 4',                                '{bd25,bd50}',               true,    true,    true,    true,    true,    true,    true,   false,   false,   false,    true,    true,   false,   false,   false,   false,   false,   false,              38),
-    ('PC-88',       'NEC PC-88 series',                                  '{cd}',                      true,   false,   false,    true,   false,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              39),
-    ('ENHANCED-CD', 'Enhanced CD',                                       '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              40),
-    ('WIIU',        'Nintendo Wii U',                                    '{bd25wiiu}',                true,   false,   false,    true,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              41),
-    ('XBOXONE',     'Microsoft Xbox One',                                '{bd25,bd50}',               true,    true,    true,    true,    true,    true,    true,   false,   false,   false,    true,    true,   false,   false,   false,   false,   false,   false,              42),
-    ('PSXGS',       'PlayStation GameShark Updates',                     '{cd}',                      true,   false,   false,    true,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              43),
-    ('KSITE',       'Tomy Kiss-Site',                                    '{cd}',                      true,   false,   false,    true,   false,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              44),
-    ('GAMEWAVE',    'ZAPiT Games Game Wave Family Entertainment System', '{dvd5}',                   false,    true,    true,    true,    true,    true,    true,   false,   false,   false,    true,   false,   false,   false,    true,   false,   false,   false,              45),
-    ('QUIZARD',     'TAB-Austria Quizard',                               '{cd}',                      true,   false,   false,    true,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              46),
-    ('NAOMI2',      'Sega Naomi 2',                                      '{gdrom}',                   true,   false,   false,    true,    true,    true,   false,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,              47),
-    ('NS246',       'Namco System 246',                                  '{cd,dvd5}',                 true,   false,   false,    true,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              48),
-    ('KSGV',        'Konami System GV',                                  '{cd}',                      true,   false,   false,    true,    true,   false,   false,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              49),
-    ('NUON',        'VM Labs NUON',                                      '{dvd5}',                    true,   false,   false,    true,    true,    true,    true,   false,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              50),
-    ('SRE2',        'Sega RingEdge 2',                                   '{dvd5,dvd9}',               true,    true,   false,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              51),
-    ('KEA',         'Konami e-Amusement',                                '{cd,dvd5}',                 true,    true,   false,    true,    true,   false,   false,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              52),
-    ('ITE',         'Incredible Technologies Eagle',                     '{cd}',                     false,   false,   false,   false,    true,    true,   false,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              53),
-    ('KFB',         'Konami FireBeat',                                   '{cd,dvd5}',                 true,    true,    true,    true,    true,   false,   false,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              54),
-    ('KM2',         'Konami M2',                                         '{cd}',                      true,   false,   false,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              55),
-    ('SRE',         'Sega RingEdge',                                     '{dvd5,dvd9}',               true,    true,   false,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              56),
-    ('HVNXP',       'Hasbro VideoNow XP',                                '{cd}',                     false,    true,    true,    true,   false,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              57),
-    ('M2',          'Panasonic M2',                                      '{cd}',                     false,   false,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              58),
-    ('HVNC',        'Hasbro VideoNow Color',                             '{cd}',                     false,    true,    true,    true,   false,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              59),
-    ('HVNJR',       'Hasbro VideoNow Jr.',                               '{cd}',                     false,    true,    true,    true,   false,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              60),
-    ('NAVI21',      'Navisoft Naviken 2.1',                              '{cd}',                      true,    true,   false,    true,   false,    true,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,              61),
-    ('VIS',         'Memorex Visual Information System',                 '{cd}',                     false,   false,   false,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              62),
-    ('IXL',         'Mattel Fisher-Price iXL',                           '{cd}',                     false,   false,   false,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              63),
-    ('AJCD',        'Atari Jaguar CD Interactive Multimedia System',     '{cd}',                      true,   false,   false,    true,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              64),
-    ('HVN',         'Hasbro VideoNow',                                   '{cd}',                     false,    true,    true,    true,   false,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              65),
-    ('FPP',         'funworld Photo Play',                               '{cd}',                      true,   false,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              66),
-    ('SP21',        'Sega Prologue 21 Multimedia Karaoke System',        '{cd}',                      true,    true,   false,    true,    true,   false,   false,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              67),
-    ('ARCH',        'Acorn Archimedes',                                  '{cd}',                      true,   false,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              68),
-    ('PPC',         'Pocket PC',                                         '{cd}',                      true,    true,    true,    true,    true,    true,    true,    true,   false,   false,    true,   false,   false,   false,   false,   false,   false,   false,              69),
-    ('HDDVD-VIDEO', 'HD DVD-Video',                                      '{hdvd15,hdvd30}',           true,    true,   false,    true,   false,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              70),
-    ('X68K',        'Sharp X68000',                                      '{cd}',                      true,    true,   false,    true,   false,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              71),
-    ('IKTV',        'Tao iKTV',                                          '{cd}',                     false,   false,   false,    true,   false,    true,    true,    true,   false,   false,   false,   false,   false,   false,   false,   false,   false,   false,              72),
-    ('KS573',       'Konami System 573',                                 '{cd}',                      true,    true,   false,    true,    true,   false,   false,    true,    true,   false,    true,   false,   false,   false,   false,   false,   false,   false,              73),
-    ('XBOXSX',      'Microsoft Xbox Series X',                           '{bd25,bd50}',               true,    true,    true,    true,   false,    true,    true,   false,   false,   false,    true,    true,   false,   false,   false,   false,   false,   false,              74),
-    ('PS5',         'Sony PlayStation 5',                                '{bd66,bd100}',              true,    true,   false,    true,    true,    true,    true,   false,   false,   false,    true,    true,   false,   false,   false,   false,   false,   false,              75);
+    (code,          name,                                                media_types) VALUES
+    ('PSX',         'Sony PlayStation',                                  '{cd}'),
+    ('PS2',         'Sony PlayStation 2',                                '{cd,dvd5,dvd9}'),
+    ('DVD-VIDEO',   'DVD-Video',                                         '{dvd5,dvd9}'),
+    ('PSP',         'Sony PlayStation Portable',                         '{dvd5,umd1,umd2}'),
+    ('MCD',         'Sega Mega CD & Sega CD',                            '{cd}'),
+    ('GC',          'Nintendo GameCube',                                 '{dvd5gc}'),
+    ('DC',          'Sega Dreamcast',                                    '{cd,gdrom}'),
+    ('WII',         'Nintendo Wii',                                      '{dvd5wii,dvd9wii}'),
+    ('SS',          'Sega Saturn',                                       '{cd}'),
+    ('3DO',         'Panasonic 3DO Interactive Multiplayer',             '{cd}'),
+    ('PC',          'IBM PC compatible',                                 '{cd,dvd5,dvd9,bd50}'),
+    ('PCE',         'NEC PC Engine CD & TurboGrafx CD',                  '{cd}'),
+    ('CDTV',        'Commodore Amiga CDTV',                              '{cd}'),
+    ('CD32',        'Commodore Amiga CD32',                              '{cd}'),
+    ('ACD',         'Commodore Amiga CD',                                '{cd}'),
+    ('AUDIO-CD',    'Audio CD',                                          '{cd}'),
+    ('QIS',         'Bandai Playdia Quick Interactive System',           '{cd}'),
+    ('PIPPIN',      'Bandai Pippin',                                     '{cd}'),
+    ('PC-98',       'NEC PC-98 series',                                  '{cd}'),
+    ('PS3',         'Sony PlayStation 3',                                '{cd,dvd5,dvd9,bd25,bd50}'),
+    ('XBOX',        'Microsoft Xbox',                                    '{cd,dvd5,dvd9}'),
+    ('XBOX360',     'Microsoft Xbox 360',                                '{cd,dvd5,dvd9}'),
+    ('MAC',         'Apple Macintosh',                                   '{cd,dvd5,dvd9}'),
+    ('FMT',         'Fujitsu FM Towns series',                           '{cd}'),
+    ('HS',          'Mattel HyperScan',                                  '{cd}'),
+    ('CDI',         'Philips CD-i',                                      '{cd}'),
+    ('VCD',         'Video CD',                                          '{cd}'),
+    ('NAOMI',       'Sega Naomi',                                        '{gdrom}'),
+    ('TRF',         'Namco · Sega · Nintendo Triforce',                  '{gdrom}'),
+    ('CHIHIRO',     'Sega Chihiro',                                      '{gdrom}'),
+    ('PC-FX',       'NEC PC-FX & PC-FXGA',                               '{cd}'),
+    ('VFLASH',      'VTech V.Flash & V.Smile Pro',                       '{cd}'),
+    ('NGCD',        'Neo Geo CD',                                        '{cd}'),
+    ('BD-VIDEO',    'BD-Video',                                          '{bd25,bd50}'),
+    ('PALM',        'Palm OS',                                           '{cd}'),
+    ('PHOTO-CD',    'Photo CD',                                          '{cd}'),
+    ('LINDBERGH',   'Sega Lindbergh',                                    '{dvd5}'),
+    ('PS4',         'Sony PlayStation 4',                                '{bd25,bd50}'),
+    ('PC-88',       'NEC PC-88 series',                                  '{cd}'),
+    ('ENHANCED-CD', 'Enhanced CD',                                       '{cd}'),
+    ('WIIU',        'Nintendo Wii U',                                    '{bd25wiiu}'),
+    ('XBOXONE',     'Microsoft Xbox One',                                '{bd25,bd50}'),
+    ('PSXGS',       'PlayStation GameShark Updates',                     '{cd}'),
+    ('KSITE',       'Tomy Kiss-Site',                                    '{cd}'),
+    ('GAMEWAVE',    'ZAPiT Games Game Wave Family Entertainment System', '{dvd5}'),
+    ('QUIZARD',     'TAB-Austria Quizard',                               '{cd}'),
+    ('NAOMI2',      'Sega Naomi 2',                                      '{gdrom}'),
+    ('NS246',       'Namco System 246',                                  '{cd,dvd5}'),
+    ('KSGV',        'Konami System GV',                                  '{cd}'),
+    ('NUON',        'VM Labs NUON',                                      '{dvd5}'),
+    ('SRE2',        'Sega RingEdge 2',                                   '{dvd5,dvd9}'),
+    ('KEA',         'Konami e-Amusement',                                '{cd,dvd5}'),
+    ('ITE',         'Incredible Technologies Eagle',                     '{cd}'),
+    ('KFB',         'Konami FireBeat',                                   '{cd,dvd5}'),
+    ('KM2',         'Konami M2',                                         '{cd}'),
+    ('SRE',         'Sega RingEdge',                                     '{dvd5,dvd9}'),
+    ('HVNXP',       'Hasbro VideoNow XP',                                '{cd}'),
+    ('M2',          'Panasonic M2',                                      '{cd}'),
+    ('HVNC',        'Hasbro VideoNow Color',                             '{cd}'),
+    ('HVNJR',       'Hasbro VideoNow Jr.',                               '{cd}'),
+    ('NAVI21',      'Navisoft Naviken 2.1',                              '{cd}'),
+    ('VIS',         'Memorex Visual Information System',                 '{cd}'),
+    ('IXL',         'Mattel Fisher-Price iXL',                           '{cd}'),
+    ('AJCD',        'Atari Jaguar CD Interactive Multimedia System',     '{cd}'),
+    ('HVN',         'Hasbro VideoNow',                                   '{cd}'),
+    ('FPP',         'funworld Photo Play',                               '{cd}'),
+    ('SP21',        'Sega Prologue 21 Multimedia Karaoke System',        '{cd}'),
+    ('ARCH',        'Acorn Archimedes',                                  '{cd}'),
+    ('PPC',         'Pocket PC',                                         '{cd}'),
+    ('HDDVD-VIDEO', 'HD DVD-Video',                                      '{hdvd15,hdvd30}'),
+    ('X68K',        'Sharp X68000',                                      '{cd}'),
+    ('IKTV',        'Tao iKTV',                                          '{cd}'),
+    ('KS573',       'Konami System 573',                                 '{cd}'),
+    ('XBOXSX',      'Microsoft Xbox Series X',                           '{bd25,bd50}'),
+    ('PS5',         'Sony PlayStation 5',                                '{bd66,bd100}');
+
+
+UPDATE systems
+SET has_title_foreign = TRUE
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'NUON', 'SRE2', 'KEA', 'KFB', 'KM2', 'SRE', 'NAVI21', 'AJCD', 'FPP', 'SP21', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'KS573', 'XBOXSX', 'PS5');
+
+UPDATE systems
+SET has_disc_number = TRUE
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'ACD', 'AUDIO-CD', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'CDI', 'VCD', 'PC-FX', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'PS4', 'ENHANCED-CD', 'XBOXONE', 'GAMEWAVE', 'KFB', 'HVNXP', 'M2', 'HVNC', 'HVNJR', 'HVN', 'FPP', 'ARCH', 'PPC', 'XBOXSX');
+
+UPDATE systems
+SET has_disc_title = TRUE
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'CDI', 'VCD', 'PC-FX', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'PS4', 'ENHANCED-CD', 'XBOXONE', 'GAMEWAVE', 'SRE2', 'KEA', 'KFB', 'SRE', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI21', 'HVN', 'SP21', 'PPC', 'HDDVD-VIDEO', 'X68K', 'KS573', 'XBOXSX', 'PS5');
+
+UPDATE systems
+SET has_serial = TRUE
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'GAMEWAVE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'NUON', 'SRE2', 'KEA', 'KFB', 'KM2', 'SRE', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI21', 'VIS', 'IXL', 'AJCD', 'HVN', 'FPP', 'SP21', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'IKTV', 'KS573', 'XBOXSX', 'PS5');
+
+UPDATE systems
+SET has_edition = TRUE
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'GAMEWAVE', 'QUIZARD', 'NAOMI2', 'NS246', 'NUON', 'ITE', 'SRE', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI21', 'VIS', 'IXL', 'AJCD', 'HVN', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'IKTV', 'XBOXSX', 'PS5');
+
+UPDATE systems
+SET has_barcode = TRUE
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'GAMEWAVE', 'NUON', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI21', 'VIS', 'IXL', 'AJCD', 'HVN', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'IKTV', 'XBOXSX', 'PS5');
+
+UPDATE systems
+SET has_version = TRUE
+WHERE code IN ('PSX', 'PS2', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'GAMEWAVE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'NUON', 'SRE2', 'KEA', 'ITE', 'KFB', 'KM2', 'SRE', 'M2', 'VIS', 'IXL', 'AJCD', 'SP21', 'ARCH', 'PPC', 'KS573', 'PS5');
+
+UPDATE systems
+SET has_error_count = TRUE
+WHERE code IN ('PSX', 'PS2', 'MCD', 'DC', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'PALM', 'PHOTO-CD', 'PC-88', 'ENHANCED-CD', 'KSITE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'KEA', 'ITE', 'KFB', 'NAVI21', 'VIS', 'IXL', 'SP21', 'ARCH', 'PPC', 'X68K', 'IKTV', 'KS573');
+
+UPDATE systems
+SET has_exe_date = TRUE
+WHERE code IN ('PSX', 'PS2', 'MCD', 'DC', 'SS', 'CDTV', 'CD32', 'ACD', 'QIS', 'PC-98', 'FMT', 'HS', 'NAOMI', 'TRF', 'CHIHIRO', 'NGCD', 'NAOMI2', 'KSGV', 'KEA', 'KFB', 'NAVI21', 'KS573');
+
+UPDATE systems
+SET has_edc = TRUE
+WHERE code IN ('PSX');
+
+UPDATE systems
+SET has_protection = TRUE
+WHERE code IN ('PSX', 'DVD-VIDEO', 'PC', 'MAC', 'BD-VIDEO', 'GAMEWAVE');
+
+UPDATE systems
+SET has_sector_ranges = TRUE
+WHERE code IN ('XBOX', 'XBOX360');
+
+UPDATE systems
+SET has_sbi = TRUE
+WHERE code IN ('PSX', 'PC', 'MAC');
+
+UPDATE systems
+SET has_pvd = TRUE
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'DC', 'SS', 'PC', 'CDTV', 'CD32', 'ACD', 'QIS', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'PS4', 'ENHANCED-CD', 'XBOXONE', 'KSITE', 'GAMEWAVE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'NUON', 'KEA', 'ITE', 'KFB', 'VIS', 'IXL', 'SP21', 'ARCH', 'PPC', 'KS573', 'XBOXSX', 'PS5');
+
+UPDATE systems
+SET has_header = TRUE
+WHERE code IN ('MCD', 'DC', 'SS', 'NAOMI', 'TRF', 'CHIHIRO', 'NAOMI2');
+
+UPDATE systems
+SET has_bca = TRUE
+WHERE code IN ('GC', 'WII');
+
+UPDATE systems
+SET has_pic = TRUE
+WHERE code IN ('PC', 'PS3', 'BD-VIDEO', 'PS4', 'XBOXONE', 'XBOXSX', 'PS5');
+
+UPDATE systems
+SET has_sample_start = TRUE
+WHERE code IN ('AUDIO-CD');
+
+UPDATE systems
+SET has_offset_extra = TRUE
+WHERE code IN ('DC', 'NAOMI', 'CHIHIRO', 'NAOMI2', 'TRF');
 
 -- OIDC clients seed (for phpBB and MediaWiki)
 INSERT INTO oauth_clients

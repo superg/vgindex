@@ -1,111 +1,106 @@
 CREATE TABLE media_types (
-    code VARCHAR(16) PRIMARY KEY,
-    name VARCHAR(64) UNIQUE NOT NULL,
+    code VARCHAR(8) PRIMARY KEY,
+    name VARCHAR(32) UNIQUE NOT NULL,
     layer_count INT NOT NULL DEFAULT 1,
-    rom_extension VARCHAR(8) NOT NULL DEFAULT 'iso',
-    sort_order INT NOT NULL DEFAULT 0
+    rom_extension VARCHAR(8) NOT NULL DEFAULT 'iso'
 );
 
 CREATE TABLE categories (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(64) UNIQUE NOT NULL,
-    sort_order INT NOT NULL DEFAULT 0
+    name VARCHAR(16) UNIQUE NOT NULL
 );
 
 CREATE TABLE regions (
     code CHAR(2) PRIMARY KEY,
-    name VARCHAR(128) UNIQUE NOT NULL,
-    flag_code VARCHAR(8) NOT NULL,
+    name VARCHAR(32) UNIQUE NOT NULL,
+    flag_code CHAR(2) NOT NULL,
     sort_order INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE languages (
     code CHAR(2) PRIMARY KEY,
-    name VARCHAR(128) NOT NULL,
-    flag_code VARCHAR(8) NOT NULL,
+    name VARCHAR(16) NOT NULL,
+    flag_code CHAR(2) NOT NULL,
     sort_order INT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE systems (
     code VARCHAR(16) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(64) NOT NULL,
     media_types TEXT[] NOT NULL DEFAULT '{}',
 
     -- optional fields
     has_title_foreign BOOLEAN NOT NULL DEFAULT FALSE,
-    has_title_disc BOOLEAN NOT NULL DEFAULT FALSE,
-    has_title_disc_number BOOLEAN NOT NULL DEFAULT FALSE,
+    has_disc_number BOOLEAN NOT NULL DEFAULT FALSE,
+    has_disc_title BOOLEAN NOT NULL DEFAULT FALSE,
     has_serial BOOLEAN NOT NULL DEFAULT FALSE,
-    has_version BOOLEAN NOT NULL DEFAULT FALSE,
     has_edition BOOLEAN NOT NULL DEFAULT FALSE,
     has_barcode BOOLEAN NOT NULL DEFAULT FALSE,
+    has_version BOOLEAN NOT NULL DEFAULT FALSE,
     has_error_count BOOLEAN NOT NULL DEFAULT FALSE,
     has_exe_date BOOLEAN NOT NULL DEFAULT FALSE,
-    has_m2f2_edc BOOLEAN NOT NULL DEFAULT FALSE,
-    has_pvd BOOLEAN NOT NULL DEFAULT FALSE,
-    has_pic BOOLEAN NOT NULL DEFAULT FALSE,
-    has_bca BOOLEAN NOT NULL DEFAULT FALSE,
-    has_header BOOLEAN NOT NULL DEFAULT FALSE,
+    has_edc BOOLEAN NOT NULL DEFAULT FALSE,
     has_protection BOOLEAN NOT NULL DEFAULT FALSE,
-    has_protection_ranges BOOLEAN NOT NULL DEFAULT FALSE,
-    has_protection_sbi BOOLEAN NOT NULL DEFAULT FALSE,
+    has_sector_ranges BOOLEAN NOT NULL DEFAULT FALSE,
+    has_sbi BOOLEAN NOT NULL DEFAULT FALSE,
+    has_pvd BOOLEAN NOT NULL DEFAULT FALSE,
+    has_header BOOLEAN NOT NULL DEFAULT FALSE,
+    has_bca BOOLEAN NOT NULL DEFAULT FALSE,
+    has_pic BOOLEAN NOT NULL DEFAULT FALSE,
+    -- ring code
     has_sample_start BOOLEAN NOT NULL DEFAULT FALSE,
-
-    sort_order INT NOT NULL DEFAULT 0
+    has_offset_extra BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+-- discs (main catalog)
+CREATE TABLE discs (
+    id SERIAL PRIMARY KEY,
+    system_code VARCHAR(16) NOT NULL REFERENCES systems(code),
+    media_type_code VARCHAR(8) NOT NULL REFERENCES media_types(code),
+    category_id INT NOT NULL REFERENCES categories(id) DEFAULT 1,
+    title VARCHAR(512) NOT NULL,
+    title_foreign VARCHAR(512),
+    disc_number VARCHAR(64),
+    disc_title VARCHAR(512),
+    filename_suffix VARCHAR(255),
+    serial TEXT[] NOT NULL DEFAULT '{}',
+    edition TEXT[] NOT NULL DEFAULT '{}',
+    barcode TEXT[] NOT NULL DEFAULT '{}',
+    version VARCHAR(64),
+    error_count INT,
+    exe_date VARCHAR(16),
+    edc BOOLEAN,
+    layerbreaks INT[],
+    keys TEXT[],
+    comments TEXT,
+    contents TEXT,
+    protection TEXT,
+    sector_ranges INT4RANGE[],
+    sbi TEXT,
+    pvd BYTEA,
+    header BYTEA,
+    bca BYTEA,
+    pic BYTEA,
+    cue TEXT,
+
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    questionable BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX idx_discs_system ON discs(system_code);
+CREATE INDEX idx_discs_title ON discs(title);
+CREATE INDEX idx_discs_enabled ON discs(enabled) WHERE NOT enabled;
 
 -- immutable wrapper for array_to_string (needed for generated columns)
 CREATE FUNCTION arr_to_str(TEXT[], TEXT) RETURNS TEXT
     LANGUAGE SQL IMMUTABLE PARALLEL SAFE
     AS $$ SELECT array_to_string($1, $2) $$;
 
--- discs (main catalog)
-CREATE TABLE discs (
-    id SERIAL PRIMARY KEY,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    media_type_code VARCHAR(16) NOT NULL REFERENCES media_types(code),
-    category_id INT NOT NULL REFERENCES categories(id) DEFAULT 1,
-    system_code VARCHAR(16) NOT NULL REFERENCES systems(code),
-    title VARCHAR(512) NOT NULL,
-    filename_suffix VARCHAR(255),
-    comments TEXT,
-    contents TEXT,
-
-    -- optional fields
-    title_foreign VARCHAR(512),
-    title_disc VARCHAR(512),
-    title_disc_number VARCHAR(64),
-    serial TEXT[] NOT NULL DEFAULT '{}',
-    version VARCHAR(255),
-    edition TEXT[] NOT NULL DEFAULT '{}',
-    barcode TEXT[] NOT NULL DEFAULT '{}',
-    error_count INT,
-    exe_date VARCHAR(16),
-    m2f2_edc BOOLEAN,
-    layerbreaks INT[],
-    pvd BYTEA,
-    pic BYTEA,
-    bca BYTEA,
-    header BYTEA,
-    protection TEXT,
-    protection_ranges INT4RANGE[],
-    protection_sbi TEXT,
-    protection_keys TEXT[],
-    cue TEXT,
-
-    questionable BOOLEAN NOT NULL DEFAULT FALSE
-);
-CREATE INDEX idx_discs_enabled ON discs(enabled) WHERE NOT enabled;
-CREATE INDEX idx_discs_system ON discs(system_code);
-CREATE INDEX idx_discs_title ON discs(title);
-
-
 -- full-text search
 ALTER TABLE discs ADD COLUMN search_vector tsvector
     GENERATED ALWAYS AS (
         setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
         setweight(to_tsvector('english', coalesce(title_foreign, '')), 'A') ||
-        setweight(to_tsvector('english', coalesce(title_disc, '')), 'B') ||
+        setweight(to_tsvector('english', coalesce(disc_title, '')), 'B') ||
         setweight(to_tsvector('english', coalesce(arr_to_str(serial, ' '), '')), 'B') ||
         setweight(to_tsvector('english', coalesce(arr_to_str(barcode, ' '), '')), 'B') ||
         setweight(to_tsvector('english', coalesce(comments, '')), 'C') ||
@@ -132,8 +127,9 @@ CREATE TABLE disc_languages (
 CREATE TABLE disc_ring_code_entries (
     id SERIAL PRIMARY KEY,
     disc_id INT NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
-    offset_value INT[],
-    sample_data_start VARCHAR(16),
+    offset_value INT,
+    offset_extra_value INT,
+    sample_data_start INT,
     comment TEXT
 );
 CREATE INDEX idx_ring_entries_disc ON disc_ring_code_entries(disc_id);

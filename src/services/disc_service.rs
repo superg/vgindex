@@ -59,7 +59,7 @@ fn parse_comma_separated(s: &str) -> Vec<String> {
 }
 
 pub async fn get_all_systems(pool: &PgPool) -> AppResult<Vec<System>> {
-    Ok(sqlx::query_as("SELECT * FROM systems ORDER BY sort_order, name")
+    Ok(sqlx::query_as("SELECT * FROM systems ORDER BY LOWER(name), name")
         .fetch_all(pool)
         .await?)
 }
@@ -127,8 +127,9 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         .fetch_all(pool)
         .await?;
         ring_views.push(RingEntryView {
-            offset_value: entry.offset_value.clone(),
-            sample_data_start: entry.sample_data_start.clone(),
+            offset_value: entry.offset_value,
+            offset_extra_value: entry.offset_extra_value,
+            sample_data_start: entry.sample_data_start,
             comment: entry.comment.clone(),
             layers,
         });
@@ -164,9 +165,9 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_one(pool)
     .await?;
 
-    let protection_ranges: Vec<ProtectionRange> = sqlx::query_as(
+    let sector_ranges: Vec<ProtectionRange> = sqlx::query_as(
         "SELECT lower(r)::INT AS range_start, upper(r)::INT AS range_end \
-         FROM discs, unnest(protection_ranges) AS r WHERE id = $1 ORDER BY lower(r)"
+         FROM discs, unnest(sector_ranges) AS r WHERE id = $1 ORDER BY lower(r)"
     )
     .bind(disc_id)
     .fetch_all(pool)
@@ -180,7 +181,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         ring_entries: ring_views,
         files,
         dumpers,
-        protection_ranges,
+        sector_ranges,
         added_at,
         modified_at,
     })
@@ -191,8 +192,8 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     let system_code = data["system_code"].as_str();
     let media_type = data["media_type"].as_str();
     let title_foreign = data["title_foreign"].as_str().filter(|s| !s.is_empty());
-    let title_disc = data["title_disc"].as_str().filter(|s| !s.is_empty());
-    let title_disc_number = data["title_disc_number"].as_str().filter(|s| !s.is_empty());
+    let disc_title = data["disc_title"].as_str().filter(|s| !s.is_empty());
+    let disc_number = data["disc_number"].as_str().filter(|s| !s.is_empty());
     let filename_suffix = data["filename_suffix"].as_str().filter(|s| !s.is_empty());
     let serial = parse_text_array(&data["serial"]);
     let category = data["category"].as_str().unwrap_or("Games");
@@ -202,12 +203,12 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     let comments = data["comments"].as_str().filter(|s| !s.is_empty());
     let contents = data["contents"].as_str().filter(|s| !s.is_empty());
     let protection = data["protection"].as_str().filter(|s| !s.is_empty());
-    let protection_sbi = data["protection_sbi"].as_str().filter(|s| !s.is_empty());
-    let protection_keys = parse_text_array(&data["protection_keys"]);
-    let protection_keys_opt: Option<Vec<String>> = if protection_keys.is_empty() {
+    let sbi = data["sbi"].as_str().filter(|s| !s.is_empty());
+    let keys = parse_text_array(&data["keys"]);
+    let keys_opt: Option<Vec<String>> = if keys.is_empty() {
         None
     } else {
-        Some(protection_keys)
+        Some(keys)
     };
     let error_count = data["error_count"].as_i64().map(|v| v as i32);
     let exe_date = data["exe_date"].as_str().filter(|s| !s.is_empty());
@@ -243,14 +244,14 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
          system_code = COALESCE($2, system_code),
          media_type_code = COALESCE($3, media_type_code),
          category_id = (SELECT id FROM categories WHERE name = $4),
-         title_foreign = $5, title_disc = $6, title_disc_number = $7,
+         title_foreign = $5, disc_title = $6, disc_number = $7,
          filename_suffix = $8,
          serial = $9, version = $10, edition = $11, barcode = $12,
          comments = $13, contents = $14,
-         error_count = $15, exe_date = $16, m2f2_edc = $17,
+         error_count = $15, exe_date = $16, edc = $17,
          layerbreaks = $18,
          pvd = $19, pic = $20, bca = $21, header = $22,
-         protection = $23, protection_sbi = $24, protection_keys = $25,
+         protection = $23, sbi = $24, keys = $25,
          cue = $26,
          questionable = $27, enabled = $28
          WHERE id = $29"
@@ -260,8 +261,8 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     .bind(media_type)          // $3
     .bind(category)            // $4
     .bind(title_foreign)       // $5
-    .bind(title_disc)          // $6
-    .bind(title_disc_number)   // $7
+    .bind(disc_title)          // $6
+    .bind(disc_number)         // $7
     .bind(filename_suffix)     // $8
     .bind(&serial)             // $9
     .bind(version)             // $10
@@ -278,8 +279,8 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     .bind(&bca)                // $21
     .bind(&header)             // $22
     .bind(protection)          // $23
-    .bind(protection_sbi)      // $24
-    .bind(&protection_keys_opt) // $25
+    .bind(sbi)                 // $24
+    .bind(&keys_opt)            // $25
     .bind(cue)                 // $26
     .bind(questionable)        // $27
     .bind(enabled)             // $28
@@ -287,10 +288,10 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     .execute(pool)
     .await?;
 
-    // Protection ranges (INT4RANGE[] needs special handling)
-    if let Some(ranges) = data["protection_ranges"].as_array() {
+    // Sector ranges (INT4RANGE[] needs special handling)
+    if let Some(ranges) = data["sector_ranges"].as_array() {
         if ranges.is_empty() {
-            sqlx::query("UPDATE discs SET protection_ranges = NULL WHERE id = $1")
+            sqlx::query("UPDATE discs SET sector_ranges = NULL WHERE id = $1")
                 .bind(disc_id)
                 .execute(pool)
                 .await?;
@@ -304,7 +305,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
                 })
                 .collect();
             let array_literal = format!("{{{}}}", range_strs.join(","));
-            sqlx::query("UPDATE discs SET protection_ranges = $1::INT4RANGE[] WHERE id = $2")
+            sqlx::query("UPDATE discs SET sector_ranges = $1::INT4RANGE[] WHERE id = $2")
                 .bind(&array_literal)
                 .bind(disc_id)
                 .execute(pool)
@@ -360,22 +361,24 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
             .await?;
 
         for entry_data in ring_codes {
-            let offset_str = entry_data["offset"].as_str().unwrap_or("");
-            let offset_values: Vec<i32> = offset_str
-                .split(',')
-                .filter_map(|s| s.trim().parse().ok())
-                .collect();
-            let offset_value: Option<Vec<i32>> =
-                if offset_values.is_empty() { None } else { Some(offset_values) };
-            let sample_start = entry_data["sample_start"].as_str().filter(|s| !s.is_empty());
+            let offset_value = entry_data["offset_value"]
+                .as_str()
+                .and_then(|s| s.trim().parse::<i32>().ok());
+            let offset_extra_value = entry_data["offset_extra_value"]
+                .as_str()
+                .and_then(|s| s.trim().parse::<i32>().ok());
+            let sample_start = entry_data["sample_start"]
+                .as_str()
+                .and_then(|s| s.trim().parse::<i32>().ok());
             let comment = entry_data["comment"].as_str().filter(|s| !s.is_empty());
 
             let entry_id: i32 = sqlx::query_scalar(
-                "INSERT INTO disc_ring_code_entries (disc_id, offset_value, sample_data_start, comment)
-                 VALUES ($1, $2, $3, $4) RETURNING id"
+                "INSERT INTO disc_ring_code_entries (disc_id, offset_value, offset_extra_value, sample_data_start, comment)
+                 VALUES ($1, $2, $3, $4, $5) RETURNING id"
             )
             .bind(disc_id)
-            .bind(&offset_value)
+            .bind(offset_value)
+            .bind(offset_extra_value)
             .bind(sample_start)
             .bind(comment)
             .fetch_one(pool)
@@ -509,8 +512,8 @@ pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> 
         &disc.title,
         &region_names,
         &language_codes,
-        disc.title_disc_number.as_deref(),
-        disc.title_disc.as_deref(),
+        disc.disc_number.as_deref(),
+        disc.disc_title.as_deref(),
         disc.filename_suffix.as_deref(),
     );
     let ext = disc.media_type.rom_extension();
