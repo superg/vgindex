@@ -141,8 +141,8 @@ CREATE TABLE disc_ring_code_layers (
     layer INT NOT NULL,
     mastering_code VARCHAR(255),
     mastering_sid VARCHAR(255),
-    mould_sids TEXT[] NOT NULL DEFAULT '{}',
     toolstamps TEXT[] NOT NULL DEFAULT '{}',
+    mould_sids TEXT[] NOT NULL DEFAULT '{}',
     additional_moulds TEXT[] NOT NULL DEFAULT '{}',
     UNIQUE(entry_id, layer)
 );
@@ -163,8 +163,8 @@ CREATE UNIQUE INDEX files_disc_cue_unique ON files (disc_id) WHERE track_number 
 
 -- enums
 CREATE TYPE user_role_enum AS ENUM ('User', 'User+', 'Moderator', 'Admin');
-CREATE TYPE submission_type_enum AS ENUM ('New Dump', 'Verification', 'Edit');
-CREATE TYPE submission_status_enum AS ENUM ('Pending', 'Approved', 'Denied');
+CREATE TYPE submission_type_enum AS ENUM ('Disc', 'Edit');
+CREATE TYPE submission_status_enum AS ENUM ('Pending', 'Approved', 'Rejected');
 
 -- users
 CREATE TABLE users (
@@ -210,10 +210,11 @@ CREATE TABLE disc_submissions (
     id SERIAL PRIMARY KEY,
     submission_type submission_type_enum NOT NULL,
     submitter_id INT NOT NULL REFERENCES users(id),
+    submitter_comment TEXT,
     target_disc_id INT REFERENCES discs(id),
-    data JSONB NOT NULL,
+    changes JSONB NOT NULL,
     dump_log TEXT,
-    extra_files_path VARCHAR(512),
+    extra_upload_url VARCHAR(512),
     status submission_status_enum NOT NULL DEFAULT 'Pending',
     reviewer_id INT REFERENCES users(id),
     review_comment TEXT,

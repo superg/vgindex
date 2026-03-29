@@ -11,10 +11,10 @@ pub async fn create_submission(
     target_disc_id: Option<i32>,
     data: serde_json::Value,
     dump_log: Option<&str>,
-    extra_files_path: Option<&str>,
+    extra_upload_url: Option<&str>,
 ) -> AppResult<DiscSubmission> {
     let sub: DiscSubmission = sqlx::query_as(
-        "INSERT INTO disc_submissions (submission_type, submitter_id, target_disc_id, data, dump_log, extra_files_path)
+        "INSERT INTO disc_submissions (submission_type, submitter_id, target_disc_id, changes, dump_log, extra_upload_url)
          VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *"
     )
@@ -23,37 +23,11 @@ pub async fn create_submission(
     .bind(target_disc_id)
     .bind(&data)
     .bind(dump_log)
-    .bind(extra_files_path)
+    .bind(extra_upload_url)
     .fetch_one(pool)
     .await?;
 
     Ok(sub)
-}
-
-pub async fn detect_submission_type(pool: &PgPool, data: &serde_json::Value) -> SubmissionType {
-    if let Some(files_xml) = data["files_xml"].as_str() {
-        // Try to find matching discs by SHA-1 of first track
-        for line in files_xml.lines() {
-            let line = line.trim();
-            if !line.starts_with("<rom ") {
-                continue;
-            }
-            if let Some(sha1) = extract_xml_attr(line, "sha1") {
-                let exists: Option<(i32,)> = sqlx::query_as(
-                    "SELECT disc_id FROM files WHERE sha1 = $1 LIMIT 1"
-                )
-                .bind(&sha1)
-                .fetch_optional(pool)
-                .await
-                .unwrap_or(None);
-
-                if exists.is_some() {
-                    return SubmissionType::Verification;
-                }
-            }
-        }
-    }
-    SubmissionType::NewDump
 }
 
 pub async fn find_matching_disc(pool: &PgPool, data: &serde_json::Value) -> Option<i32> {
@@ -123,31 +97,9 @@ pub async fn review_submission(
 
     if new_status == SubmissionStatus::Approved {
         match sub.submission_type {
-            SubmissionType::NewDump => {
-                let disc_id = disc_service::create_disc_from_submission(
-                    pool,
-                    &sub.data,
-                    sub.submitter_id,
-                )
-                .await?;
-
-                sqlx::query(
-                    "UPDATE disc_submissions SET status = $1, reviewer_id = $2,
-                     review_comment = $3, reviewed_at = NOW(), target_disc_id = $4
-                     WHERE id = $5"
-                )
-                .bind(new_status)
-                .bind(reviewer_id)
-                .bind(comment)
-                .bind(disc_id)
-                .bind(submission_id)
-                .execute(pool)
-                .await?;
-                return Ok(());
-            }
-            SubmissionType::Verification => {
+            SubmissionType::Disc => {
                 if let Some(disc_id) = sub.target_disc_id {
-                    // Add submitter as dumper and upgrade status
+                    // Verification: add submitter as dumper.
                     sqlx::query(
                         "INSERT INTO disc_dumpers (disc_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
                     )
@@ -155,12 +107,33 @@ pub async fn review_submission(
                     .bind(sub.submitter_id)
                     .execute(pool)
                     .await?;
+                } else {
+                    // New disc: create from submission payload.
+                    let disc_id = disc_service::create_disc_from_submission(
+                        pool,
+                        &sub.changes,
+                        sub.submitter_id,
+                    )
+                    .await?;
 
+                    sqlx::query(
+                        "UPDATE disc_submissions SET status = $1, reviewer_id = $2,
+                         review_comment = $3, reviewed_at = NOW(), target_disc_id = $4
+                         WHERE id = $5"
+                    )
+                    .bind(new_status)
+                    .bind(reviewer_id)
+                    .bind(comment)
+                    .bind(disc_id)
+                    .bind(submission_id)
+                    .execute(pool)
+                    .await?;
+                    return Ok(());
                 }
             }
             SubmissionType::Edit => {
                 if let Some(disc_id) = sub.target_disc_id {
-                    disc_service::update_disc(pool, disc_id, &sub.data).await?;
+                    disc_service::update_disc(pool, disc_id, &sub.changes).await?;
                 }
             }
         }
@@ -207,7 +180,7 @@ pub async fn list_submissions(
     }
 
     let sql = format!(
-        "SELECT ds.id, ds.submission_type, COALESCE(d.title, ds.data->>'title', 'Untitled') AS title,
+        "SELECT ds.id, ds.submission_type, COALESCE(d.title, ds.changes->>'title', 'Untitled') AS title,
                 u.username AS submitter, ds.status, ds.review_comment, ds.created_at
          FROM disc_submissions ds
          JOIN users u ON u.id = ds.submitter_id
