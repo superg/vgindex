@@ -21,7 +21,7 @@
             <td>{{ sys.name }}</td>
             <td>{% if sys.has_dat %}<a href="/downloads/{{ sys.code }}/dat">Download</a>{% endif %}</td>
             <td>{% if sys.has_cue %}<a href="/downloads/{{ sys.code }}/cue">Download</a>{% endif %}</td>
-            <td>{% if sys.has_protection_sbi %}<a href="/downloads/{{ sys.code }}/sbi">Download</a>{% endif %}</td>
+            <td>{% if sys.has_sbi %}<a href="/downloads/{{ sys.code }}/sbi">Download</a>{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

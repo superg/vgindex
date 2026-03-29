@@ -61,7 +61,7 @@ async fn submit_page(
         sqlx::query_as("SELECT * FROM languages ORDER BY sort_order")
             .fetch_all(&state.pool).await?;
     let all_media_types: Vec<MediaTypeRow> =
-        sqlx::query_as("SELECT code, name, layer_count, rom_extension FROM media_types ORDER BY sort_order")
+        sqlx::query_as("SELECT code, name, layer_count, rom_extension FROM media_types ORDER BY name")
             .fetch_all(&state.pool).await?;
 
     Ok(Html(

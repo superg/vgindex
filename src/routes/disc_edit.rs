@@ -39,14 +39,15 @@ struct DiscEditTemplate {
     max_layers: u32,
     media_layers_json: String,
     systems_media_json: String,
+    systems_has_offset_extra_json: String,
 
     title: String,
     show_title_foreign: bool,
     title_foreign: String,
-    show_title_disc_number: bool,
-    title_disc_number: String,
-    show_title_disc: bool,
-    title_disc: String,
+    show_disc_number: bool,
+    disc_number: String,
+    show_disc_title: bool,
+    disc_title: String,
     filename_suffix: String,
 
     show_serial: bool,
@@ -82,10 +83,10 @@ struct DiscEditTemplate {
 
     show_protection: bool,
     protection: String,
-    show_protection_ranges: bool,
-    protection_ranges_text: String,
-    show_protection_sbi: bool,
-    protection_sbi: String,
+    show_sector_ranges: bool,
+    sector_ranges_text: String,
+    show_sbi: bool,
+    sbi: String,
     protection_key_disc_key: String,
     protection_key_disc_id: String,
     has_sample_start: bool,
@@ -188,11 +189,15 @@ async fn edit_page(
     systems.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     let mut systems_media_map = serde_json::Map::new();
+    let mut systems_has_offset_extra_map = serde_json::Map::new();
     for s in &all_systems {
         systems_media_map.insert(s.code.clone(), serde_json::json!(s.media_types));
+        systems_has_offset_extra_map.insert(s.code.clone(), serde_json::json!(s.has_offset_extra));
     }
     let systems_media_json =
         serde_json::to_string(&systems_media_map).unwrap_or_else(|_| "{}".into());
+    let systems_has_offset_extra_json =
+        serde_json::to_string(&systems_has_offset_extra_map).unwrap_or_else(|_| "{}".into());
 
     let media_types_all: Vec<MediaTypeOption> = all_media_types
         .iter()
@@ -265,10 +270,9 @@ async fn edit_page(
                 })
                 .collect();
             serde_json::json!({
-                "offset": e.offset_value.as_ref()
-                    .map(|v| v.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", "))
-                    .unwrap_or_default(),
-                "sample_start": e.sample_data_start.clone().unwrap_or_default(),
+                "offset_value": e.offset_value.map(|v| v.to_string()).unwrap_or_default(),
+                "offset_extra_value": e.offset_extra_value.map(|v| v.to_string()).unwrap_or_default(),
+                "sample_start": e.sample_data_start.map(|v| v.to_string()).unwrap_or_default(),
                 "comment": e.comment.clone().unwrap_or_default(),
                 "layers": layers,
             })
@@ -284,8 +288,8 @@ async fn edit_page(
         &detail.disc.title,
         &region_names,
         &language_codes,
-        detail.disc.title_disc_number.as_deref(),
-        detail.disc.title_disc.as_deref(),
+        detail.disc.disc_number.as_deref(),
+        detail.disc.disc_title.as_deref(),
         detail.disc.filename_suffix.as_deref(),
     );
     let total_tracks = detail
@@ -312,8 +316,8 @@ async fn edit_page(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let protection_ranges_text = detail
-        .protection_ranges
+    let sector_ranges_text = detail
+        .sector_ranges
         .iter()
         .map(|r| format!("{}-{}", r.range_start, r.range_end))
         .collect::<Vec<_>>()
@@ -321,8 +325,8 @@ async fn edit_page(
 
     let page_title = format_display_title(
         &detail.disc.title,
-        detail.disc.title_disc_number.as_deref(),
-        detail.disc.title_disc.as_deref(),
+        detail.disc.disc_number.as_deref(),
+        detail.disc.disc_title.as_deref(),
         detail.disc.filename_suffix.as_deref(),
     );
 
@@ -344,18 +348,19 @@ async fn edit_page(
             max_layers,
             media_layers_json,
             systems_media_json,
+            systems_has_offset_extra_json,
 
             title: detail.disc.title.clone(),
             show_title_foreign: detail.system.has_title_foreign,
             title_foreign: detail.disc.title_foreign.clone().unwrap_or_default(),
-            show_title_disc_number: detail.system.has_title_disc_number,
-            title_disc_number: detail
+            show_disc_number: detail.system.has_disc_number,
+            disc_number: detail
                 .disc
-                .title_disc_number
+                .disc_number
                 .clone()
                 .unwrap_or_default(),
-            show_title_disc: detail.system.has_title_disc,
-            title_disc: detail.disc.title_disc.clone().unwrap_or_default(),
+            show_disc_title: detail.system.has_disc_title,
+            disc_title: detail.disc.disc_title.clone().unwrap_or_default(),
             filename_suffix: detail.disc.filename_suffix.clone().unwrap_or_default(),
 
             show_serial: detail.system.has_serial,
@@ -392,10 +397,10 @@ async fn edit_page(
                 .unwrap_or_default(),
             show_exe_date: detail.system.has_exe_date,
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
-            show_edc: detail.system.has_m2f2_edc,
+            show_edc: detail.system.has_edc,
             edc_value: detail
                 .disc
-                .m2f2_edc
+                .edc
                 .map(|e| e.to_string())
                 .unwrap_or_default(),
 
@@ -438,14 +443,14 @@ async fn edit_page(
 
             show_protection: detail.system.has_protection,
             protection: detail.disc.protection.clone().unwrap_or_default(),
-            show_protection_ranges: detail.system.has_protection_ranges,
-            protection_ranges_text,
-            show_protection_sbi: detail.system.has_protection_sbi,
-            protection_sbi: detail.disc.protection_sbi.clone().unwrap_or_default(),
+            show_sector_ranges: detail.system.has_sector_ranges,
+            sector_ranges_text,
+            show_sbi: detail.system.has_sbi,
+            sbi: detail.disc.sbi.clone().unwrap_or_default(),
             has_sample_start: detail.system.has_sample_start,
             protection_key_disc_key: detail
                 .disc
-                .protection_keys
+                .keys
                 .as_deref()
                 .unwrap_or_default()
                 .first()
@@ -453,7 +458,7 @@ async fn edit_page(
                 .unwrap_or_default(),
             protection_key_disc_id: detail
                 .disc
-                .protection_keys
+                .keys
                 .as_deref()
                 .unwrap_or_default()
                 .get(1)
@@ -477,8 +482,8 @@ pub struct DiscEditForm {
     pub media_type: String,
     pub title: String,
     pub title_foreign: Option<String>,
-    pub title_disc_number: Option<String>,
-    pub title_disc: Option<String>,
+    pub disc_number: Option<String>,
+    pub disc_title: Option<String>,
     pub filename_suffix: Option<String>,
     pub category: String,
     #[serde(default)]
@@ -505,8 +510,8 @@ pub struct DiscEditForm {
     pub bca: Option<String>,
     pub header: Option<String>,
     pub protection: Option<String>,
-    pub protection_ranges: Option<String>,
-    pub protection_sbi: Option<String>,
+    pub sector_ranges: Option<String>,
+    pub sbi: Option<String>,
     pub protection_key_disc_key: Option<String>,
     pub protection_key_disc_id: Option<String>,
     pub cue: Option<String>,
@@ -542,7 +547,7 @@ async fn edit_submit(
         .filter_map(|s| s.trim().parse::<i32>().ok())
         .collect();
 
-    let protection_keys: Vec<String> = [
+    let keys: Vec<String> = [
         form.protection_key_disc_key.as_deref().unwrap_or("").trim(),
         form.protection_key_disc_id.as_deref().unwrap_or("").trim(),
     ]
@@ -551,8 +556,8 @@ async fn edit_submit(
     .map(|s| s.to_string())
     .collect();
 
-    let protection_ranges: Vec<serde_json::Value> = form
-        .protection_ranges
+    let sector_ranges: Vec<serde_json::Value> = form
+        .sector_ranges
         .as_deref()
         .unwrap_or("")
         .lines()
@@ -601,8 +606,8 @@ async fn edit_submit(
         "media_type": form.media_type,
         "title": form.title,
         "title_foreign": form.title_foreign,
-        "title_disc_number": form.title_disc_number,
-        "title_disc": form.title_disc,
+        "disc_number": form.disc_number,
+        "disc_title": form.disc_title,
         "filename_suffix": form.filename_suffix,
         "category": form.category,
         "regions": form.regions,
@@ -623,9 +628,9 @@ async fn edit_submit(
         "bca": form.bca,
         "header": form.header,
         "protection": form.protection,
-        "protection_ranges": protection_ranges,
-        "protection_sbi": form.protection_sbi,
-        "protection_keys": protection_keys,
+        "sector_ranges": sector_ranges,
+        "sbi": form.sbi,
+        "keys": keys,
         "cue": form.cue,
         "files_xml": form.files_xml,
         "questionable": form.questionable.as_deref() == Some("true"),

@@ -32,7 +32,7 @@ struct SystemDownload {
     name: String,
     has_dat: bool,
     has_cue: bool,
-    has_protection_sbi: bool,
+    has_sbi: bool,
 }
 
 async fn downloads_page(
@@ -40,10 +40,10 @@ async fn downloads_page(
     user: CurrentUser,
 ) -> Html<String> {
     let rows: Vec<SystemDownloadRow> = sqlx::query_as(
-        "SELECT s.code, s.name, s.has_protection_sbi,
+        "SELECT s.code, s.name, s.has_sbi,
                 CASE WHEN 'cd' = ANY(s.media_types) OR 'gdrom' = ANY(s.media_types) THEN true ELSE false END AS has_cue
          FROM systems s
-         ORDER BY s.sort_order, s.name"
+         ORDER BY LOWER(s.name), s.name"
     )
     .fetch_all(&state.pool)
     .await
@@ -56,7 +56,7 @@ async fn downloads_page(
             name: r.name,
             has_dat: true,
             has_cue: r.has_cue,
-            has_protection_sbi: r.has_protection_sbi,
+            has_sbi: r.has_sbi,
         })
         .collect();
 
@@ -74,7 +74,7 @@ async fn downloads_page(
 struct SystemDownloadRow {
     code: String,
     name: String,
-    has_protection_sbi: bool,
+    has_sbi: bool,
     has_cue: bool,
 }
 

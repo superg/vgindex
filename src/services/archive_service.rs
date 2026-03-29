@@ -203,14 +203,14 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<Vec<u8>>
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if !sys.has_protection_sbi {
+    if !sys.has_sbi {
         return Err(AppError::NotFound);
     }
 
     let discs: Vec<SbiDisc> = sqlx::query_as(
-        "SELECT d.id, d.title, d.protection_sbi
+        "SELECT d.id, d.title, d.sbi
          FROM discs d
-         WHERE d.system_code = $1 AND d.protection_sbi IS NOT NULL AND d.enabled AND NOT d.questionable
+         WHERE d.system_code = $1 AND d.sbi IS NOT NULL AND d.enabled AND NOT d.questionable
          ORDER BY d.title"
     )
     .bind(&sys.code)
@@ -223,7 +223,7 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<Vec<u8>>
         let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         for disc in &discs {
-            if let Some(ref sbi) = disc.protection_sbi {
+            if let Some(ref sbi) = disc.sbi {
                 let filename = format!("{}.txt", disc.title);
                 zip.start_file(&filename, options).map_err(|e| AppError::Internal(e.to_string()))?;
                 zip.write_all(sbi.as_bytes()).map_err(|e| AppError::Internal(e.to_string()))?;
@@ -318,5 +318,5 @@ struct DatfileDisc {
 struct SbiDisc {
     id: i32,
     title: String,
-    protection_sbi: Option<String>,
+    sbi: Option<String>,
 }

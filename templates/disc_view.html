@@ -36,23 +36,14 @@
             {% if !serial.is_empty() %}
             <tr><td><strong>{% if serial_count == 1 %}Serial{% else %}Serials{% endif %}</strong></td><td>{{ serial|safe }}</td></tr>
             {% endif %}
-            {% if !version.is_empty() %}
-            <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
-            {% endif %}
             {% if !edition.is_empty() %}
             <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td>{{ edition|safe }}</td></tr>
             {% endif %}
             {% if !barcode.is_empty() %}
             <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{{ barcode|safe }}</td></tr>
             {% endif %}
-            {% if !layerbreaks.is_empty() %}
-            <tr><td><strong>Layerbreak</strong></td><td>{{ layerbreaks }}</td></tr>
-            {% endif %}
-            {% if !disc_key.is_empty() %}
-            <tr><td><strong>Disc Key</strong></td><td>{{ disc_key }}</td></tr>
-            {% endif %}
-            {% if !disc_id_hex.is_empty() %}
-            <tr><td><strong>Disc ID</strong></td><td>{{ disc_id_hex }}</td></tr>
+            {% if !version.is_empty() %}
+            <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
             {% endif %}
             {% if !error_count.is_empty() %}
             <tr><td><strong>Errors</strong></td><td>{{ error_count }}</td></tr>
@@ -62,6 +53,15 @@
             {% endif %}
             {% if !edc_display.is_empty() %}
             <tr><td><strong>EDC</strong></td><td>{{ edc_display }}</td></tr>
+            {% endif %}
+            {% if !layerbreaks.is_empty() %}
+            <tr><td><strong>Layerbreak</strong></td><td>{{ layerbreaks }}</td></tr>
+            {% endif %}
+            {% if !disc_key.is_empty() %}
+            <tr><td><strong>Disc Key</strong></td><td>{{ disc_key }}</td></tr>
+            {% endif %}
+            {% if !disc_id_hex.is_empty() %}
+            <tr><td><strong>Disc ID</strong></td><td>{{ disc_id_hex }}</td></tr>
             {% endif %}
         </table>
     </section>
@@ -122,7 +122,8 @@
                 {% if ring_vis.toolstamps %}<th>Toolstamp(s)</th>{% endif %}
                 {% if ring_vis.mould_sids %}<th>Mould SID(s)</th>{% endif %}
                 {% if ring_vis.additional_moulds %}<th>Additional Mould(s)</th>{% endif %}
-                {% if ring_vis.offset_value %}<th>Offset</th>{% endif %}
+                {% if ring_vis.offset %}<th>Offset</th>{% endif %}
+                {% if ring_vis.offset_extra %}<th>Extra Offset</th>{% endif %}
                 {% if ring_vis.sample_data_start %}<th>Sample Start</th>{% endif %}
                 {% if ring_vis.comment %}<th>Comment</th>{% endif %}
             </tr>
@@ -137,7 +138,8 @@
                 {% if ring_vis.toolstamps %}<td>{{ row.toolstamps|safe }}</td>{% endif %}
                 {% if ring_vis.mould_sids %}<td>{{ row.mould_sids|safe }}</td>{% endif %}
                 {% if ring_vis.additional_moulds %}<td>{{ row.additional_moulds|safe }}</td>{% endif %}
-                {% if ring_vis.offset_value %}<td>{{ row.offset_value }}</td>{% endif %}
+                {% if ring_vis.offset %}<td>{{ row.offset }}</td>{% endif %}
+                {% if ring_vis.offset_extra %}<td>{{ row.offset_extra }}</td>{% endif %}
                 {% if ring_vis.sample_data_start %}<td>{{ row.sample_data_start }}</td>{% endif %}
                 {% if ring_vis.comment %}<td>{{ row.comment }}</td>{% endif %}
             </tr>
@@ -148,31 +150,7 @@
 </section>
 {% endif %}
 
-{% if !pvd_rows.is_empty() %}
-<section>
-    <h3>PVD</h3>
-    <div class="table-scroll table-scroll-compact">
-    <table class="table-nowrap binary-table">
-        <thead>
-            <tr><th>Record / Entry</th><th>Contents</th><th>Date</th><th>Time</th><th>GMT</th></tr>
-        </thead>
-        <tbody>
-            {% for row in pvd_rows %}
-            <tr>
-                <td>{{ row.label }}</td>
-                <td><code>{{ row.hex_contents }}</code></td>
-                <td>{{ row.date }}</td>
-                <td>{{ row.time }}</td>
-                <td>{{ row.gmt }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</section>
-{% endif %}
-
-{% if !protection_ranges.is_empty() %}
+{% if !sector_ranges.is_empty() %}
 <section>
     <h3>Protection</h3>
     <div class="table-scroll table-scroll-compact">
@@ -181,33 +159,11 @@
             <tr><th>#</th><th>Start</th><th>End</th></tr>
         </thead>
         <tbody>
-            {% for r in protection_ranges %}
+            {% for r in sector_ranges %}
             <tr>
                 <td>{{ r.num }}</td>
                 <td>{{ r.start }}</td>
                 <td>{{ r.end }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</section>
-{% endif %}
-
-{% if !pic_rows.is_empty() %}
-<section>
-    <h3>PIC</h3>
-    <div class="table-scroll table-scroll-compact">
-    <table class="table-nowrap binary-table">
-        <thead>
-            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
-        </thead>
-        <tbody>
-            {% for row in pic_rows %}
-            <tr>
-                <td><code>{{ row.offset }}</code></td>
-                <td><code>{{ row.hex_contents }}</code></td>
-                <td><code>{{ row.ascii }}</code></td>
             </tr>
             {% endfor %}
         </tbody>
@@ -237,6 +193,30 @@
     </table>
     </div>
     <p><a href="/disc/{{ disc_id }}/sbi">Download .sbi</a></p>
+</section>
+{% endif %}
+
+{% if !pvd_rows.is_empty() %}
+<section>
+    <h3>PVD</h3>
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
+        <thead>
+            <tr><th>Record / Entry</th><th>Contents</th><th>Date</th><th>Time</th><th>GMT</th></tr>
+        </thead>
+        <tbody>
+            {% for row in pvd_rows %}
+            <tr>
+                <td>{{ row.label }}</td>
+                <td><code>{{ row.hex_contents }}</code></td>
+                <td>{{ row.date }}</td>
+                <td>{{ row.time }}</td>
+                <td>{{ row.gmt }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
 </section>
 {% endif %}
 
@@ -272,6 +252,28 @@
         </thead>
         <tbody>
             {% for row in bca_rows %}
+            <tr>
+                <td><code>{{ row.offset }}</code></td>
+                <td><code>{{ row.hex_contents }}</code></td>
+                <td><code>{{ row.ascii }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+{% if !pic_rows.is_empty() %}
+<section>
+    <h3>PIC</h3>
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
+        <thead>
+            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+        </thead>
+        <tbody>
+            {% for row in pic_rows %}
             <tr>
                 <td><code>{{ row.offset }}</code></td>
                 <td><code>{{ row.hex_contents }}</code></td>

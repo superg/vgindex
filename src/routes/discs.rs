@@ -225,7 +225,7 @@ async fn discs_page(
         where_clauses.push(format!(
             r#"(d.title ILIKE '%' || ${bind_idx} || '%'
              OR COALESCE(d.title_foreign, '') ILIKE '%' || ${bind_idx} || '%'
-             OR COALESCE(d.title_disc, '') ILIKE '%' || ${bind_idx} || '%'
+             OR COALESCE(d.disc_title, '') ILIKE '%' || ${bind_idx} || '%'
              OR EXISTS (
                  SELECT 1
                  FROM unnest(d.serial) elem
@@ -272,7 +272,7 @@ async fn discs_page(
         "SELECT COUNT(*) FROM discs d JOIN systems s ON s.code = d.system_code WHERE {where_sql}"
     );
     let sql_select = format!(
-        "SELECT d.id, d.title, d.title_disc_number, d.title_disc, d.filename_suffix,
+        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
                 s.code AS system_code,
                 array_to_string(d.serial, ', ') AS serial,
                 d.version,
@@ -349,8 +349,8 @@ async fn discs_page(
             id: r.id,
             title: format_display_title(
                 &r.title,
-                r.title_disc_number.as_deref(),
-                r.title_disc.as_deref(),
+                r.disc_number.as_deref(),
+                r.disc_title.as_deref(),
                 r.filename_suffix.as_deref(),
             ),
             system_code: r.system_code,
@@ -428,8 +428,8 @@ struct SysRow {
 struct RawDiscRow {
     id: i32,
     title: String,
-    title_disc_number: Option<String>,
-    title_disc: Option<String>,
+    disc_number: Option<String>,
+    disc_title: Option<String>,
     filename_suffix: Option<String>,
     system_code: String,
     serial: Option<String>,

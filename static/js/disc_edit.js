@@ -50,6 +50,12 @@ function getMaxLayers() {
     return (typeof MAX_LAYERS !== 'undefined') ? MAX_LAYERS : 1;
 }
 
+function systemHasOffsetExtra() {
+    var sel = document.getElementById('system-select');
+    if (!sel || typeof SYSTEMS_HAS_OFFSET_EXTRA === 'undefined') return false;
+    return !!SYSTEMS_HAS_OFFSET_EXTRA[sel.value];
+}
+
 function emptyLayer() {
     return { mastering_code: '', mastering_sid: '', toolstamps: '', mould_sids: '', additional_moulds: '' };
 }
@@ -57,7 +63,7 @@ function emptyLayer() {
 function emptyEntry(ml) {
     var layers = [];
     for (var i = 0; i < ml; i++) layers.push(emptyLayer());
-    return { offset: '', sample_start: '', comment: '', layers: layers };
+    return { offset_value: '', offset_extra_value: '', sample_start: '', comment: '', layers: layers };
 }
 
 function ensureEmptyRingEntry() {
@@ -68,7 +74,7 @@ function ensureEmptyRingEntry() {
 }
 
 function isEntryEmpty(entry) {
-    if ((entry.offset || '').trim() !== '' || (entry.sample_start || '').trim() !== '' || (entry.comment || '').trim() !== '') return false;
+    if ((entry.offset_value || '').trim() !== '' || (entry.offset_extra_value || '').trim() !== '' || (entry.sample_start || '').trim() !== '' || (entry.comment || '').trim() !== '') return false;
     if (!entry.layers) return true;
     for (var i = 0; i < entry.layers.length; i++) {
         var l = entry.layers[i];
@@ -93,12 +99,14 @@ function renderRingEntries() {
     }
 
     var showSampleStart = (typeof HAS_SAMPLE_START !== 'undefined') && HAS_SAMPLE_START;
+    var showOffsetExtra = systemHasOffsetExtra();
 
     // Build header
     var hdr = '<tr><th>#</th>';
     if (ml > 1) hdr += '<th></th>';
     hdr += '<th>Mastering Code</th><th>Mastering SID</th><th>Toolstamp(s)</th><th>Mould SID(s)</th><th>Additional Mould(s)</th>';
     hdr += '<th>Offset</th>';
+    if (showOffsetExtra) hdr += '<th>Extra Offset</th>';
     if (showSampleStart) hdr += '<th>Sample Start</th>';
     hdr += '<th>Comment</th><th></th></tr>';
     thead.innerHTML = hdr;
@@ -128,7 +136,8 @@ function renderRingEntries() {
 
             if (li === 0) {
                 var rs = ml > 1 ? ' rowspan="' + ml + '"' : '';
-                cells += '<td' + rs + '><input type="text" class="ring-offset" value="' + esc(entry.offset || '') + '"></td>';
+                cells += '<td' + rs + '><input type="text" class="ring-offset" value="' + esc(entry.offset_value || '') + '"></td>';
+                if (showOffsetExtra) cells += '<td' + rs + '><input type="text" class="ring-offset-extra" value="' + esc(entry.offset_extra_value || '') + '"></td>';
                 if (showSampleStart) cells += '<td' + rs + '><input type="text" class="ring-sample-start" value="' + esc(entry.sample_start || '') + '"></td>';
                 cells += '<td' + rs + '><input type="text" class="ring-comment" value="' + esc(entry.comment || '') + '"></td>';
                 cells += '<td' + rs + '><button type="button" class="outline secondary remove-entry" onclick="removeRingEntry(' + ei + ')">&times;</button></td>';
@@ -179,7 +188,8 @@ function saveRingFromDom() {
         var tools = tr.querySelector('.ring-tools'); if (tools) layer.toolstamps = tools.value;
         var moulds = tr.querySelector('.ring-moulds'); if (moulds) layer.mould_sids = moulds.value;
         var addm = tr.querySelector('.ring-addmoulds'); if (addm) layer.additional_moulds = addm.value;
-        var off = tr.querySelector('.ring-offset'); if (off) ringEntries[ei].offset = off.value;
+        var off = tr.querySelector('.ring-offset'); if (off) ringEntries[ei].offset_value = off.value;
+        var offExtra = tr.querySelector('.ring-offset-extra'); if (offExtra) ringEntries[ei].offset_extra_value = offExtra.value;
         var ss = tr.querySelector('.ring-sample-start'); if (ss) ringEntries[ei].sample_start = ss.value;
         var cmt = tr.querySelector('.ring-comment'); if (cmt) ringEntries[ei].comment = cmt.value;
     });
@@ -290,7 +300,7 @@ function fitAllInlineGroups() {
 
 // Size ring code table columns by measuring max content per column class
 var _ringColWidths = {};
-var RING_COL_CLASSES = ['ring-mc', 'ring-ms', 'ring-tools', 'ring-moulds', 'ring-addmoulds', 'ring-offset', 'ring-sample-start', 'ring-comment'];
+var RING_COL_CLASSES = ['ring-mc', 'ring-ms', 'ring-tools', 'ring-moulds', 'ring-addmoulds', 'ring-offset', 'ring-offset-extra', 'ring-sample-start', 'ring-comment'];
 
 function fitRingColumns() {
     var tbody = document.getElementById('ring-tbody');
