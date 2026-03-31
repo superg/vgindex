@@ -1,7 +1,8 @@
 use askama::Template;
 use axum::{
     extract::{Path, State},
-    response::{Html, Redirect},
+    http::StatusCode,
+    response::{Html, IntoResponse, Redirect, Response},
     routing::get,
     Form, Router,
 };
@@ -11,7 +12,7 @@ use crate::auth::middleware::RequireAuth;
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::AppResult;
-use crate::services::{disc_service, submission_service};
+use crate::services::{disc_service, submission_service, validation};
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -96,6 +97,8 @@ struct DiscEditTemplate {
 
     questionable: bool,
     enabled: bool,
+
+    validation_errors: Vec<String>,
 }
 impl SiteConfig for DiscEditTemplate {}
 
@@ -138,32 +141,151 @@ struct CategoryRow {
     name: String,
 }
 
+struct EditRefData {
+    all_systems: Vec<System>,
+    all_media_types: Vec<EditMediaTypeRow>,
+    all_categories: Vec<CategoryRow>,
+    all_regions: Vec<Region>,
+    all_languages: Vec<Language>,
+}
+
+async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData> {
+    let all_systems = disc_service::get_all_systems(pool).await?;
+    let all_media_types: Vec<EditMediaTypeRow> = sqlx::query_as(
+        "SELECT code, name, layer_count FROM media_types ORDER BY name",
+    )
+    .fetch_all(pool)
+    .await?;
+    let all_categories: Vec<CategoryRow> = sqlx::query_as(
+        "SELECT id, name FROM categories ORDER BY name",
+    )
+    .fetch_all(pool)
+    .await?;
+    let all_regions: Vec<Region> =
+        sqlx::query_as("SELECT * FROM regions ORDER BY sort_order")
+            .fetch_all(pool)
+            .await?;
+    let all_languages: Vec<Language> =
+        sqlx::query_as("SELECT * FROM languages ORDER BY sort_order")
+            .fetch_all(pool)
+            .await?;
+    Ok(EditRefData {
+        all_systems,
+        all_media_types,
+        all_categories,
+        all_regions,
+        all_languages,
+    })
+}
+
+fn build_systems_json(
+    all_systems: &[System],
+) -> (String, String) {
+    let mut systems_media_map = serde_json::Map::new();
+    let mut systems_has_offset_extra_map = serde_json::Map::new();
+    for s in all_systems {
+        systems_media_map.insert(s.code.clone(), serde_json::json!(s.media_types));
+        systems_has_offset_extra_map.insert(s.code.clone(), serde_json::json!(s.has_offset_extra));
+    }
+    let systems_media_json =
+        serde_json::to_string(&systems_media_map).unwrap_or_else(|_| "{}".into());
+    let systems_has_offset_extra_json =
+        serde_json::to_string(&systems_has_offset_extra_map).unwrap_or_else(|_| "{}".into());
+    (systems_media_json, systems_has_offset_extra_json)
+}
+
+fn build_media_layers_json(all_media_types: &[EditMediaTypeRow]) -> String {
+    let mut media_layers_map = serde_json::Map::new();
+    for m in all_media_types {
+        media_layers_map.insert(m.code.clone(), serde_json::json!(m.layer_count));
+    }
+    serde_json::to_string(&media_layers_map).unwrap_or_else(|_| "{}".into())
+}
+
+fn build_system_options(all_systems: &[System], selected: &str) -> Vec<SystemOption> {
+    let mut systems: Vec<SystemOption> = all_systems
+        .iter()
+        .map(|s| SystemOption {
+            code: s.code.clone(),
+            name: s.name.clone(),
+            selected: s.code == selected,
+        })
+        .collect();
+    systems.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    systems
+}
+
+fn build_media_options(all_media_types: &[EditMediaTypeRow], selected: &str) -> Vec<MediaTypeOption> {
+    all_media_types
+        .iter()
+        .map(|m| MediaTypeOption {
+            code: m.code.clone(),
+            name: m.name.clone(),
+            selected: m.code == selected,
+        })
+        .collect()
+}
+
+fn build_category_options(all_categories: &[CategoryRow], selected: &str) -> Vec<SelectOption> {
+    all_categories
+        .iter()
+        .map(|c| SelectOption {
+            value: c.name.clone(),
+            name: c.name.clone(),
+            selected: selected == c.name,
+        })
+        .collect()
+}
+
+fn build_check_options(
+    all: &[Region],
+    selected_codes: &[String],
+) -> Vec<CheckOption> {
+    let mut options: Vec<CheckOption> = all
+        .iter()
+        .map(|r| CheckOption {
+            value: r.code.trim().to_string(),
+            name: r.name.clone(),
+            code: r.flag_code.trim().to_lowercase(),
+            selected: selected_codes.iter().any(|c| c.trim() == r.code.trim()),
+        })
+        .collect();
+    options.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    options
+}
+
+fn build_lang_check_options(
+    all: &[Language],
+    selected_codes: &[String],
+) -> Vec<CheckOption> {
+    let mut options: Vec<CheckOption> = all
+        .iter()
+        .map(|l| CheckOption {
+            value: l.code.trim().to_string(),
+            name: l.name.clone(),
+            code: l.flag_code.trim().to_lowercase(),
+            selected: selected_codes.iter().any(|c| c.trim() == l.code.trim()),
+        })
+        .collect();
+    options.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    options
+}
+
+fn max_layers_for_media(all_media_types: &[EditMediaTypeRow], code: &str) -> u32 {
+    all_media_types
+        .iter()
+        .find(|m| m.code == code)
+        .map(|m| m.layer_count as u32)
+        .unwrap_or(1)
+}
+
 async fn edit_page(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
     Path(id): Path<i32>,
 ) -> AppResult<Html<String>> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
-
-    let all_systems = disc_service::get_all_systems(&state.pool).await?;
-    let all_media_types: Vec<EditMediaTypeRow> = sqlx::query_as(
-        "SELECT code, name, layer_count FROM media_types ORDER BY name",
-    )
-    .fetch_all(&state.pool)
-    .await?;
-    let all_categories: Vec<CategoryRow> = sqlx::query_as(
-        "SELECT id, name FROM categories ORDER BY name",
-    )
-    .fetch_all(&state.pool)
-    .await?;
-    let all_regions: Vec<Region> =
-        sqlx::query_as("SELECT * FROM regions ORDER BY sort_order")
-            .fetch_all(&state.pool)
-            .await?;
-    let all_languages: Vec<Language> =
-        sqlx::query_as("SELECT * FROM languages ORDER BY sort_order")
-            .fetch_all(&state.pool)
-            .await?;
+    let ref_data = fetch_ref_data(&state.pool).await?;
 
     let disc_region_codes: Vec<String> = sqlx::query_scalar(
         "SELECT region_code FROM disc_regions WHERE disc_id = $1",
@@ -178,81 +300,11 @@ async fn edit_page(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut systems: Vec<SystemOption> = all_systems
-        .iter()
-        .map(|s| SystemOption {
-            code: s.code.clone(),
-            name: s.name.clone(),
-            selected: s.code == detail.disc.system_code,
-        })
-        .collect();
-    systems.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-
-    let mut systems_media_map = serde_json::Map::new();
-    let mut systems_has_offset_extra_map = serde_json::Map::new();
-    for s in &all_systems {
-        systems_media_map.insert(s.code.clone(), serde_json::json!(s.media_types));
-        systems_has_offset_extra_map.insert(s.code.clone(), serde_json::json!(s.has_offset_extra));
-    }
-    let systems_media_json =
-        serde_json::to_string(&systems_media_map).unwrap_or_else(|_| "{}".into());
-    let systems_has_offset_extra_json =
-        serde_json::to_string(&systems_has_offset_extra_map).unwrap_or_else(|_| "{}".into());
-
-    let media_types_all: Vec<MediaTypeOption> = all_media_types
-        .iter()
-        .map(|m| MediaTypeOption {
-            code: m.code.clone(),
-            name: m.name.clone(),
-            selected: m.code == detail.disc.media_type.code(),
-        })
-        .collect();
-
-    let mut media_layers_map = serde_json::Map::new();
-    for m in &all_media_types {
-        media_layers_map.insert(m.code.clone(), serde_json::json!(m.layer_count));
-    }
-    let media_layers_json =
-        serde_json::to_string(&media_layers_map).unwrap_or_else(|_| "{}".into());
-
+    let (systems_media_json, systems_has_offset_extra_json) =
+        build_systems_json(&ref_data.all_systems);
+    let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
     let max_layers = detail.disc.media_type.max_layers();
 
-    let categories: Vec<SelectOption> = all_categories
-        .iter()
-        .map(|c| SelectOption {
-            value: c.name.clone(),
-            name: c.name.clone(),
-            selected: detail.disc.category.to_string() == c.name,
-        })
-        .collect();
-
-    let mut regions: Vec<CheckOption> = all_regions
-        .iter()
-        .map(|r| CheckOption {
-            value: r.code.trim().to_string(),
-            name: r.name.clone(),
-            code: r.flag_code.trim().to_lowercase(),
-            selected: disc_region_codes
-                .iter()
-                .any(|c| c.trim() == r.code.trim()),
-        })
-        .collect();
-    regions.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-
-    let mut languages: Vec<CheckOption> = all_languages
-        .iter()
-        .map(|l| CheckOption {
-            value: l.code.trim().to_string(),
-            name: l.name.clone(),
-            code: l.flag_code.trim().to_lowercase(),
-            selected: disc_lang_codes
-                .iter()
-                .any(|c| c.trim() == l.code.trim()),
-        })
-        .collect();
-    languages.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-
-    // Ring codes: pad each entry to max_layers so every layer slot is present
     let ring_data: Vec<serde_json::Value> = detail
         .ring_entries
         .iter()
@@ -280,18 +332,7 @@ async fn edit_page(
         .collect();
     let ring_codes_json = serde_json::to_string(&ring_data).unwrap_or_else(|_| "[]".into());
 
-    // Build files XML for non-cue files
-    let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
-    let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
     let rom_extension = detail.disc.media_type.rom_extension();
-    let rom_base_name = build_rom_base_name(
-        &detail.disc.title,
-        &region_names,
-        &language_codes,
-        detail.disc.disc_number.as_deref(),
-        detail.disc.disc_title.as_deref(),
-        detail.disc.filename_suffix.as_deref(),
-    );
     let total_tracks = detail
         .files
         .iter()
@@ -302,8 +343,7 @@ async fn edit_page(
         .iter()
         .filter(|f| f.track_number.is_some())
         .map(|f| {
-            let name = build_rom_name(
-                &rom_base_name,
+            let name = build_simple_track_name(
                 f.track_number.as_deref(),
                 total_tracks,
                 rom_extension,
@@ -337,11 +377,11 @@ async fn edit_page(
             disc_id: id,
             page_title,
 
-            systems,
-            media_types_all,
-            categories,
-            regions,
-            languages,
+            systems: build_system_options(&ref_data.all_systems, &detail.disc.system_code),
+            media_types_all: build_media_options(&ref_data.all_media_types, detail.disc.media_type.code()),
+            categories: build_category_options(&ref_data.all_categories, &detail.disc.category.to_string()),
+            regions: build_check_options(&ref_data.all_regions, &disc_region_codes),
+            languages: build_lang_check_options(&ref_data.all_languages, &disc_lang_codes),
 
             system_code: detail.disc.system_code.clone(),
             media_type_code: detail.disc.media_type.code().to_string(),
@@ -354,11 +394,7 @@ async fn edit_page(
             show_title_foreign: detail.system.has_title_foreign,
             title_foreign: detail.disc.title_foreign.clone().unwrap_or_default(),
             show_disc_number: detail.system.has_disc_number,
-            disc_number: detail
-                .disc
-                .disc_number
-                .clone()
-                .unwrap_or_default(),
+            disc_number: detail.disc.disc_number.clone().unwrap_or_default(),
             show_disc_title: detail.system.has_disc_title,
             disc_title: detail.disc.disc_title.clone().unwrap_or_default(),
             filename_suffix: detail.disc.filename_suffix.clone().unwrap_or_default(),
@@ -390,19 +426,11 @@ async fn edit_page(
             contents: detail.disc.contents.clone().unwrap_or_default(),
 
             show_error_count: detail.system.has_error_count,
-            error_count: detail
-                .disc
-                .error_count
-                .map(|e| e.to_string())
-                .unwrap_or_default(),
+            error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             show_exe_date: detail.system.has_exe_date,
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
             show_edc: detail.system.has_edc,
-            edc_value: detail
-                .disc
-                .edc
-                .map(|e| e.to_string())
-                .unwrap_or_default(),
+            edc_value: detail.disc.edc.map(|e| e.to_string()).unwrap_or_default(),
 
             layerbreaks: detail
                 .disc
@@ -465,11 +493,16 @@ async fn edit_page(
                 .cloned()
                 .unwrap_or_default(),
 
-            cue: detail.disc.cue.clone().unwrap_or_default(),
+            cue: detail.disc.cue.as_deref()
+                .filter(|s| !s.is_empty())
+                .map(|c| simplify_cue(c, rom_extension))
+                .unwrap_or_default(),
             files_xml,
 
             questionable: detail.disc.questionable,
             enabled: detail.disc.enabled,
+
+            validation_errors: vec![],
         }
         .render()
         .unwrap(),
@@ -523,12 +556,256 @@ pub struct DiscEditForm {
     pub submission_comment: Option<String>,
 }
 
+fn validate_form(form: &DiscEditForm) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    if form.title.trim().is_empty() {
+        errors.push("Title: cannot be empty".into());
+    }
+
+    if form.regions.is_empty() {
+        errors.push("Regions: at least one region must be selected".into());
+    }
+
+    if let Some(ref s) = form.error_count {
+        let s = s.trim();
+        if !s.is_empty() {
+            if validation::validate_non_negative_int(s).is_err() {
+                errors.push("Error Count: must be a non-negative integer".into());
+            }
+        }
+    }
+
+    for (i, lb) in form.layerbreak.iter().enumerate() {
+        let s = lb.trim();
+        if !s.is_empty() {
+            if validation::validate_non_negative_int(s).is_err() {
+                errors.push(format!("Layerbreak {}: must be a non-negative integer", i + 1));
+            }
+        }
+    }
+
+    if let Some(ref json_str) = form.ring_codes_json {
+        let ring_errors = validation::validate_ring_code_offsets(json_str);
+        errors.extend(ring_errors);
+    }
+
+    if let Some(ref text) = form.sector_ranges {
+        let text = text.trim();
+        if !text.is_empty() {
+            if let Err(e) = validation::validate_sector_ranges(text) {
+                errors.push(format!("Sector Ranges: {}", e));
+            }
+        }
+    }
+
+    if let Some(ref text) = form.sbi {
+        let text = text.trim();
+        if !text.is_empty() {
+            if let Err(e) = validation::validate_sbi(text) {
+                errors.push(format!("SBI: {}", e));
+            }
+        }
+    }
+
+    if let Some(ref text) = form.pvd {
+        let text = text.trim();
+        if !text.is_empty() {
+            if let Err(e) = validation::validate_hex_dump(text) {
+                errors.push(format!("PVD: {}", e));
+            }
+        }
+    }
+
+    if let Some(ref text) = form.header {
+        let text = text.trim();
+        if !text.is_empty() {
+            if let Err(e) = validation::validate_hex_dump(text) {
+                errors.push(format!("Header: {}", e));
+            }
+        }
+    }
+
+    if let Some(ref text) = form.bca {
+        let text = text.trim();
+        if !text.is_empty() {
+            if let Err(e) = validation::validate_hex_dump(text) {
+                errors.push(format!("BCA: {}", e));
+            }
+        }
+    }
+
+    if let Some(ref text) = form.pic {
+        let text = text.trim();
+        if !text.is_empty() {
+            if let Err(e) = validation::validate_hex_dump(text) {
+                errors.push(format!("PIC: {}", e));
+            }
+        }
+    }
+
+    if let Some(ref text) = form.cue {
+        let text = text.trim();
+        if !text.is_empty() {
+            if let Err(e) = validation::validate_cuesheet(text) {
+                errors.push(format!("Cuesheet: {}", e));
+            }
+        }
+    }
+
+    if let Some(ref text) = form.files_xml {
+        let text = text.trim();
+        if !text.is_empty() {
+            if let Err(e) = validation::validate_dat(text) {
+                errors.push(format!("Dat: {}", e));
+            }
+        }
+    }
+
+    errors
+}
+
+async fn render_form_with_errors(
+    pool: &sqlx::PgPool,
+    id: i32,
+    username: &str,
+    can_edit_directly: bool,
+    form: &DiscEditForm,
+    errors: Vec<String>,
+) -> AppResult<Response> {
+    let ref_data = fetch_ref_data(pool).await?;
+    let system = disc_service::get_system(pool, &form.system_code).await.ok();
+
+    let (systems_media_json, systems_has_offset_extra_json) =
+        build_systems_json(&ref_data.all_systems);
+    let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
+    let max_layers = max_layers_for_media(&ref_data.all_media_types, &form.media_type);
+
+    let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
+
+    let page_title = format_display_title(
+        &form.title,
+        form.disc_number.as_deref(),
+        form.disc_title.as_deref(),
+        form.filename_suffix.as_deref(),
+    );
+
+    let template = DiscEditTemplate {
+        current_user: Some(username.to_string()),
+        can_edit_directly,
+        disc_id: id,
+        page_title,
+
+        systems: build_system_options(&ref_data.all_systems, &form.system_code),
+        media_types_all: build_media_options(&ref_data.all_media_types, &form.media_type),
+        categories: build_category_options(&ref_data.all_categories, &form.category),
+        regions: build_check_options(&ref_data.all_regions, &form.regions),
+        languages: build_lang_check_options(&ref_data.all_languages, &form.languages),
+
+        system_code: form.system_code.clone(),
+        media_type_code: form.media_type.clone(),
+        max_layers,
+        media_layers_json,
+        systems_media_json,
+        systems_has_offset_extra_json,
+
+        title: form.title.clone(),
+        show_title_foreign: has_sys(|s| s.has_title_foreign),
+        title_foreign: form.title_foreign.clone().unwrap_or_default(),
+        show_disc_number: has_sys(|s| s.has_disc_number),
+        disc_number: form.disc_number.clone().unwrap_or_default(),
+        show_disc_title: has_sys(|s| s.has_disc_title),
+        disc_title: form.disc_title.clone().unwrap_or_default(),
+        filename_suffix: form.filename_suffix.clone().unwrap_or_default(),
+
+        show_serial: has_sys(|s| s.has_serial),
+        serials: form
+            .serial
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        show_version: has_sys(|s| s.has_version),
+        version: form.version.clone().unwrap_or_default(),
+        show_edition: has_sys(|s| s.has_edition),
+        editions: form
+            .edition
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        show_barcode: has_sys(|s| s.has_barcode),
+        barcodes: form
+            .barcode
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+
+        ring_codes_json: form.ring_codes_json.clone().unwrap_or_else(|| "[]".into()),
+
+        comments: form.comments.clone().unwrap_or_default(),
+        contents: form.contents.clone().unwrap_or_default(),
+
+        show_error_count: has_sys(|s| s.has_error_count),
+        error_count: form.error_count.clone().unwrap_or_default(),
+        show_exe_date: has_sys(|s| s.has_exe_date),
+        exe_date: form.exe_date.clone().unwrap_or_default(),
+        show_edc: has_sys(|s| s.has_edc),
+        edc_value: form.edc.clone().unwrap_or_default(),
+
+        layerbreaks: form.layerbreak.clone(),
+        show_pvd: has_sys(|s| s.has_pvd),
+        pvd_hex: form.pvd.clone().unwrap_or_default(),
+        show_pic: has_sys(|s| s.has_pic),
+        pic_hex: form.pic.clone().unwrap_or_default(),
+        show_bca: has_sys(|s| s.has_bca),
+        bca_hex: form.bca.clone().unwrap_or_default(),
+        show_header: has_sys(|s| s.has_header),
+        header_hex: form.header.clone().unwrap_or_default(),
+
+        show_protection: has_sys(|s| s.has_protection),
+        protection: form.protection.clone().unwrap_or_default(),
+        show_sector_ranges: has_sys(|s| s.has_sector_ranges),
+        sector_ranges_text: form.sector_ranges.clone().unwrap_or_default(),
+        show_sbi: has_sys(|s| s.has_sbi),
+        sbi: form.sbi.clone().unwrap_or_default(),
+        has_sample_start: has_sys(|s| s.has_sample_start),
+        protection_key_disc_key: form.protection_key_disc_key.clone().unwrap_or_default(),
+        protection_key_disc_id: form.protection_key_disc_id.clone().unwrap_or_default(),
+
+        cue: form.cue.clone().unwrap_or_default(),
+        files_xml: form.files_xml.clone().unwrap_or_default(),
+
+        questionable: form.questionable.as_deref() == Some("true"),
+        enabled: form.enabled.as_deref() == Some("true"),
+
+        validation_errors: errors,
+    };
+
+    let html = template.render().unwrap();
+    Ok((StatusCode::BAD_REQUEST, Html(html)).into_response())
+}
+
 async fn edit_submit(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
     Path(id): Path<i32>,
     Form(form): Form<DiscEditForm>,
-) -> AppResult<Redirect> {
+) -> AppResult<Response> {
+    let errors = validate_form(&form);
+    if !errors.is_empty() {
+        return render_form_with_errors(
+            &state.pool,
+            id,
+            &user.username,
+            user.role.can_edit_directly(),
+            &form,
+            errors,
+        )
+        .await;
+    }
+
     let error_count = form
         .error_count
         .as_deref()
@@ -544,7 +821,14 @@ async fn edit_submit(
     let layerbreaks: Vec<i32> = form
         .layerbreak
         .iter()
-        .filter_map(|s| s.trim().parse::<i32>().ok())
+        .filter_map(|s| {
+            let s = s.trim();
+            if s.is_empty() {
+                None
+            } else {
+                s.parse::<i32>().ok()
+            }
+        })
         .collect();
 
     let keys: Vec<String> = [
@@ -556,26 +840,11 @@ async fn edit_submit(
     .map(|s| s.to_string())
     .collect();
 
-    let sector_ranges: Vec<serde_json::Value> = form
-        .sector_ranges
-        .as_deref()
-        .unwrap_or("")
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            if line.is_empty() {
-                return None;
-            }
-            let parts: Vec<&str> = line.splitn(2, '-').collect();
-            if parts.len() == 2 {
-                let start = parts[0].trim().parse::<i32>().ok()?;
-                let end = parts[1].trim().parse::<i32>().ok()?;
-                Some(serde_json::json!({"start": start, "end": end}))
-            } else {
-                None
-            }
-        })
-        .collect();
+    let sector_ranges: Vec<serde_json::Value> =
+        validation::parse_sector_range_pairs(form.sector_ranges.as_deref().unwrap_or(""))
+            .into_iter()
+            .map(|(start, end)| serde_json::json!({"start": start, "end": end}))
+            .collect();
 
     let serials: Vec<String> = form
         .serial
@@ -638,7 +907,6 @@ async fn edit_submit(
         "submission_comment": form.submission_comment,
     });
 
-    // Always create a submission for audit trail
     let sub = submission_service::create_submission(
         &state.pool,
         SubmissionType::Edit,
@@ -655,7 +923,7 @@ async fn edit_submit(
         submission_service::mark_submission_approved(&state.pool, sub.id, user.id).await?;
     }
 
-    Ok(Redirect::to(&format!("/disc/{id}/")))
+    Ok(Redirect::to(&format!("/disc/{id}/")).into_response())
 }
 
 fn format_hex_dump_edit(data: &[u8], base_addr: usize) -> String {

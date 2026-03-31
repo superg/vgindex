@@ -12,6 +12,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -432,6 +433,18 @@ CATEGORY_ID = 1
 SUBMITTER_USER_ID = 1
 
 
+def _normalize_cue_file_name_commas(cue_text):
+    """Remove spaces after commas inside CUE FILE quoted filenames."""
+    if not cue_text:
+        return cue_text
+    return re.sub(
+        r'(^\s*FILE\s+"([^"]*)")',
+        lambda m: m.group(1).replace(", ", ","),
+        cue_text,
+        flags=re.MULTILINE,
+    )
+
+
 def _pad_list(elements, longest_element, target_count):
     """Pad a list to target_count by repeating elements, each at most as long
     as the longest observed element. Returns a new list."""
@@ -552,7 +565,7 @@ ON CONFLICT (id) DO NOTHING;\n\n""")
             stats.protection_key_elements, stats.longest_protection_key,
             stats.max_protection_keys_count) if stats.max_protection_keys_count > 0 else None
 
-        cue = stats.longest_cue
+        cue = _normalize_cue_file_name_commas(stats.longest_cue)
 
         out.write("-- Insert max-complexity disc\n")
         out.write(f"""INSERT INTO discs

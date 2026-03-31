@@ -603,6 +603,66 @@ pub fn build_rom_name(
     name
 }
 
+pub fn build_simple_track_name(
+    track_number: Option<&str>,
+    total_tracks: usize,
+    extension: &str,
+) -> String {
+    let mut name = String::from("Track");
+    if total_tracks > 1 {
+        if let Some(t) = track_number {
+            let n: u32 = t.parse().unwrap_or(0);
+            if total_tracks >= 10 {
+                name.push_str(&format!(" {n:02}"));
+            } else {
+                name.push_str(&format!(" {n}"));
+            }
+        }
+    }
+    name.push('.');
+    name.push_str(extension);
+    name
+}
+
+pub fn simplify_cue(raw_cue: &str, extension: &str) -> String {
+    let lines: Vec<&str> = raw_cue.lines().collect();
+    let total_tracks = lines.iter()
+        .filter(|l| l.trim_start().starts_with("TRACK "))
+        .count();
+
+    let mut result = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        if trimmed.starts_with("FILE ") {
+            let track_num = lines[i + 1..].iter()
+                .find_map(|l| {
+                    let lt = l.trim_start();
+                    if lt.starts_with("TRACK ") {
+                        lt.split_whitespace().nth(1)
+                            .map(|n| n.trim_start_matches('0'))
+                            .map(|n| if n.is_empty() { "0" } else { n })
+                    } else {
+                        None
+                    }
+                });
+            let simple_name = build_simple_track_name(
+                track_num,
+                total_tracks,
+                extension,
+            );
+            let file_type = trimmed.rsplit_once(' ')
+                .map(|(_, t)| t)
+                .unwrap_or("BINARY");
+            result.push(format!("FILE \"{simple_name}\" {file_type}"));
+        } else {
+            result.push(lines[i].to_string());
+        }
+        i += 1;
+    }
+    result.join("\n")
+}
+
 pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
     let lines: Vec<&str> = raw_cue.lines().collect();
     let total_tracks = lines.iter()

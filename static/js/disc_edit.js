@@ -384,9 +384,50 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var form = document.getElementById('disc-edit-form');
     if (form) {
-        form.addEventListener('submit', function () {
+        form.addEventListener('submit', function (e) {
             var data = collectRingCodes();
             document.getElementById('ring-codes-json').value = JSON.stringify(data);
+
+            clearClientErrors();
+            var errors = [];
+            var titleInput = form.querySelector('input[name="title"]');
+            if (titleInput && titleInput.value.trim() === '') {
+                errors.push('Title: cannot be empty');
+            }
+            var regionBoxes = form.querySelectorAll('input[name="regions"]:checked');
+            if (regionBoxes.length === 0) {
+                errors.push('Regions: at least one region must be selected');
+            }
+            if (errors.length > 0) {
+                e.preventDefault();
+                showClientErrors(errors);
+            }
         });
     }
 });
+
+function showClientErrors(errors) {
+    clearClientErrors();
+    var box = document.createElement('div');
+    box.className = 'validation-errors';
+    box.id = 'client-validation-errors';
+    box.setAttribute('role', 'alert');
+    var strong = document.createElement('strong');
+    strong.textContent = 'Please fix the following errors:';
+    box.appendChild(strong);
+    var ul = document.createElement('ul');
+    errors.forEach(function (msg) {
+        var li = document.createElement('li');
+        li.textContent = msg;
+        ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    var form = document.getElementById('disc-edit-form');
+    form.parentNode.insertBefore(box, form);
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function clearClientErrors() {
+    var old = document.getElementById('client-validation-errors');
+    if (old) old.remove();
+}
