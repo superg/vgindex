@@ -209,6 +209,33 @@ async fn disc_view(
         let comment = e.comment.clone().unwrap_or_default();
         let entry_num = i + 1;
         let entry_even = entry_num % 2 == 0;
+
+        if e.layers.is_empty() {
+            let has_data = !offset.is_empty()
+                || !offset_extra.is_empty()
+                || !sample_data_start.is_empty()
+                || !comment.is_empty();
+            if has_data {
+                return vec![ViewRingRow {
+                    entry_num,
+                    layer: String::new(),
+                    mastering_code: String::new(),
+                    mastering_sid: String::new(),
+                    mould_sids: String::new(),
+                    additional_moulds: String::new(),
+                    toolstamps: String::new(),
+                    offset,
+                    offset_extra,
+                    sample_data_start,
+                    comment,
+                    first_in_entry: true,
+                    entry_even,
+                    entry_rowspan: 1,
+                }];
+            }
+            return vec![];
+        }
+
         let layer_count = e.layers.len();
         e.layers.iter().enumerate().map(move |(li, l)| ViewRingRow {
             entry_num,
@@ -225,7 +252,7 @@ async fn disc_view(
             first_in_entry: li == 0,
             entry_even,
             entry_rowspan: if li == 0 { layer_count } else { 0 },
-        })
+        }).collect()
     }).collect();
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();

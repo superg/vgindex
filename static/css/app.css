@@ -531,3 +531,24 @@ textarea.fit-width {
 textarea.fixed-80 {
     width: 80ch;
 }
+
+/* Validation error box */
+.validation-errors {
+    background: var(--pico-del-color, #c62828);
+    color: #fff;
+    padding: 0.75rem 1rem;
+    border-radius: var(--pico-border-radius, 0.25rem);
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+}
+.validation-errors strong {
+    display: block;
+    margin-bottom: 0.35rem;
+}
+.validation-errors ul {
+    margin: 0;
+    padding-left: 1.25rem;
+}
+.validation-errors li {
+    margin-bottom: 0.15rem;
+}

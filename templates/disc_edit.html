@@ -16,6 +16,16 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
 {% endblock %}
 
 {% block content %}
+{% if !validation_errors.is_empty() %}
+<div class="validation-errors" role="alert">
+    <strong>Please fix the following errors:</strong>
+    <ul>
+    {% for err in validation_errors %}
+        <li>{{ err }}</li>
+    {% endfor %}
+    </ul>
+</div>
+{% endif %}
 <form method="post" action="/disc/{{ disc_id }}/edit/" id="disc-edit-form" class="disc-edit">
 
     <div class="grid">

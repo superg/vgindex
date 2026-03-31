@@ -6,6 +6,9 @@ Usage:
 
 Reads JSON files from data/redump/db/ and produces a single .sql file
 that can be imported via: psql -f import.sql
+
+Disc id 1 is reserved for a synthetic max-complexity entry (disabled)
+built from global maxima observed across all scraped records.
 """
 
 import argparse
@@ -15,7 +18,6 @@ import json
 import os
 import re
 import sys
-from collections import OrderedDict
 from datetime import datetime
 
 # ---------------------------------------------------------------------------
@@ -98,6 +100,7 @@ SYSTEM_NAME_TO_CODE = {
     "Konami System 573": "KS573",
     "Microsoft Xbox Series X": "XBOXSX",
     "Sony PlayStation 5": "PS5",
+    "Max Complexity Test System": "MAXTEST",
 }
 
 MEDIA_NAME_TO_CODE = {
@@ -117,6 +120,7 @@ MEDIA_NAME_TO_CODE = {
     "BD-100": "bd100",
     "UMD (SL)": "umd1",
     "UMD (DL)": "umd2",
+    "Max Test (4-layer)": "test4l",
 }
 
 REGION_NAME_TO_CODE = {
@@ -182,7 +186,7 @@ LANG2_SORT_ORDER = {
     "sq": 45, "hy": 46, "vi": 47, "bg": 48,
 }
 
-MEDIA_CODE_TO_ROM_EXT = {"cd": "bin", "gdrom": "bin"}
+MEDIA_CODE_TO_ROM_EXT = {"cd": "bin", "gdrom": "bin", "test4l": "bin"}
 
 _FILENAME_REPLACEMENTS = [
     ("Böse", "Boese"),
@@ -223,11 +227,11 @@ def build_rom_base_name(title, region_names, lang2_codes, disc_number, disc_labe
     name = title
     sorted_regions = sorted(region_names, key=lambda r: REGION_SORT_ORDER.get(r, 9999))
     if sorted_regions:
-        name += " ({})".format(", ".join(sorted_regions))
+        name += " ({})".format(",".join(sorted_regions))
     sorted_langs = sorted(lang2_codes, key=lambda c: LANG2_SORT_ORDER.get(c, 9999))
     if len(sorted_langs) > 1:
         capitalized = [c[0].upper() + c[1:] for c in sorted_langs]
-        name += " ({})".format(", ".join(capitalized))
+        name += " ({})".format(",".join(capitalized))
     if disc_number:
         name += " (Disc {})".format(disc_number)
     if disc_label:
@@ -585,23 +589,44 @@ def split_csv(value):
     return [s.strip() for s in value.split(",") if s.strip()]
 
 
-def merge_offsets(data):
-    """Merge d_offset[] and d_offset_text into a list of int offset values."""
-    offsets = []
-    for val in data.get("d_offset[]", []):
+def _parse_offset_value(raw):
+    """Parse a single offset string into (offset, offset_extra).
+
+    A plain signed integer like "+588" returns (588, None).
+    A pipe-separated pair like "-486|-486" returns (-486, -486).
+    Returns None on parse failure.
+    """
+    raw = raw.strip()
+    if not raw:
+        return None
+    if "|" in raw:
+        parts = raw.split("|", 1)
         try:
-            offsets.append(int(val))
+            return (int(parts[0]), int(parts[1]))
         except (ValueError, TypeError):
-            pass
+            return None
+    try:
+        return (int(raw), None)
+    except (ValueError, TypeError):
+        return None
+
+
+def merge_offsets(data):
+    """Merge d_offset[] and d_offset_text into a list of (offset, offset_extra) tuples."""
+    offsets = []
+    seen = set()
+    for val in data.get("d_offset[]", []):
+        parsed = _parse_offset_value(str(val))
+        if parsed and parsed not in seen:
+            offsets.append(parsed)
+            seen.add(parsed)
     text = data.get("d_offset_text", "")
     if text:
         for val in text.split(","):
-            val = val.strip()
-            if val:
-                try:
-                    offsets.append(int(val))
-                except (ValueError, TypeError):
-                    pass
+            parsed = _parse_offset_value(val)
+            if parsed and parsed not in seen:
+                offsets.append(parsed)
+                seen.add(parsed)
     return offsets
 
 
@@ -652,6 +677,368 @@ def build_submission_data(fields_list):
     return {"fields": result_fields}
 
 # ---------------------------------------------------------------------------
+# Max-stats accumulator (merged from generate_max_disc_sql.py)
+# ---------------------------------------------------------------------------
+
+SYNTHETIC_DISC_ID = 1
+SYNTHETIC_SYSTEM_CODE = "MAXTEST"
+SYNTHETIC_SYSTEM_NAME = "Max Complexity Test System"
+SYNTHETIC_MEDIA_CODE = "test4l"
+SYNTHETIC_MEDIA_NAME = "Max Test (4-layer)"
+SYNTHETIC_MEDIA_LAYERS = 4
+
+
+def _keep_longest(current, candidate):
+    if candidate is None:
+        return current
+    if current is None:
+        return candidate
+    return candidate if len(str(candidate)) > len(str(current)) else current
+
+
+def _pad_list(elements, longest_element, target_count):
+    if target_count <= 0:
+        return []
+    if not elements:
+        elements = [longest_element or "x"]
+    result = [elements[i % len(elements)] for i in range(target_count)]
+    if longest_element and result:
+        result[0] = longest_element
+    return result
+
+
+class MaxStats:
+    """Collect maxima from non-empty scrape records in a single scan."""
+
+    def __init__(self):
+        self.longest_title = None
+        self.longest_title_foreign = None
+        self.longest_disc_title = None
+        self.longest_disc_number = None
+        self.longest_version = None
+        self.longest_filename_suffix = None
+        self.longest_comments = None
+        self.longest_contents = None
+        self.longest_exe_date = None
+
+        self.longest_serial_element = None
+        self.max_serial_count = 0
+        self.serial_elements = []
+
+        self.longest_edition_element = None
+        self.max_edition_count = 0
+        self.edition_elements = []
+
+        self.longest_barcode_element = None
+        self.max_barcode_count = 0
+        self.barcode_elements = []
+
+        self.max_error_count = None
+        self.max_layerbreak_count = 0
+        self.layerbreak_values = []
+
+        self.longest_pvd_hex = None
+        self.longest_pic_hex = None
+        self.longest_bca_hex = None
+        self.longest_header_hex = None
+
+        self.longest_protection = None
+        self.longest_sbi = None
+
+        self.max_sector_ranges_count = 0
+        self.sector_ranges_values = []
+
+        self.max_protection_keys_count = 0
+        self.longest_protection_key = None
+        self.protection_key_elements = []
+
+        self.longest_cue = None
+
+        self.max_region_count = 0
+        self.region_names = []
+
+        self.max_language_count = 0
+        self.language3_codes = []
+
+        self.max_ring_entry_count = 0
+        self.max_ring_layer_count = 0
+        self.max_offset_values_count = 0
+        self.max_mould_sids_count = 0
+        self.max_toolstamps_count = 0
+        self.max_additional_moulds_count = 0
+
+        self._ring_pool_size = 100
+        self.mastering_code_pool = []
+        self.mastering_sid_pool = []
+        self.mould_sid_pool = []
+        self.toolstamp_pool = []
+        self.additional_mould_pool = []
+
+        self.max_track_count = 0
+        self.longest_track_size = 0
+
+        self.max_dumper_count = 0
+        self.dumper_names = []
+
+        self.max_changes_count = 0
+        self.change_templates = []
+
+    def _add_to_pool(self, pool, value):
+        if not value or not str(value).strip():
+            return
+        v = str(value).strip()
+        if v in pool:
+            return
+        if len(pool) < self._ring_pool_size:
+            pool.append(v)
+            return
+        shortest_idx = min(range(len(pool)), key=lambda i: len(pool[i]))
+        if len(v) > len(pool[shortest_idx]):
+            pool[shortest_idx] = v
+
+    def ingest(self, data):
+        self.longest_title = _keep_longest(self.longest_title, data.get("d_title"))
+        self.longest_title_foreign = _keep_longest(self.longest_title_foreign, data.get("d_title_foreign"))
+        self.longest_disc_title = _keep_longest(self.longest_disc_title, data.get("d_label"))
+        self.longest_disc_number = _keep_longest(self.longest_disc_number, data.get("d_number"))
+        self.longest_version = _keep_longest(self.longest_version, data.get("d_version"))
+        self.longest_filename_suffix = _keep_longest(self.longest_filename_suffix, data.get("d_version_datfile"))
+        self.longest_comments = _keep_longest(self.longest_comments, data.get("d_comments"))
+        self.longest_contents = _keep_longest(self.longest_contents, data.get("d_contents"))
+        self.longest_exe_date = _keep_longest(self.longest_exe_date, data.get("d_date"))
+
+        serials = split_csv(data.get("d_serial"))
+        if len(serials) > self.max_serial_count:
+            self.max_serial_count = len(serials)
+            self.serial_elements = list(serials)
+        for s in serials:
+            self.longest_serial_element = _keep_longest(self.longest_serial_element, s)
+
+        editions = merge_editions(data)
+        if len(editions) > self.max_edition_count:
+            self.max_edition_count = len(editions)
+            self.edition_elements = list(editions)
+        for e in editions:
+            self.longest_edition_element = _keep_longest(self.longest_edition_element, e)
+
+        barcodes = split_csv(data.get("d_barcode"))
+        if len(barcodes) > self.max_barcode_count:
+            self.max_barcode_count = len(barcodes)
+            self.barcode_elements = list(barcodes)
+        for b in barcodes:
+            self.longest_barcode_element = _keep_longest(self.longest_barcode_element, b)
+
+        if data.get("d_errors"):
+            try:
+                ec = int(data["d_errors"])
+                if self.max_error_count is None or ec > self.max_error_count:
+                    self.max_error_count = ec
+            except ValueError:
+                pass
+
+        lb = data.get("d_layerbreak")
+        if lb:
+            try:
+                lb_val = int(lb)
+                if self.max_layerbreak_count < 1:
+                    self.max_layerbreak_count = 1
+                    self.layerbreak_values = [lb_val]
+                elif lb_val > (self.layerbreak_values[0] if self.layerbreak_values else 0):
+                    self.layerbreak_values = [lb_val]
+            except (ValueError, TypeError):
+                pass
+
+        self.longest_pvd_hex = _keep_longest(self.longest_pvd_hex, data.get("d_pvd"))
+        self.longest_pic_hex = _keep_longest(self.longest_pic_hex, data.get("d_pic_data"))
+        self.longest_bca_hex = _keep_longest(self.longest_bca_hex, data.get("d_bca"))
+        self.longest_header_hex = _keep_longest(self.longest_header_hex, data.get("d_header"))
+
+        protection = build_protection(data)
+        self.longest_protection = _keep_longest(self.longest_protection, protection)
+        self.longest_sbi = _keep_longest(
+            self.longest_sbi, data.get("d_libcrypt") or data.get("d_securom") or None)
+
+        if data.get("d_ssranges"):
+            ranges = parse_ss_ranges(data["d_ssranges"])
+            if len(ranges) > self.max_sector_ranges_count:
+                self.max_sector_ranges_count = len(ranges)
+                self.sector_ranges_values = list(ranges)
+
+        keys = build_keys(data)
+        if keys:
+            if len(keys) > self.max_protection_keys_count:
+                self.max_protection_keys_count = len(keys)
+                self.protection_key_elements = list(keys)
+            for k in keys:
+                self.longest_protection_key = _keep_longest(self.longest_protection_key, k)
+
+        self.longest_cue = _keep_longest(self.longest_cue, data.get("d_cue"))
+
+        region_str = data.get("d_region", "")
+        rn = [r.strip() for r in region_str.split(", ")
+              if r.strip() and r.strip() in REGION_NAME_TO_CODE]
+        if len(rn) > self.max_region_count:
+            self.max_region_count = len(rn)
+            self.region_names = list(rn)
+
+        lang3 = [c for c in data.get("d_languages[]", []) if LANG3_TO_LANG2.get(c)]
+        if len(lang3) > self.max_language_count:
+            self.max_language_count = len(lang3)
+            self.language3_codes = list(lang3)
+
+        rings = data.get("rings", [])
+        if len(rings) > self.max_ring_entry_count:
+            self.max_ring_entry_count = len(rings)
+
+        for ring_obj in rings:
+            offset, offset_extra, layers_dict = parse_ring_entry(ring_obj)
+            oc = int(offset is not None) + int(offset_extra is not None)
+            if oc > self.max_offset_values_count:
+                self.max_offset_values_count = oc
+            if len(layers_dict) > self.max_ring_layer_count:
+                self.max_ring_layer_count = len(layers_dict)
+            for layer in layers_dict.values():
+                if len(layer["mould_sids"]) > self.max_mould_sids_count:
+                    self.max_mould_sids_count = len(layer["mould_sids"])
+                if len(layer["toolstamps"]) > self.max_toolstamps_count:
+                    self.max_toolstamps_count = len(layer["toolstamps"])
+                if len(layer["additional_moulds"]) > self.max_additional_moulds_count:
+                    self.max_additional_moulds_count = len(layer["additional_moulds"])
+                self._add_to_pool(self.mastering_code_pool, layer["mastering_code"])
+                self._add_to_pool(self.mastering_sid_pool, layer["mastering_sid"])
+                for v in layer["mould_sids"]:
+                    self._add_to_pool(self.mould_sid_pool, v)
+                for v in layer["toolstamps"]:
+                    self._add_to_pool(self.toolstamp_pool, v)
+                for v in layer["additional_moulds"]:
+                    self._add_to_pool(self.additional_mould_pool, v)
+
+        d_tracks = data.get("d_tracks", "")
+        if d_tracks.strip():
+            track_hashes = parse_track_hashes(d_tracks)
+            if len(track_hashes) > self.max_track_count:
+                self.max_track_count = len(track_hashes)
+            for size, _, _, _ in track_hashes:
+                if size > self.longest_track_size:
+                    self.longest_track_size = size
+
+        dumpers = merge_dumpers(data)
+        if len(dumpers) > self.max_dumper_count:
+            self.max_dumper_count = len(dumpers)
+            self.dumper_names = list(dumpers)
+
+        changes = data.get("changes", [])
+        if len(changes) > self.max_changes_count:
+            self.max_changes_count = len(changes)
+            self.change_templates = list(changes)
+
+
+def _build_synthetic_disc_data(stats):
+    """Build a fake JSON data dict from accumulated MaxStats.
+
+    The dict mirrors the structure of real scraped records so it flows
+    through the exact same import helpers (CUE finalization, track
+    parsing, hash derivation, ring parsing, _build_disc_insert, etc.).
+    """
+    track_count = max(1, stats.max_track_count)
+    total_size = stats.longest_track_size if stats.longest_track_size > 0 else 700000000
+    per_track = max(1, total_size // max(1, track_count))
+
+    # Build synthetic d_tracks (same format parse_track_hashes expects)
+    track_lines = []
+    for t in range(1, track_count + 1):
+        crc = f"{t:08x}"[-8:]
+        hx = f"{t % 256:02x}"
+        track_lines.append(
+            f'<track size="{per_track}" crc="{crc}" md5="{hx * 16}" sha1="{hx * 20}" />')
+
+    # Build synthetic CUE (one FILE per track so finalize_cue rewrites each)
+    cue_lines = []
+    for t in range(1, track_count + 1):
+        cue_lines.append(f'FILE "placeholder{t:02d}.bin" BINARY')
+        cue_lines.append(f"  TRACK {t:02d} AUDIO")
+        cue_lines.append("    INDEX 01 00:00:00")
+
+    # Build synthetic ring objects (Redump-format dicts for parse_ring_entry)
+    ring_entry_count = max(1, stats.max_ring_entry_count)
+    layer_count = max(SYNTHETIC_MEDIA_LAYERS, stats.max_ring_layer_count)
+    mc_pool = stats.mastering_code_pool or ["MC"]
+    ms_pool = stats.mastering_sid_pool or ["MS"]
+    mo_pool = stats.mould_sid_pool or ["MO"]
+    ts_pool = stats.toolstamp_pool or ["TS"]
+    am_pool = stats.additional_mould_pool or ["AM"]
+
+    rings = []
+    slot = 0
+    for entry_idx in range(ring_entry_count):
+        ring_obj = {}
+        # offset_extra via 1_value; offset via d_offset[] inheritance (gives comment too)
+        ring_obj["1_value"] = str(entry_idx + 1)
+        ring_obj["_sample_data_start"] = entry_idx * 100
+        for li in range(1, layer_count + 1):
+            ring_obj[f"ma{li}"] = mc_pool[slot % len(mc_pool)]
+            ring_obj[f"ma{li}_sid"] = ms_pool[slot % len(ms_pool)]
+            ring_obj[f"mo{li}_sid"] = ",".join(
+                mo_pool[(slot + j) % len(mo_pool)] for j in range(max(1, stats.max_mould_sids_count)))
+            ring_obj[f"ts{li}"] = ",".join(
+                ts_pool[(slot + j) % len(ts_pool)] for j in range(max(1, stats.max_toolstamps_count)))
+            ring_obj[f"mo{li}"] = ",".join(
+                am_pool[(slot + j) % len(am_pool)] for j in range(max(1, stats.max_additional_moulds_count)))
+            slot += 1
+        rings.append(ring_obj)
+
+    serials = _pad_list(stats.serial_elements, stats.longest_serial_element, stats.max_serial_count)
+    editions = _pad_list(stats.edition_elements, stats.longest_edition_element, stats.max_edition_count)
+    barcodes = _pad_list(stats.barcode_elements, stats.longest_barcode_element, stats.max_barcode_count)
+    pkeys = _pad_list(
+        stats.protection_key_elements, stats.longest_protection_key,
+        stats.max_protection_keys_count) if stats.max_protection_keys_count > 0 else []
+
+    return {
+        "d_status": "2",  # disabled
+        "system": SYNTHETIC_SYSTEM_NAME,
+        "media": SYNTHETIC_MEDIA_NAME,
+        "d_category": "Games",
+        "d_title": stats.longest_title or "Max Test Title",
+        "d_title_foreign": stats.longest_title_foreign or "",
+        "d_label": stats.longest_disc_title or "",
+        "d_number": stats.longest_disc_number or "",
+        "d_version": stats.longest_version or "",
+        "d_version_datfile": stats.longest_filename_suffix or "",
+        "d_comments": stats.longest_comments or "",
+        "d_contents": stats.longest_contents or "",
+        "d_serial": ", ".join(serials),
+        "d_editions[]": editions,
+        "d_barcode": ", ".join(barcodes),
+        "d_errors": str(stats.max_error_count) if stats.max_error_count is not None else "",
+        "d_date": stats.longest_exe_date or "",
+        "d_edc": "Yes",
+        "d_layerbreak": str(stats.layerbreak_values[0]) if stats.layerbreak_values else "",
+        "d_pvd": stats.longest_pvd_hex or "",
+        "d_pic_data": stats.longest_pic_hex or "",
+        "d_bca": stats.longest_bca_hex or "",
+        "d_header": stats.longest_header_hex or "",
+        "d_protection": stats.longest_protection or "",
+        "d_ssranges": "\n".join(f"{s}-{e}" for s, e in stats.sector_ranges_values),
+        "d_libcrypt": stats.longest_sbi or "",
+        "d_d1_key": pkeys[0] if len(pkeys) > 0 else "",
+        "d_d2_key": pkeys[1] if len(pkeys) > 1 else "",
+        "d_region": ", ".join(stats.region_names),
+        "d_languages[]": list(stats.language3_codes),
+        "d_cue": "\n".join(cue_lines),
+        "d_tracks": "\n".join(track_lines),
+        "d_size": str(total_size),
+        "d_crc32": "deadbeef",
+        "d_md5": "d" * 32,
+        "d_sha1": "a" * 40,
+        "d_dumpers[]": list(stats.dumper_names),
+        "changes": list(stats.change_templates),
+        "rings": rings,
+        "d_offset[]": ["0"],
+        "d_offset_text": "",
+    }
+
+# ---------------------------------------------------------------------------
 # Main import generation
 # ---------------------------------------------------------------------------
 
@@ -662,14 +1049,18 @@ def disc_id_from_filename(fname):
 
 
 def process_all(data_dir, output_path, max_disc_id=None):
-    # Pass 1: collect all usernames and load all disc data
-    print(f"Scanning {data_dir} ...", file=sys.stderr)
+    # Pass 1: collect all usernames, load all disc data, accumulate max-stats
+    filenames = sorted(f for f in os.listdir(data_dir) if f.endswith(".json"))
+    total = len(filenames)
+    print(f"[scan] Scanning {total} JSON files in {data_dir} ...", file=sys.stderr)
+
     all_usernames = set()
     disc_files = []
+    stats = MaxStats()
+    loaded = 0
+    empty = 0
 
-    for fname in sorted(os.listdir(data_dir)):
-        if not fname.endswith(".json"):
-            continue
+    for idx, fname in enumerate(filenames):
         disc_id = disc_id_from_filename(fname)
         if max_disc_id is not None and disc_id > max_disc_id:
             continue
@@ -677,10 +1068,14 @@ def process_all(data_dir, output_path, max_disc_id=None):
         file_size = os.path.getsize(path)
         if file_size == 0:
             disc_files.append((fname, None))
+            empty += 1
             continue
         with open(path) as f:
             data = json.load(f)
         disc_files.append((fname, data))
+        loaded += 1
+
+        stats.ingest(data)
 
         for name in merge_dumpers(data):
             all_usernames.add(name)
@@ -689,12 +1084,31 @@ def process_all(data_dir, output_path, max_disc_id=None):
             if user:
                 all_usernames.add(user)
 
+        if (idx + 1) % 10000 == 0:
+            print(f"[scan]   ... {idx + 1}/{total} files", file=sys.stderr)
+
+    print(f"[scan] Done: {loaded} loaded, {empty} empty, "
+          f"{len(all_usernames)} unique users", file=sys.stderr)
+
+    # Build synthetic max-complexity entry for disc 1
+    print(f"[synth] Building synthetic max-complexity entry for disc "
+          f"{SYNTHETIC_DISC_ID} ...", file=sys.stderr)
+    synthetic_data = _build_synthetic_disc_data(stats)
+    injected = False
+    for i, (fname, data) in enumerate(disc_files):
+        if disc_id_from_filename(fname) == SYNTHETIC_DISC_ID:
+            disc_files[i] = (fname, synthetic_data)
+            injected = True
+            break
+    if not injected:
+        disc_files.insert(0, ("000001.json", synthetic_data))
+
     # Assign user IDs
     user_id_map = {}
     for uid, username in enumerate(sorted(all_usernames), start=1):
         user_id_map[username] = uid
 
-    print(f"Found {len(disc_files)} disc files, {len(all_usernames)} unique users", file=sys.stderr)
+    print(f"[sql] Writing SQL to {output_path} ...", file=sys.stderr)
 
     # Pass 2: generate SQL
     with open(output_path, "w") as out:
@@ -702,8 +1116,12 @@ def process_all(data_dir, output_path, max_disc_id=None):
         out.write("-- Generated: {}\n\n".format(datetime.now().astimezone().isoformat()))
         out.write("BEGIN;\n\n")
 
+        # Synthetic system/media type prerequisites
+        _write_synthetic_prereqs(out)
+
         # Users
         _write_users(out, user_id_map)
+        print(f"[sql]   Users: {len(user_id_map)} rows", file=sys.stderr)
 
         # Track ring entry ID counter
         ring_entry_id = 0
@@ -718,11 +1136,12 @@ def process_all(data_dir, output_path, max_disc_id=None):
         dumper_inserts = []
         submission_inserts = []
 
+        processed = 0
         for fname, data in disc_files:
             disc_id = disc_id_from_filename(fname)
+            processed += 1
 
             if data is None:
-                # Empty file: disabled stub
                 disc_inserts.append(_build_empty_disc_insert(disc_id))
                 continue
 
@@ -800,46 +1219,47 @@ def process_all(data_dir, output_path, max_disc_id=None):
             # Ring codes
             offsets = merge_offsets(data)
             rings = data.get("rings", [])
+            seen_offset_pairs = set()
 
-            if rings:
-                for ring_obj in rings:
-                    ring_entry_id += 1
-                    entry_offset, entry_offset_extra, layers_dict = parse_ring_entry(ring_obj)
-                    comment = None
+            for ring_obj in rings:
+                entry_offset, entry_offset_extra, layers_dict = parse_ring_entry(ring_obj)
+                sample_start = ring_obj.get("_sample_data_start")
 
-                    # Apply offset inheritance
-                    if entry_offset is None and len(offsets) == 1:
-                        entry_offset = offsets[0]
-                        comment = "offset inherited"
+                if entry_offset is None and entry_offset_extra is None and not layers_dict:
+                    continue
 
-                    ring_entry_inserts.append(
-                        f"({ring_entry_id}, {disc_id}, "
-                        f"{sql_int(entry_offset)}, "
-                        f"{sql_int(entry_offset_extra)}, "
-                        f"NULL, "  # sample_data_start
-                        f"{sql_str_or_null(comment)})"
+                ring_entry_id += 1
+                seen_offset_pairs.add((entry_offset, entry_offset_extra))
+
+                ring_entry_inserts.append(
+                    f"({ring_entry_id}, {disc_id}, "
+                    f"{sql_int(entry_offset)}, "
+                    f"{sql_int(entry_offset_extra)}, "
+                    f"{sql_int(sample_start)}, "
+                    f"NULL)"
+                )
+
+                for layer_num in sorted(layers_dict.keys()):
+                    layer = layers_dict[layer_num]
+                    ring_layer_inserts.append(
+                        f"({ring_entry_id}, {layer_num}, "
+                        f"{sql_str_or_null(layer['mastering_code'])}, "
+                        f"{sql_str_or_null(layer['mastering_sid'])}, "
+                        f"{sql_text_array(layer['mould_sids'])}, "
+                        f"{sql_text_array(layer['toolstamps'])}, "
+                        f"{sql_text_array(layer['additional_moulds'])})"
                     )
 
-                    for layer_num in sorted(layers_dict.keys()):
-                        layer = layers_dict[layer_num]
-                        ring_layer_inserts.append(
-                            f"({ring_entry_id}, {layer_num}, "
-                            f"{sql_str_or_null(layer['mastering_code'])}, "
-                            f"{sql_str_or_null(layer['mastering_sid'])}, "
-                            f"{sql_text_array(layer['mould_sids'])}, "
-                            f"{sql_text_array(layer['toolstamps'])}, "
-                            f"{sql_text_array(layer['additional_moulds'])})"
-                        )
-            elif offsets:
-                # No rings but have offsets: create entry-only rows
-                for off_val in offsets:
+            for off_val, off_extra in offsets:
+                if (off_val, off_extra) not in seen_offset_pairs:
                     ring_entry_id += 1
+                    seen_offset_pairs.add((off_val, off_extra))
                     ring_entry_inserts.append(
                         f"({ring_entry_id}, {disc_id}, "
                         f"{sql_int(off_val)}, "
+                        f"{sql_int(off_extra)}, "
                         f"NULL, "
-                        f"NULL, "
-                        f"{sql_str('offset inherited')})"
+                        f"{sql_str('inherited')})"
                     )
 
             # Dumpers
@@ -864,7 +1284,10 @@ def process_all(data_dir, output_path, max_disc_id=None):
                     f"{sql_timestamp(ts)}, {sql_timestamp(ts)})"
                 )
 
-        # Write disc inserts
+            if processed % 10000 == 0:
+                print(f"[sql]   ... {processed}/{len(disc_files)} discs", file=sys.stderr)
+
+        # Write all batched inserts
         _write_batched(out, "discs",
             "(id, enabled, media_type_code, category_id, system_code, title, "
             "filename_suffix, comments, contents, title_foreign, disc_title, "
@@ -874,31 +1297,39 @@ def process_all(data_dir, output_path, max_disc_id=None):
             "questionable) OVERRIDING SYSTEM VALUE",
             disc_inserts,
         )
+        print(f"[sql]   Discs: {len(disc_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_regions",
             "(disc_id, region_code)", region_inserts)
+        print(f"[sql]   Regions: {len(region_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_languages",
             "(disc_id, language_code)", language_inserts)
+        print(f"[sql]   Languages: {len(language_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "files",
             "(disc_id, track_number, size, crc32, md5, sha1)", file_inserts)
+        print(f"[sql]   Files: {len(file_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_ring_code_entries",
             "(id, disc_id, offset_value, offset_extra_value, sample_data_start, comment) OVERRIDING SYSTEM VALUE",
             ring_entry_inserts)
+        print(f"[sql]   Ring entries: {len(ring_entry_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_ring_code_layers",
             "(entry_id, layer, mastering_code, mastering_sid, mould_sids, toolstamps, additional_moulds)",
             ring_layer_inserts)
+        print(f"[sql]   Ring layers: {len(ring_layer_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_dumpers",
             "(disc_id, user_id)", dumper_inserts)
+        print(f"[sql]   Dumpers: {len(dumper_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_submissions",
             "(submission_type, submitter_id, target_disc_id, changes, status, "
             "reviewer_id, review_comment, created_at, reviewed_at)",
             submission_inserts)
+        print(f"[sql]   Submissions: {len(submission_inserts)} rows", file=sys.stderr)
 
         # Reset sequences
         out.write("\n-- Reset sequences\n")
@@ -910,7 +1341,47 @@ def process_all(data_dir, output_path, max_disc_id=None):
 
         out.write("\nCOMMIT;\n")
 
-    print(f"Wrote {output_path}", file=sys.stderr)
+    print(f"[done] Wrote {output_path}", file=sys.stderr)
+
+
+def _write_synthetic_prereqs(out):
+    """Emit SQL for the synthetic system and media type used by disc 1."""
+    out.write("-- Synthetic media type and system for max-complexity disc\n")
+    out.write(
+        f"INSERT INTO media_types (code, name, layer_count, rom_extension)\n"
+        f"VALUES ({sql_str(SYNTHETIC_MEDIA_CODE)}, {sql_str(SYNTHETIC_MEDIA_NAME)}, "
+        f"{SYNTHETIC_MEDIA_LAYERS}, {sql_str('bin')})\n"
+        f"ON CONFLICT (code) DO UPDATE SET\n"
+        f"    name = EXCLUDED.name, layer_count = EXCLUDED.layer_count, "
+        f"rom_extension = EXCLUDED.rom_extension;\n\n"
+    )
+    out.write(
+        f"INSERT INTO systems\n"
+        f"    (code, name, media_types,\n"
+        f"     has_title_foreign, has_disc_title, has_disc_number,\n"
+        f"     has_serial, has_version, has_edition, has_barcode,\n"
+        f"     has_error_count, has_exe_date, has_edc,\n"
+        f"     has_pvd, has_pic, has_bca, has_header,\n"
+        f"     has_protection, has_sector_ranges, has_sbi,\n"
+        f"     has_sample_start, has_offset_extra)\n"
+        f"VALUES\n"
+        f"    ({sql_str(SYNTHETIC_SYSTEM_CODE)}, {sql_str(SYNTHETIC_SYSTEM_NAME)},\n"
+        f"     ARRAY[{sql_str(SYNTHETIC_MEDIA_CODE)}]::TEXT[],\n"
+        f"     TRUE, TRUE, TRUE,\n"
+        f"     TRUE, TRUE, TRUE, TRUE,\n"
+        f"     TRUE, TRUE, TRUE,\n"
+        f"     TRUE, TRUE, TRUE, TRUE,\n"
+        f"     TRUE, TRUE, TRUE,\n"
+        f"     TRUE, TRUE)\n"
+        f"ON CONFLICT (code) DO UPDATE SET\n"
+        f"    name = EXCLUDED.name, media_types = EXCLUDED.media_types,\n"
+        f"    has_title_foreign = TRUE, has_disc_title = TRUE, has_disc_number = TRUE,\n"
+        f"    has_serial = TRUE, has_version = TRUE, has_edition = TRUE, has_barcode = TRUE,\n"
+        f"    has_error_count = TRUE, has_exe_date = TRUE, has_edc = TRUE,\n"
+        f"    has_pvd = TRUE, has_pic = TRUE, has_bca = TRUE, has_header = TRUE,\n"
+        f"    has_protection = TRUE, has_sector_ranges = TRUE, has_sbi = TRUE,\n"
+        f"    has_sample_start = TRUE, has_offset_extra = TRUE;\n\n"
+    )
 
 
 def _write_users(out, user_id_map):
