@@ -10,16 +10,18 @@ pub async fn create_submission(
     submitter_id: i32,
     target_disc_id: Option<i32>,
     data: serde_json::Value,
+    submitter_comment: Option<&str>,
     dump_log: Option<&str>,
     extra_upload_url: Option<&str>,
 ) -> AppResult<DiscSubmission> {
     let sub: DiscSubmission = sqlx::query_as(
-        "INSERT INTO disc_submissions (submission_type, submitter_id, target_disc_id, changes, dump_log, extra_upload_url)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO disc_submissions (submission_type, submitter_id, submitter_comment, target_disc_id, changes, dump_log, extra_upload_url)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *"
     )
     .bind(sub_type)
     .bind(submitter_id)
+    .bind(submitter_comment)
     .bind(target_disc_id)
     .bind(&data)
     .bind(dump_log)
@@ -99,7 +101,6 @@ pub async fn review_submission(
         match sub.submission_type {
             SubmissionType::Disc => {
                 if let Some(disc_id) = sub.target_disc_id {
-                    // Verification: add submitter as dumper.
                     sqlx::query(
                         "INSERT INTO disc_dumpers (disc_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
                     )
@@ -108,7 +109,6 @@ pub async fn review_submission(
                     .execute(pool)
                     .await?;
                 } else {
-                    // New disc: create from submission payload.
                     let disc_id = disc_service::create_disc_from_submission(
                         pool,
                         &sub.changes,
@@ -133,7 +133,8 @@ pub async fn review_submission(
             }
             SubmissionType::Edit => {
                 if let Some(disc_id) = sub.target_disc_id {
-                    disc_service::update_disc(pool, disc_id, &sub.changes).await?;
+                    let snapshot = build_edit_snapshot(pool, disc_id, &sub.changes).await?;
+                    disc_service::update_disc(pool, disc_id, &snapshot).await?;
                 }
             }
         }
@@ -154,11 +155,36 @@ pub async fn review_submission(
     Ok(())
 }
 
+/// Merge a diff-format `changes` object with the current disc state to produce
+/// a full snapshot suitable for `update_disc`.
+async fn build_edit_snapshot(
+    pool: &PgPool,
+    disc_id: i32,
+    changes: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    let detail = disc_service::get_disc_detail(pool, disc_id).await?;
+    let mut snapshot = disc_service::build_snapshot_from_disc(&detail);
+
+    if let Some(diff_obj) = changes.as_object() {
+        if let Some(snapshot_obj) = snapshot.as_object_mut() {
+            for (field, change) in diff_obj {
+                let new_val = &change["new"];
+                snapshot_obj.insert(field.clone(), new_val.clone());
+            }
+        }
+    }
+
+    Ok(snapshot)
+}
+
 pub async fn list_submissions(
     pool: &PgPool,
     user_id_filter: Option<i32>,
     status_filter: Option<&str>,
     type_filter: Option<&str>,
+    system_filter: Option<&str>,
+    sort_column: &str,
+    sort_order: &str,
     page: i64,
     page_size: i64,
 ) -> AppResult<Vec<SubmissionListRow>> {
@@ -178,19 +204,42 @@ pub async fn list_submissions(
         idx += 1;
         conditions.push(format!("ds.submission_type::text = ${idx}"));
     }
+    if system_filter.is_some_and(|s| !s.is_empty()) {
+        idx += 1;
+        conditions.push(format!("COALESCE(d.system_code, ds.changes->>'system_code') = ${idx}"));
+    }
+
+    let sort_col = match sort_column {
+        "date"      => "ds.created_at",
+        "title"     => "LOWER(COALESCE(d.title, ds.changes->>'title', 'Untitled'))",
+        "system"    => "LOWER(COALESCE(d.system_code, ds.changes->>'system_code', ''))",
+        "submitter" => "LOWER(u.username)",
+        "reviewer"  => "LOWER(COALESCE(ur.username, ''))",
+        "type"      => "ds.submission_type",
+        "status"    => "ds.status",
+        _           => "ds.created_at",
+    };
+    let sort_dir = if sort_order == "asc" { "ASC" } else { "DESC" };
 
     let sql = format!(
-        "SELECT ds.id, ds.submission_type, COALESCE(d.title, ds.changes->>'title', 'Untitled') AS title,
-                u.username AS submitter, ds.status, ds.review_comment, ds.created_at
+        "SELECT ds.id, ds.submission_type,
+                COALESCE(d.title, ds.changes->>'title', 'Untitled') AS title,
+                COALESCE(d.system_code, ds.changes->>'system_code', '') AS system_code,
+                u.username AS submitter,
+                ds.submitter_id,
+                ur.username AS reviewer,
+                ds.reviewer_id,
+                ds.status,
+                ds.target_disc_id,
+                ds.created_at
          FROM disc_submissions ds
          JOIN users u ON u.id = ds.submitter_id
+         LEFT JOIN users ur ON ur.id = ds.reviewer_id
          LEFT JOIN discs d ON d.id = ds.target_disc_id
          WHERE {}
-         ORDER BY ds.created_at DESC
-         LIMIT {} OFFSET {}",
-        conditions.join(" AND "),
-        page_size,
-        offset
+         ORDER BY {sort_col} {sort_dir}
+         LIMIT {page_size} OFFSET {offset}",
+        conditions.join(" AND ")
     );
 
     let mut query = sqlx::query_as::<_, SubmissionListRow>(&sql);
@@ -207,6 +256,11 @@ pub async fn list_submissions(
             query = query.bind(sub_type.to_string());
         }
     }
+    if let Some(system) = system_filter {
+        if !system.is_empty() {
+            query = query.bind(system.to_string());
+        }
+    }
 
     Ok(query.fetch_all(pool).await?)
 }
@@ -216,25 +270,33 @@ pub async fn count_submissions(
     user_id_filter: Option<i32>,
     status_filter: Option<&str>,
     type_filter: Option<&str>,
+    system_filter: Option<&str>,
 ) -> AppResult<i64> {
     let mut conditions = vec!["1=1".to_string()];
     let mut idx = 0u32;
 
     if user_id_filter.is_some() {
         idx += 1;
-        conditions.push(format!("submitter_id = ${idx}"));
+        conditions.push(format!("ds.submitter_id = ${idx}"));
     }
     if status_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("status::text = ${idx}"));
+        conditions.push(format!("ds.status::text = ${idx}"));
     }
     if type_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("submission_type::text = ${idx}"));
+        conditions.push(format!("ds.submission_type::text = ${idx}"));
+    }
+    if system_filter.is_some_and(|s| !s.is_empty()) {
+        idx += 1;
+        conditions.push(format!("COALESCE(d.system_code, ds.changes->>'system_code') = ${idx}"));
     }
 
     let sql = format!(
-        "SELECT COUNT(*) FROM disc_submissions WHERE {}",
+        "SELECT COUNT(*)
+         FROM disc_submissions ds
+         LEFT JOIN discs d ON d.id = ds.target_disc_id
+         WHERE {}",
         conditions.join(" AND ")
     );
 
@@ -252,11 +314,15 @@ pub async fn count_submissions(
             query = query.bind(sub_type.to_string());
         }
     }
+    if let Some(system) = system_filter {
+        if !system.is_empty() {
+            query = query.bind(system.to_string());
+        }
+    }
 
     Ok(query.fetch_one(pool).await?)
 }
 
-// Manual FromRow for SubmissionListRow since it's from a custom query
 impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
     fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
         use sqlx::Row;
@@ -264,9 +330,13 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
             id: row.try_get("id")?,
             submission_type: row.try_get("submission_type")?,
             title: row.try_get("title")?,
+            system_code: row.try_get("system_code")?,
             submitter: row.try_get("submitter")?,
+            submitter_id: row.try_get("submitter_id")?,
+            reviewer: row.try_get("reviewer")?,
+            reviewer_id: row.try_get("reviewer_id")?,
             status: row.try_get("status")?,
-            review_comment: row.try_get("review_comment")?,
+            target_disc_id: row.try_get("target_disc_id")?,
             created_at: row.try_get("created_at")?,
         })
     }

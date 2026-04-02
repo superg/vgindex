@@ -283,10 +283,6 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
         <textarea name="submission_comment" rows="2" placeholder="Optional comment about this edit"></textarea>
     </label>
 
-    {% if can_edit_directly %}
-    <button type="submit">Save</button>
-    {% else %}
-    <button type="submit">Submit Request</button>
-    {% endif %}
+    <button type="submit">Submit</button>
 </form>
 {% endblock %}

@@ -11,7 +11,7 @@ use crate::auth::middleware::RequireAuth;
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::AppResult;
-use crate::services::{disc_service, submission_service};
+use crate::services::{disc_service, queue_service};
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -140,17 +140,18 @@ async fn submit_handler(
         "languages": form.languages,
     });
 
-    let target_disc_id = submission_service::find_matching_disc(&state.pool, &data).await;
+    let target_disc_id = queue_service::find_matching_disc(&state.pool, &data).await;
 
-    let sub = submission_service::create_submission(
+    let _sub = queue_service::create_submission(
         &state.pool,
         SubmissionType::Disc,
         user.id,
         target_disc_id,
         data,
+        None,
         form.dump_log.as_deref(),
         None,
     ).await?;
 
-    Ok(Redirect::to(&format!("/submissions/{}/", sub.id)))
+    Ok(Redirect::to("/queue/"))
 }

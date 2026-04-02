@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Queue{% endblock %}
+
+{% block content %}
+<h2>Queue</h2>
+
+<details open>
+    <summary>Filters</summary>
+    <form method="get" action="/queue/" id="filter-form">
+        <label>
+            <span>Status</span>
+            <select name="status" onchange="this.form.submit()">
+                <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🟡🔴)</option>
+                <option value="Pending" {% if filter_status == "Pending" %}selected{% endif %}>Pending (🟡)</option>
+                <option value="Approved" {% if filter_status == "Approved" %}selected{% endif %}>Approved (🟢)</option>
+                <option value="Rejected" {% if filter_status == "Rejected" %}selected{% endif %}>Rejected (🔴)</option>
+            </select>
+        </label>
+        <label>
+            <span>Type</span>
+            <select name="sub_type" onchange="this.form.submit()">
+                <option value="">All Types</option>
+                <option value="Edit" {% if filter_type == "Edit" %}selected{% endif %}>Edit</option>
+                <option value="Disc" {% if filter_type == "Disc" %}selected{% endif %}>Disc</option>
+            </select>
+        </label>
+        <label>
+            <span>System</span>
+            <select name="system" onchange="this.form.submit()">
+                <option value="">All Systems</option>
+                {% for sys in systems %}
+                <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <input type="hidden" name="sort" value="{{ sort_column }}">
+        <input type="hidden" name="order" value="{{ sort_order }}">
+    </form>
+</details>
+
+<p><small>{{ total_count }} submission(s) found.</small></p>
+
+<div id="queue-results">
+    {% if total_pages > 1 %}
+    <nav aria-label="Pagination">
+        <ul>
+            {% if page > 1 %}
+            <li><a href="/queue/?page={{ prev_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}">&laquo; Previous</a></li>
+            {% endif %}
+            <li>Page {{ page }} of {{ total_pages }}</li>
+            {% if page < total_pages %}
+            <li><a href="/queue/?page={{ next_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}">Next &raquo;</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+
+    <table class="disc-table striped">
+        <thead>
+            <tr>
+                <th><a href="/queue/?sort=date&amp;order={{ next_date_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}">Date{% if sort_column == "date" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=title&amp;order={{ next_title_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=system&amp;order={{ next_system_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=submitter&amp;order={{ next_submitter_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}">Submitter{% if sort_column == "submitter" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=reviewer&amp;order={{ next_reviewer_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}">Reviewer{% if sort_column == "reviewer" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=type&amp;order={{ next_type_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}">Type{% if sort_column == "type" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=status&amp;order={{ next_status_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+            <tr>
+                <td><small>{{ entry.created_at.format("%Y-%m-%d %H:%M") }}</small></td>
+                <td>{% match entry.target_disc_id %}{% when Some with (disc_id) %}<a href="/disc/{{ disc_id }}/">{{ entry.title }}</a>{% when None %}{{ entry.title }}{% endmatch %}</td>
+                <td>{{ entry.system_code }}</td>
+                <td><a href="/discs/?dumper={{ entry.submitter_id }}">{{ entry.submitter }}</a></td>
+                <td>{% match entry.reviewer_id %}{% when Some with (rid) %}<a href="/discs/?dumper={{ rid }}">{{ entry.reviewer.as_deref().unwrap_or("") }}</a>{% when None %}{% endmatch %}</td>
+                <td>{{ entry.submission_type }}</td>
+                <td title="{{ entry.status }}">{% match entry.status %}{% when SubmissionStatus::Pending %}🟡{% when SubmissionStatus::Approved %}🟢{% when SubmissionStatus::Rejected %}🔴{% endmatch %}</td>
+            </tr>
+            {% endfor %}
+            {% if entries.is_empty() %}
+            <tr><td colspan="7">No submissions found.</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    {% if total_pages > 1 %}
+    <nav aria-label="Pagination">
+        <ul>
+            {% if page > 1 %}
+            <li><a href="/queue/?page={{ prev_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}">&laquo; Previous</a></li>
+            {% endif %}
+            <li>Page {{ page }} of {{ total_pages }}</li>
+            {% if page < total_pages %}
+            <li><a href="/queue/?page={{ next_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}">Next &raquo;</a></li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}
