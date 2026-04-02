@@ -164,7 +164,7 @@ CREATE UNIQUE INDEX files_disc_cue_unique ON files (disc_id) WHERE track_number 
 -- enums
 CREATE TYPE user_role_enum AS ENUM ('User', 'User+', 'Moderator', 'Admin');
 CREATE TYPE submission_type_enum AS ENUM ('Disc', 'Edit');
-CREATE TYPE submission_status_enum AS ENUM ('Pending', 'Approved', 'Rejected');
+CREATE TYPE submission_status_enum AS ENUM ('Pending', 'Approved', 'Rejected', 'Legacy');
 
 -- users
 CREATE TABLE users (

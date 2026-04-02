@@ -234,6 +234,7 @@ pub enum SubmissionStatus {
     Pending,
     Approved,
     Rejected,
+    Legacy,
 }
 
 impl SubmissionStatus {
@@ -242,6 +243,7 @@ impl SubmissionStatus {
             Self::Pending => "status-pending",
             Self::Approved => "status-approved",
             Self::Rejected => "status-rejected",
+            Self::Legacy => "status-legacy",
         }
     }
 }

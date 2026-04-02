@@ -183,6 +183,7 @@ pub async fn list_submissions(
     status_filter: Option<&str>,
     type_filter: Option<&str>,
     system_filter: Option<&str>,
+    submitter_filter: Option<&str>,
     sort_column: &str,
     sort_order: &str,
     page: i64,
@@ -207,6 +208,10 @@ pub async fn list_submissions(
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
         conditions.push(format!("COALESCE(d.system_code, ds.changes->>'system_code') = ${idx}"));
+    }
+    if submitter_filter.is_some_and(|s| !s.is_empty()) {
+        idx += 1;
+        conditions.push(format!("u.username = ${idx}"));
     }
 
     let sort_col = match sort_column {
@@ -261,6 +266,11 @@ pub async fn list_submissions(
             query = query.bind(system.to_string());
         }
     }
+    if let Some(submitter) = submitter_filter {
+        if !submitter.is_empty() {
+            query = query.bind(submitter.to_string());
+        }
+    }
 
     Ok(query.fetch_all(pool).await?)
 }
@@ -271,6 +281,7 @@ pub async fn count_submissions(
     status_filter: Option<&str>,
     type_filter: Option<&str>,
     system_filter: Option<&str>,
+    submitter_filter: Option<&str>,
 ) -> AppResult<i64> {
     let mut conditions = vec!["1=1".to_string()];
     let mut idx = 0u32;
@@ -291,10 +302,15 @@ pub async fn count_submissions(
         idx += 1;
         conditions.push(format!("COALESCE(d.system_code, ds.changes->>'system_code') = ${idx}"));
     }
+    if submitter_filter.is_some_and(|s| !s.is_empty()) {
+        idx += 1;
+        conditions.push(format!("u.username = ${idx}"));
+    }
 
     let sql = format!(
         "SELECT COUNT(*)
          FROM disc_submissions ds
+         JOIN users u ON u.id = ds.submitter_id
          LEFT JOIN discs d ON d.id = ds.target_disc_id
          WHERE {}",
         conditions.join(" AND ")
@@ -317,6 +333,11 @@ pub async fn count_submissions(
     if let Some(system) = system_filter {
         if !system.is_empty() {
             query = query.bind(system.to_string());
+        }
+    }
+    if let Some(submitter) = submitter_filter {
+        if !submitter.is_empty() {
+            query = query.bind(submitter.to_string());
         }
     }
 
