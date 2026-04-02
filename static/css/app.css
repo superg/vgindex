@@ -304,6 +304,7 @@ nav .quick-search input[type="text"] {
 .status-dot-pending  { background: #f39c12; }
 .status-dot-approved { background: var(--status-verified); }
 .status-dot-rejected { background: var(--status-bad); }
+.status-dot-legacy   { background: #999; }
 
 /* Diff view */
 .diff-add { background: #e6ffec; }

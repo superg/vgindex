@@ -25,6 +25,7 @@ pub struct QueueQuery {
     pub status: Option<String>,
     pub sub_type: Option<String>,
     pub system: Option<String>,
+    pub submitter: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
     pub page: Option<i64>,
@@ -36,6 +37,12 @@ struct SystemOption {
     selected: bool,
 }
 
+struct SubmitterOption {
+    id: i32,
+    username: String,
+    selected: bool,
+}
+
 #[derive(Template)]
 #[template(path = "queue.html")]
 struct QueueTemplate {
@@ -43,9 +50,11 @@ struct QueueTemplate {
     is_moderator: bool,
     entries: Vec<SubmissionListRow>,
     systems: Vec<SystemOption>,
+    submitters: Vec<SubmitterOption>,
     filter_status: String,
     filter_type: String,
     filter_system: String,
+    filter_submitter: String,
     total_count: i64,
     page: i64,
     total_pages: i64,
@@ -82,6 +91,7 @@ async fn queue_list(
     let filter_status = query.status.clone().unwrap_or_else(|| "Pending".to_string());
     let filter_type = query.sub_type.clone().unwrap_or_default();
     let filter_system = query.system.clone().unwrap_or_default();
+    let filter_submitter = query.submitter.clone().unwrap_or_default();
     let sort_column = query.sort.clone().unwrap_or_else(|| "date".to_string());
     let sort_order = query.order.clone().unwrap_or_else(|| "desc".to_string());
 
@@ -95,6 +105,7 @@ async fn queue_list(
 
     let type_for_query = if filter_type.is_empty() { None } else { Some(filter_type.as_str()) };
     let system_for_query = if filter_system.is_empty() { None } else { Some(filter_system.as_str()) };
+    let submitter_for_query = if filter_submitter.is_empty() { None } else { Some(filter_submitter.as_str()) };
 
     let entries = queue_service::list_submissions(
         &state.pool,
@@ -102,6 +113,7 @@ async fn queue_list(
         status_for_query,
         type_for_query,
         system_for_query,
+        submitter_for_query,
         &sort_column,
         &sort_order,
         page,
@@ -114,6 +126,7 @@ async fn queue_list(
         status_for_query,
         type_for_query,
         system_for_query,
+        submitter_for_query,
     ).await?;
 
     let total_pages = (total_count + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -130,6 +143,23 @@ async fn queue_list(
         name: s.name,
     }).collect();
 
+    #[derive(sqlx::FromRow)]
+    struct SubRow { id: i32, username: String }
+    let sub_rows: Vec<SubRow> = sqlx::query_as(
+        "SELECT id, username FROM users \
+         WHERE id IN (SELECT DISTINCT submitter_id FROM disc_submissions) \
+         ORDER BY LOWER(username)"
+    )
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
+
+    let submitters: Vec<SubmitterOption> = sub_rows.into_iter().map(|s| SubmitterOption {
+        selected: s.username == filter_submitter,
+        id: s.id,
+        username: s.username,
+    }).collect();
+
     let is_asc = sort_order != "desc";
     let next_order = |col: &str| -> String {
         if sort_column == col && is_asc { "desc" } else { "asc" }.to_string()
@@ -141,9 +171,11 @@ async fn queue_list(
             is_moderator: is_mod,
             entries,
             systems,
+            submitters,
             filter_status: if filter_status.is_empty() { "Pending".to_string() } else { filter_status },
             filter_type,
             filter_system,
+            filter_submitter,
             total_count,
             page,
             total_pages,

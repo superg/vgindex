@@ -655,26 +655,133 @@ def build_keys(data):
     return keys if keys else None
 
 # ---------------------------------------------------------------------------
+# Redump field name -> internal schema key mapping
+# ---------------------------------------------------------------------------
+
+REDUMP_FIELD_MAP = {
+    "Title": "title",
+    "Foreign title": "title_foreign",
+    "Alternative title": "title_foreign",
+    "Disc title": "disc_title",
+    "Disc number": "disc_number",
+    "System": "system_code",
+    "Media": "media_type",
+    "Category": "category",
+    "Region": "regions",
+    "Languages": "languages",
+    "Serial": "serial",
+    "Version": "version",
+    "Version (datfile)": "filename_suffix",
+    "Edition": "edition",
+    "Barcode": "barcode",
+    "Errors count": "error_count",
+    "EXE date": "exe_date",
+    "Protection": "protection",
+    "Anti-modchip protection": "protection",
+    "LibCrypt protection": "protection",
+    "SecuROM protection": "protection",
+    "Protection info": "protection",
+    "Comments": "comments",
+    "Contents": "contents",
+    "Ring": "ring_codes",
+    "Ring (old)": "ring_codes",
+    "Ring old": "ring_codes",
+    "EDC": "edc",
+    "Header": "header",
+    "Header old": "header",
+    "Layerbreak": "layerbreaks",
+}
+
+def _to_snake_case(name):
+    """Convert a Redump field label to a snake_case key."""
+    s = name.strip().lower()
+    s = re.sub(r'[^a-z0-9]+', '_', s)
+    return s.strip('_')
+
+
+def _map_status_change(old_val, new_val):
+    """Map a Redump status code change to enabled/questionable diffs.
+
+    Status codes: "2" = Red (disabled), "3" = Yellow (questionable).
+    """
+    changes = {}
+    old_enabled = old_val != "2" if old_val else True
+    new_enabled = new_val != "2" if new_val else True
+    if old_enabled != new_enabled:
+        changes["enabled"] = {"old": old_enabled, "new": new_enabled}
+    old_q = old_val == "3" if old_val else False
+    new_q = new_val == "3" if new_val else False
+    if old_q != new_q:
+        changes["questionable"] = {"old": old_q, "new": new_q}
+    return changes
+
+
+# ---------------------------------------------------------------------------
 # Change history -> submission data payload
 # ---------------------------------------------------------------------------
 
 def build_submission_data(fields_list):
-    """Build a JSON-serializable data payload from change fields."""
-    result_fields = []
+    """Build a diff-format payload from change fields.
+
+    Returns a dict like {"title": {"old": "...", "new": "..."}, ...}.
+    Fields that don't map to schema keys are grouped under "legacy".
+    Dumpers and Status fields are excluded (handled separately).
+    """
+    result = {}
+    legacy = {}
     for f in fields_list:
         field_name = f.get("field", "")
-        field_type = f.get("type", "")
-        new_val = f.get("new_value", "")
-        old_val = f.get("old_value", "")
+        if field_name in ("Dumpers", "Status"):
+            continue
+        new_val = f.get("new_value")
+        old_val = f.get("old_value")
         if new_val == old_val:
             continue
-        entry = {"field": field_name, "type": field_type}
-        if new_val:
-            entry["new_value"] = new_val
-        if old_val:
-            entry["old_value"] = old_val
-        result_fields.append(entry)
-    return {"fields": result_fields}
+        entry = {}
+        if old_val is not None:
+            entry["old"] = old_val
+        if new_val is not None:
+            entry["new"] = new_val
+        if not entry:
+            continue
+        mapped_key = REDUMP_FIELD_MAP.get(field_name)
+        if mapped_key:
+            result[mapped_key] = entry
+        else:
+            legacy[_to_snake_case(field_name)] = entry
+    if legacy:
+        result["legacy"] = legacy
+    return result
+
+
+def _extract_new_dumpers(fields_list):
+    """Extract newly added dumper names from a change's fields list.
+
+    Returns a list of new dumper names (may be empty).
+    """
+    for f in fields_list:
+        if f.get("field") != "Dumpers":
+            continue
+        old_val = f.get("old_value", "") or ""
+        new_val = f.get("new_value", "") or ""
+        old_set = {n.strip() for n in old_val.split(",") if n.strip()}
+        new_set = {n.strip() for n in new_val.split(",") if n.strip()}
+        return sorted(new_set - old_set)
+    return []
+
+
+def _has_dumpers_change(fields_list):
+    """Check if a change's fields list contains a Dumpers modification."""
+    return any(f.get("field") == "Dumpers" for f in fields_list)
+
+
+def _get_status_changes(fields_list):
+    """Extract enabled/questionable diffs from a Status field change."""
+    for f in fields_list:
+        if f.get("field") != "Status":
+            continue
+        return _map_status_change(f.get("old_value"), f.get("new_value"))
+    return {}
 
 # ---------------------------------------------------------------------------
 # Max-stats accumulator (merged from generate_max_disc_sql.py)
@@ -1083,6 +1190,8 @@ def process_all(data_dir, output_path, max_disc_id=None):
             user = change.get("user", "")
             if user:
                 all_usernames.add(user)
+            for dumper in _extract_new_dumpers(change.get("fields", [])):
+                all_usernames.add(dumper)
 
         if (idx + 1) % 10000 == 0:
             print(f"[scan]   ... {idx + 1}/{total} files", file=sys.stderr)
@@ -1269,20 +1378,61 @@ def process_all(data_dir, output_path, max_disc_id=None):
                     dumper_inserts.append(f"({disc_id}, {uid})")
 
             # Submissions (changes)
-            for change in data.get("changes", []):
+            changes_list = data.get("changes", [])
+            for ci, change in enumerate(changes_list):
                 user = change.get("user", "")
                 uid = user_id_map.get(user)
                 if not uid:
                     continue
                 ts = parse_change_date(change.get("date", ""))
                 fields = change.get("fields", [])
+                is_oldest = (ci == len(changes_list) - 1)
+
+                if is_oldest and not fields:
+                    # Empty oldest entry: initial disc creation
+                    empty_obj = {}
+                    submission_inserts.append(
+                        f"('Disc', {uid}, {disc_id}, "
+                        f"{sql_jsonb(empty_obj)}, "
+                        f"'Legacy', {uid}, {sql_str('inherited')}, "
+                        f"{sql_timestamp(ts)}, {sql_timestamp(ts)})"
+                    )
+                    continue
+
+                # Build diff payload for non-Dumper/non-Status fields
                 payload = build_submission_data(fields)
-                submission_inserts.append(
-                    f"('Edit', {uid}, {disc_id}, "
-                    f"{sql_jsonb(payload)}, "
-                    f"'Approved', {uid}, {sql_str('inherited')}, "
-                    f"{sql_timestamp(ts)}, {sql_timestamp(ts)})"
-                )
+                # Merge Status field changes into the payload
+                status_diffs = _get_status_changes(fields)
+                payload.update(status_diffs)
+
+                if _has_dumpers_change(fields):
+                    # Dumpers changed: create Disc submission per new dumper
+                    new_dumpers = _extract_new_dumpers(fields)
+                    if new_dumpers:
+                        for dumper_name in new_dumpers:
+                            dumper_uid = user_id_map.get(dumper_name, uid)
+                            submission_inserts.append(
+                                f"('Disc', {dumper_uid}, {disc_id}, "
+                                f"{sql_jsonb(payload)}, "
+                                f"'Legacy', {uid}, {sql_str('inherited')}, "
+                                f"{sql_timestamp(ts)}, {sql_timestamp(ts)})"
+                            )
+                    else:
+                        # Dumpers field changed but no new names found; use editor
+                        submission_inserts.append(
+                            f"('Disc', {uid}, {disc_id}, "
+                            f"{sql_jsonb(payload)}, "
+                            f"'Legacy', {uid}, {sql_str('inherited')}, "
+                            f"{sql_timestamp(ts)}, {sql_timestamp(ts)})"
+                        )
+                else:
+                    # Regular edit
+                    submission_inserts.append(
+                        f"('Edit', {uid}, {disc_id}, "
+                        f"{sql_jsonb(payload)}, "
+                        f"'Legacy', {uid}, {sql_str('inherited')}, "
+                        f"{sql_timestamp(ts)}, {sql_timestamp(ts)})"
+                    )
 
             if processed % 10000 == 0:
                 print(f"[sql]   ... {processed}/{len(disc_files)} discs", file=sys.stderr)
