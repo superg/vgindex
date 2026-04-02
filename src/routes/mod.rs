@@ -7,7 +7,7 @@ pub mod discs;
 pub mod downloads;
 pub mod feeds;
 pub mod main_page;
-pub mod submissions;
+pub mod queue;
 
 use axum::Router;
 use crate::AppState;
@@ -22,7 +22,7 @@ pub fn build_router() -> Router<AppState> {
         .merge(disc_edit::routes())
         .merge(disc_submit::routes())
         .merge(downloads::routes())
-        .merge(submissions::routes())
+        .merge(queue::routes())
         .merge(feeds::routes())
         .merge(api::routes())
 }

@@ -300,14 +300,10 @@ nav .quick-search input[type="text"] {
     font-size: 0.75rem;
 }
 
-/* Submission status colors */
-.submissions-table td, .submissions-table th {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-}
-.submissions-table .status-pending { color: #f39c12; font-weight: 600; }
-.submissions-table .status-approved { color: var(--status-verified); font-weight: 600; }
-.submissions-table .status-rejected { color: var(--status-bad); font-weight: 600; }
+/* Queue status dots */
+.status-dot-pending  { background: #f39c12; }
+.status-dot-approved { background: var(--status-verified); }
+.status-dot-rejected { background: var(--status-bad); }
 
 /* Diff view */
 .diff-add { background: #e6ffec; }

@@ -604,6 +604,129 @@ fn extract_track_number(filename: &str) -> Option<String> {
     None
 }
 
+fn format_hex_dump_snapshot(data: &[u8], base_addr: usize) -> String {
+    let mut out = String::new();
+    let total_chunks = data.chunks(16).len();
+    for (i, chunk) in data.chunks(16).enumerate() {
+        let offset = base_addr + i * 16;
+        out.push_str(&format!("{:04X} : ", offset));
+        for (j, byte) in chunk.iter().enumerate() {
+            out.push_str(&format!("{:02X} ", byte));
+            if j == 7 { out.push(' '); }
+        }
+        for _ in chunk.len()..16 { out.push_str("   "); }
+        out.push_str("  ");
+        for byte in chunk {
+            if byte.is_ascii_graphic() || *byte == b' ' {
+                out.push(*byte as char);
+            } else {
+                out.push(' ');
+            }
+        }
+        if i + 1 < total_chunks { out.push('\n'); }
+    }
+    out
+}
+
+fn format_pvd_hex_snapshot(data: &[u8]) -> String {
+    const PVD_FULL_SIZE: usize = 96;
+    const PVD_STORED_SIZE: usize = 82;
+    let mut buf = [0u8; PVD_FULL_SIZE];
+    let copy_len = data.len().min(PVD_STORED_SIZE);
+    buf[..copy_len].copy_from_slice(&data[..copy_len]);
+    format_hex_dump_snapshot(&buf, 0x0320)
+}
+
+/// Convert a DiscDetail into the flat JSON snapshot format that `update_disc` expects.
+pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
+    let rom_extension = detail.disc.media_type.rom_extension();
+    let max_layers = detail.disc.media_type.max_layers();
+
+    let ring_codes: Vec<serde_json::Value> = detail.ring_entries.iter().map(|e| {
+        let layers: Vec<serde_json::Value> = (0..max_layers).map(|li| {
+            let layer = e.layers.iter().find(|l| l.layer == li as i32);
+            serde_json::json!({
+                "mastering_code": layer.and_then(|l| l.mastering_code.as_deref()).unwrap_or(""),
+                "mastering_sid": layer.and_then(|l| l.mastering_sid.as_deref()).unwrap_or(""),
+                "mould_sids": layer.map(|l| l.mould_sids.join(", ")).unwrap_or_default(),
+                "toolstamps": layer.map(|l| l.toolstamps.join(", ")).unwrap_or_default(),
+                "additional_moulds": layer.map(|l| l.additional_moulds.join(", ")).unwrap_or_default(),
+            })
+        }).collect();
+        serde_json::json!({
+            "offset_value": e.offset_value.map(|v| v.to_string()).unwrap_or_default(),
+            "offset_extra_value": e.offset_extra_value.map(|v| v.to_string()).unwrap_or_default(),
+            "sample_start": e.sample_data_start.map(|v| v.to_string()).unwrap_or_default(),
+            "comment": e.comment.clone().unwrap_or_default(),
+            "layers": layers,
+        })
+    }).collect();
+
+    let total_tracks = detail.files.iter().filter(|f| f.track_number.is_some()).count();
+    let files_xml: String = detail.files.iter()
+        .filter(|f| f.track_number.is_some())
+        .map(|f| {
+            let name = build_simple_track_name(f.track_number.as_deref(), total_tracks, rom_extension);
+            format!(r#"<rom name="{}" size="{}" crc="{}" md5="{}" sha1="{}" />"#,
+                name, f.size, f.crc32, f.md5, f.sha1)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let sector_ranges: Vec<serde_json::Value> = detail.sector_ranges.iter()
+        .map(|r| serde_json::json!({"start": r.range_start, "end": r.range_end}))
+        .collect();
+
+    let region_codes: Vec<String> = detail.regions.iter().map(|r| r.code.trim().to_string()).collect();
+    let lang_codes: Vec<String> = detail.languages.iter().map(|l| l.code.trim().to_string()).collect();
+
+    let edc_value: serde_json::Value = match detail.disc.edc {
+        Some(true) => serde_json::json!(true),
+        Some(false) => serde_json::json!(false),
+        None => serde_json::Value::Null,
+    };
+
+    let cue = detail.disc.cue.as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|c| simplify_cue(c, rom_extension));
+
+    serde_json::json!({
+        "system_code": detail.disc.system_code,
+        "media_type": detail.disc.media_type.code(),
+        "title": detail.disc.title,
+        "category": detail.disc.category.to_string(),
+        "title_foreign": detail.disc.title_foreign,
+        "disc_number": detail.disc.disc_number,
+        "disc_title": detail.disc.disc_title,
+        "filename_suffix": detail.disc.filename_suffix,
+        "serial": detail.disc.serial,
+        "version": detail.disc.version,
+        "edition": detail.disc.edition,
+        "barcode": detail.disc.barcode,
+        "comments": detail.disc.comments,
+        "contents": detail.disc.contents,
+        "error_count": detail.disc.error_count,
+        "exe_date": detail.disc.exe_date,
+        "edc": edc_value,
+        "layerbreaks": detail.disc.layerbreaks.clone().unwrap_or_default(),
+        "pvd": detail.disc.pvd.as_ref().map(|d| format_pvd_hex_snapshot(d)),
+        "pic": detail.disc.pic.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
+        "bca": detail.disc.bca.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
+        "header": detail.disc.header.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
+        "protection": detail.disc.protection,
+        "sbi": detail.disc.sbi,
+        "keys": detail.disc.keys.clone().unwrap_or_default(),
+        "cue": cue,
+        "questionable": detail.disc.questionable,
+        "enabled": detail.disc.enabled,
+        "regions": region_codes,
+        "languages": lang_codes,
+        "ring_codes": ring_codes,
+        "sector_ranges": sector_ranges,
+        "files_xml": if files_xml.is_empty() { serde_json::Value::Null } else { serde_json::json!(files_xml) },
+    })
+}
+
 // DumperInfo needs FromRow
 impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for DumperInfo {
     fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
