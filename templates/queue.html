@@ -35,6 +35,7 @@
                 {% endfor %}
             </select>
         </label>
+        {% if is_moderator %}
         <label>
             <span>Submitter</span>
             <select name="submitter" onchange="this.form.submit()">
@@ -44,6 +45,7 @@
                 {% endfor %}
             </select>
         </label>
+        {% endif %}
         <input type="hidden" name="sort" value="{{ sort_column }}">
         <input type="hidden" name="order" value="{{ sort_order }}">
     </form>
@@ -82,7 +84,7 @@
             {% for entry in entries %}
             <tr>
                 <td>{{ entry.created_at.format("%Y-%m-%d %H:%M") }}</td>
-                <td>{% match entry.target_disc_id %}{% when Some with (disc_id) %}<a href="/disc/{{ disc_id }}/">{{ entry.title }}</a>{% when None %}{{ entry.title }}{% endmatch %}</td>
+                <td><a href="/queue/{{ entry.id }}/">{{ entry.title }}</a></td>
                 <td>{{ entry.system_code }}</td>
                 <td><a href="/discs/?dumper={{ entry.submitter_id }}">{{ entry.submitter }}</a></td>
                 <td>{% match entry.reviewer_id %}{% when Some with (rid) %}<a href="/discs/?dumper={{ rid }}">{{ entry.reviewer.as_deref().unwrap_or("") }}</a>{% when None %}{% endmatch %}</td>

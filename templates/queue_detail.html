@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Submission #{{ submission_id }}{% endblock %}
+
+{% block content %}
+<h2>Submission #{{ submission_id }}</h2>
+
+<div class="submission-info">
+    <dl>
+        <dt>Submission Type</dt>
+        <dd>{{ submission_type_display }}</dd>
+        <dt>Submitter</dt>
+        <dd>{{ submitter_name }}</dd>
+        {% if !submitter_comment.is_empty() %}
+        <dt>Submitter Comment</dt>
+        <dd>{{ submitter_comment }}</dd>
+        {% endif %}
+        {% if !dump_log_display.is_empty() %}
+        <dt>Dump Log</dt>
+        <dd><pre>{{ dump_log_display }}</pre></dd>
+        {% endif %}
+        {% if !extra_upload_url_display.is_empty() %}
+        <dt>Extra Upload URL</dt>
+        <dd><a href="{{ extra_upload_url_display }}" target="_blank">{{ extra_upload_url_display }}</a></dd>
+        {% endif %}
+        <dt>Status</dt>
+        <dd>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</dd>
+        {% if !reviewer_name.is_empty() %}
+        <dt>Reviewer</dt>
+        <dd>{{ reviewer_name }}</dd>
+        {% endif %}
+        {% if !review_comment_display.is_empty() %}
+        <dt>Review Comment</dt>
+        <dd>{{ review_comment_display }}</dd>
+        {% endif %}
+        <dt>Created</dt>
+        <dd>{{ created_at_display }}</dd>
+        {% if !reviewed_at_display.is_empty() %}
+        <dt>Reviewed</dt>
+        <dd>{{ reviewed_at_display }}</dd>
+        {% endif %}
+    </dl>
+</div>
+
+{% if !changes_summary.is_empty() %}
+<h3>Changes</h3>
+<table class="disc-table striped">
+    <thead>
+        <tr>
+            <th>Field</th>
+            {% if is_diff_format %}
+            <th>Old Value</th>
+            {% endif %}
+            <th>{% if is_diff_format %}New Value{% else %}Value{% endif %}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in changes_summary %}
+        <tr>
+            <td><strong>{{ entry.field }}</strong></td>
+            {% if is_diff_format %}
+            <td class="change-old">{{ entry.old_value }}</td>
+            {% endif %}
+            <td class="change-new">{{ entry.new_value }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if target_disc_id > 0 %}
+<p><a href="/disc/{{ target_disc_id }}/">View Disc #{{ target_disc_id }}</a></p>
+{% endif %}
+{% endblock %}

@@ -2,7 +2,6 @@ use sqlx::PgPool;
 
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
-use crate::services::disc_service;
 
 pub async fn create_submission(
     pool: &PgPool,
@@ -32,28 +31,69 @@ pub async fn create_submission(
     Ok(sub)
 }
 
-pub async fn find_matching_disc(pool: &PgPool, data: &serde_json::Value) -> Option<i32> {
-    if let Some(files_xml) = data["files_xml"].as_str() {
-        for line in files_xml.lines() {
+struct RomEntry {
+    size: i64,
+    crc32: String,
+    md5: String,
+    sha1: String,
+}
+
+fn parse_rom_entries(files_xml: &str) -> Vec<RomEntry> {
+    files_xml
+        .lines()
+        .filter_map(|line| {
             let line = line.trim();
             if !line.starts_with("<rom ") {
-                continue;
+                return None;
             }
-            if let Some(sha1) = extract_xml_attr(line, "sha1") {
-                let disc_id: Option<i32> = sqlx::query_scalar(
-                    "SELECT disc_id FROM files WHERE sha1 = $1 LIMIT 1"
-                )
-                .bind(&sha1)
-                .fetch_optional(pool)
-                .await
-                .unwrap_or(None);
+            Some(RomEntry {
+                size: extract_xml_attr(line, "size")
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0),
+                crc32: extract_xml_attr(line, "crc").unwrap_or_default(),
+                md5: extract_xml_attr(line, "md5").unwrap_or_default(),
+                sha1: extract_xml_attr(line, "sha1").unwrap_or_default(),
+            })
+        })
+        .collect()
+}
 
-                if disc_id.is_some() {
-                    return disc_id;
-                }
-            }
+pub async fn find_matching_disc(pool: &PgPool, files_xml: &str) -> Option<i32> {
+    let submitted = parse_rom_entries(files_xml);
+    if submitted.is_empty() {
+        return None;
+    }
+
+    let candidates: Vec<i32> = sqlx::query_scalar(
+        "SELECT DISTINCT disc_id FROM files WHERE sha1 = $1",
+    )
+    .bind(&submitted[0].sha1)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    for disc_id in candidates {
+        let disc_files: Vec<crate::db::models::File> = sqlx::query_as(
+            "SELECT * FROM files WHERE disc_id = $1 AND track_number IS NOT NULL ORDER BY track_number",
+        )
+        .bind(disc_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        if disc_files.len() != submitted.len() {
+            continue;
+        }
+
+        let all_match = disc_files.iter().zip(&submitted).all(|(df, sf)| {
+            df.size == sf.size && df.crc32 == sf.crc32 && df.md5 == sf.md5 && df.sha1 == sf.sha1
+        });
+
+        if all_match {
+            return Some(disc_id);
         }
     }
+
     None
 }
 
@@ -64,117 +104,12 @@ fn extract_xml_attr(line: &str, attr: &str) -> Option<String> {
     Some(line[start..end].to_string())
 }
 
-pub async fn mark_submission_approved(
-    pool: &PgPool,
-    submission_id: i32,
-    reviewer_id: i32,
-) -> AppResult<()> {
-    sqlx::query(
-        "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1, reviewed_at = NOW()
-         WHERE id = $2"
-    )
-    .bind(reviewer_id)
-    .bind(submission_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-pub async fn review_submission(
-    pool: &PgPool,
-    submission_id: i32,
-    reviewer_id: i32,
-    new_status: SubmissionStatus,
-    comment: Option<&str>,
-) -> AppResult<()> {
-    let sub: DiscSubmission = sqlx::query_as("SELECT * FROM disc_submissions WHERE id = $1")
-        .bind(submission_id)
+pub async fn get_submission(pool: &PgPool, id: i32) -> AppResult<DiscSubmission> {
+    sqlx::query_as("SELECT * FROM disc_submissions WHERE id = $1")
+        .bind(id)
         .fetch_optional(pool)
         .await?
-        .ok_or(AppError::NotFound)?;
-
-    if sub.status != SubmissionStatus::Pending {
-        return Err(AppError::BadRequest("Submission already reviewed".into()));
-    }
-
-    if new_status == SubmissionStatus::Approved {
-        match sub.submission_type {
-            SubmissionType::Disc => {
-                if let Some(disc_id) = sub.target_disc_id {
-                    sqlx::query(
-                        "INSERT INTO disc_dumpers (disc_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"
-                    )
-                    .bind(disc_id)
-                    .bind(sub.submitter_id)
-                    .execute(pool)
-                    .await?;
-                } else {
-                    let disc_id = disc_service::create_disc_from_submission(
-                        pool,
-                        &sub.changes,
-                        sub.submitter_id,
-                    )
-                    .await?;
-
-                    sqlx::query(
-                        "UPDATE disc_submissions SET status = $1, reviewer_id = $2,
-                         review_comment = $3, reviewed_at = NOW(), target_disc_id = $4
-                         WHERE id = $5"
-                    )
-                    .bind(new_status)
-                    .bind(reviewer_id)
-                    .bind(comment)
-                    .bind(disc_id)
-                    .bind(submission_id)
-                    .execute(pool)
-                    .await?;
-                    return Ok(());
-                }
-            }
-            SubmissionType::Edit => {
-                if let Some(disc_id) = sub.target_disc_id {
-                    let snapshot = build_edit_snapshot(pool, disc_id, &sub.changes).await?;
-                    disc_service::update_disc(pool, disc_id, &snapshot).await?;
-                }
-            }
-        }
-    }
-
-    sqlx::query(
-        "UPDATE disc_submissions SET status = $1, reviewer_id = $2,
-         review_comment = $3, reviewed_at = NOW()
-         WHERE id = $4"
-    )
-    .bind(new_status)
-    .bind(reviewer_id)
-    .bind(comment)
-    .bind(submission_id)
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-/// Merge a diff-format `changes` object with the current disc state to produce
-/// a full snapshot suitable for `update_disc`.
-async fn build_edit_snapshot(
-    pool: &PgPool,
-    disc_id: i32,
-    changes: &serde_json::Value,
-) -> AppResult<serde_json::Value> {
-    let detail = disc_service::get_disc_detail(pool, disc_id).await?;
-    let mut snapshot = disc_service::build_snapshot_from_disc(&detail);
-
-    if let Some(diff_obj) = changes.as_object() {
-        if let Some(snapshot_obj) = snapshot.as_object_mut() {
-            for (field, change) in diff_obj {
-                let new_val = &change["new"];
-                snapshot_obj.insert(field.clone(), new_val.clone());
-            }
-        }
-    }
-
-    Ok(snapshot)
+        .ok_or(AppError::NotFound)
 }
 
 pub async fn list_submissions(
@@ -342,23 +277,4 @@ pub async fn count_submissions(
     }
 
     Ok(query.fetch_one(pool).await?)
-}
-
-impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
-    fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        use sqlx::Row;
-        Ok(Self {
-            id: row.try_get("id")?,
-            submission_type: row.try_get("submission_type")?,
-            title: row.try_get("title")?,
-            system_code: row.try_get("system_code")?,
-            submitter: row.try_get("submitter")?,
-            submitter_id: row.try_get("submitter_id")?,
-            reviewer: row.try_get("reviewer")?,
-            reviewer_id: row.try_get("reviewer_id")?,
-            status: row.try_get("status")?,
-            target_disc_id: row.try_get("target_disc_id")?,
-            created_at: row.try_get("created_at")?,
-        })
-    }
 }

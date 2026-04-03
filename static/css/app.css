@@ -281,6 +281,48 @@ table.striped tbody tr:nth-child(even) {
 .site-nav > ul:first-of-type {
     margin-right: auto;
 }
+
+/* Nav submenu dropdown */
+.submenu-label {
+    cursor: pointer;
+    color: var(--pico-primary);
+}
+.has-submenu {
+    position: relative;
+}
+.has-submenu .submenu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin: 0;
+    padding: 0.25rem 0;
+    list-style: none;
+    background: var(--pico-background-color);
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: var(--pico-border-radius);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    z-index: 100;
+    min-width: 10rem;
+}
+.has-submenu:hover .submenu,
+.has-submenu:focus-within .submenu {
+    display: block;
+}
+.submenu li {
+    padding: 0;
+    margin: 0;
+}
+.submenu li a {
+    display: block;
+    padding: 0.35rem 1rem;
+    white-space: nowrap;
+    text-decoration: none;
+}
+.submenu li a:hover {
+    background: var(--pico-secondary-background);
+}
+
 nav .quick-search {
     display: flex;
     align-items: center;
@@ -548,4 +590,65 @@ textarea.fixed-80 {
 }
 .validation-errors li {
     margin-bottom: 0.15rem;
+}
+
+/* Queue review: highlight changed fields */
+.field-changed {
+    background-color: rgba(255, 235, 59, 0.18);
+    border-left: 3px solid rgba(255, 235, 59, 0.7);
+    padding-left: 0.5rem;
+}
+.field-changed > legend,
+.field-changed > .inline-field-label {
+    background-color: rgba(255, 235, 59, 0.3);
+    padding: 0 4px;
+    border-radius: 2px;
+}
+
+/* Queue submission info box */
+.submission-info {
+    border: 1px solid var(--pico-muted-border-color, #ccc);
+    border-radius: var(--pico-border-radius, 0.25rem);
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+.submission-info dt {
+    font-weight: 600;
+    margin-top: 0.5rem;
+}
+.submission-info dt:first-child {
+    margin-top: 0;
+}
+.submission-info dd {
+    margin-left: 0;
+    margin-bottom: 0.25rem;
+}
+.submission-info pre {
+    max-height: 20rem;
+    overflow: auto;
+    font-size: 0.8rem;
+}
+
+/* Review action buttons */
+.review-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+    align-items: flex-end;
+}
+.review-actions .btn-approve {
+    background-color: #388e3c;
+    border-color: #388e3c;
+}
+.review-actions .btn-reject {
+    background-color: #c62828;
+    border-color: #c62828;
+}
+
+/* Queue detail: changes summary table */
+td.change-old {
+    color: var(--pico-del-color, #c62828);
+}
+td.change-new {
+    color: var(--pico-ins-color, #2e7d32);
 }

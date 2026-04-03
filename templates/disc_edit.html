@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Edit {{ page_title }}{% endblock %}
+{% block title %}{% if is_review_mode %}Review Submission #{{ submission_id }}{% else if is_add_mode %}Add Disc{% else %}Edit {{ page_title }}{% endif %}{% endblock %}
 
 {% block head %}
 <script>
@@ -26,24 +26,68 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </ul>
 </div>
 {% endif %}
-<form method="post" action="/disc/{{ disc_id }}/edit/" id="disc-edit-form" class="disc-edit">
+
+{% if is_review_mode %}
+<div class="submission-info">
+    <h2>Submission #{{ submission_id }}</h2>
+    <dl>
+        <dt>Submission Type</dt>
+        <dd>{{ submission_type_display }}</dd>
+        <dt>Submitter</dt>
+        <dd>{{ submitter_name }}</dd>
+        {% if !submitter_comment.is_empty() %}
+        <dt>Submitter Comment</dt>
+        <dd>{{ submitter_comment }}</dd>
+        {% endif %}
+        {% if !dump_log_display.is_empty() %}
+        <dt>Dump Log</dt>
+        <dd><pre>{{ dump_log_display }}</pre></dd>
+        {% endif %}
+        {% if !extra_upload_url_display.is_empty() %}
+        <dt>Extra Upload URL</dt>
+        <dd><a href="{{ extra_upload_url_display }}" target="_blank">{{ extra_upload_url_display }}</a></dd>
+        {% endif %}
+        <dt>Status</dt>
+        <dd>{{ submission_status }}</dd>
+        {% if !reviewer_name.is_empty() %}
+        <dt>Reviewer</dt>
+        <dd>{{ reviewer_name }}</dd>
+        {% endif %}
+        {% if !review_comment_display.is_empty() %}
+        <dt>Review Comment</dt>
+        <dd>{{ review_comment_display }}</dd>
+        {% endif %}
+        <dt>Created</dt>
+        <dd>{{ created_at_display }}</dd>
+        {% if !reviewed_at_display.is_empty() %}
+        <dt>Reviewed</dt>
+        <dd>{{ reviewed_at_display }}</dd>
+        {% endif %}
+    </dl>
+</div>
+{% endif %}
+
+<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review/{% else if is_add_mode %}/disc/submit/{% else %}/disc/{{ disc_id }}/edit/{% endif %}" id="disc-edit-form" class="disc-edit">
 
     <div class="grid">
-        <label>System
-            <select name="system_code" id="system-select">
+        <label{% if self.is_changed("system_code") %} class="field-changed"{% endif %}>System
+            <select name="system_code" id="system-select" required>
+                {% if is_add_mode %}
+                <option value="" {% if system_code.is_empty() %}selected{% endif %} disabled>-- Choose System --</option>
+                {% endif %}
                 {% for sys in systems %}
                 <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
                 {% endfor %}
             </select>
         </label>
-        <label>Media
+        <label{% if self.is_changed("media_type") %} class="field-changed"{% endif %}>Media
             <select name="media_type" id="media-select">
                 {% for mt in media_types_all %}
                 <option value="{{ mt.code }}" {% if mt.selected %}selected{% endif %}>{{ mt.name }}</option>
                 {% endfor %}
             </select>
         </label>
-        <label>Category
+        <label{% if self.is_changed("category") %} class="field-changed"{% endif %}>Category
             <select name="category">
                 {% for cat in categories %}
                 <option value="{{ cat.value }}" {% if cat.selected %}selected{% endif %}>{{ cat.name }}</option>
@@ -53,11 +97,11 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </div>
 
     <div class="grid">
-        <label>Title
+        <label{% if self.is_changed("title") %} class="field-changed"{% endif %}>Title
             <input type="text" name="title" value="{{ title }}" required>
         </label>
         {% if show_title_foreign %}
-        <label>Foreign Title
+        <label{% if self.is_changed("title_foreign") %} class="field-changed"{% endif %}>Foreign Title
             <input type="text" name="title_foreign" value="{{ title_foreign }}">
         </label>
         {% endif %}
@@ -65,22 +109,22 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
 
     <div class="grid">
         {% if show_disc_number %}
-        <label>Disc Number
+        <label{% if self.is_changed("disc_number") %} class="field-changed"{% endif %}>Disc Number
             <input type="text" name="disc_number" value="{{ disc_number }}">
         </label>
         {% endif %}
         {% if show_disc_title %}
-        <label>Disc Title
+        <label{% if self.is_changed("disc_title") %} class="field-changed"{% endif %}>Disc Title
             <input type="text" name="disc_title" value="{{ disc_title }}">
         </label>
         {% endif %}
-        <label>Filename Suffix
+        <label{% if self.is_changed("filename_suffix") %} class="field-changed"{% endif %}>Filename Suffix
             <input type="text" name="filename_suffix" value="{{ filename_suffix }}">
         </label>
     </div>
 
     <div class="grid">
-        <fieldset>
+        <fieldset{% if self.is_changed("regions") %} class="field-changed"{% endif %}>
             <legend>Regions</legend>
             <div class="flag-check-list">
             {% for r in regions %}
@@ -92,7 +136,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
             {% endfor %}
             </div>
         </fieldset>
-        <fieldset>
+        <fieldset{% if self.is_changed("languages") %} class="field-changed"{% endif %}>
             <legend>Languages</legend>
             <div class="flag-check-list">
             {% for lang in languages %}
@@ -107,7 +151,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </div>
 
     {% if show_serial %}
-    <div class="inline-field">
+    <div class="inline-field{% if self.is_changed("serial") %} field-changed{% endif %}">
         <span class="inline-field-label">Serials</span>
         <div id="serial-list" class="inline-field-values">
             {% for s in serials %}
@@ -120,7 +164,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     {% endif %}
 
     {% if show_edition %}
-    <div class="inline-field">
+    <div class="inline-field{% if self.is_changed("edition") %} field-changed{% endif %}">
         <span class="inline-field-label">Editions</span>
         <div id="edition-list" class="inline-field-values">
             {% for e in editions %}
@@ -133,7 +177,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     {% endif %}
 
     {% if show_barcode %}
-    <div class="inline-field">
+    <div class="inline-field{% if self.is_changed("barcode") %} field-changed{% endif %}">
         <span class="inline-field-label">Barcodes</span>
         <div id="barcode-list" class="inline-field-values">
             {% for b in barcodes %}
@@ -146,7 +190,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     {% endif %}
 
     {% if show_version %}
-    <div class="inline-field">
+    <div class="inline-field{% if self.is_changed("version") %} field-changed{% endif %}">
         <span class="inline-field-label">Version</span>
         <div class="inline-field-values">
             <input type="text" name="version" value="{{ version }}">
@@ -155,7 +199,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     {% endif %}
 
     {% if show_error_count %}
-    <div class="inline-field">
+    <div class="inline-field{% if self.is_changed("error_count") %} field-changed{% endif %}">
         <span class="inline-field-label">Error Count</span>
         <div class="inline-field-values">
             <input type="number" name="error_count" value="{{ error_count }}">
@@ -164,7 +208,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     {% endif %}
 
     {% if show_exe_date %}
-    <div class="inline-field">
+    <div class="inline-field{% if self.is_changed("exe_date") %} field-changed{% endif %}">
         <span class="inline-field-label">EXE Date</span>
         <div class="inline-field-values">
             <input type="text" name="exe_date" value="{{ exe_date }}" placeholder="YYYY-MM-DD">
@@ -173,7 +217,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     {% endif %}
 
     {% if show_edc %}
-    <div class="inline-field">
+    <div class="inline-field{% if self.is_changed("edc") %} field-changed{% endif %}">
         <span class="inline-field-label">EDC</span>
         <div class="inline-field-values inline-radios">
             <label><input type="radio" name="edc" value="false" {% if edc_value == "false" || edc_value.is_empty() %}checked{% endif %}> No</label>
@@ -182,13 +226,13 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </div>
     {% endif %}
 
-    <div class="inline-field" id="layerbreak-row" style="display:none">
+    <div class="inline-field{% if self.is_changed("layerbreaks") %} field-changed{% endif %}" id="layerbreak-row" style="display:none">
         <span class="inline-field-label">Layerbreaks</span>
         <div id="layerbreak-list" class="inline-field-values"></div>
     </div>
 
     {% if show_protection %}
-    <div class="inline-field">
+    <div class="inline-field{% if self.is_changed("keys") %} field-changed{% endif %}">
         <span class="inline-field-label">Disc Key / ID</span>
         <div class="inline-field-values">
             <input type="text" name="protection_key_disc_key" value="{{ protection_key_disc_key }}">
@@ -197,7 +241,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </div>
     {% endif %}
 
-    <fieldset>
+    <fieldset{% if self.is_changed("ring_codes") %} class="field-changed"{% endif %}>
         <legend>Ring Codes</legend>
         <div class="table-scroll table-scroll-compact">
         <table class="disc-table ring-table ring-edit-table" id="ring-editor">
@@ -209,65 +253,66 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
         <input type="hidden" name="ring_codes_json" id="ring-codes-json">
     </fieldset>
 
-    <label>Comments
+    <label{% if self.is_changed("comments") %} class="field-changed"{% endif %}>Comments
         <textarea name="comments" rows="2" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
     </label>
 
-    <label>Contents
+    <label{% if self.is_changed("contents") %} class="field-changed"{% endif %}>Contents
         <textarea name="contents" rows="2" class="hex-dump-input auto-expand fixed-80">{{ contents }}</textarea>
     </label>
 
     {% if show_protection %}
-    <label>Protection
+    <label{% if self.is_changed("protection") %} class="field-changed"{% endif %}>Protection
         <textarea name="protection" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection }}</textarea>
     </label>
     {% endif %}
 
     {% if show_sector_ranges %}
-    <label>Sector Ranges
+    <label{% if self.is_changed("sector_ranges") %} class="field-changed"{% endif %}>Sector Ranges
         <textarea name="sector_ranges" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sector_ranges_text }}</textarea>
     </label>
     {% endif %}
 
     {% if show_sbi %}
-    <label>SBI
+    <label{% if self.is_changed("sbi") %} class="field-changed"{% endif %}>SBI
         <textarea name="sbi" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sbi }}</textarea>
     </label>
     {% endif %}
 
     {% if show_pvd %}
-    <label>PVD
+    <label{% if self.is_changed("pvd") %} class="field-changed"{% endif %}>PVD
         <textarea name="pvd" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pvd_hex }}</textarea>
     </label>
     {% endif %}
 
     {% if show_header %}
-    <label>Header
+    <label{% if self.is_changed("header") %} class="field-changed"{% endif %}>Header
         <textarea name="header" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ header_hex }}</textarea>
     </label>
     {% endif %}
 
     {% if show_bca %}
-    <label>BCA
+    <label{% if self.is_changed("bca") %} class="field-changed"{% endif %}>BCA
         <textarea name="bca" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ bca_hex }}</textarea>
     </label>
     {% endif %}
 
     {% if show_pic %}
-    <label>PIC
+    <label{% if self.is_changed("pic") %} class="field-changed"{% endif %}>PIC
         <textarea name="pic" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>
     </label>
     {% endif %}
 
 
-    <label>Cuesheet
+    <label{% if self.is_changed("cue") %} class="field-changed"{% endif %}>Cuesheet
         <textarea name="cue" rows="2" spellcheck="false" class="hex-dump-input auto-expand fixed-80">{{ cue }}</textarea>
     </label>
 
-    <label>Dat
+    <label{% if self.is_changed("files_xml") %} class="field-changed"{% endif %}>Dat
         <textarea name="files_xml" rows="2" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ files_xml }}</textarea>
     </label>
 
+    {% if !is_add_mode %}
     <div class="grid">
         <label>
             <input type="checkbox" name="enabled" value="true" {% if enabled %}checked{% endif %}>
@@ -278,11 +323,32 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
             Questionable
         </label>
     </div>
+    {% endif %}
 
+    {% if is_add_mode %}
+    <label>Dump Log
+        <textarea name="dump_log" rows="4" class="hex-dump-input auto-expand fixed-80" required>{{ dump_log }}</textarea>
+    </label>
+
+    <label>Extra Upload URL
+        <input type="text" name="extra_upload_url" value="{{ extra_upload_url }}">
+    </label>
+    {% endif %}
+
+    {% if is_review_mode %}
+    <label>Review Comment
+        <textarea name="review_comment" rows="2" placeholder="Optional comment about this review"></textarea>
+    </label>
+    <div class="review-actions">
+        <button type="submit" name="action" value="approve" class="btn-approve">Approve</button>
+        <button type="submit" name="action" value="reject" class="btn-reject">Reject</button>
+    </div>
+    {% else %}
     <label>Submission Comment
-        <textarea name="submission_comment" rows="2" placeholder="Optional comment about this edit"></textarea>
+        <textarea name="submission_comment" rows="2" placeholder="Optional comment about this {% if is_add_mode %}submission{% else %}edit{% endif %}"></textarea>
     </label>
 
     <button type="submit">Submit</button>
+    {% endif %}
 </form>
 {% endblock %}
