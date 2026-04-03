@@ -1,7 +1,6 @@
 pub mod api;
 pub mod auth_routes;
 pub mod disc_edit;
-pub mod disc_submit;
 pub mod disc_view;
 pub mod discs;
 pub mod downloads;
@@ -20,7 +19,6 @@ pub fn build_router() -> Router<AppState> {
         .merge(discs::routes())
         .merge(disc_view::routes())
         .merge(disc_edit::routes())
-        .merge(disc_submit::routes())
         .merge(downloads::routes())
         .merge(queue::routes())
         .merge(feeds::routes())

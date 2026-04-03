@@ -23,8 +23,13 @@
                 <li><a href="/discs/">Discs</a></li>
                 <li><a href="/downloads/">Downloads</a></li>
                 {% if current_user.is_some() %}
-                <li><a href="/disc/submit/">Add Disc</a></li>
-                <li><a href="/queue/">Queue</a></li>
+                <li class="has-submenu">
+                    <span class="submenu-label">Submissions</span>
+                    <ul class="submenu">
+                        <li><a href="/queue/">Queue</a></li>
+                        <li><a href="/disc/submit/">Add Disc</a></li>
+                    </ul>
+                </li>
                 {% endif %}
                 <li><a href="{{ self.forum_url() }}">Forum</a></li>
                 <li><a href="{{ self.wiki_url() }}">Wiki</a></li>
