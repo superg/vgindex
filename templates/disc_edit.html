@@ -8,9 +8,11 @@ const RING_CODES = {{ ring_codes_json|safe }};
 const MAX_LAYERS = {{ max_layers }};
 const MEDIA_LAYERS = {{ media_layers_json|safe }};
 const SYSTEMS_MEDIA = {{ systems_media_json|safe }};
-const SYSTEMS_HAS_OFFSET_EXTRA = {{ systems_has_offset_extra_json|safe }};
-const HAS_SAMPLE_START = {{ has_sample_start }};
+const SYSTEMS_HAS_FLAGS = {{ systems_has_flags_json|safe }};
+const MEDIA_ROM_EXTENSIONS = {{ media_rom_extensions_json|safe }};
+const MEDIA_HAS_PIC = {{ media_has_pic_json|safe }};
 const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{% endif %}{% endfor %}];
+const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
 </script>
 <script src="/static/js/disc_edit.js" defer></script>
 {% endblock %}
@@ -29,65 +31,73 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
 
 {% if is_review_mode %}
 <div class="submission-info">
-    <h2>Submission #{{ submission_id }}</h2>
-    <dl>
-        <dt>Submission Type</dt>
-        <dd>{{ submission_type_display }}</dd>
-        <dt>Submitter</dt>
-        <dd>{{ submitter_name }}</dd>
-        {% if !submitter_comment.is_empty() %}
-        <dt>Submitter Comment</dt>
-        <dd>{{ submitter_comment }}</dd>
-        {% endif %}
-        {% if !dump_log_display.is_empty() %}
-        <dt>Dump Log</dt>
-        <dd><pre>{{ dump_log_display }}</pre></dd>
+    <table class="table-compact table-fit-section">
+        <tr><td><strong>Submission Type</strong></td><td>{{ submission_type_display }}</td></tr>
+        <tr><td><strong>Submitter</strong></td><td><a href="/discs/?dumper={{ submitter_id }}">{{ submitter_name }}</a></td></tr>
+        {% if disc_id > 0 %}
+        <tr><td><strong>Disc ID</strong></td><td><a href="/disc/{{ disc_id }}/">{{ disc_id }}</a></td></tr>
         {% endif %}
         {% if !extra_upload_url_display.is_empty() %}
-        <dt>Extra Upload URL</dt>
-        <dd><a href="{{ extra_upload_url_display }}" target="_blank">{{ extra_upload_url_display }}</a></dd>
+        <tr><td><strong>Extra Upload URL</strong></td><td><a href="{{ extra_upload_url_display }}" target="_blank">{{ extra_upload_url_display }}</a></td></tr>
         {% endif %}
-        <dt>Status</dt>
-        <dd>{{ submission_status }}</dd>
+        <tr><td><strong>Status</strong></td><td>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</td></tr>
         {% if !reviewer_name.is_empty() %}
-        <dt>Reviewer</dt>
-        <dd>{{ reviewer_name }}</dd>
+        <tr><td><strong>Reviewer</strong></td><td><a href="/discs/?dumper={{ reviewer_id }}">{{ reviewer_name }}</a></td></tr>
         {% endif %}
-        {% if !review_comment_display.is_empty() %}
-        <dt>Review Comment</dt>
-        <dd>{{ review_comment_display }}</dd>
-        {% endif %}
-        <dt>Created</dt>
-        <dd>{{ created_at_display }}</dd>
+        <tr><td><strong>Created</strong></td><td>{{ created_at_display }}</td></tr>
         {% if !reviewed_at_display.is_empty() %}
-        <dt>Reviewed</dt>
-        <dd>{{ reviewed_at_display }}</dd>
+        <tr><td><strong>Reviewed</strong></td><td>{{ reviewed_at_display }}</td></tr>
         {% endif %}
-    </dl>
+    </table>
+
+    {% if !changes_json.is_empty() %}
+    <details>
+        <summary>Raw JSON</summary>
+        <pre class="raw-json"><code>{{ changes_json }}</code></pre>
+    </details>
+    {% endif %}
 </div>
+
+{% if !dump_log_display.is_empty() %}
+<section>
+    <h3>Dump Log</h3>
+    <p class="pre-wrap section-text">{{ dump_log_display }}</p>
+</section>
+{% endif %}
+
+{% if !submission_comment.is_empty() %}
+<section>
+    <h3>Submission Comment</h3>
+    <p class="pre-wrap section-text">{{ submission_comment }}</p>
+</section>
+{% endif %}
+
+{% if !review_comment_display.is_empty() %}
+<section>
+    <h3>Review Comment</h3>
+    <p class="pre-wrap section-text">{{ review_comment_display }}</p>
+</section>
+{% endif %}
 {% endif %}
 
 <form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review/{% else if is_add_mode %}/disc/submit/{% else %}/disc/{{ disc_id }}/edit/{% endif %}" id="disc-edit-form" class="disc-edit">
 
     <div class="grid">
-        <label{% if self.is_changed("system_code") %} class="field-changed"{% endif %}>System
+        <label{% if !self.highlight_class("system_code").is_empty() %} class="{{ self.highlight_class("system_code") }}"{% endif %}>System
             <select name="system_code" id="system-select" required>
-                {% if is_add_mode %}
-                <option value="" {% if system_code.is_empty() %}selected{% endif %} disabled>-- Choose System --</option>
-                {% endif %}
                 {% for sys in systems %}
                 <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
                 {% endfor %}
             </select>
         </label>
-        <label{% if self.is_changed("media_type") %} class="field-changed"{% endif %}>Media
+        <label{% if !self.highlight_class("media_type").is_empty() %} class="{{ self.highlight_class("media_type") }}"{% endif %}>Media
             <select name="media_type" id="media-select">
                 {% for mt in media_types_all %}
                 <option value="{{ mt.code }}" {% if mt.selected %}selected{% endif %}>{{ mt.name }}</option>
                 {% endfor %}
             </select>
         </label>
-        <label{% if self.is_changed("category") %} class="field-changed"{% endif %}>Category
+        <label{% if !self.highlight_class("category").is_empty() %} class="{{ self.highlight_class("category") }}"{% endif %}>Category
             <select name="category">
                 {% for cat in categories %}
                 <option value="{{ cat.value }}" {% if cat.selected %}selected{% endif %}>{{ cat.name }}</option>
@@ -97,38 +107,32 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </div>
 
     <div class="grid">
-        <label{% if self.is_changed("title") %} class="field-changed"{% endif %}>Title
+        <label{% if !self.highlight_class("title").is_empty() %} class="{{ self.highlight_class("title") }}"{% endif %}>Title
             <input type="text" name="title" value="{{ title }}" required>
         </label>
-        {% if show_title_foreign %}
-        <label{% if self.is_changed("title_foreign") %} class="field-changed"{% endif %}>Foreign Title
+        <label data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}{% if !self.highlight_class("title_foreign").is_empty() %} class="{{ self.highlight_class("title_foreign") }}"{% endif %}>Foreign Title
             <input type="text" name="title_foreign" value="{{ title_foreign }}">
         </label>
-        {% endif %}
     </div>
 
     <div class="grid">
-        {% if show_disc_number %}
-        <label{% if self.is_changed("disc_number") %} class="field-changed"{% endif %}>Disc Number
+        <label data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}{% if !self.highlight_class("disc_number").is_empty() %} class="{{ self.highlight_class("disc_number") }}"{% endif %}>Disc Number
             <input type="text" name="disc_number" value="{{ disc_number }}">
         </label>
-        {% endif %}
-        {% if show_disc_title %}
-        <label{% if self.is_changed("disc_title") %} class="field-changed"{% endif %}>Disc Title
+        <label data-field-flag="has_disc_title"{% if !show_disc_title %} style="display:none"{% endif %}{% if !self.highlight_class("disc_title").is_empty() %} class="{{ self.highlight_class("disc_title") }}"{% endif %}>Disc Title
             <input type="text" name="disc_title" value="{{ disc_title }}">
         </label>
-        {% endif %}
-        <label{% if self.is_changed("filename_suffix") %} class="field-changed"{% endif %}>Filename Suffix
+        <label{% if !self.highlight_class("filename_suffix").is_empty() %} class="{{ self.highlight_class("filename_suffix") }}"{% endif %}>Filename Suffix
             <input type="text" name="filename_suffix" value="{{ filename_suffix }}">
         </label>
     </div>
 
     <div class="grid">
-        <fieldset{% if self.is_changed("regions") %} class="field-changed"{% endif %}>
+        <fieldset{% if !self.highlight_class("regions").is_empty() %} class="{{ self.highlight_class("regions") }}"{% endif %}>
             <legend>Regions</legend>
             <div class="flag-check-list">
             {% for r in regions %}
-                <label class="flag-check">
+                <label class="flag-check{% if !r.highlight.is_empty() %} item-{{ r.highlight }}{% endif %}">
                     <input type="checkbox" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
                     <img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}">
                     <span>{{ r.name }}</span>
@@ -136,11 +140,11 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
             {% endfor %}
             </div>
         </fieldset>
-        <fieldset{% if self.is_changed("languages") %} class="field-changed"{% endif %}>
+        <fieldset{% if !self.highlight_class("languages").is_empty() %} class="{{ self.highlight_class("languages") }}"{% endif %}>
             <legend>Languages</legend>
             <div class="flag-check-list">
             {% for lang in languages %}
-                <label class="flag-check">
+                <label class="flag-check{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">
                     <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}>
                     <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
                     <span>{{ lang.name }}</span>
@@ -150,98 +154,82 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
         </fieldset>
     </div>
 
-    {% if show_serial %}
-    <div class="inline-field{% if self.is_changed("serial") %} field-changed{% endif %}">
+    <div class="inline-field{% if !self.highlight_class("serial").is_empty() %} {{ self.highlight_class("serial") }}{% endif %}" data-field-flag="has_serial"{% if !show_serial %} style="display:none"{% endif %}>
         <span class="inline-field-label">Serials</span>
         <div id="serial-list" class="inline-field-values">
             {% for s in serials %}
-            <input type="text" name="serial" value="{{ s }}">
+            <input type="text" name="serial" value="{{ s.value }}"{% if !s.highlight.is_empty() %} class="item-{{ s.highlight }}"{% endif %}>
             {% endfor %}
             <input type="text" name="serial" value="">
         </div>
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('serial-list','serial')">+</button>
     </div>
-    {% endif %}
 
-    {% if show_edition %}
-    <div class="inline-field{% if self.is_changed("edition") %} field-changed{% endif %}">
+    <div class="inline-field{% if !self.highlight_class("edition").is_empty() %} {{ self.highlight_class("edition") }}{% endif %}" data-field-flag="has_edition"{% if !show_edition %} style="display:none"{% endif %}>
         <span class="inline-field-label">Editions</span>
         <div id="edition-list" class="inline-field-values">
             {% for e in editions %}
-            <input type="text" name="edition" value="{{ e }}">
+            <input type="text" name="edition" value="{{ e.value }}"{% if !e.highlight.is_empty() %} class="item-{{ e.highlight }}"{% endif %}>
             {% endfor %}
             <input type="text" name="edition" value="">
         </div>
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('edition-list','edition')">+</button>
     </div>
-    {% endif %}
 
-    {% if show_barcode %}
-    <div class="inline-field{% if self.is_changed("barcode") %} field-changed{% endif %}">
+    <div class="inline-field{% if !self.highlight_class("barcode").is_empty() %} {{ self.highlight_class("barcode") }}{% endif %}" data-field-flag="has_barcode"{% if !show_barcode %} style="display:none"{% endif %}>
         <span class="inline-field-label">Barcodes</span>
         <div id="barcode-list" class="inline-field-values">
             {% for b in barcodes %}
-            <input type="text" name="barcode" value="{{ b }}">
+            <input type="text" name="barcode" value="{{ b.value }}"{% if !b.highlight.is_empty() %} class="item-{{ b.highlight }}"{% endif %}>
             {% endfor %}
             <input type="text" name="barcode" value="">
         </div>
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('barcode-list','barcode')">+</button>
     </div>
-    {% endif %}
 
-    {% if show_version %}
-    <div class="inline-field{% if self.is_changed("version") %} field-changed{% endif %}">
+    <div class="inline-field{% if !self.highlight_class("version").is_empty() %} {{ self.highlight_class("version") }}{% endif %}" data-field-flag="has_version"{% if !show_version %} style="display:none"{% endif %}>
         <span class="inline-field-label">Version</span>
         <div class="inline-field-values">
             <input type="text" name="version" value="{{ version }}">
         </div>
     </div>
-    {% endif %}
 
-    {% if show_error_count %}
-    <div class="inline-field{% if self.is_changed("error_count") %} field-changed{% endif %}">
+    <div class="inline-field{% if !self.highlight_class("error_count").is_empty() %} {{ self.highlight_class("error_count") }}{% endif %}" data-field-flag="has_error_count"{% if !show_error_count %} style="display:none"{% endif %}>
         <span class="inline-field-label">Error Count</span>
         <div class="inline-field-values">
             <input type="number" name="error_count" value="{{ error_count }}">
         </div>
     </div>
-    {% endif %}
 
-    {% if show_exe_date %}
-    <div class="inline-field{% if self.is_changed("exe_date") %} field-changed{% endif %}">
+    <div class="inline-field{% if !self.highlight_class("exe_date").is_empty() %} {{ self.highlight_class("exe_date") }}{% endif %}" data-field-flag="has_exe_date"{% if !show_exe_date %} style="display:none"{% endif %}>
         <span class="inline-field-label">EXE Date</span>
         <div class="inline-field-values">
             <input type="text" name="exe_date" value="{{ exe_date }}" placeholder="YYYY-MM-DD">
         </div>
     </div>
-    {% endif %}
 
-    {% if show_edc %}
-    <div class="inline-field{% if self.is_changed("edc") %} field-changed{% endif %}">
+    <div class="inline-field{% if !self.highlight_class("edc").is_empty() %} {{ self.highlight_class("edc") }}{% endif %}" data-field-flag="has_edc"{% if !show_edc %} style="display:none"{% endif %}>
         <span class="inline-field-label">EDC</span>
         <div class="inline-field-values inline-radios">
             <label><input type="radio" name="edc" value="false" {% if edc_value == "false" || edc_value.is_empty() %}checked{% endif %}> No</label>
             <label><input type="radio" name="edc" value="true" {% if edc_value == "true" %}checked{% endif %}> Yes</label>
         </div>
     </div>
-    {% endif %}
 
-    <div class="inline-field{% if self.is_changed("layerbreaks") %} field-changed{% endif %}" id="layerbreak-row" style="display:none">
+    <div class="inline-field{% if !self.highlight_class("layerbreaks").is_empty() %} {{ self.highlight_class("layerbreaks") }}{% endif %}" id="layerbreak-row" style="display:none">
         <span class="inline-field-label">Layerbreaks</span>
         <div id="layerbreak-list" class="inline-field-values"></div>
     </div>
 
-    {% if show_protection %}
-    <div class="inline-field{% if self.is_changed("keys") %} field-changed{% endif %}">
+    <div class="inline-field{% if !self.highlight_class("keys").is_empty() %} {{ self.highlight_class("keys") }}{% endif %}" data-field-flag="has_keys"{% if !show_keys %} style="display:none"{% endif %}>
         <span class="inline-field-label">Disc Key / ID</span>
         <div class="inline-field-values">
             <input type="text" name="protection_key_disc_key" value="{{ protection_key_disc_key }}">
             <input type="text" name="protection_key_disc_id" value="{{ protection_key_disc_id }}">
         </div>
     </div>
-    {% endif %}
 
-    <fieldset{% if self.is_changed("ring_codes") %} class="field-changed"{% endif %}>
+    <fieldset{% if !self.highlight_class("ring_codes").is_empty() %} class="{{ self.highlight_class("ring_codes") }}"{% endif %}>
         <legend>Ring Codes</legend>
         <div class="table-scroll table-scroll-compact">
         <table class="disc-table ring-table ring-edit-table" id="ring-editor">
@@ -253,72 +241,62 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
         <input type="hidden" name="ring_codes_json" id="ring-codes-json">
     </fieldset>
 
-    <label{% if self.is_changed("comments") %} class="field-changed"{% endif %}>Comments
-        <textarea name="comments" rows="2" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
+    <label{% if !self.highlight_class("comments").is_empty() %} class="{{ self.highlight_class("comments") }}"{% endif %}>Comments
+        <textarea name="comments" rows="5" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
     </label>
 
-    <label{% if self.is_changed("contents") %} class="field-changed"{% endif %}>Contents
-        <textarea name="contents" rows="2" class="hex-dump-input auto-expand fixed-80">{{ contents }}</textarea>
+    <label{% if !self.highlight_class("contents").is_empty() %} class="{{ self.highlight_class("contents") }}"{% endif %}>Contents
+        <textarea name="contents" rows="5" class="hex-dump-input auto-expand fixed-80">{{ contents }}</textarea>
     </label>
 
-    {% if show_protection %}
-    <label{% if self.is_changed("protection") %} class="field-changed"{% endif %}>Protection
-        <textarea name="protection" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection }}</textarea>
-    </label>
-    {% endif %}
-
-    {% if show_sector_ranges %}
-    <label{% if self.is_changed("sector_ranges") %} class="field-changed"{% endif %}>Sector Ranges
-        <textarea name="sector_ranges" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sector_ranges_text }}</textarea>
-    </label>
-    {% endif %}
-
-    {% if show_sbi %}
-    <label{% if self.is_changed("sbi") %} class="field-changed"{% endif %}>SBI
-        <textarea name="sbi" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sbi }}</textarea>
-    </label>
-    {% endif %}
-
-    {% if show_pvd %}
-    <label{% if self.is_changed("pvd") %} class="field-changed"{% endif %}>PVD
-        <textarea name="pvd" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pvd_hex }}</textarea>
-    </label>
-    {% endif %}
-
-    {% if show_header %}
-    <label{% if self.is_changed("header") %} class="field-changed"{% endif %}>Header
-        <textarea name="header" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ header_hex }}</textarea>
-    </label>
-    {% endif %}
-
-    {% if show_bca %}
-    <label{% if self.is_changed("bca") %} class="field-changed"{% endif %}>BCA
-        <textarea name="bca" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ bca_hex }}</textarea>
-    </label>
-    {% endif %}
-
-    {% if show_pic %}
-    <label{% if self.is_changed("pic") %} class="field-changed"{% endif %}>PIC
-        <textarea name="pic" rows="2" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>
-    </label>
-    {% endif %}
-
-
-    <label{% if self.is_changed("cue") %} class="field-changed"{% endif %}>Cuesheet
-        <textarea name="cue" rows="2" spellcheck="false" class="hex-dump-input auto-expand fixed-80">{{ cue }}</textarea>
+    <label data-field-flag="has_protection"{% if !show_protection %} style="display:none"{% endif %}{% if !self.highlight_class("protection").is_empty() %} class="{{ self.highlight_class("protection") }}"{% endif %}>Protection
+        <textarea name="protection" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection }}</textarea>
     </label>
 
-    <label{% if self.is_changed("files_xml") %} class="field-changed"{% endif %}>Dat
-        <textarea name="files_xml" rows="2" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ files_xml }}</textarea>
+    <label data-field-flag="has_sector_ranges"{% if !show_sector_ranges %} style="display:none"{% endif %}{% if !self.highlight_class("sector_ranges").is_empty() %} class="{{ self.highlight_class("sector_ranges") }}"{% endif %}>Sector Ranges
+        <textarea name="sector_ranges" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sector_ranges_text }}</textarea>
     </label>
 
-    {% if !is_add_mode %}
+    <label data-field-flag="has_sbi"{% if !show_sbi %} style="display:none"{% endif %}{% if !self.highlight_class("sbi").is_empty() %} class="{{ self.highlight_class("sbi") }}"{% endif %}>SBI
+        <textarea name="sbi" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sbi }}</textarea>
+    </label>
+
+    <label data-field-flag="has_pvd"{% if !show_pvd %} style="display:none"{% endif %}{% if !self.highlight_class("pvd").is_empty() %} class="{{ self.highlight_class("pvd") }}"{% endif %}>PVD
+        <textarea name="pvd" rows="6" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pvd_hex }}</textarea>
+    </label>
+
+    <label data-field-flag="has_header"{% if !show_header %} style="display:none"{% endif %}{% if !self.highlight_class("header").is_empty() %} class="{{ self.highlight_class("header") }}"{% endif %}>Header
+        <textarea name="header" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ header_hex }}</textarea>
+    </label>
+
+    <label data-field-flag="has_bca"{% if !show_bca %} style="display:none"{% endif %}{% if !self.highlight_class("bca").is_empty() %} class="{{ self.highlight_class("bca") }}"{% endif %}>BCA
+        <textarea name="bca" rows="4" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ bca_hex }}</textarea>
+    </label>
+
+    <label data-media-flag="has_pic"{% if !show_pic %} style="display:none"{% endif %}{% if !self.highlight_class("pic").is_empty() %} class="{{ self.highlight_class("pic") }}"{% endif %}>PIC
+        <textarea name="pic" rows="9" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>
+    </label>
+
+    <label id="cue-field"{% if !self.highlight_class("cue").is_empty() %} class="{{ self.highlight_class("cue") }}"{% endif %}>Cuesheet
+        <textarea name="cue" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80">{{ cue }}</textarea>
+    </label>
+
+    <label{% if !self.highlight_class("files_xml").is_empty() %} class="{{ self.highlight_class("files_xml") }}"{% endif %}>Dat
+        <textarea name="files_xml" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ files_xml }}</textarea>
+    </label>
+
+    {% if is_add_mode %}
+    <input type="hidden" name="enabled" value="true">
+    <input type="hidden" name="questionable" value="false">
+    {% else %}
     <div class="grid">
-        <label>
+        <label{% if !self.highlight_class("enabled").is_empty() %} class="{{ self.highlight_class("enabled") }}"{% endif %}>
+            <input type="hidden" name="enabled" value="false">
             <input type="checkbox" name="enabled" value="true" {% if enabled %}checked{% endif %}>
             Enabled
         </label>
-        <label>
+        <label{% if !self.highlight_class("questionable").is_empty() %} class="{{ self.highlight_class("questionable") }}"{% endif %}>
+            <input type="hidden" name="questionable" value="false">
             <input type="checkbox" name="questionable" value="true" {% if questionable %}checked{% endif %}>
             Questionable
         </label>
@@ -327,7 +305,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
 
     {% if is_add_mode %}
     <label>Dump Log
-        <textarea name="dump_log" rows="4" class="hex-dump-input auto-expand fixed-80" required>{{ dump_log }}</textarea>
+        <textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80"{% if dump_log_required %} required{% endif %}>{{ dump_log }}</textarea>
     </label>
 
     <label>Extra Upload URL
@@ -335,9 +313,9 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </label>
     {% endif %}
 
-    {% if is_review_mode %}
+{% if is_review_mode %}
     <label>Review Comment
-        <textarea name="review_comment" rows="2" placeholder="Optional comment about this review"></textarea>
+        <textarea name="review_comment" rows="2" class="auto-expand" placeholder="Optional comment about this review"></textarea>
     </label>
     <div class="review-actions">
         <button type="submit" name="action" value="approve" class="btn-approve">Approve</button>
@@ -345,10 +323,10 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
     </div>
     {% else %}
     <label>Submission Comment
-        <textarea name="submission_comment" rows="2" placeholder="Optional comment about this {% if is_add_mode %}submission{% else %}edit{% endif %}"></textarea>
+        <textarea name="submission_comment" rows="2" class="auto-expand" placeholder="Optional comment about this submission"></textarea>
     </label>
 
-    <button type="submit">Submit</button>
+    <button type="submit">{{ submit_button_text }}</button>
     {% endif %}
 </form>
 {% endblock %}

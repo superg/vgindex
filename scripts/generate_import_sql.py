@@ -1476,7 +1476,7 @@ def process_all(data_dir, output_path, max_disc_id=None):
         print(f"[sql]   Dumpers: {len(dumper_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_submissions",
-            "(submission_type, submitter_id, target_disc_id, changes, status, "
+            "(submission_type, submitter_id, target_disc_id, data, status, "
             "reviewer_id, review_comment, created_at, reviewed_at)",
             submission_inserts)
         print(f"[sql]   Submissions: {len(submission_inserts)} rows", file=sys.stderr)
@@ -1498,12 +1498,12 @@ def _write_synthetic_prereqs(out):
     """Emit SQL for the synthetic system and media type used by disc 1."""
     out.write("-- Synthetic media type and system for max-complexity disc\n")
     out.write(
-        f"INSERT INTO media_types (code, name, layer_count, rom_extension)\n"
+        f"INSERT INTO media_types (code, name, layer_count, pic, rom_extension)\n"
         f"VALUES ({sql_str(SYNTHETIC_MEDIA_CODE)}, {sql_str(SYNTHETIC_MEDIA_NAME)}, "
-        f"{SYNTHETIC_MEDIA_LAYERS}, {sql_str('bin')})\n"
+        f"{SYNTHETIC_MEDIA_LAYERS}, TRUE, {sql_str('bin')})\n"
         f"ON CONFLICT (code) DO UPDATE SET\n"
         f"    name = EXCLUDED.name, layer_count = EXCLUDED.layer_count, "
-        f"rom_extension = EXCLUDED.rom_extension;\n\n"
+        f"pic = EXCLUDED.pic, rom_extension = EXCLUDED.rom_extension;\n\n"
     )
     out.write(
         f"INSERT INTO systems\n"
@@ -1511,7 +1511,7 @@ def _write_synthetic_prereqs(out):
         f"     has_title_foreign, has_disc_title, has_disc_number,\n"
         f"     has_serial, has_version, has_edition, has_barcode,\n"
         f"     has_error_count, has_exe_date, has_edc,\n"
-        f"     has_pvd, has_pic, has_bca, has_header,\n"
+        f"     has_pvd, has_bca, has_header, has_keys,\n"
         f"     has_protection, has_sector_ranges, has_sbi,\n"
         f"     has_sample_start, has_offset_extra)\n"
         f"VALUES\n"
@@ -1528,7 +1528,7 @@ def _write_synthetic_prereqs(out):
         f"    has_title_foreign = TRUE, has_disc_title = TRUE, has_disc_number = TRUE,\n"
         f"    has_serial = TRUE, has_version = TRUE, has_edition = TRUE, has_barcode = TRUE,\n"
         f"    has_error_count = TRUE, has_exe_date = TRUE, has_edc = TRUE,\n"
-        f"    has_pvd = TRUE, has_pic = TRUE, has_bca = TRUE, has_header = TRUE,\n"
+        f"    has_pvd = TRUE, has_bca = TRUE, has_header = TRUE, has_keys = TRUE,\n"
         f"    has_protection = TRUE, has_sector_ranges = TRUE, has_sbi = TRUE,\n"
         f"    has_sample_start = TRUE, has_offset_extra = TRUE;\n\n"
     )

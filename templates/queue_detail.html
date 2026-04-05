@@ -3,72 +3,53 @@
 {% block title %}Submission #{{ submission_id }}{% endblock %}
 
 {% block content %}
-<h2>Submission #{{ submission_id }}</h2>
-
 <div class="submission-info">
-    <dl>
-        <dt>Submission Type</dt>
-        <dd>{{ submission_type_display }}</dd>
-        <dt>Submitter</dt>
-        <dd>{{ submitter_name }}</dd>
-        {% if !submitter_comment.is_empty() %}
-        <dt>Submitter Comment</dt>
-        <dd>{{ submitter_comment }}</dd>
-        {% endif %}
-        {% if !dump_log_display.is_empty() %}
-        <dt>Dump Log</dt>
-        <dd><pre>{{ dump_log_display }}</pre></dd>
+    <table class="table-compact table-fit-section">
+        <tr><td><strong>Submission Type</strong></td><td>{{ submission_type_display }}</td></tr>
+        <tr><td><strong>Submitter</strong></td><td><a href="/discs/?dumper={{ submitter_id }}">{{ submitter_name }}</a></td></tr>
+        {% if target_disc_id > 0 %}
+        <tr><td><strong>Disc ID</strong></td><td><a href="/disc/{{ target_disc_id }}/">{{ target_disc_id }}</a></td></tr>
         {% endif %}
         {% if !extra_upload_url_display.is_empty() %}
-        <dt>Extra Upload URL</dt>
-        <dd><a href="{{ extra_upload_url_display }}" target="_blank">{{ extra_upload_url_display }}</a></dd>
+        <tr><td><strong>Extra Upload URL</strong></td><td><a href="{{ extra_upload_url_display }}" target="_blank">{{ extra_upload_url_display }}</a></td></tr>
         {% endif %}
-        <dt>Status</dt>
-        <dd>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</dd>
+        <tr><td><strong>Status</strong></td><td>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</td></tr>
         {% if !reviewer_name.is_empty() %}
-        <dt>Reviewer</dt>
-        <dd>{{ reviewer_name }}</dd>
+        <tr><td><strong>Reviewer</strong></td><td><a href="/discs/?dumper={{ reviewer_id }}">{{ reviewer_name }}</a></td></tr>
         {% endif %}
-        {% if !review_comment_display.is_empty() %}
-        <dt>Review Comment</dt>
-        <dd>{{ review_comment_display }}</dd>
-        {% endif %}
-        <dt>Created</dt>
-        <dd>{{ created_at_display }}</dd>
+        <tr><td><strong>Created</strong></td><td>{{ created_at_display }}</td></tr>
         {% if !reviewed_at_display.is_empty() %}
-        <dt>Reviewed</dt>
-        <dd>{{ reviewed_at_display }}</dd>
+        <tr><td><strong>Reviewed</strong></td><td>{{ reviewed_at_display }}</td></tr>
         {% endif %}
-    </dl>
+    </table>
+
+    {% if !changes_json.is_empty() %}
+    <details>
+        <summary>Raw JSON</summary>
+        <pre class="raw-json"><code>{{ changes_json }}</code></pre>
+    </details>
+    {% endif %}
 </div>
 
-{% if !changes_summary.is_empty() %}
-<h3>Changes</h3>
-<table class="disc-table striped">
-    <thead>
-        <tr>
-            <th>Field</th>
-            {% if is_diff_format %}
-            <th>Old Value</th>
-            {% endif %}
-            <th>{% if is_diff_format %}New Value{% else %}Value{% endif %}</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for entry in changes_summary %}
-        <tr>
-            <td><strong>{{ entry.field }}</strong></td>
-            {% if is_diff_format %}
-            <td class="change-old">{{ entry.old_value }}</td>
-            {% endif %}
-            <td class="change-new">{{ entry.new_value }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% if !dump_log_display.is_empty() %}
+<section>
+    <h3>Dump Log</h3>
+    <p class="pre-wrap section-text">{{ dump_log_display }}</p>
+</section>
 {% endif %}
 
-{% if target_disc_id > 0 %}
-<p><a href="/disc/{{ target_disc_id }}/">View Disc #{{ target_disc_id }}</a></p>
+{% if !submission_comment.is_empty() %}
+<section>
+    <h3>Submission Comment</h3>
+    <p class="pre-wrap section-text">{{ submission_comment }}</p>
+</section>
 {% endif %}
+
+{% if !review_comment_display.is_empty() %}
+<section>
+    <h3>Review Comment</h3>
+    <p class="pre-wrap section-text">{{ review_comment_display }}</p>
+</section>
+{% endif %}
+
 {% endblock %}

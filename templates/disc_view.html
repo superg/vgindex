@@ -5,7 +5,7 @@
 {% block content %}
 <div class="disc-view">
 {% if can_edit %}
-<p><a href="/disc/{{ disc_id }}/edit/" role="button" class="outline">Edit Disc</a></p>
+<a href="/disc/{{ disc_id }}/edit/" role="button">Edit</a>
 {% endif %}
 <h2>{{ title }}</h2>
 {% if !title_foreign.is_empty() %}
@@ -57,10 +57,10 @@
             {% if !layerbreaks.is_empty() %}
             <tr><td><strong>Layerbreak</strong></td><td>{{ layerbreaks }}</td></tr>
             {% endif %}
-            {% if !disc_key.is_empty() %}
+            {% if show_keys && !disc_key.is_empty() %}
             <tr><td><strong>Disc Key</strong></td><td>{{ disc_key }}</td></tr>
             {% endif %}
-            {% if !disc_id_hex.is_empty() %}
+            {% if show_keys && !disc_id_hex.is_empty() %}
             <tr><td><strong>Disc ID</strong></td><td>{{ disc_id_hex }}</td></tr>
             {% endif %}
         </table>
@@ -307,5 +307,6 @@
     </table>
     </div>
 </section>
+
 </div>
 {% endblock %}

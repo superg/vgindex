@@ -3,7 +3,7 @@ use sqlx::PgPool;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 
-fn parse_hex_dump(text: &str) -> Vec<u8> {
+pub(crate) fn parse_hex_dump(text: &str) -> Vec<u8> {
     let mut result = Vec::new();
     for line in text.lines() {
         let line = line.trim();
@@ -74,7 +74,7 @@ pub async fn get_system(pool: &PgPool, code: &str) -> AppResult<System> {
 
 async fn enrich_media_type(pool: &PgPool, disc: &mut Disc) -> AppResult<()> {
     let row: MediaTypeRow = sqlx::query_as(
-        "SELECT code, name, layer_count, rom_extension FROM media_types WHERE code = $1",
+        "SELECT code, name, layer_count, pic, rom_extension FROM media_types WHERE code = $1",
     )
     .bind(disc.media_type.code())
     .fetch_one(pool)

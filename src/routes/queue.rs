@@ -11,15 +11,16 @@ use serde::Deserialize;
 use crate::auth::middleware::{RequireAuth, RequireModerator};
 use crate::config::SiteConfig;
 use crate::db::models::*;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::services::{disc_service, queue_service};
 use crate::AppState;
 
 use super::disc_edit::{
     self, build_category_options, build_check_options, build_flat_changes,
-    build_lang_check_options, build_media_layers_json, build_media_options, build_system_options,
-    build_systems_json, fetch_ref_data, max_layers_for_media, validate_form, DiscEditForm,
-    DiscEditTemplate,
+    build_lang_check_options, build_media_has_pic_json, build_media_layers_json,
+    build_media_options, build_media_rom_extensions_json, build_system_options,
+    build_systems_json, fetch_ref_data, max_layers_for_media, validate_form,
+    DiscEditForm, DiscEditTemplate,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -221,6 +222,11 @@ async fn submission_detail(
 ) -> AppResult<Html<String>> {
     let sub = queue_service::get_submission(&state.pool, id).await?;
 
+    let is_mod = user.role.can_moderate();
+    if !is_mod && sub.submitter_id != user.id {
+        return Err(AppError::Forbidden);
+    }
+
     let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
         .bind(sub.submitter_id)
         .fetch_one(&state.pool)
@@ -237,7 +243,6 @@ async fn submission_detail(
         String::new()
     };
 
-    let is_mod = user.role.can_moderate();
     let is_pending = sub.status == SubmissionStatus::Pending;
     let show_review_form = is_mod && is_pending;
 
@@ -249,75 +254,40 @@ async fn submission_detail(
     }
 
     let ref_data = fetch_ref_data(&state.pool).await?;
-    let (systems_media_json, systems_has_offset_extra_json) =
+    let (systems_media_json, systems_has_flags_json) =
         build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
+    let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+    let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
 
-    let changed_fields: Vec<String> = sub
-        .changes
-        .as_object()
-        .map(|obj| obj.keys().cloned().collect())
-        .unwrap_or_default();
+    let snapshot = sub.data.clone();
 
-    let is_diff_format = sub.target_disc_id.is_some()
-        || sub
-            .changes
-            .as_object()
-            .and_then(|o| o.values().next())
-            .and_then(|v| v.get("new"))
-            .is_some();
+    let system_code = snapshot["system_code"].as_str().unwrap_or("").to_string();
+    let media_type_code = snapshot["media_type"].as_str().unwrap_or("cd").to_string();
+    let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
+
+    let system = if !system_code.is_empty() {
+        disc_service::get_system(&state.pool, &system_code).await.ok()
+    } else {
+        None
+    };
+    let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
+
+    let mut template = build_review_template(
+        &user.username, &sub, &submitter_name, &reviewer_name,
+        &snapshot, &ref_data, &systems_media_json, &systems_has_flags_json,
+        &media_layers_json, &media_rom_extensions_json, &media_has_pic_json,
+        &system_code, &media_type_code, max_layers, has_sys,
+    );
 
     if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
-
-        let mut snapshot = disc_service::build_snapshot_from_disc(&detail);
-        if is_diff_format {
-            if let Some(diff_obj) = sub.changes.as_object() {
-                if let Some(snap_obj) = snapshot.as_object_mut() {
-                    for (field, change) in diff_obj {
-                        if let Some(new_val) = change.get("new") {
-                            snap_obj.insert(field.clone(), new_val.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        let system_code = snapshot["system_code"].as_str().unwrap_or(&detail.disc.system_code).to_string();
-        let media_type_code = snapshot["media_type"].as_str().unwrap_or(detail.disc.media_type.code()).to_string();
-        let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
-
-        let system = disc_service::get_system(&state.pool, &system_code).await.ok();
-        let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
-
-        let template = build_review_template(
-            &user.username, &sub, &submitter_name, &reviewer_name, &changed_fields,
-            &snapshot, &ref_data, &systems_media_json, &systems_has_offset_extra_json,
-            &media_layers_json, &system_code, &media_type_code, max_layers, has_sys,
-        );
-
-        Ok(Html(template.render().unwrap()))
-    } else {
-        let snapshot = &sub.changes;
-        let system_code = snapshot["system_code"].as_str().unwrap_or("").to_string();
-        let media_type_code = snapshot["media_type"].as_str().unwrap_or("cd").to_string();
-        let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
-
-        let system = if !system_code.is_empty() {
-            disc_service::get_system(&state.pool, &system_code).await.ok()
-        } else {
-            None
-        };
-        let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
-
-        let template = build_review_template(
-            &user.username, &sub, &submitter_name, &reviewer_name, &changed_fields,
-            snapshot, &ref_data, &systems_media_json, &systems_has_offset_extra_json,
-            &media_layers_json, &system_code, &media_type_code, max_layers, has_sys,
-        );
-
-        Ok(Html(template.render().unwrap()))
+        let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
+        let highlights = compute_field_highlights(&snapshot, &db_snapshot);
+        apply_highlights(&mut template, highlights);
     }
+
+    Ok(Html(template.render().unwrap()))
 }
 
 fn build_review_template(
@@ -325,12 +295,13 @@ fn build_review_template(
     sub: &DiscSubmission,
     submitter_name: &str,
     reviewer_name: &str,
-    changed_fields: &[String],
     snapshot: &serde_json::Value,
     ref_data: &disc_edit::EditRefData,
     systems_media_json: &str,
-    systems_has_offset_extra_json: &str,
+    systems_has_flags_json: &str,
     media_layers_json: &str,
+    media_rom_extensions_json: &str,
+    media_has_pic_json: &str,
     system_code: &str,
     media_type_code: &str,
     max_layers: u32,
@@ -428,7 +399,8 @@ fn build_review_template(
         max_layers,
         media_layers_json: media_layers_json.to_string(),
         systems_media_json: systems_media_json.to_string(),
-        systems_has_offset_extra_json: systems_has_offset_extra_json.to_string(),
+        systems_has_flags_json: systems_has_flags_json.to_string(),
+        media_rom_extensions_json: media_rom_extensions_json.to_string(),
 
         title: json_str("title"),
         show_title_foreign: has_sys(|s| s.has_title_foreign),
@@ -440,15 +412,22 @@ fn build_review_template(
         filename_suffix: json_opt_str("filename_suffix"),
 
         show_serial: has_sys(|s| s.has_serial),
-        serials: json_str_vec("serial"),
+        serials: json_str_vec("serial").into_iter()
+            .map(|s| disc_edit::HighlightedValue { value: s, highlight: String::new() })
+            .collect(),
         show_version: has_sys(|s| s.has_version),
         version: json_opt_str("version"),
         show_edition: has_sys(|s| s.has_edition),
-        editions: json_str_vec("edition"),
+        editions: json_str_vec("edition").into_iter()
+            .map(|s| disc_edit::HighlightedValue { value: s, highlight: String::new() })
+            .collect(),
         show_barcode: has_sys(|s| s.has_barcode),
-        barcodes: json_str_vec("barcode"),
+        barcodes: json_str_vec("barcode").into_iter()
+            .map(|s| disc_edit::HighlightedValue { value: s, highlight: String::new() })
+            .collect(),
 
         ring_codes_json,
+        ring_highlights_json: "[]".to_string(),
 
         comments: json_opt_str("comments"),
         contents: json_opt_str("contents"),
@@ -463,13 +442,17 @@ fn build_review_template(
         layerbreaks,
         show_pvd: has_sys(|s| s.has_pvd),
         pvd_hex: json_opt_str("pvd"),
-        show_pic: has_sys(|s| s.has_pic),
+        show_pic: ref_data.all_media_types.iter()
+            .find(|m| m.code == media_type_code)
+            .map_or(false, |m| m.pic),
+        media_has_pic_json: media_has_pic_json.to_string(),
         pic_hex: json_opt_str("pic"),
         show_bca: has_sys(|s| s.has_bca),
         bca_hex: json_opt_str("bca"),
         show_header: has_sys(|s| s.has_header),
         header_hex: json_opt_str("header"),
 
+        show_keys: has_sys(|s| s.has_keys),
         show_protection: has_sys(|s| s.has_protection),
         protection: json_opt_str("protection"),
         show_sector_ranges: has_sys(|s| s.has_sector_ranges),
@@ -488,19 +471,23 @@ fn build_review_template(
 
         is_add_mode: false,
         dump_log: String::new(),
+        dump_log_required: false,
         extra_upload_url: String::new(),
 
+        submit_button_text: String::new(),
         validation_errors: vec![],
 
         is_review_mode: true,
-        changed_fields: changed_fields.to_vec(),
+        changed_fields: vec![],
         submission_id: sub.id,
         submission_type_display: sub.submission_type.to_string(),
+        submitter_id: sub.submitter_id,
         submitter_name: submitter_name.to_string(),
-        submitter_comment: sub.submitter_comment.clone().unwrap_or_default(),
+        submission_comment: sub.submission_comment.clone().unwrap_or_default(),
         dump_log_display: sub.dump_log.clone().unwrap_or_default(),
         extra_upload_url_display: sub.extra_upload_url.clone().unwrap_or_default(),
         submission_status: sub.status.to_string(),
+        reviewer_id: sub.reviewer_id.unwrap_or(0),
         reviewer_name: reviewer_name.to_string(),
         review_comment_display: sub.review_comment.clone().unwrap_or_default(),
         created_at_display: sub.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
@@ -508,6 +495,7 @@ fn build_review_template(
             .reviewed_at
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
+        changes_json: serde_json::to_string_pretty(&sub.data).unwrap_or_default(),
     }
 }
 
@@ -519,73 +507,21 @@ struct QueueDetailTemplate {
     current_user: Option<String>,
     submission_id: i32,
     submission_type_display: String,
+    submitter_id: i32,
     submitter_name: String,
-    submitter_comment: String,
+    submission_comment: String,
     dump_log_display: String,
     extra_upload_url_display: String,
     submission_status: String,
+    reviewer_id: i32,
     reviewer_name: String,
     review_comment_display: String,
     created_at_display: String,
     reviewed_at_display: String,
     target_disc_id: i32,
-    changes_summary: Vec<ChangeSummaryRow>,
-    is_diff_format: bool,
+    changes_json: String,
 }
 impl SiteConfig for QueueDetailTemplate {}
-
-struct ChangeSummaryRow {
-    field: String,
-    old_value: String,
-    new_value: String,
-}
-
-fn format_json_value(val: &serde_json::Value) -> String {
-    match val {
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Bool(b) => b.to_string(),
-        serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::Null => String::new(),
-        serde_json::Value::Array(arr) => {
-            arr.iter()
-                .filter_map(|v| match v {
-                    serde_json::Value::String(s) => Some(s.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join(", ")
-        }
-        other => serde_json::to_string(other).unwrap_or_default(),
-    }
-}
-
-fn build_changes_summary(changes: &serde_json::Value, is_diff: bool) -> Vec<ChangeSummaryRow> {
-    let obj = match changes.as_object() {
-        Some(o) => o,
-        None => return vec![],
-    };
-
-    let mut rows: Vec<ChangeSummaryRow> = obj
-        .iter()
-        .map(|(field, val)| {
-            if is_diff {
-                ChangeSummaryRow {
-                    field: field.clone(),
-                    old_value: format_json_value(&val["old"]),
-                    new_value: format_json_value(&val["new"]),
-                }
-            } else {
-                ChangeSummaryRow {
-                    field: field.clone(),
-                    old_value: String::new(),
-                    new_value: format_json_value(val),
-                }
-            }
-        })
-        .collect();
-    rows.sort_by(|a, b| a.field.cmp(&b.field));
-    rows
-}
 
 async fn render_readonly_detail(
     username: &str,
@@ -593,24 +529,17 @@ async fn render_readonly_detail(
     submitter_name: &str,
     reviewer_name: &str,
 ) -> AppResult<Html<String>> {
-    let is_diff = sub
-        .changes
-        .as_object()
-        .and_then(|o| o.values().next())
-        .and_then(|v| v.get("new"))
-        .is_some();
-
-    let changes_summary = build_changes_summary(&sub.changes, is_diff);
-
     let template = QueueDetailTemplate {
         current_user: Some(username.to_string()),
         submission_id: sub.id,
         submission_type_display: sub.submission_type.to_string(),
+        submitter_id: sub.submitter_id,
         submitter_name: submitter_name.to_string(),
-        submitter_comment: sub.submitter_comment.clone().unwrap_or_default(),
+        submission_comment: sub.submission_comment.clone().unwrap_or_default(),
         dump_log_display: sub.dump_log.clone().unwrap_or_default(),
         extra_upload_url_display: sub.extra_upload_url.clone().unwrap_or_default(),
         submission_status: sub.status.to_string(),
+        reviewer_id: sub.reviewer_id.unwrap_or(0),
         reviewer_name: reviewer_name.to_string(),
         review_comment_display: sub.review_comment.clone().unwrap_or_default(),
         created_at_display: sub.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
@@ -619,11 +548,248 @@ async fn render_readonly_detail(
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
         target_disc_id: sub.target_disc_id.unwrap_or(0),
-        changes_summary,
-        is_diff_format: is_diff,
+        changes_json: serde_json::to_string_pretty(&sub.data).unwrap_or_default(),
     };
 
     Ok(Html(template.render().unwrap()))
+}
+
+// ── Diff highlighting ──────────────────────────────────────────────────
+
+struct FieldHighlights {
+    changed_fields: Vec<String>,
+    region_highlights: std::collections::HashMap<String, String>,
+    language_highlights: std::collections::HashMap<String, String>,
+    serial_highlights: std::collections::HashMap<String, String>,
+    edition_highlights: std::collections::HashMap<String, String>,
+    barcode_highlights: std::collections::HashMap<String, String>,
+    ring_highlights_json: String,
+}
+
+fn compute_field_highlights(
+    changes: &serde_json::Value,
+    db_snapshot: &serde_json::Value,
+) -> FieldHighlights {
+    let mut changed_fields = Vec::new();
+
+    let simple_fields = [
+        "system_code", "media_type", "category", "title", "title_foreign",
+        "disc_number", "disc_title", "filename_suffix", "version",
+        "error_count", "exe_date", "edc", "comments", "contents",
+        "protection", "sector_ranges", "sbi", "pvd", "header", "bca",
+        "pic", "cue", "files_xml", "enabled", "questionable",
+    ];
+
+    let is_empty_val = |v: &serde_json::Value| -> bool {
+        match v {
+            serde_json::Value::Null => true,
+            serde_json::Value::String(s) => s.trim().is_empty(),
+            serde_json::Value::Bool(_) => false,
+            serde_json::Value::Number(_) => false,
+            serde_json::Value::Array(a) => a.is_empty(),
+            serde_json::Value::Object(o) => o.is_empty(),
+        }
+    };
+
+    let vals_equal = |a: &serde_json::Value, b: &serde_json::Value| -> bool {
+        if a == b {
+            return true;
+        }
+        match (a, b) {
+            (serde_json::Value::String(sa), serde_json::Value::String(sb)) => {
+                sa.trim().replace("\r\n", "\n") == sb.trim().replace("\r\n", "\n")
+            }
+            _ => false,
+        }
+    };
+
+    for field in &simple_fields {
+        let db_val = &db_snapshot[*field];
+        let ch_val = &changes[*field];
+        let db_empty = is_empty_val(db_val);
+        let ch_empty = is_empty_val(ch_val);
+
+        if db_empty && ch_empty {
+            continue;
+        } else if db_empty && !ch_empty {
+            changed_fields.push(format!("{}:added", field));
+        } else if !db_empty && ch_empty {
+            changed_fields.push(format!("{}:removed", field));
+        } else if !vals_equal(db_val, ch_val) {
+            changed_fields.push(format!("{}:changed", field));
+        }
+    }
+
+    let layerbreaks_field = "layerbreaks";
+    let db_lb = &db_snapshot[layerbreaks_field];
+    let ch_lb = &changes[layerbreaks_field];
+    if db_lb != ch_lb {
+        let db_lb_empty = db_lb.as_array().map_or(true, |a| a.is_empty());
+        let ch_lb_empty = ch_lb.as_array().map_or(true, |a| a.is_empty());
+        if db_lb_empty && !ch_lb_empty {
+            changed_fields.push(format!("{}:added", layerbreaks_field));
+        } else if !db_lb_empty && ch_lb_empty {
+            changed_fields.push(format!("{}:removed", layerbreaks_field));
+        } else {
+            changed_fields.push(format!("{}:changed", layerbreaks_field));
+        }
+    }
+
+    let keys_field = "keys";
+    let db_keys = &db_snapshot[keys_field];
+    let ch_keys = &changes[keys_field];
+    if db_keys != ch_keys {
+        let db_keys_empty = db_keys.as_array().map_or(true, |a| a.iter().all(|v| is_empty_val(v)));
+        let ch_keys_empty = ch_keys.as_array().map_or(true, |a| a.iter().all(|v| is_empty_val(v)));
+        if db_keys_empty && !ch_keys_empty {
+            changed_fields.push(format!("{}:added", keys_field));
+        } else if !db_keys_empty && ch_keys_empty {
+            changed_fields.push(format!("{}:removed", keys_field));
+        } else {
+            changed_fields.push(format!("{}:changed", keys_field));
+        }
+    }
+
+    let str_set = |v: &serde_json::Value| -> std::collections::HashSet<String> {
+        v.as_array()
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default()
+    };
+
+    let mut region_highlights = std::collections::HashMap::new();
+    let db_regions = str_set(&db_snapshot["regions"]);
+    let ch_regions = str_set(&changes["regions"]);
+    for code in &ch_regions {
+        if !db_regions.contains(code) {
+            region_highlights.insert(code.clone(), "added".to_string());
+        }
+    }
+    for code in &db_regions {
+        if !ch_regions.contains(code) {
+            region_highlights.insert(code.clone(), "removed".to_string());
+        }
+    }
+    let mut language_highlights = std::collections::HashMap::new();
+    let db_langs = str_set(&db_snapshot["languages"]);
+    let ch_langs = str_set(&changes["languages"]);
+    for code in &ch_langs {
+        if !db_langs.contains(code) {
+            language_highlights.insert(code.clone(), "added".to_string());
+        }
+    }
+    for code in &db_langs {
+        if !ch_langs.contains(code) {
+            language_highlights.insert(code.clone(), "removed".to_string());
+        }
+    }
+    if !region_highlights.is_empty() {
+        changed_fields.push("regions:changed".to_string());
+    }
+    if !language_highlights.is_empty() {
+        changed_fields.push("languages:changed".to_string());
+    }
+
+    let mut serial_highlights = std::collections::HashMap::new();
+    let db_serials = str_set(&db_snapshot["serial"]);
+    let ch_serials = str_set(&changes["serial"]);
+    for s in &ch_serials {
+        if !db_serials.contains(s) {
+            serial_highlights.insert(s.clone(), "added".to_string());
+        }
+    }
+    if !serial_highlights.is_empty() {
+        changed_fields.push("serial:changed".to_string());
+    }
+
+    let mut edition_highlights = std::collections::HashMap::new();
+    let db_editions = str_set(&db_snapshot["edition"]);
+    let ch_editions = str_set(&changes["edition"]);
+    for s in &ch_editions {
+        if !db_editions.contains(s) {
+            edition_highlights.insert(s.clone(), "added".to_string());
+        }
+    }
+    if !edition_highlights.is_empty() {
+        changed_fields.push("edition:changed".to_string());
+    }
+
+    let mut barcode_highlights = std::collections::HashMap::new();
+    let db_barcodes = str_set(&db_snapshot["barcode"]);
+    let ch_barcodes = str_set(&changes["barcode"]);
+    for s in &ch_barcodes {
+        if !db_barcodes.contains(s) {
+            barcode_highlights.insert(s.clone(), "added".to_string());
+        }
+    }
+    if !barcode_highlights.is_empty() {
+        changed_fields.push("barcode:changed".to_string());
+    }
+
+    let mut ring_highlights: Vec<String> = Vec::new();
+    let db_rings = db_snapshot["ring_codes"].as_array();
+    let ch_rings = changes["ring_codes"].as_array();
+    if let Some(ch_arr) = ch_rings {
+        let db_arr = db_rings.cloned().unwrap_or_default();
+        for ch_entry in ch_arr {
+            let matched = db_arr.iter().find(|db_entry| {
+                disc_edit::ring_entry_key_matches(db_entry, ch_entry)
+            });
+            match matched {
+                None => ring_highlights.push("added".to_string()),
+                Some(db_entry) => {
+                    if db_entry != ch_entry {
+                        ring_highlights.push("changed".to_string());
+                    } else {
+                        ring_highlights.push(String::new());
+                    }
+                }
+            }
+        }
+        // Ring codes: only individual entry highlighting via ring_highlights_json,
+        // no fieldset-level highlight.
+    }
+    let ring_highlights_json = serde_json::to_string(&ring_highlights).unwrap_or_else(|_| "[]".to_string());
+
+    FieldHighlights {
+        changed_fields,
+        region_highlights,
+        language_highlights,
+        serial_highlights,
+        edition_highlights,
+        barcode_highlights,
+        ring_highlights_json,
+    }
+}
+
+fn apply_highlights(template: &mut DiscEditTemplate, highlights: FieldHighlights) {
+    template.changed_fields = highlights.changed_fields;
+    template.ring_highlights_json = highlights.ring_highlights_json;
+
+    for opt in &mut template.regions {
+        if let Some(hl) = highlights.region_highlights.get(&opt.value) {
+            opt.highlight = hl.clone();
+        }
+    }
+    for opt in &mut template.languages {
+        if let Some(hl) = highlights.language_highlights.get(&opt.value) {
+            opt.highlight = hl.clone();
+        }
+    }
+    for item in &mut template.serials {
+        if let Some(hl) = highlights.serial_highlights.get(&item.value) {
+            item.highlight = hl.clone();
+        }
+    }
+    for item in &mut template.editions {
+        if let Some(hl) = highlights.edition_highlights.get(&item.value) {
+            item.highlight = hl.clone();
+        }
+    }
+    for item in &mut template.barcodes {
+        if let Some(hl) = highlights.barcode_highlights.get(&item.value) {
+            item.highlight = hl.clone();
+        }
+    }
 }
 
 // ── Review submission (POST /queue/{id}/review/) ───────────────────────
@@ -655,21 +821,18 @@ async fn review_submit(
         .filter(|s| !s.is_empty());
 
     if form.action == "reject" {
-        sqlx::query(
-            "UPDATE disc_submissions SET status = 'Rejected', reviewer_id = $1,
-             review_comment = $2, reviewed_at = NOW()
-             WHERE id = $3",
-        )
-        .bind(user.id)
-        .bind(review_comment)
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+        let rejected = queue_service::reject_submission(
+            &state.pool, id, user.id, review_comment,
+        ).await?;
 
-        return Ok(Redirect::to(&format!("/queue/{id}/")).into_response());
+        if !rejected {
+            return Ok(Redirect::to(&format!("/queue/{id}/")).into_response());
+        }
+        return Ok(Redirect::to("/queue/").into_response());
     }
 
-    let errors = validate_form(&form.disc);
+    let ref_data = fetch_ref_data(&state.pool).await?;
+    let errors = validate_form(&form.disc, &ref_data.all_media_types);
     if !errors.is_empty() {
         let submitter_name: String =
             sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
@@ -678,16 +841,12 @@ async fn review_submit(
                 .await
                 .unwrap_or_else(|_| format!("User #{}", sub.submitter_id));
 
-        let ref_data = fetch_ref_data(&state.pool).await?;
-        let (systems_media_json, systems_has_offset_extra_json) =
+        let (systems_media_json, systems_has_flags_json) =
             build_systems_json(&ref_data.all_systems);
         let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
-        let changed_fields: Vec<String> = sub
-            .changes
-            .as_object()
-            .map(|obj| obj.keys().cloned().collect())
-            .unwrap_or_default();
-        let snapshot = build_flat_changes(&form.disc);
+        let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+        let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+        let snapshot = build_flat_changes(&form.disc, &ref_data.all_media_types);
         let system_code = form.disc.system_code.clone();
         let media_type_code = form.disc.media_type.clone();
         let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
@@ -695,80 +854,31 @@ async fn review_submit(
         let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
 
         let mut template = build_review_template(
-            &user.username, &sub, &submitter_name, "", &changed_fields,
-            &snapshot, &ref_data, &systems_media_json, &systems_has_offset_extra_json,
-            &media_layers_json, &system_code, &media_type_code, max_layers, has_sys,
+            &user.username, &sub, &submitter_name, "",
+            &snapshot, &ref_data, &systems_media_json, &systems_has_flags_json,
+            &media_layers_json, &media_rom_extensions_json, &media_has_pic_json,
+            &system_code, &media_type_code, max_layers, has_sys,
         );
         template.validation_errors = errors;
 
         return Ok(Html(template.render().unwrap()).into_response());
     }
 
-    let form_snapshot = build_flat_changes(&form.disc);
+    let form_snapshot = build_flat_changes(&form.disc, &ref_data.all_media_types);
 
-    match sub.submission_type {
-        SubmissionType::Edit => {
-            if let Some(disc_id) = sub.target_disc_id {
-                disc_service::update_disc(&state.pool, disc_id, &form_snapshot).await?;
-            }
+    let approved = queue_service::approve_submission(
+        &state.pool,
+        &sub,
+        &form_snapshot,
+        user.id,
+        review_comment,
+    )
+    .await?;
 
-            sqlx::query(
-                "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1,
-                 review_comment = $2, reviewed_at = NOW()
-                 WHERE id = $3",
-            )
-            .bind(user.id)
-            .bind(review_comment)
-            .bind(id)
-            .execute(&state.pool)
-            .await?;
-        }
-        SubmissionType::Disc => {
-            if let Some(disc_id) = sub.target_disc_id {
-                disc_service::update_disc(&state.pool, disc_id, &form_snapshot).await?;
-
-                sqlx::query(
-                    "INSERT INTO disc_dumpers (disc_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-                )
-                .bind(disc_id)
-                .bind(sub.submitter_id)
-                .execute(&state.pool)
-                .await?;
-
-                sqlx::query(
-                    "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1,
-                     review_comment = $2, reviewed_at = NOW()
-                     WHERE id = $3",
-                )
-                .bind(user.id)
-                .bind(review_comment)
-                .bind(id)
-                .execute(&state.pool)
-                .await?;
-            } else {
-                let disc_id = disc_service::create_disc_from_submission(
-                    &state.pool,
-                    &form_snapshot,
-                    sub.submitter_id,
-                )
-                .await?;
-
-                sqlx::query(
-                    "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1,
-                     review_comment = $2, reviewed_at = NOW(), target_disc_id = $3
-                     WHERE id = $4",
-                )
-                .bind(user.id)
-                .bind(review_comment)
-                .bind(disc_id)
-                .bind(id)
-                .execute(&state.pool)
-                .await?;
-            }
-        }
+    match approved {
+        Some(_) => Ok(Redirect::to("/queue/").into_response()),
+        None => Ok(Redirect::to(&format!("/queue/{id}/")).into_response()),
     }
-
-    Ok(Redirect::to(&format!("/queue/{id}/")).into_response())
 }
 
 impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
