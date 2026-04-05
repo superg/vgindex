@@ -26,8 +26,8 @@
                 <li class="has-submenu">
                     <span class="submenu-label">Submissions</span>
                     <ul class="submenu">
-                        <li><a href="/queue/">Queue</a></li>
                         <li><a href="/disc/submit/">Add Disc</a></li>
+                        <li><a href="/queue/">Queue</a></li>
                     </ul>
                 </li>
                 {% endif %}
@@ -44,9 +44,9 @@
                 {% match current_user %}
                 {% when Some with (user) %}
                 <li>{{ user }}</li>
-                <li><form method="post" action="/logout" style="margin:0"><button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;margin:0">Logout</button></form></li>
+                <li><form method="post" action="/logout" style="margin:0"><button type="submit" style="margin:0">Logout</button></form></li>
                 {% when None %}
-                <li><a href="/login" role="button" class="outline">Login</a></li>
+                <li><a href="/login" role="button">Login</a></li>
                 {# Demo/public mode: disable self-registration link.
                    Re-enable by uncommenting the line below.
                 <li><a href="/register" role="button">Register</a></li>

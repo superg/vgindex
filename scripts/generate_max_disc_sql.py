@@ -471,11 +471,12 @@ def generate_sql(stats, output_path):
 
         # 1. Custom media type with 4 layers
         out.write("-- Custom media type with 4 layers and bin extension\n")
-        out.write(f"""INSERT INTO media_types (code, name, layer_count, rom_extension)
-VALUES ({sql_str(MEDIA_TYPE_CODE)}, {sql_str(MEDIA_TYPE_NAME)}, {MEDIA_TYPE_LAYERS}, {sql_str(MEDIA_TYPE_ROM_EXT)})
+        out.write(f"""INSERT INTO media_types (code, name, layer_count, pic, rom_extension)
+VALUES ({sql_str(MEDIA_TYPE_CODE)}, {sql_str(MEDIA_TYPE_NAME)}, {MEDIA_TYPE_LAYERS}, TRUE, {sql_str(MEDIA_TYPE_ROM_EXT)})
 ON CONFLICT (code) DO UPDATE SET
     name = EXCLUDED.name,
     layer_count = EXCLUDED.layer_count,
+    pic = EXCLUDED.pic,
     rom_extension = EXCLUDED.rom_extension;\n\n""")
 
         # 2. System with all has_ flags enabled
@@ -485,7 +486,7 @@ ON CONFLICT (code) DO UPDATE SET
      has_title_foreign, has_disc_title, has_disc_number,
      has_serial, has_version, has_edition, has_barcode,
      has_error_count, has_exe_date, has_edc,
-     has_pvd, has_pic, has_bca, has_header,
+     has_pvd, has_bca, has_header, has_keys,
      has_protection, has_sector_ranges, has_sbi, has_offset_extra)
 VALUES
     ({sql_str(SYSTEM_CODE)}, {sql_str(SYSTEM_NAME)},
@@ -501,7 +502,7 @@ ON CONFLICT (code) DO UPDATE SET
     has_title_foreign = TRUE, has_disc_title = TRUE, has_disc_number = TRUE,
     has_serial = TRUE, has_version = TRUE, has_edition = TRUE, has_barcode = TRUE,
     has_error_count = TRUE, has_exe_date = TRUE, has_edc = TRUE,
-    has_pvd = TRUE, has_pic = TRUE, has_bca = TRUE, has_header = TRUE,
+    has_pvd = TRUE, has_bca = TRUE, has_header = TRUE, has_keys = TRUE,
     has_protection = TRUE, has_sector_ranges = TRUE, has_sbi = TRUE, has_offset_extra = TRUE;\n\n""")
 
         # 2. Ensure a user exists for submissions
@@ -713,7 +714,7 @@ ON CONFLICT (id) DO NOTHING;\n""")
         if stats.max_changes_count > 0:
             out.write(f"-- Disc submissions ({stats.max_changes_count} Approved rows)\n")
             out.write("INSERT INTO disc_submissions\n")
-            out.write("    (submission_type, submitter_id, target_disc_id, changes, status,\n")
+            out.write("    (submission_type, submitter_id, target_disc_id, data, status,\n")
             out.write("     reviewer_id, review_comment, created_at, reviewed_at)\nVALUES\n")
 
             submission_vals = []

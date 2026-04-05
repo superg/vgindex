@@ -74,6 +74,7 @@ struct DiscViewTemplate {
     sbi_rows: Vec<SbiRow>,
     pvd_rows: Vec<PvdRow>,
     pic_rows: Vec<HeaderRow>,
+    show_keys: bool,
     disc_key: String,
     disc_id_hex: String,
     sector_ranges: Vec<ProtectionRangeRow>,
@@ -202,6 +203,8 @@ async fn disc_view(
         std::cmp::Ordering::Equal
     });
 
+    let ring_display_layers = detail.disc.media_type.max_layers().max(2) as usize;
+
     let ring_rows: Vec<ViewRingRow> = sorted_entries.iter().enumerate().flat_map(|(i, e)| {
         let offset = format_signed_offset(e.offset_value);
         let offset_extra = format_signed_offset(e.offset_extra_value);
@@ -236,22 +239,25 @@ async fn disc_view(
             return vec![];
         }
 
-        let layer_count = e.layers.len();
-        e.layers.iter().enumerate().map(move |(li, l)| ViewRingRow {
-            entry_num,
-            layer: format!("L{}", l.layer),
-            mastering_code: ring_tab_replace(&l.mastering_code.clone().unwrap_or_default()),
-            mastering_sid: ring_tab_replace(&l.mastering_sid.clone().unwrap_or_default()),
-            mould_sids: { let mut v = l.mould_sids.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
-            additional_moulds: { let mut v = l.additional_moulds.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
-            toolstamps: { let mut v = l.toolstamps.clone(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
-            offset: offset.clone(),
-            offset_extra: offset_extra.clone(),
-            sample_data_start: sample_data_start.clone(),
-            comment: comment.clone(),
-            first_in_entry: li == 0,
-            entry_even,
-            entry_rowspan: if li == 0 { layer_count } else { 0 },
+        let display_count = ring_display_layers;
+        (0..display_count).map(move |li| {
+            let layer = e.layers.iter().find(|l| l.layer == li as i32);
+            ViewRingRow {
+                entry_num,
+                layer: format!("L{}", li),
+                mastering_code: ring_tab_replace(&layer.and_then(|l| l.mastering_code.clone()).unwrap_or_default()),
+                mastering_sid: ring_tab_replace(&layer.and_then(|l| l.mastering_sid.clone()).unwrap_or_default()),
+                mould_sids: { let mut v = layer.map(|l| l.mould_sids.clone()).unwrap_or_default(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
+                additional_moulds: { let mut v = layer.map(|l| l.additional_moulds.clone()).unwrap_or_default(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
+                toolstamps: { let mut v = layer.map(|l| l.toolstamps.clone()).unwrap_or_default(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
+                offset: offset.clone(),
+                offset_extra: offset_extra.clone(),
+                sample_data_start: sample_data_start.clone(),
+                comment: comment.clone(),
+                first_in_entry: li == 0,
+                entry_even,
+                entry_rowspan: if li == 0 { display_count } else { 0 },
+            }
         }).collect()
     }).collect();
 
@@ -402,6 +408,7 @@ async fn disc_view(
             sbi_rows,
             pvd_rows,
             pic_rows,
+            show_keys: detail.system.has_keys,
             disc_key,
             disc_id_hex,
             sector_ranges,

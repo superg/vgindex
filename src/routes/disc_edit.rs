@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::auth::middleware::RequireAuth;
 use crate::config::SiteConfig;
 use crate::db::models::*;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::services::{disc_service, queue_service, validation};
 use crate::AppState;
 
@@ -69,7 +69,8 @@ pub(crate) struct DiscEditTemplate {
     pub max_layers: u32,
     pub media_layers_json: String,
     pub systems_media_json: String,
-    pub systems_has_offset_extra_json: String,
+    pub systems_has_flags_json: String,
+    pub media_rom_extensions_json: String,
 
     pub title: String,
     pub show_title_foreign: bool,
@@ -81,15 +82,16 @@ pub(crate) struct DiscEditTemplate {
     pub filename_suffix: String,
 
     pub show_serial: bool,
-    pub serials: Vec<String>,
+    pub serials: Vec<HighlightedValue>,
     pub show_version: bool,
     pub version: String,
     pub show_edition: bool,
-    pub editions: Vec<String>,
+    pub editions: Vec<HighlightedValue>,
     pub show_barcode: bool,
-    pub barcodes: Vec<String>,
+    pub barcodes: Vec<HighlightedValue>,
 
     pub ring_codes_json: String,
+    pub ring_highlights_json: String,
 
     pub comments: String,
     pub contents: String,
@@ -105,12 +107,14 @@ pub(crate) struct DiscEditTemplate {
     pub show_pvd: bool,
     pub pvd_hex: String,
     pub show_pic: bool,
+    pub media_has_pic_json: String,
     pub pic_hex: String,
     pub show_bca: bool,
     pub bca_hex: String,
     pub show_header: bool,
     pub header_hex: String,
 
+    pub show_keys: bool,
     pub show_protection: bool,
     pub protection: String,
     pub show_sector_ranges: bool,
@@ -129,29 +133,47 @@ pub(crate) struct DiscEditTemplate {
 
     pub is_add_mode: bool,
     pub dump_log: String,
+    pub dump_log_required: bool,
     pub extra_upload_url: String,
 
+    pub submit_button_text: String,
     pub validation_errors: Vec<String>,
 
     pub is_review_mode: bool,
     pub changed_fields: Vec<String>,
     pub submission_id: i32,
     pub submission_type_display: String,
+    pub submitter_id: i32,
     pub submitter_name: String,
-    pub submitter_comment: String,
+    pub submission_comment: String,
     pub dump_log_display: String,
     pub extra_upload_url_display: String,
     pub submission_status: String,
+    pub reviewer_id: i32,
     pub reviewer_name: String,
     pub review_comment_display: String,
     pub created_at_display: String,
     pub reviewed_at_display: String,
+    pub changes_json: String,
 }
 impl SiteConfig for DiscEditTemplate {}
 
 impl DiscEditTemplate {
-    pub fn is_changed(&self, field: &str) -> bool {
-        self.changed_fields.iter().any(|f| f == field)
+    pub fn highlight_class(&self, field: &str) -> &str {
+        for f in &self.changed_fields {
+            if f.len() > field.len()
+                && f.as_bytes()[field.len()] == b':'
+                && f.starts_with(field)
+            {
+                return match &f[field.len() + 1..] {
+                    "changed" => "field-changed",
+                    "added" => "field-added",
+                    "removed" => "field-removed",
+                    _ => "",
+                };
+            }
+        }
+        ""
     }
 }
 
@@ -178,6 +200,12 @@ pub(crate) struct CheckOption {
     pub name: String,
     pub code: String,
     pub selected: bool,
+    pub highlight: String,
+}
+
+pub(crate) struct HighlightedValue {
+    pub value: String,
+    pub highlight: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -185,6 +213,8 @@ pub(crate) struct EditMediaTypeRow {
     pub code: String,
     pub name: String,
     pub layer_count: i32,
+    pub pic: bool,
+    pub rom_extension: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -205,7 +235,7 @@ pub(crate) struct EditRefData {
 pub(crate) async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData> {
     let all_systems = disc_service::get_all_systems(pool).await?;
     let all_media_types: Vec<EditMediaTypeRow> = sqlx::query_as(
-        "SELECT code, name, layer_count FROM media_types ORDER BY name",
+        "SELECT code, name, layer_count, pic, rom_extension FROM media_types ORDER BY name",
     )
     .fetch_all(pool)
     .await?;
@@ -235,16 +265,44 @@ pub(crate) fn build_systems_json(
     all_systems: &[System],
 ) -> (String, String) {
     let mut systems_media_map = serde_json::Map::new();
-    let mut systems_has_offset_extra_map = serde_json::Map::new();
+    let mut systems_has_flags_map = serde_json::Map::new();
     for s in all_systems {
         systems_media_map.insert(s.code.clone(), serde_json::json!(s.media_types));
-        systems_has_offset_extra_map.insert(s.code.clone(), serde_json::json!(s.has_offset_extra));
+        systems_has_flags_map.insert(s.code.clone(), serde_json::json!({
+            "has_title_foreign": s.has_title_foreign,
+            "has_disc_number": s.has_disc_number,
+            "has_disc_title": s.has_disc_title,
+            "has_serial": s.has_serial,
+            "has_version": s.has_version,
+            "has_edition": s.has_edition,
+            "has_barcode": s.has_barcode,
+            "has_error_count": s.has_error_count,
+            "has_exe_date": s.has_exe_date,
+            "has_edc": s.has_edc,
+            "has_keys": s.has_keys,
+            "has_pvd": s.has_pvd,
+            "has_bca": s.has_bca,
+            "has_header": s.has_header,
+            "has_protection": s.has_protection,
+            "has_sector_ranges": s.has_sector_ranges,
+            "has_sbi": s.has_sbi,
+            "has_sample_start": s.has_sample_start,
+            "has_offset_extra": s.has_offset_extra,
+        }));
     }
     let systems_media_json =
         serde_json::to_string(&systems_media_map).unwrap_or_else(|_| "{}".into());
-    let systems_has_offset_extra_json =
-        serde_json::to_string(&systems_has_offset_extra_map).unwrap_or_else(|_| "{}".into());
-    (systems_media_json, systems_has_offset_extra_json)
+    let systems_has_flags_json =
+        serde_json::to_string(&systems_has_flags_map).unwrap_or_else(|_| "{}".into());
+    (systems_media_json, systems_has_flags_json)
+}
+
+pub(crate) fn build_media_rom_extensions_json(all_media_types: &[EditMediaTypeRow]) -> String {
+    let mut map = serde_json::Map::new();
+    for m in all_media_types {
+        map.insert(m.code.clone(), serde_json::json!(m.rom_extension));
+    }
+    serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
 }
 
 pub(crate) fn build_media_layers_json(all_media_types: &[EditMediaTypeRow]) -> String {
@@ -253,6 +311,14 @@ pub(crate) fn build_media_layers_json(all_media_types: &[EditMediaTypeRow]) -> S
         media_layers_map.insert(m.code.clone(), serde_json::json!(m.layer_count));
     }
     serde_json::to_string(&media_layers_map).unwrap_or_else(|_| "{}".into())
+}
+
+pub(crate) fn build_media_has_pic_json(all_media_types: &[EditMediaTypeRow]) -> String {
+    let mut map = serde_json::Map::new();
+    for m in all_media_types {
+        map.insert(m.code.clone(), serde_json::json!(m.pic));
+    }
+    serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
 }
 
 pub(crate) fn build_system_options(all_systems: &[System], selected: &str) -> Vec<SystemOption> {
@@ -301,6 +367,7 @@ pub(crate) fn build_check_options(
             name: r.name.clone(),
             code: r.flag_code.trim().to_lowercase(),
             selected: selected_codes.iter().any(|c| c.trim() == r.code.trim()),
+            highlight: String::new(),
         })
         .collect();
     options.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -318,6 +385,7 @@ pub(crate) fn build_lang_check_options(
             name: l.name.clone(),
             code: l.flag_code.trim().to_lowercase(),
             selected: selected_codes.iter().any(|c| c.trim() == l.code.trim()),
+            highlight: String::new(),
         })
         .collect();
     options.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -330,6 +398,10 @@ pub(crate) fn max_layers_for_media(all_media_types: &[EditMediaTypeRow], code: &
         .find(|m| m.code == code)
         .map(|m| m.layer_count as u32)
         .unwrap_or(1)
+}
+
+pub(crate) fn ring_layers(media_layers: u32) -> u32 {
+    media_layers.max(2)
 }
 
 async fn edit_page(
@@ -353,16 +425,19 @@ async fn edit_page(
     .fetch_all(&state.pool)
     .await?;
 
-    let (systems_media_json, systems_has_offset_extra_json) =
+    let (systems_media_json, systems_has_flags_json) =
         build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
+    let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+    let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let max_layers = detail.disc.media_type.max_layers();
+    let ring_layer_count = ring_layers(max_layers);
 
     let ring_data: Vec<serde_json::Value> = detail
         .ring_entries
         .iter()
         .map(|e| {
-            let layers: Vec<serde_json::Value> = (0..max_layers)
+            let layers: Vec<serde_json::Value> = (0..ring_layer_count)
                 .map(|li| {
                     let layer = e.layers.iter().find(|l| l.layer == li as i32);
                     serde_json::json!({
@@ -440,7 +515,8 @@ async fn edit_page(
             max_layers,
             media_layers_json,
             systems_media_json,
-            systems_has_offset_extra_json,
+            systems_has_flags_json,
+            media_rom_extensions_json,
 
             title: detail.disc.title.clone(),
             show_title_foreign: detail.system.has_title_foreign,
@@ -455,7 +531,7 @@ async fn edit_page(
             serials: {
                 let mut v = detail.disc.serial.clone();
                 v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-                v
+                v.into_iter().map(|s| HighlightedValue { value: s, highlight: String::new() }).collect()
             },
             show_version: detail.system.has_version,
             version: detail.disc.version.clone().unwrap_or_default(),
@@ -463,16 +539,17 @@ async fn edit_page(
             editions: {
                 let mut v = detail.disc.edition.clone();
                 v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-                v
+                v.into_iter().map(|s| HighlightedValue { value: s, highlight: String::new() }).collect()
             },
             show_barcode: detail.system.has_barcode,
             barcodes: {
                 let mut v = detail.disc.barcode.clone();
                 v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-                v
+                v.into_iter().map(|s| HighlightedValue { value: s, highlight: String::new() }).collect()
             },
 
             ring_codes_json,
+            ring_highlights_json: "[]".to_string(),
 
             comments: detail.disc.comments.clone().unwrap_or_default(),
             contents: detail.disc.contents.clone().unwrap_or_default(),
@@ -499,7 +576,8 @@ async fn edit_page(
                 .as_ref()
                 .map(|data| format_pvd_hex_dump(data))
                 .unwrap_or_default(),
-            show_pic: detail.system.has_pic,
+            show_pic: detail.disc.media_type.has_pic(),
+            media_has_pic_json: media_has_pic_json.clone(),
             pic_hex: detail
                 .disc
                 .pic
@@ -521,6 +599,7 @@ async fn edit_page(
                 .map(|data| format_header_hex_dump(data))
                 .unwrap_or_default(),
 
+            show_keys: detail.system.has_keys,
             show_protection: detail.system.has_protection,
             protection: detail.disc.protection.clone().unwrap_or_default(),
             show_sector_ranges: detail.system.has_sector_ranges,
@@ -556,23 +635,28 @@ async fn edit_page(
 
             is_add_mode: false,
             dump_log: String::new(),
+            dump_log_required: false,
             extra_upload_url: String::new(),
 
+            submit_button_text: if user.role.can_edit_directly() { "Save".into() } else { "Submit".into() },
             validation_errors: vec![],
 
             is_review_mode: false,
             changed_fields: vec![],
             submission_id: 0,
             submission_type_display: String::new(),
+            submitter_id: 0,
             submitter_name: String::new(),
-            submitter_comment: String::new(),
+            submission_comment: String::new(),
             dump_log_display: String::new(),
             extra_upload_url_display: String::new(),
             submission_status: String::new(),
+            reviewer_id: 0,
             reviewer_name: String::new(),
             review_comment_display: String::new(),
             created_at_display: String::new(),
             reviewed_at_display: String::new(),
+            changes_json: String::new(),
         }
         .render()
         .unwrap(),
@@ -619,16 +703,16 @@ pub struct DiscEditForm {
     pub protection_key_disc_id: Option<String>,
     pub cue: Option<String>,
     pub files_xml: Option<String>,
-    #[serde(default)]
-    pub questionable: Option<String>,
-    #[serde(default)]
-    pub enabled: Option<String>,
+    #[serde(default, deserialize_with = "one_or_many_strings")]
+    pub questionable: Vec<String>,
+    #[serde(default, deserialize_with = "one_or_many_strings")]
+    pub enabled: Vec<String>,
     pub submission_comment: Option<String>,
     pub dump_log: Option<String>,
     pub extra_upload_url: Option<String>,
 }
 
-pub(crate) fn validate_form(form: &DiscEditForm) -> Vec<String> {
+pub(crate) fn validate_form(form: &DiscEditForm, all_media_types: &[EditMediaTypeRow]) -> Vec<String> {
     let mut errors = Vec::new();
 
     if form.system_code.trim().is_empty() {
@@ -720,12 +804,25 @@ pub(crate) fn validate_form(form: &DiscEditForm) -> Vec<String> {
         }
     }
 
-    if let Some(ref text) = form.cue {
-        let text = text.trim();
-        if !text.is_empty() {
-            if let Err(e) = validation::validate_cuesheet(text) {
-                errors.push(format!("Cuesheet: {}", e));
+    let rom_ext = all_media_types.iter()
+        .find(|m| m.code == form.media_type)
+        .map(|m| m.rom_extension.as_str())
+        .unwrap_or("");
+
+    if rom_ext == "bin" {
+        match form.cue.as_deref().map(|s| s.trim()) {
+            None | Some("") => {
+                errors.push("Cuesheet: required for this media type".into());
             }
+            Some(text) => {
+                if let Err(e) = validation::validate_cuesheet(text) {
+                    errors.push(format!("Cuesheet: {}", e));
+                }
+            }
+        }
+    } else if let Some(ref text) = form.cue {
+        if !text.trim().is_empty() {
+            errors.push("Cuesheet: not applicable for this media type".into());
         }
     }
 
@@ -752,16 +849,23 @@ async fn render_form_with_errors(
     form: &DiscEditForm,
     errors: Vec<String>,
     is_add_mode: bool,
+    can_edit_directly: bool,
 ) -> AppResult<Response> {
     let ref_data = fetch_ref_data(pool).await?;
     let system = disc_service::get_system(pool, &form.system_code).await.ok();
 
-    let (systems_media_json, systems_has_offset_extra_json) =
+    let (systems_media_json, systems_has_flags_json) =
         build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
+    let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+    let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let max_layers = max_layers_for_media(&ref_data.all_media_types, &form.media_type);
 
     let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
+
+    let media_pic = ref_data.all_media_types.iter()
+        .find(|m| m.code == form.media_type)
+        .map_or(false, |m| m.pic);
 
     let page_title = format_display_title(
         &form.title,
@@ -786,7 +890,8 @@ async fn render_form_with_errors(
         max_layers,
         media_layers_json,
         systems_media_json,
-        systems_has_offset_extra_json,
+        systems_has_flags_json,
+        media_rom_extensions_json,
 
         title: form.title.clone(),
         show_title_foreign: has_sys(|s| s.has_title_foreign),
@@ -803,6 +908,7 @@ async fn render_form_with_errors(
             .iter()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
+            .map(|s| HighlightedValue { value: s, highlight: String::new() })
             .collect(),
         show_version: has_sys(|s| s.has_version),
         version: form.version.clone().unwrap_or_default(),
@@ -812,6 +918,7 @@ async fn render_form_with_errors(
             .iter()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
+            .map(|s| HighlightedValue { value: s, highlight: String::new() })
             .collect(),
         show_barcode: has_sys(|s| s.has_barcode),
         barcodes: form
@@ -819,9 +926,11 @@ async fn render_form_with_errors(
             .iter()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
+            .map(|s| HighlightedValue { value: s, highlight: String::new() })
             .collect(),
 
         ring_codes_json: form.ring_codes_json.clone().unwrap_or_else(|| "[]".into()),
+        ring_highlights_json: "[]".to_string(),
 
         comments: form.comments.clone().unwrap_or_default(),
         contents: form.contents.clone().unwrap_or_default(),
@@ -836,13 +945,15 @@ async fn render_form_with_errors(
         layerbreaks: form.layerbreak.clone(),
         show_pvd: has_sys(|s| s.has_pvd),
         pvd_hex: form.pvd.clone().unwrap_or_default(),
-        show_pic: has_sys(|s| s.has_pic),
+        show_pic: media_pic,
+        media_has_pic_json,
         pic_hex: form.pic.clone().unwrap_or_default(),
         show_bca: has_sys(|s| s.has_bca),
         bca_hex: form.bca.clone().unwrap_or_default(),
         show_header: has_sys(|s| s.has_header),
         header_hex: form.header.clone().unwrap_or_default(),
 
+        show_keys: has_sys(|s| s.has_keys),
         show_protection: has_sys(|s| s.has_protection),
         protection: form.protection.clone().unwrap_or_default(),
         show_sector_ranges: has_sys(|s| s.has_sector_ranges),
@@ -856,28 +967,33 @@ async fn render_form_with_errors(
         cue: form.cue.clone().unwrap_or_default(),
         files_xml: form.files_xml.clone().unwrap_or_default(),
 
-        questionable: form.questionable.as_deref() == Some("true"),
-        enabled: form.enabled.as_deref() == Some("true"),
+        questionable: form.questionable.iter().any(|v| v == "true"),
+        enabled: form.enabled.iter().any(|v| v == "true"),
 
         is_add_mode,
         dump_log: form.dump_log.clone().unwrap_or_default(),
+        dump_log_required: is_add_mode && !can_edit_directly,
         extra_upload_url: form.extra_upload_url.clone().unwrap_or_default(),
 
+        submit_button_text: if can_edit_directly { "Save".into() } else { "Submit".into() },
         validation_errors: errors,
 
         is_review_mode: false,
         changed_fields: vec![],
         submission_id: 0,
         submission_type_display: String::new(),
+        submitter_id: 0,
         submitter_name: String::new(),
-        submitter_comment: String::new(),
+        submission_comment: String::new(),
         dump_log_display: String::new(),
         extra_upload_url_display: String::new(),
         submission_status: String::new(),
+        reviewer_id: 0,
         reviewer_name: String::new(),
         review_comment_display: String::new(),
         created_at_display: String::new(),
         reviewed_at_display: String::new(),
+        changes_json: String::new(),
     };
 
     let html = template.render().unwrap();
@@ -945,13 +1061,171 @@ fn diff_json(changes: &mut serde_json::Map<String, serde_json::Value>, key: &str
     }
 }
 
+/// Union-merge two sorted string vecs, preserving all unique entries (case-insensitive dedup).
+fn merge_str_vecs(old: &[String], new: &[String]) -> Vec<String> {
+    let mut merged: Vec<String> = old.to_vec();
+    for s in new {
+        if !merged.iter().any(|existing| existing.eq_ignore_ascii_case(s)) {
+            merged.push(s.clone());
+        }
+    }
+    merged.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    merged
+}
+
+/// Normalize multiline text for comparison: strip \r, trim each line's trailing whitespace,
+/// trim leading/trailing blank lines.
+fn normalize_multiline(s: Option<&str>) -> Option<String> {
+    s.map(|text| {
+        text.lines()
+            .map(|line| line.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string()
+    })
+    .filter(|v| !v.is_empty())
+}
+
+/// Merge ring code entries: if an old entry matches a new entry on offset + mastering_code +
+/// mastering_sid (across all layers), merge toolstamps, mould_sids, additional_moulds (union)
+/// and comments (comma-delimited append). Non-matching new entries are added.
+fn merge_ring_codes(old: &serde_json::Value, new: &serde_json::Value) -> serde_json::Value {
+    let old_arr = match old.as_array() {
+        Some(a) => a,
+        None => return new.clone(),
+    };
+    let new_arr = match new.as_array() {
+        Some(a) => a,
+        None => return old.clone(),
+    };
+
+    let mut result: Vec<serde_json::Value> = old_arr.clone();
+    let mut matched_old: Vec<bool> = vec![false; old_arr.len()];
+
+    for new_entry in new_arr {
+        let match_idx = old_arr.iter().enumerate().position(|(idx, old_entry)| {
+            if matched_old[idx] {
+                return false;
+            }
+            ring_entry_key_matches(old_entry, new_entry)
+        });
+
+        if let Some(idx) = match_idx {
+            matched_old[idx] = true;
+            result[idx] = merge_single_ring_entry(&result[idx], new_entry);
+        } else {
+            result.push(new_entry.clone());
+        }
+    }
+
+    serde_json::json!(result)
+}
+
+pub(crate) fn ring_entry_key_matches(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    let str_field = |entry: &serde_json::Value, key: &str| {
+        entry[key].as_str().unwrap_or("").to_string()
+    };
+    if str_field(a, "offset_value") != str_field(b, "offset_value") {
+        return false;
+    }
+    if str_field(a, "offset_extra_value") != str_field(b, "offset_extra_value") {
+        return false;
+    }
+    if str_field(a, "sample_start") != str_field(b, "sample_start") {
+        return false;
+    }
+
+    let layers_a = a["layers"].as_array();
+    let layers_b = b["layers"].as_array();
+    match (layers_a, layers_b) {
+        (Some(la), Some(lb)) => {
+            if la.len() != lb.len() {
+                return false;
+            }
+            la.iter().zip(lb.iter()).all(|(la_layer, lb_layer)| {
+                let mc_a = la_layer["mastering_code"].as_str().unwrap_or("");
+                let mc_b = lb_layer["mastering_code"].as_str().unwrap_or("");
+                let ms_a = la_layer["mastering_sid"].as_str().unwrap_or("");
+                let ms_b = lb_layer["mastering_sid"].as_str().unwrap_or("");
+                mc_a == mc_b && ms_a == ms_b
+            })
+        }
+        _ => false,
+    }
+}
+
+fn merge_single_ring_entry(old: &serde_json::Value, new: &serde_json::Value) -> serde_json::Value {
+    let mut merged = old.clone();
+
+    let old_comment = old["comment"].as_str().unwrap_or("").trim().to_string();
+    let new_comment = new["comment"].as_str().unwrap_or("").trim().to_string();
+    if !new_comment.is_empty() && new_comment != old_comment {
+        let combined = if old_comment.is_empty() {
+            new_comment
+        } else {
+            format!("{}, {}", old_comment, new_comment)
+        };
+        merged["comment"] = serde_json::json!(combined);
+    }
+
+    if let (Some(old_layers), Some(new_layers)) =
+        (old["layers"].as_array(), new["layers"].as_array())
+    {
+        let merged_layers: Vec<serde_json::Value> = old_layers
+            .iter()
+            .zip(new_layers.iter())
+            .map(|(ol, nl)| {
+                let mut ml = ol.clone();
+                ml["toolstamps"] = serde_json::json!(
+                    merge_csv_field(
+                        ol["toolstamps"].as_str().unwrap_or(""),
+                        nl["toolstamps"].as_str().unwrap_or(""),
+                    )
+                );
+                ml["mould_sids"] = serde_json::json!(
+                    merge_csv_field(
+                        ol["mould_sids"].as_str().unwrap_or(""),
+                        nl["mould_sids"].as_str().unwrap_or(""),
+                    )
+                );
+                ml["additional_moulds"] = serde_json::json!(
+                    merge_csv_field(
+                        ol["additional_moulds"].as_str().unwrap_or(""),
+                        nl["additional_moulds"].as_str().unwrap_or(""),
+                    )
+                );
+                ml
+            })
+            .collect();
+        merged["layers"] = serde_json::json!(merged_layers);
+    }
+
+    merged
+}
+
+/// Merge two comma-delimited strings, keeping unique values.
+fn merge_csv_field(old: &str, new: &str) -> String {
+    let mut items: Vec<String> = old
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    for val in new.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        if !items.iter().any(|existing| existing.eq_ignore_ascii_case(val)) {
+            items.push(val.to_string());
+        }
+    }
+    items.join(", ")
+}
+
 fn build_ring_codes_json_from_detail(detail: &DiscDetail) -> serde_json::Value {
-    let max_layers = detail.disc.media_type.max_layers();
+    let ring_layer_count = ring_layers(detail.disc.media_type.max_layers());
     let entries: Vec<serde_json::Value> = detail
         .ring_entries
         .iter()
         .map(|e| {
-            let layers: Vec<serde_json::Value> = (0..max_layers)
+            let layers: Vec<serde_json::Value> = (0..ring_layer_count)
                 .map(|li| {
                     let layer = e.layers.iter().find(|l| l.layer == li as i32);
                     serde_json::json!({
@@ -1011,7 +1285,8 @@ async fn edit_submit(
     Path(id): Path<i32>,
     Form(form): Form<DiscEditForm>,
 ) -> AppResult<Response> {
-    let errors = validate_form(&form);
+    let ref_data = fetch_ref_data(&state.pool).await?;
+    let errors = validate_form(&form, &ref_data.all_media_types);
     if !errors.is_empty() {
         return render_form_with_errors(
             &state.pool,
@@ -1020,178 +1295,43 @@ async fn edit_submit(
             &form,
             errors,
             false,
+            user.role.can_edit_directly(),
         )
         .await;
     }
 
-    let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    let changes = build_flat_changes(&form, &ref_data.all_media_types);
 
-    let old_region_codes: Vec<String> = {
-        let mut v: Vec<String> = detail.regions.iter().map(|r| r.code.trim().to_string()).collect();
-        v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-        v
-    };
-    let old_lang_codes: Vec<String> = {
-        let mut v: Vec<String> = detail.languages.iter().map(|l| l.code.trim().to_string()).collect();
-        v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
-        v
-    };
-
-    let new_regions = norm_str_vec(form.regions.clone());
-    let new_languages = norm_str_vec(form.languages.clone());
-    let new_serials = norm_str_vec(form.serial.clone());
-    let new_editions = norm_str_vec(form.edition.clone());
-    let new_barcodes = norm_str_vec(form.barcode.clone());
-
-    let old_serials = { let mut v = detail.disc.serial.clone(); v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase())); v };
-    let old_editions = { let mut v = detail.disc.edition.clone(); v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase())); v };
-    let old_barcodes = { let mut v = detail.disc.barcode.clone(); v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase())); v };
-
-    let new_error_count = form.error_count.as_deref()
-        .filter(|s| !s.trim().is_empty())
-        .and_then(|s| s.trim().parse::<i32>().ok());
-    let new_edc = match form.edc.as_deref() {
-        Some("true") => Some(true),
-        Some("false") => Some(false),
-        _ => None,
-    };
-    let new_layerbreaks: Vec<i32> = form.layerbreak.iter()
-        .filter_map(|s| { let s = s.trim(); if s.is_empty() { None } else { s.parse::<i32>().ok() } })
-        .collect();
-    let old_layerbreaks: Vec<i32> = detail.disc.layerbreaks.clone().unwrap_or_default();
-
-    let new_keys: Vec<String> = [
-        form.protection_key_disc_key.as_deref().unwrap_or("").trim(),
-        form.protection_key_disc_id.as_deref().unwrap_or("").trim(),
-    ].iter().filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
-    let old_keys: Vec<String> = detail.disc.keys.clone().unwrap_or_default();
-
-    let new_sector_ranges: Vec<serde_json::Value> =
-        validation::parse_sector_range_pairs(form.sector_ranges.as_deref().unwrap_or(""))
-            .into_iter()
-            .map(|(start, end)| serde_json::json!({"start": start, "end": end}))
-            .collect();
-    let old_sector_ranges_json = build_sector_ranges_json(&detail.sector_ranges);
-    let new_sector_ranges_json = serde_json::json!(new_sector_ranges);
-
-    let new_ring_codes = form.ring_codes_json.as_deref()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-        .unwrap_or(serde_json::json!([]));
-    let old_ring_codes = build_ring_codes_json_from_detail(&detail);
-
-    let new_cue = norm_opt_str(form.cue.as_deref());
-    let old_cue = detail.disc.cue.as_deref()
-        .filter(|s| !s.is_empty())
-        .map(|c| simplify_cue(c, detail.disc.media_type.rom_extension()));
-
-    let new_files_xml = norm_opt_str(form.files_xml.as_deref());
-    let old_files_xml = {
-        let s = build_files_xml_from_detail(&detail);
-        if s.is_empty() { None } else { Some(s) }
-    };
-
-    let new_pvd = norm_opt_str(form.pvd.as_deref());
-    let old_pvd = detail.disc.pvd.as_ref().map(|data| format_pvd_hex_dump(data));
-    let new_pic = norm_opt_str(form.pic.as_deref());
-    let old_pic = detail.disc.pic.as_ref().map(|data| format_header_hex_dump(data));
-    let new_bca = norm_opt_str(form.bca.as_deref());
-    let old_bca = detail.disc.bca.as_ref().map(|data| format_header_hex_dump(data));
-    let new_header = norm_opt_str(form.header.as_deref());
-    let old_header = detail.disc.header.as_ref().map(|data| format_header_hex_dump(data));
-
-    let new_questionable = form.questionable.as_deref() == Some("true");
-    let new_enabled = form.enabled.as_deref() == Some("true");
-
-    let mut changes = serde_json::Map::new();
-
-    diff_str(&mut changes, "system_code", &detail.disc.system_code, &form.system_code);
-    diff_str(&mut changes, "media_type", detail.disc.media_type.code(), &form.media_type);
-    diff_str(&mut changes, "title", &detail.disc.title, form.title.trim());
-    diff_str(&mut changes, "category", &detail.disc.category.to_string(), &form.category);
-
-    diff_opt_str(&mut changes, "title_foreign",
-        detail.disc.title_foreign.as_deref(),
-        norm_opt_str(form.title_foreign.as_deref()).as_deref());
-    diff_opt_str(&mut changes, "disc_number",
-        detail.disc.disc_number.as_deref(),
-        norm_opt_str(form.disc_number.as_deref()).as_deref());
-    diff_opt_str(&mut changes, "disc_title",
-        detail.disc.disc_title.as_deref(),
-        norm_opt_str(form.disc_title.as_deref()).as_deref());
-    diff_opt_str(&mut changes, "filename_suffix",
-        detail.disc.filename_suffix.as_deref(),
-        norm_opt_str(form.filename_suffix.as_deref()).as_deref());
-    diff_opt_str(&mut changes, "version",
-        detail.disc.version.as_deref(),
-        norm_opt_str(form.version.as_deref()).as_deref());
-    diff_opt_str(&mut changes, "exe_date",
-        detail.disc.exe_date.as_deref(),
-        norm_opt_str(form.exe_date.as_deref()).as_deref());
-    diff_opt_str(&mut changes, "protection",
-        detail.disc.protection.as_deref(),
-        norm_opt_str(form.protection.as_deref()).as_deref());
-    diff_opt_str(&mut changes, "sbi",
-        detail.disc.sbi.as_deref(),
-        norm_opt_str(form.sbi.as_deref()).as_deref());
-    diff_opt_str(&mut changes, "comments",
-        detail.disc.comments.as_deref(),
-        norm_opt_str(form.comments.as_deref()).as_deref());
-    diff_opt_str(&mut changes, "contents",
-        detail.disc.contents.as_deref(),
-        norm_opt_str(form.contents.as_deref()).as_deref());
-
-    diff_opt_bool(&mut changes, "edc", detail.disc.edc, new_edc);
-    diff_bool(&mut changes, "questionable", detail.disc.questionable, new_questionable);
-    diff_bool(&mut changes, "enabled", detail.disc.enabled, new_enabled);
-    diff_opt_i32(&mut changes, "error_count", detail.disc.error_count, new_error_count);
-
-    diff_str_vec(&mut changes, "serial", &old_serials, &new_serials);
-    diff_str_vec(&mut changes, "edition", &old_editions, &new_editions);
-    diff_str_vec(&mut changes, "barcode", &old_barcodes, &new_barcodes);
-    diff_str_vec(&mut changes, "regions", &old_region_codes, &new_regions);
-    diff_str_vec(&mut changes, "languages", &old_lang_codes, &new_languages);
-    diff_str_vec(&mut changes, "keys", &old_keys, &new_keys);
-    diff_i32_vec(&mut changes, "layerbreaks", &old_layerbreaks, &new_layerbreaks);
-
-    diff_json(&mut changes, "ring_codes", &old_ring_codes, &new_ring_codes);
-    diff_json(&mut changes, "sector_ranges", &old_sector_ranges_json, &new_sector_ranges_json);
-
-    diff_opt_str(&mut changes, "cue", old_cue.as_deref(), new_cue.as_deref());
-    diff_opt_str(&mut changes, "files_xml", old_files_xml.as_deref(), new_files_xml.as_deref());
-    diff_opt_str(&mut changes, "pvd", old_pvd.as_deref(), new_pvd.as_deref());
-    diff_opt_str(&mut changes, "pic", old_pic.as_deref(), new_pic.as_deref());
-    diff_opt_str(&mut changes, "bca", old_bca.as_deref(), new_bca.as_deref());
-    diff_opt_str(&mut changes, "header", old_header.as_deref(), new_header.as_deref());
-
-    if changes.is_empty() {
-        return render_form_with_errors(
-            &state.pool,
-            id,
-            &user.username,
-            &form,
-            vec!["No changes detected".into()],
-            false,
-        )
-        .await;
-    }
-
-    let submitter_comment = form.submission_comment.as_deref()
+    let submission_comment = form.submission_comment.as_deref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
 
-    queue_service::create_submission(
+    let sub = queue_service::create_submission(
         &state.pool,
         SubmissionType::Edit,
         user.id,
         Some(id),
-        serde_json::Value::Object(changes),
-        submitter_comment,
+        changes,
+        submission_comment,
         None,
         None,
     )
     .await?;
 
-    Ok(Redirect::to(&format!("/disc/{id}/")).into_response())
+    if user.role.can_edit_directly() {
+        let disc_id = queue_service::approve_submission(
+            &state.pool,
+            &sub,
+            &sub.data,
+            user.id,
+            None,
+        )
+        .await?
+        .ok_or(AppError::Internal("submission was already processed".into()))?;
+        Ok(Redirect::to(&format!("/disc/{disc_id}/")).into_response())
+    } else {
+        Ok(Redirect::to("/queue/").into_response())
+    }
 }
 
 async fn add_page(
@@ -1200,9 +1340,14 @@ async fn add_page(
 ) -> AppResult<Html<String>> {
     let ref_data = fetch_ref_data(&state.pool).await?;
 
-    let (systems_media_json, systems_has_offset_extra_json) =
+    let (systems_media_json, systems_has_flags_json) =
         build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
+    let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+    let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+
+    let default_system = ref_data.all_systems.iter().find(|s| s.code == "PC");
+    let has_sys = |f: fn(&System) -> bool| default_system.map_or(true, f);
 
     Ok(Html(
         DiscEditTemplate {
@@ -1210,68 +1355,72 @@ async fn add_page(
             disc_id: 0,
             page_title: String::new(),
 
-            systems: build_system_options(&ref_data.all_systems, ""),
+            systems: build_system_options(&ref_data.all_systems, "PC"),
             media_types_all: build_media_options(&ref_data.all_media_types, ""),
             categories: build_category_options(&ref_data.all_categories, "Games"),
             regions: build_check_options(&ref_data.all_regions, &[]),
             languages: build_lang_check_options(&ref_data.all_languages, &[]),
 
-            system_code: String::new(),
+            system_code: "PC".to_string(),
             media_type_code: String::new(),
             max_layers: 1,
             media_layers_json,
             systems_media_json,
-            systems_has_offset_extra_json,
+            systems_has_flags_json,
+            media_rom_extensions_json,
 
             title: String::new(),
-            show_title_foreign: true,
+            show_title_foreign: has_sys(|s| s.has_title_foreign),
             title_foreign: String::new(),
-            show_disc_number: true,
+            show_disc_number: has_sys(|s| s.has_disc_number),
             disc_number: String::new(),
-            show_disc_title: true,
+            show_disc_title: has_sys(|s| s.has_disc_title),
             disc_title: String::new(),
             filename_suffix: String::new(),
 
-            show_serial: true,
+            show_serial: has_sys(|s| s.has_serial),
             serials: vec![],
-            show_version: true,
+            show_version: has_sys(|s| s.has_version),
             version: String::new(),
-            show_edition: true,
+            show_edition: has_sys(|s| s.has_edition),
             editions: vec![],
-            show_barcode: true,
+            show_barcode: has_sys(|s| s.has_barcode),
             barcodes: vec![],
 
             ring_codes_json: "[]".to_string(),
+            ring_highlights_json: "[]".to_string(),
 
             comments: String::new(),
             contents: String::new(),
 
-            show_error_count: true,
+            show_error_count: has_sys(|s| s.has_error_count),
             error_count: String::new(),
-            show_exe_date: true,
+            show_exe_date: has_sys(|s| s.has_exe_date),
             exe_date: String::new(),
-            show_edc: true,
+            show_edc: has_sys(|s| s.has_edc),
             edc_value: String::new(),
 
             layerbreaks: vec![],
-            show_pvd: true,
+            show_pvd: has_sys(|s| s.has_pvd),
             pvd_hex: String::new(),
-            show_pic: true,
+            show_pic: false,
+            media_has_pic_json,
             pic_hex: String::new(),
-            show_bca: true,
+            show_bca: has_sys(|s| s.has_bca),
             bca_hex: String::new(),
-            show_header: true,
+            show_header: has_sys(|s| s.has_header),
             header_hex: String::new(),
 
-            show_protection: true,
+            show_keys: has_sys(|s| s.has_keys),
+            show_protection: has_sys(|s| s.has_protection),
             protection: String::new(),
-            show_sector_ranges: true,
+            show_sector_ranges: has_sys(|s| s.has_sector_ranges),
             sector_ranges_text: String::new(),
-            show_sbi: true,
+            show_sbi: has_sys(|s| s.has_sbi),
             sbi: String::new(),
             protection_key_disc_key: String::new(),
             protection_key_disc_id: String::new(),
-            has_sample_start: true,
+            has_sample_start: has_sys(|s| s.has_sample_start),
 
             cue: String::new(),
             files_xml: String::new(),
@@ -1281,23 +1430,28 @@ async fn add_page(
 
             is_add_mode: true,
             dump_log: String::new(),
+            dump_log_required: !user.role.can_edit_directly(),
             extra_upload_url: String::new(),
 
+            submit_button_text: if user.role.can_edit_directly() { "Save".into() } else { "Submit".into() },
             validation_errors: vec![],
 
             is_review_mode: false,
             changed_fields: vec![],
             submission_id: 0,
             submission_type_display: String::new(),
+            submitter_id: 0,
             submitter_name: String::new(),
-            submitter_comment: String::new(),
+            submission_comment: String::new(),
             dump_log_display: String::new(),
             extra_upload_url_display: String::new(),
             submission_status: String::new(),
+            reviewer_id: 0,
             reviewer_name: String::new(),
             review_comment_display: String::new(),
             created_at_display: String::new(),
             reviewed_at_display: String::new(),
+            changes_json: String::new(),
         }
         .render()
         .unwrap(),
@@ -1309,12 +1463,13 @@ async fn add_submit(
     RequireAuth(user): RequireAuth,
     Form(form): Form<DiscEditForm>,
 ) -> AppResult<Response> {
-    let mut errors = validate_form(&form);
+    let ref_data = fetch_ref_data(&state.pool).await?;
+    let mut errors = validate_form(&form, &ref_data.all_media_types);
 
     let dump_log_text = form.dump_log.as_deref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
-    if dump_log_text.is_none() {
+    if dump_log_text.is_none() && !user.role.can_edit_directly() {
         errors.push("Dump Log: cannot be empty".into());
     }
 
@@ -1326,32 +1481,31 @@ async fn add_submit(
             &form,
             errors,
             true,
+            user.role.can_edit_directly(),
         )
         .await;
     }
 
     let files_xml_str = form.files_xml.as_deref().unwrap_or("");
-    let matched_disc_id = queue_service::find_matching_disc(&state.pool, files_xml_str).await;
-
-    let (target_disc_id, changes) = if let Some(disc_id) = matched_disc_id {
+    let target_disc_id = queue_service::find_matching_disc(&state.pool, files_xml_str).await;
+    let changes = if let Some(disc_id) = target_disc_id {
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
-        let diff = compute_verification_diff(&form, &detail);
-        (Some(disc_id), serde_json::Value::Object(diff))
+        build_merged_changes(&form, &detail, &ref_data.all_media_types)
     } else {
-        (None, build_flat_changes(&form))
+        build_flat_changes(&form, &ref_data.all_media_types)
     };
 
-    let submitter_comment = form.submission_comment.as_deref()
+    let submission_comment = form.submission_comment.as_deref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
 
-    queue_service::create_submission(
+    let sub = queue_service::create_submission(
         &state.pool,
         SubmissionType::Disc,
         user.id,
         target_disc_id,
         changes,
-        submitter_comment,
+        submission_comment,
         dump_log_text,
         form.extra_upload_url.as_deref()
             .map(|s| s.trim())
@@ -1359,7 +1513,20 @@ async fn add_submit(
     )
     .await?;
 
-    Ok(Redirect::to("/queue/").into_response())
+    if user.role.can_edit_directly() {
+        let disc_id = queue_service::approve_submission(
+            &state.pool,
+            &sub,
+            &sub.data,
+            user.id,
+            None,
+        )
+        .await?
+        .ok_or(AppError::Internal("submission was already processed".into()))?;
+        Ok(Redirect::to(&format!("/disc/{disc_id}/")).into_response())
+    } else {
+        Ok(Redirect::to("/queue/").into_response())
+    }
 }
 
 fn compute_verification_diff(
@@ -1441,22 +1608,25 @@ fn compute_verification_diff(
     let new_serials = norm_str_vec(form.serial.clone());
     if !new_serials.is_empty() {
         let old_serials = { let mut v = detail.disc.serial.clone(); v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase())); v };
-        if new_serials != old_serials {
-            diff_str_vec(&mut changes, "serial", &old_serials, &new_serials);
+        let merged = merge_str_vecs(&old_serials, &new_serials);
+        if merged != old_serials {
+            diff_str_vec(&mut changes, "serial", &old_serials, &merged);
         }
     }
     let new_editions = norm_str_vec(form.edition.clone());
     if !new_editions.is_empty() {
         let old_editions = { let mut v = detail.disc.edition.clone(); v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase())); v };
-        if new_editions != old_editions {
-            diff_str_vec(&mut changes, "edition", &old_editions, &new_editions);
+        let merged = merge_str_vecs(&old_editions, &new_editions);
+        if merged != old_editions {
+            diff_str_vec(&mut changes, "edition", &old_editions, &merged);
         }
     }
     let new_barcodes = norm_str_vec(form.barcode.clone());
     if !new_barcodes.is_empty() {
         let old_barcodes = { let mut v = detail.disc.barcode.clone(); v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase())); v };
-        if new_barcodes != old_barcodes {
-            diff_str_vec(&mut changes, "barcode", &old_barcodes, &new_barcodes);
+        let merged = merge_str_vecs(&old_barcodes, &new_barcodes);
+        if merged != old_barcodes {
+            diff_str_vec(&mut changes, "barcode", &old_barcodes, &merged);
         }
     }
     let new_regions = norm_str_vec(form.regions.clone());
@@ -1508,8 +1678,9 @@ fn compute_verification_diff(
         .unwrap_or(serde_json::json!([]));
     if new_ring_codes.as_array().map_or(false, |a| !a.is_empty()) {
         let old_ring_codes = build_ring_codes_json_from_detail(detail);
-        if new_ring_codes != old_ring_codes {
-            diff_json(&mut changes, "ring_codes", &old_ring_codes, &new_ring_codes);
+        let merged_ring_codes = merge_ring_codes(&old_ring_codes, &new_ring_codes);
+        if merged_ring_codes != old_ring_codes {
+            diff_json(&mut changes, "ring_codes", &old_ring_codes, &merged_ring_codes);
         }
     }
 
@@ -1526,12 +1697,14 @@ fn compute_verification_diff(
         }
     }
 
-    let new_cue = norm_opt_str(form.cue.as_deref());
+    let rom_ext = detail.disc.media_type.rom_extension();
+    let new_cue = norm_opt_str(form.cue.as_deref())
+        .map(|c| simplify_cue(&c, rom_ext));
     if new_cue.is_some() {
         let old_cue = detail.disc.cue.as_deref()
             .filter(|s| !s.is_empty())
-            .map(|c| simplify_cue(c, detail.disc.media_type.rom_extension()));
-        if new_cue.as_deref() != old_cue.as_deref() {
+            .map(|c| simplify_cue(c, rom_ext));
+        if normalize_multiline(new_cue.as_deref()) != normalize_multiline(old_cue.as_deref()) {
             diff_opt_str(&mut changes, "cue", old_cue.as_deref(), new_cue.as_deref());
         }
     }
@@ -1539,28 +1712,28 @@ fn compute_verification_diff(
     let new_pvd = norm_opt_str(form.pvd.as_deref());
     if new_pvd.is_some() {
         let old_pvd = detail.disc.pvd.as_ref().map(|data| format_pvd_hex_dump(data));
-        if new_pvd.as_deref() != old_pvd.as_deref() {
+        if normalize_multiline(new_pvd.as_deref()) != normalize_multiline(old_pvd.as_deref()) {
             diff_opt_str(&mut changes, "pvd", old_pvd.as_deref(), new_pvd.as_deref());
         }
     }
     let new_pic = norm_opt_str(form.pic.as_deref());
     if new_pic.is_some() {
         let old_pic = detail.disc.pic.as_ref().map(|data| format_header_hex_dump(data));
-        if new_pic.as_deref() != old_pic.as_deref() {
+        if normalize_multiline(new_pic.as_deref()) != normalize_multiline(old_pic.as_deref()) {
             diff_opt_str(&mut changes, "pic", old_pic.as_deref(), new_pic.as_deref());
         }
     }
     let new_bca = norm_opt_str(form.bca.as_deref());
     if new_bca.is_some() {
         let old_bca = detail.disc.bca.as_ref().map(|data| format_header_hex_dump(data));
-        if new_bca.as_deref() != old_bca.as_deref() {
+        if normalize_multiline(new_bca.as_deref()) != normalize_multiline(old_bca.as_deref()) {
             diff_opt_str(&mut changes, "bca", old_bca.as_deref(), new_bca.as_deref());
         }
     }
     let new_header = norm_opt_str(form.header.as_deref());
     if new_header.is_some() {
         let old_header = detail.disc.header.as_ref().map(|data| format_header_hex_dump(data));
-        if new_header.as_deref() != old_header.as_deref() {
+        if normalize_multiline(new_header.as_deref()) != normalize_multiline(old_header.as_deref()) {
             diff_opt_str(&mut changes, "header", old_header.as_deref(), new_header.as_deref());
         }
     }
@@ -1568,7 +1741,7 @@ fn compute_verification_diff(
     changes
 }
 
-pub(crate) fn build_flat_changes(form: &DiscEditForm) -> serde_json::Value {
+pub(crate) fn build_flat_changes(form: &DiscEditForm, all_media_types: &[EditMediaTypeRow]) -> serde_json::Value {
     let new_edc: serde_json::Value = match form.edc.as_deref() {
         Some("true") => serde_json::json!(true),
         Some("false") => serde_json::json!(false),
@@ -1600,6 +1773,13 @@ pub(crate) fn build_flat_changes(form: &DiscEditForm) -> serde_json::Value {
     let new_editions = norm_str_vec(form.edition.clone());
     let new_barcodes = norm_str_vec(form.barcode.clone());
 
+    let rom_ext = all_media_types.iter()
+        .find(|m| m.code == form.media_type)
+        .map(|m| m.rom_extension.as_str())
+        .unwrap_or("");
+    let new_cue = norm_opt_str(form.cue.as_deref())
+        .map(|c| simplify_cue(&c, rom_ext));
+
     serde_json::json!({
         "system_code": form.system_code.trim(),
         "media_type": form.media_type.trim(),
@@ -1619,21 +1799,151 @@ pub(crate) fn build_flat_changes(form: &DiscEditForm) -> serde_json::Value {
         "exe_date": norm_opt_str(form.exe_date.as_deref()),
         "edc": new_edc,
         "layerbreaks": new_layerbreaks,
-        "pvd": norm_opt_str(form.pvd.as_deref()),
+        "pvd": norm_opt_str(form.pvd.as_deref()).map(|s| normalize_pvd_hex_dump(&s)),
         "pic": norm_opt_str(form.pic.as_deref()),
         "bca": norm_opt_str(form.bca.as_deref()),
         "header": norm_opt_str(form.header.as_deref()),
         "protection": norm_opt_str(form.protection.as_deref()),
         "sbi": norm_opt_str(form.sbi.as_deref()),
         "keys": new_keys,
-        "cue": norm_opt_str(form.cue.as_deref()),
-        "files_xml": norm_opt_str(form.files_xml.as_deref()),
+        "cue": new_cue,
+        "files_xml": norm_opt_str(form.files_xml.as_deref()).map(|s| simplify_files_xml(&s, rom_ext)),
         "regions": new_regions,
         "languages": new_languages,
         "ring_codes": new_ring_codes,
         "sector_ranges": new_sector_ranges,
-        "questionable": form.questionable.as_deref() == Some("true"),
-        "enabled": form.enabled.as_deref() != Some("false"),
+        "questionable": form.questionable.iter().any(|v| v == "true"),
+        "enabled": form.enabled.iter().any(|v| v == "true"),
+    })
+}
+
+fn merge_opt_str(db: &serde_json::Value, user: Option<String>) -> serde_json::Value {
+    match user {
+        Some(v) if !v.is_empty() => serde_json::json!(v),
+        _ => db.clone(),
+    }
+}
+
+fn merge_opt_json(db: &serde_json::Value, user: &serde_json::Value) -> serde_json::Value {
+    if user.is_null() { db.clone() } else { user.clone() }
+}
+
+pub(crate) fn build_merged_changes(
+    form: &DiscEditForm,
+    detail: &DiscDetail,
+    all_media_types: &[EditMediaTypeRow],
+) -> serde_json::Value {
+    let db = disc_service::build_snapshot_from_disc(detail);
+    let user = build_flat_changes(form, all_media_types);
+
+    let system_code = {
+        let u = user["system_code"].as_str().unwrap_or("");
+        if u.is_empty() { db["system_code"].clone() } else { user["system_code"].clone() }
+    };
+    let media_type = {
+        let u = user["media_type"].as_str().unwrap_or("");
+        if u.is_empty() { db["media_type"].clone() } else { user["media_type"].clone() }
+    };
+    let title = {
+        let u = user["title"].as_str().unwrap_or("");
+        if u.is_empty() { db["title"].clone() } else { user["title"].clone() }
+    };
+    let category = {
+        let u = user["category"].as_str().unwrap_or("");
+        if u.is_empty() { db["category"].clone() } else { user["category"].clone() }
+    };
+
+    let u_str = |key: &str| user[key].as_str().map(|s| s.to_string());
+    let title_foreign = merge_opt_str(&db["title_foreign"], u_str("title_foreign"));
+    let disc_number = merge_opt_str(&db["disc_number"], u_str("disc_number"));
+    let disc_title = merge_opt_str(&db["disc_title"], u_str("disc_title"));
+    let filename_suffix = merge_opt_str(&db["filename_suffix"], u_str("filename_suffix"));
+    let version = merge_opt_str(&db["version"], u_str("version"));
+    let exe_date = merge_opt_str(&db["exe_date"], u_str("exe_date"));
+    let comments = merge_opt_str(&db["comments"], u_str("comments"));
+    let contents = merge_opt_str(&db["contents"], u_str("contents"));
+    let protection = merge_opt_str(&db["protection"], u_str("protection"));
+    let sbi = merge_opt_str(&db["sbi"], u_str("sbi"));
+    let pvd = merge_opt_str(&db["pvd"], u_str("pvd"));
+    let header = merge_opt_str(&db["header"], u_str("header"));
+    let bca = merge_opt_str(&db["bca"], u_str("bca"));
+    let pic = merge_opt_str(&db["pic"], u_str("pic"));
+    let cue = merge_opt_str(&db["cue"], u_str("cue"));
+    let files_xml = merge_opt_str(&db["files_xml"], u_str("files_xml"));
+
+    let error_count = merge_opt_json(&db["error_count"], &user["error_count"]);
+    let edc = merge_opt_json(&db["edc"], &user["edc"]);
+
+    let layerbreaks = {
+        let u = user["layerbreaks"].as_array();
+        if u.map_or(true, |a| a.is_empty()) { db["layerbreaks"].clone() } else { user["layerbreaks"].clone() }
+    };
+    let keys = {
+        let u = user["keys"].as_array();
+        if u.map_or(true, |a| a.is_empty()) { db["keys"].clone() } else { user["keys"].clone() }
+    };
+    let sector_ranges = {
+        let u = user["sector_ranges"].as_array();
+        if u.map_or(true, |a| a.is_empty()) { db["sector_ranges"].clone() } else { user["sector_ranges"].clone() }
+    };
+
+    let questionable = user["questionable"].as_bool().unwrap_or(
+        db["questionable"].as_bool().unwrap_or(false)
+    );
+    let enabled = user["enabled"].as_bool().unwrap_or(
+        db["enabled"].as_bool().unwrap_or(true)
+    );
+
+    let db_serials: Vec<String> = db["serial"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+    let db_editions: Vec<String> = db["edition"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+    let db_barcodes: Vec<String> = db["barcode"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+    let db_regions: Vec<String> = db["regions"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+    let db_languages: Vec<String> = db["languages"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+
+    let serial = merge_str_vecs(&db_serials, &norm_str_vec(form.serial.clone()));
+    let edition = merge_str_vecs(&db_editions, &norm_str_vec(form.edition.clone()));
+    let barcode = merge_str_vecs(&db_barcodes, &norm_str_vec(form.barcode.clone()));
+    let regions = merge_str_vecs(&db_regions, &norm_str_vec(form.regions.clone()));
+    let languages = merge_str_vecs(&db_languages, &norm_str_vec(form.languages.clone()));
+
+    let db_ring_codes = &db["ring_codes"];
+    let user_ring_codes = &user["ring_codes"];
+    let ring_codes = merge_ring_codes(db_ring_codes, user_ring_codes);
+
+    serde_json::json!({
+        "system_code": system_code,
+        "media_type": media_type,
+        "title": title,
+        "category": category,
+        "title_foreign": title_foreign,
+        "disc_number": disc_number,
+        "disc_title": disc_title,
+        "filename_suffix": filename_suffix,
+        "serial": serial,
+        "version": version,
+        "edition": edition,
+        "barcode": barcode,
+        "comments": comments,
+        "contents": contents,
+        "error_count": error_count,
+        "exe_date": exe_date,
+        "edc": edc,
+        "layerbreaks": layerbreaks,
+        "pvd": pvd,
+        "pic": pic,
+        "bca": bca,
+        "header": header,
+        "protection": protection,
+        "sbi": sbi,
+        "keys": keys,
+        "cue": cue,
+        "files_xml": files_xml,
+        "regions": regions,
+        "languages": languages,
+        "ring_codes": ring_codes,
+        "sector_ranges": sector_ranges,
+        "questionable": questionable,
+        "enabled": enabled,
     })
 }
 
@@ -1665,6 +1975,11 @@ fn format_hex_dump_edit(data: &[u8], base_addr: usize) -> String {
         }
     }
     out
+}
+
+pub(crate) fn normalize_pvd_hex_dump(text: &str) -> String {
+    let bytes = disc_service::parse_hex_dump(text);
+    format_pvd_hex_dump(&bytes)
 }
 
 pub(crate) fn format_pvd_hex_dump(data: &[u8]) -> String {

@@ -9,6 +9,7 @@ pub struct MediaType {
     code: String,
     name: String,
     layer_count: i32,
+    pic: bool,
     rom_extension: String,
 }
 
@@ -23,6 +24,10 @@ impl MediaType {
 
     pub fn is_cd(&self) -> bool {
         self.rom_extension == "bin"
+    }
+
+    pub fn has_pic(&self) -> bool {
+        self.pic
     }
 
     pub fn rom_extension(&self) -> &str {
@@ -57,6 +62,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for MediaType {
             code: code.trim().to_string(),
             name: String::new(),
             layer_count: 1,
+            pic: false,
             rom_extension: String::new(),
         })
     }
@@ -76,6 +82,7 @@ pub struct MediaTypeRow {
     pub code: String,
     pub name: String,
     pub layer_count: i32,
+    pub pic: bool,
     pub rom_extension: String,
 }
 
@@ -85,6 +92,7 @@ impl From<MediaTypeRow> for MediaType {
             code: row.code,
             name: row.name,
             layer_count: row.layer_count,
+            pic: row.pic,
             rom_extension: row.rom_extension,
         }
     }
@@ -266,6 +274,7 @@ pub struct System {
     pub has_sbi: bool,
     pub has_pvd: bool,
     pub has_edc: bool,
+    pub has_keys: bool,
     pub has_title_foreign: bool,
     pub has_disc_title: bool,
     pub has_disc_number: bool,
@@ -275,7 +284,6 @@ pub struct System {
     pub has_edition: bool,
     pub has_error_count: bool,
     pub has_protection: bool,
-    pub has_pic: bool,
     pub has_sector_ranges: bool,
     pub has_header: bool,
     pub has_bca: bool,
@@ -402,9 +410,9 @@ pub struct DiscSubmission {
     pub id: i32,
     pub submission_type: SubmissionType,
     pub submitter_id: i32,
-    pub submitter_comment: Option<String>,
+    pub submission_comment: Option<String>,
     pub target_disc_id: Option<i32>,
-    pub changes: serde_json::Value,
+    pub data: serde_json::Value,
     pub dump_log: Option<String>,
     pub extra_upload_url: Option<String>,
     pub status: SubmissionStatus,
@@ -664,6 +672,59 @@ pub fn simplify_cue(raw_cue: &str, extension: &str) -> String {
         i += 1;
     }
     result.join("\n")
+}
+
+pub fn simplify_files_xml(raw: &str, extension: &str) -> String {
+    let lines: Vec<&str> = raw.lines().collect();
+    let total_tracks = lines.iter()
+        .filter(|l| l.trim().starts_with("<rom "))
+        .count();
+
+    lines.iter().map(|line| {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("<rom ") {
+            return (*line).to_string();
+        }
+        let name = extract_rom_name_attr(trimmed);
+        let track_num = name.as_deref().and_then(extract_track_from_filename);
+        let track_str = track_num.as_deref()
+            .map(|n| n.trim_start_matches('0'))
+            .map(|n| if n.is_empty() { "0" } else { n });
+        let simple_name = build_simple_track_name(track_str, total_tracks, extension);
+        match name {
+            Some(ref old_name) => trimmed.replacen(
+                &format!("name=\"{old_name}\""),
+                &format!("name=\"{simple_name}\""),
+                1,
+            ),
+            None => trimmed.to_string(),
+        }
+    }).collect::<Vec<_>>().join("\n")
+}
+
+fn extract_rom_name_attr(line: &str) -> Option<String> {
+    let needle = "name=\"";
+    let start = line.find(needle)? + needle.len();
+    let end = line[start..].find('"')? + start;
+    Some(line[start..end].to_string())
+}
+
+fn extract_track_from_filename(filename: &str) -> Option<String> {
+    if filename.ends_with(".iso") {
+        return Some("1".to_string());
+    }
+    let lower = filename.to_lowercase();
+    if lower.starts_with("track.") {
+        return Some("1".to_string());
+    }
+    if let Some(pos) = lower.find("track ") {
+        let rest = &filename[pos + 6..];
+        let num: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+        if !num.is_empty() {
+            return Some(num);
+        }
+    }
+    None
 }
 
 pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {

@@ -9,6 +9,9 @@ function addInlineEntry(containerId, name) {
     var input = document.createElement('input');
     input.type = 'text';
     input.name = name;
+    if (last) {
+        input.style.width = last.style.width;
+    }
     container.appendChild(input);
     input.focus();
 }
@@ -50,10 +53,19 @@ function getMaxLayers() {
     return (typeof MAX_LAYERS !== 'undefined') ? MAX_LAYERS : 1;
 }
 
-function systemHasOffsetExtra() {
+function getRingLayers() {
+    return Math.max(getMaxLayers(), 2);
+}
+
+function systemHasFlag(flag) {
     var sel = document.getElementById('system-select');
-    if (!sel || typeof SYSTEMS_HAS_OFFSET_EXTRA === 'undefined') return false;
-    return !!SYSTEMS_HAS_OFFSET_EXTRA[sel.value];
+    if (!sel || typeof SYSTEMS_HAS_FLAGS === 'undefined') return false;
+    var flags = SYSTEMS_HAS_FLAGS[sel.value];
+    return flags ? !!flags[flag] : false;
+}
+
+function systemHasOffsetExtra() {
+    return systemHasFlag('has_offset_extra');
 }
 
 function emptyLayer() {
@@ -67,7 +79,7 @@ function emptyEntry(ml) {
 }
 
 function ensureEmptyRingEntry() {
-    var ml = getMaxLayers();
+    var ml = getRingLayers();
     if (ringEntries.length === 0 || !isEntryEmpty(ringEntries[ringEntries.length - 1])) {
         ringEntries.push(emptyEntry(ml));
     }
@@ -90,7 +102,7 @@ function renderRingEntries() {
     var tbody = document.getElementById('ring-tbody');
     if (!thead || !tbody) return;
 
-    var ml = getMaxLayers();
+    var ml = getRingLayers();
 
     // Pad all entries to current max layers
     for (var i = 0; i < ringEntries.length; i++) {
@@ -98,7 +110,7 @@ function renderRingEntries() {
         while (ringEntries[i].layers.length < ml) ringEntries[i].layers.push(emptyLayer());
     }
 
-    var showSampleStart = (typeof HAS_SAMPLE_START !== 'undefined') && HAS_SAMPLE_START;
+    var showSampleStart = systemHasFlag('has_sample_start');
     var showOffsetExtra = systemHasOffsetExtra();
 
     // Build header
@@ -144,6 +156,11 @@ function renderRingEntries() {
             }
 
             tr.innerHTML = cells;
+            if (typeof RING_HIGHLIGHTS !== 'undefined' && RING_HIGHLIGHTS[ei]) {
+                var hlClass = RING_HIGHLIGHTS[ei] === 'added' ? 'item-added' :
+                              RING_HIGHLIGHTS[ei] === 'changed' ? 'field-changed' : '';
+                if (hlClass) tr.classList.add(hlClass);
+            }
             tbody.appendChild(tr);
         }
     }
@@ -165,7 +182,7 @@ function addRingEntry() {
         if (firstInput) firstInput.focus();
         return;
     }
-    ringEntries.push(emptyEntry(getMaxLayers()));
+    ringEntries.push(emptyEntry(getRingLayers()));
     renderRingEntries();
     applyRingColumnWidths();
     var newFirst = document.querySelector('#ring-tbody tr[data-entry="' + (ringEntries.length - 1) + '"] input');
@@ -175,7 +192,7 @@ function addRingEntry() {
 function saveRingFromDom() {
     var tbody = document.getElementById('ring-tbody');
     if (!tbody) return;
-    var ml = getMaxLayers();
+    var ml = getRingLayers();
     var rows = tbody.querySelectorAll('tr');
     rows.forEach(function (tr) {
         var ei = parseInt(tr.dataset.entry, 10);
@@ -211,6 +228,60 @@ function val(parent, sel) {
 
 function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function applySystemFieldVisibility() {
+    var sysSel = document.getElementById('system-select');
+    if (!sysSel || typeof SYSTEMS_HAS_FLAGS === 'undefined') return;
+    var flags = SYSTEMS_HAS_FLAGS[sysSel.value];
+    if (!flags) return;
+    document.querySelectorAll('[data-field-flag]').forEach(function (el) {
+        var flag = el.getAttribute('data-field-flag');
+        var show = flags[flag] !== undefined ? !!flags[flag] : true;
+        var wasHidden = el.style.display === 'none';
+        el.style.display = show ? '' : 'none';
+        if (show && wasHidden) {
+            el.querySelectorAll('textarea.auto-expand').forEach(function (ta) {
+                autoExpand(ta);
+            });
+            el.querySelectorAll('.inline-field-values').forEach(function (c) {
+                fitInlineGroup(c);
+            });
+        }
+    });
+}
+
+function applyMediaFieldVisibility() {
+    var mediaSel = document.getElementById('media-select');
+    if (!mediaSel || typeof MEDIA_HAS_PIC === 'undefined') return;
+    var code = mediaSel.value;
+    var showPic = !!MEDIA_HAS_PIC[code];
+    document.querySelectorAll('[data-media-flag="has_pic"]').forEach(function (el) {
+        var wasHidden = el.style.display === 'none';
+        el.style.display = showPic ? '' : 'none';
+        if (showPic && wasHidden) {
+            el.querySelectorAll('textarea.auto-expand').forEach(function (ta) {
+                autoExpand(ta);
+            });
+        }
+    });
+}
+
+function applyCueRules() {
+    var mediaSel = document.getElementById('media-select');
+    var cueField = document.getElementById('cue-field');
+    if (!mediaSel || !cueField || typeof MEDIA_ROM_EXTENSIONS === 'undefined') return;
+    var ext = MEDIA_ROM_EXTENSIONS[mediaSel.value];
+    var isBin = ext === 'bin';
+    var wasHidden = cueField.style.display === 'none';
+    cueField.style.display = isBin ? '' : 'none';
+    var ta = cueField.querySelector('textarea');
+    if (ta) {
+        ta.disabled = !isBin;
+        if (isBin && wasHidden) {
+            autoExpand(ta);
+        }
+    }
 }
 
 // System <-> media type filtering
@@ -277,6 +348,24 @@ function getInputFont(input) {
 var MIN_INPUT_WIDTH = 40;
 var INPUT_PADDING = 24;
 
+var DEFAULT_WIDTHS = {
+    'serial': 12,
+    'edition': 10,
+    'barcode': 16,
+    'version': 6,
+    'error_count': 4,
+    'exe_date': 10,
+    'layerbreak': 8,
+    'protection_key_disc_key': 32,
+    'protection_key_disc_id': 32
+};
+
+function defaultWidthPx(name, font) {
+    var chars = DEFAULT_WIDTHS[name];
+    if (!chars) return MIN_INPUT_WIDTH;
+    return measureText('M'.repeat(chars), font) + INPUT_PADDING;
+}
+
 // Size all inputs in an inline-field-values container to the max content width
 function fitInlineGroup(container) {
     var inputs = container.querySelectorAll('input[type="text"], input[type="number"]');
@@ -287,6 +376,10 @@ function fitInlineGroup(container) {
         var w = measureText(inp.value, font) + INPUT_PADDING;
         if (w > maxW) maxW = w;
     });
+    if (maxW <= MIN_INPUT_WIDTH) {
+        var name = inputs[0].name;
+        maxW = defaultWidthPx(name, font);
+    }
     inputs.forEach(function (inp) {
         inp.style.width = maxW + 'px';
     });
@@ -302,6 +395,18 @@ function fitAllInlineGroups() {
 var _ringColWidths = {};
 var RING_COL_CLASSES = ['ring-mc', 'ring-ms', 'ring-tools', 'ring-moulds', 'ring-addmoulds', 'ring-offset', 'ring-offset-extra', 'ring-sample-start', 'ring-comment'];
 
+var RING_DEFAULT_WIDTHS = {
+    'ring-mc': 22,
+    'ring-ms': 10,
+    'ring-tools': 5,
+    'ring-moulds': 10,
+    'ring-addmoulds': 14,
+    'ring-offset': 4,
+    'ring-offset-extra': 4,
+    'ring-sample-start': 6,
+    'ring-comment': 8
+};
+
 function fitRingColumns() {
     var tbody = document.getElementById('ring-tbody');
     if (!tbody) return;
@@ -315,6 +420,9 @@ function fitRingColumns() {
             var w = measureText(inp.value, font) + INPUT_PADDING;
             if (w > maxW) maxW = w;
         });
+        if (maxW <= MIN_INPUT_WIDTH && RING_DEFAULT_WIDTHS[cls]) {
+            maxW = measureText('M'.repeat(RING_DEFAULT_WIDTHS[cls]), font) + INPUT_PADDING;
+        }
         _ringColWidths[cls] = maxW;
         inputs.forEach(function (inp) {
             inp.style.width = maxW + 'px';
@@ -358,8 +466,11 @@ function renderLayerbreaks() {
 
 // Init
 document.addEventListener('DOMContentLoaded', function () {
-    initRingEditor();
     filterMediaTypes();
+    applySystemFieldVisibility();
+    applyMediaFieldVisibility();
+    applyCueRules();
+    initRingEditor();
     renderLayerbreaks();
     initAutoExpand();
     fitAllInlineGroups();
@@ -369,13 +480,19 @@ document.addEventListener('DOMContentLoaded', function () {
     if (sysSel) {
         sysSel.addEventListener('change', function () {
             filterMediaTypes();
+            applySystemFieldVisibility();
+            applyMediaFieldVisibility();
+            applyCueRules();
             renderRingEntries();
             fitRingColumns();
+            renderLayerbreaks();
         });
     }
     var mediaSel = document.getElementById('media-select');
     if (mediaSel) {
         mediaSel.addEventListener('change', function () {
+            applyMediaFieldVisibility();
+            applyCueRules();
             renderRingEntries();
             fitRingColumns();
             renderLayerbreaks();

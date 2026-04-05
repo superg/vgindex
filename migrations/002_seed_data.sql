@@ -1,21 +1,21 @@
 INSERT INTO media_types
-    (code,       name,                layer_count, rom_extension) VALUES
-    ('cd',       'CD',                          1, 'bin'),
-    ('gdrom',    'GD-ROM',                      1, 'bin'),
-    ('dvd5',     'DVD-5',                       1, 'iso'),
-    ('dvd5gc',   'Nintendo GameCube Game Disc', 1, 'iso'),
-    ('dvd5wii',  'Wii Optical Disc (SL)',       1, 'iso'),
-    ('dvd9',     'DVD-9',                       2, 'iso'),
-    ('dvd9wii',  'Wii Optical Disc (DL)',       2, 'iso'),
-    ('hdvd15',   'HD DVD (SL)',                 1, 'iso'),
-    ('hdvd30',   'HD DVD (DL)',                 2, 'iso'),
-    ('bd25',     'BD-25',                       1, 'iso'),
-    ('bd25wiiu', 'Wii U Optical Disc (SL)',     1, 'iso'),
-    ('bd50',     'BD-50',                       2, 'iso'),
-    ('bd66',     'BD-66',                       2, 'iso'),
-    ('bd100',    'BD-100',                      3, 'iso'),
-    ('umd1',     'UMD (SL)',                    1, 'iso'),
-    ('umd2',     'UMD (DL)',                    2, 'iso');
+    (code,       name,                layer_count, pic,   rom_extension) VALUES
+    ('cd',       'CD',                          1, FALSE, 'bin'),
+    ('gdrom',    'GD-ROM',                      1, FALSE, 'bin'),
+    ('dvd5',     'DVD-5',                       1, FALSE, 'iso'),
+    ('dvd5gc',   'Nintendo GameCube Game Disc', 1, FALSE, 'iso'),
+    ('dvd5wii',  'Wii Optical Disc (SL)',       1, FALSE, 'iso'),
+    ('dvd9',     'DVD-9',                       2, FALSE, 'iso'),
+    ('dvd9wii',  'Wii Optical Disc (DL)',       2, FALSE, 'iso'),
+    ('hdvd15',   'HD DVD (SL)',                 1, FALSE, 'iso'),
+    ('hdvd30',   'HD DVD (DL)',                 2, FALSE, 'iso'),
+    ('bd25',     'BD-25',                       1, TRUE,  'iso'),
+    ('bd25wiiu', 'Wii U Optical Disc (SL)',     1, TRUE,  'iso'),
+    ('bd50',     'BD-50',                       2, TRUE,  'iso'),
+    ('bd66',     'BD-66',                       2, TRUE,  'iso'),
+    ('bd100',    'BD-100',                      3, TRUE,  'iso'),
+    ('umd1',     'UMD (SL)',                    1, FALSE, 'iso'),
+    ('umd2',     'UMD (DL)',                    2, FALSE, 'iso');
 
 INSERT INTO categories
     (name) VALUES
@@ -266,6 +266,10 @@ SET has_edc = TRUE
 WHERE code IN ('PSX');
 
 UPDATE systems
+SET has_keys = TRUE
+WHERE code IN ('PS3');
+
+UPDATE systems
 SET has_protection = TRUE
 WHERE code IN ('PSX', 'DVD-VIDEO', 'PC', 'MAC', 'BD-VIDEO', 'GAMEWAVE');
 
@@ -288,10 +292,6 @@ WHERE code IN ('MCD', 'DC', 'SS', 'NAOMI', 'TRF', 'CHIHIRO', 'NAOMI2');
 UPDATE systems
 SET has_bca = TRUE
 WHERE code IN ('GC', 'WII');
-
-UPDATE systems
-SET has_pic = TRUE
-WHERE code IN ('PC', 'PS3', 'BD-VIDEO', 'PS4', 'XBOXONE', 'XBOXSX', 'PS5');
 
 UPDATE systems
 SET has_sample_start = TRUE

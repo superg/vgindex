@@ -2,6 +2,7 @@ CREATE TABLE media_types (
     code VARCHAR(8) PRIMARY KEY,
     name VARCHAR(32) UNIQUE NOT NULL,
     layer_count INT NOT NULL DEFAULT 1,
+    pic BOOLEAN NOT NULL DEFAULT FALSE,
     rom_extension VARCHAR(8) NOT NULL DEFAULT 'iso'
 );
 
@@ -40,13 +41,13 @@ CREATE TABLE systems (
     has_error_count BOOLEAN NOT NULL DEFAULT FALSE,
     has_exe_date BOOLEAN NOT NULL DEFAULT FALSE,
     has_edc BOOLEAN NOT NULL DEFAULT FALSE,
+    has_keys BOOLEAN NOT NULL DEFAULT FALSE,
     has_protection BOOLEAN NOT NULL DEFAULT FALSE,
     has_sector_ranges BOOLEAN NOT NULL DEFAULT FALSE,
     has_sbi BOOLEAN NOT NULL DEFAULT FALSE,
     has_pvd BOOLEAN NOT NULL DEFAULT FALSE,
     has_header BOOLEAN NOT NULL DEFAULT FALSE,
     has_bca BOOLEAN NOT NULL DEFAULT FALSE,
-    has_pic BOOLEAN NOT NULL DEFAULT FALSE,
     -- ring code
     has_sample_start BOOLEAN NOT NULL DEFAULT FALSE,
     has_offset_extra BOOLEAN NOT NULL DEFAULT FALSE
@@ -210,9 +211,9 @@ CREATE TABLE disc_submissions (
     id SERIAL PRIMARY KEY,
     submission_type submission_type_enum NOT NULL,
     submitter_id INT NOT NULL REFERENCES users(id),
-    submitter_comment TEXT,
+    submission_comment TEXT,
     target_disc_id INT REFERENCES discs(id),
-    changes JSONB NOT NULL,
+    data JSONB NOT NULL,
     dump_log TEXT,
     extra_upload_url VARCHAR(512),
     status submission_status_enum NOT NULL DEFAULT 'Pending',
