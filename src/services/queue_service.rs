@@ -4,26 +4,35 @@ use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 use crate::services::disc_service;
 
+fn normalize_newlines(s: &str) -> String {
+    s.replace("\r\n", "\n").replace('\r', "\n")
+}
+
 pub async fn create_submission(
     pool: &PgPool,
     sub_type: SubmissionType,
     submitter_id: i32,
     target_disc_id: Option<i32>,
-    data: serde_json::Value,
+    changes: serde_json::Value,
     submission_comment: Option<&str>,
     dump_log: Option<&str>,
     extra_upload_url: Option<&str>,
 ) -> AppResult<DiscSubmission> {
+    let normalized_submission_comment: Option<String> = submission_comment
+        .map(normalize_newlines)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
     let sub: DiscSubmission = sqlx::query_as(
-        "INSERT INTO disc_submissions (submission_type, submitter_id, submission_comment, target_disc_id, data, dump_log, extra_upload_url)
+        "INSERT INTO disc_submissions (submission_type, submitter_id, submission_comment, target_disc_id, changes, dump_log, extra_upload_url)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *"
     )
     .bind(sub_type)
     .bind(submitter_id)
-    .bind(submission_comment)
+    .bind(normalized_submission_comment.as_deref())
     .bind(target_disc_id)
-    .bind(&data)
+    .bind(&changes)
     .bind(dump_log)
     .bind(extra_upload_url)
     .fetch_one(pool)
@@ -105,6 +114,393 @@ fn extract_xml_attr(line: &str, attr: &str) -> Option<String> {
     Some(line[start..end].to_string())
 }
 
+fn json_str_vec(value: &serde_json::Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn merge_str_vecs(old: &[String], new: &[String]) -> Vec<String> {
+    let mut merged: Vec<String> = old.to_vec();
+    for s in new {
+        if !merged.iter().any(|existing| existing.eq_ignore_ascii_case(s)) {
+            merged.push(s.clone());
+        }
+    }
+    merged
+}
+
+fn merge_i32_vecs(old: &[i32], new: &[i32]) -> Vec<i32> {
+    let mut merged: Vec<i32> = old.to_vec();
+    for value in new {
+        if !merged.contains(value) {
+            merged.push(*value);
+        }
+    }
+    merged.sort_unstable();
+    merged
+}
+
+fn history_new_value(node: &serde_json::Value) -> Option<&serde_json::Value> {
+    node.as_object().and_then(|obj| obj.get("new"))
+}
+
+fn apply_string_list_history(
+    old_values: &[String],
+    changes: &serde_json::Value,
+    allow_removal: bool,
+) -> Vec<String> {
+    let mut out = old_values.to_vec();
+    let Some(items) = changes.as_array() else {
+        return out;
+    };
+
+    for item in items {
+        let idx = item.get("index").and_then(|v| v.as_u64()).map(|v| v as usize);
+        let new_value = item.get("new");
+        match (idx, new_value) {
+            (Some(i), Some(serde_json::Value::Null)) => {
+                if allow_removal && i < out.len() {
+                    out.remove(i);
+                }
+            }
+            (Some(_), None) => {}
+            (Some(i), Some(v)) => {
+                let text = v.as_str().unwrap_or("").to_string();
+                if i < out.len() {
+                    out[i] = text;
+                } else {
+                    while out.len() < i {
+                        out.push(String::new());
+                    }
+                    out.push(text);
+                }
+            }
+            (None, Some(serde_json::Value::Null)) | (None, None) => {}
+            (None, Some(v)) => {
+                let text = v.as_str().unwrap_or("").to_string();
+                if !text.is_empty() {
+                    out.push(text);
+                }
+            }
+        }
+    }
+
+    out.retain(|s| !s.trim().is_empty());
+    out
+}
+
+fn apply_i32_list_history(
+    old_values: &[i32],
+    changes: &serde_json::Value,
+    allow_removal: bool,
+) -> Vec<i32> {
+    let old_as_str: Vec<String> = old_values.iter().map(|v| v.to_string()).collect();
+    apply_string_list_history(&old_as_str, changes, allow_removal)
+        .into_iter()
+        .filter_map(|s| s.parse::<i32>().ok())
+        .collect()
+}
+
+fn parse_csv_ids(value: &str) -> Vec<String> {
+    let mut out: Vec<String> = value
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    out.sort_by_key(|s| s.to_lowercase());
+    out.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    out
+}
+
+fn normalize_csv_ids(value: &str) -> String {
+    parse_csv_ids(value).join(", ")
+}
+
+fn merge_csv_ids(old_value: &str, new_value: &str) -> String {
+    let old_items = parse_csv_ids(old_value);
+    let new_items = parse_csv_ids(new_value);
+    let merged = merge_str_vecs(&old_items, &new_items);
+    normalize_csv_ids(&merged.join(", "))
+}
+
+fn apply_regions_languages_change(
+    submission_type: SubmissionType,
+    old_value: &serde_json::Value,
+    change_node: &serde_json::Value,
+) -> serde_json::Value {
+    let new_csv = history_new_value(change_node).and_then(|v| v.as_str()).unwrap_or("");
+    let mut new_values = parse_csv_ids(new_csv);
+    if submission_type == SubmissionType::Disc {
+        let old_values = json_str_vec(old_value);
+        new_values = merge_str_vecs(&old_values, &new_values);
+    }
+    serde_json::json!(new_values)
+}
+
+fn ring_set_scalar_field(
+    entry: &mut serde_json::Value,
+    key: &str,
+    change_node: &serde_json::Value,
+) {
+    let Some(new_value) = history_new_value(change_node) else {
+        return;
+    };
+    entry[key] = match new_value {
+        serde_json::Value::Null => serde_json::json!(""),
+        serde_json::Value::String(s) => serde_json::json!(s),
+        serde_json::Value::Number(n) => serde_json::json!(n.to_string()),
+        serde_json::Value::Bool(b) => serde_json::json!(b.to_string()),
+        _ => serde_json::json!(new_value.to_string()),
+    };
+}
+
+fn ring_get_or_create_layer(entry: &mut serde_json::Value, layer_index: usize) -> &mut serde_json::Value {
+    if !entry["layers"].is_array() {
+        entry["layers"] = serde_json::json!([]);
+    }
+    while entry["layers"].as_array().map(|a| a.len()).unwrap_or(0) <= layer_index {
+        let arr = entry["layers"].as_array_mut().expect("layers array exists");
+        arr.push(serde_json::json!({
+            "mastering_code": "",
+            "mastering_sid": "",
+            "toolstamps": "",
+            "mould_sids": "",
+            "additional_moulds": ""
+        }));
+    }
+    &mut entry["layers"][layer_index]
+}
+
+fn ring_layers_max(entries: &[serde_json::Value]) -> usize {
+    entries
+        .iter()
+        .map(|e| e["layers"].as_array().map(|a| a.len()).unwrap_or(0))
+        .max()
+        .unwrap_or(0)
+}
+
+fn apply_ring_codes_history(
+    submission_type: SubmissionType,
+    old_value: &serde_json::Value,
+    change_node: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    let mut rings = old_value.as_array().cloned().unwrap_or_default();
+    let before_layers = ring_layers_max(&rings);
+    disc_service::sort_ring_codes_json(&mut rings, before_layers);
+    let Some(changes) = change_node.as_array() else {
+        return Ok(serde_json::json!(rings));
+    };
+    let allow_removal = submission_type == SubmissionType::Edit;
+    let mut removals: Vec<usize> = Vec::new();
+    let mut additions: Vec<serde_json::Value> = Vec::new();
+
+    for change in changes {
+        let idx = change
+            .get("index")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+        if change.get("removed").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if allow_removal {
+                let Some(remove_idx) = idx else {
+                    return Err(AppError::BadRequest(
+                        "ring_codes removal requires entry index".to_string(),
+                    ));
+                };
+                if remove_idx >= rings.len() {
+                    return Err(AppError::BadRequest(format!(
+                        "ring_codes index {} out of range (len {})",
+                        remove_idx,
+                        rings.len()
+                    )));
+                }
+                removals.push(remove_idx);
+            }
+            continue;
+        }
+
+        let entry = if let Some(i) = idx {
+            if i >= rings.len() {
+                return Err(AppError::BadRequest(format!(
+                    "ring_codes index {} out of range (len {})",
+                    i,
+                    rings.len()
+                )));
+            }
+            &mut rings[i]
+        } else {
+            additions.push(serde_json::json!({
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": []
+            }));
+            additions
+                .last_mut()
+                .expect("addition just pushed")
+        };
+
+        for (history_key, target_key) in [
+            ("offset_value", "offset_value"),
+            ("offset_extra_value", "offset_extra_value"),
+            ("sample_data_start", "sample_start"),
+            ("comment", "comment"),
+        ] {
+            if let Some(node) = change.get(history_key) {
+                ring_set_scalar_field(entry, target_key, node);
+            }
+        }
+
+        if let Some(layer_changes) = change.get("layers").and_then(|v| v.as_array()) {
+            for layer_change in layer_changes {
+                let Some(layer_idx) = layer_change.get("index").and_then(|v| v.as_u64()) else {
+                    continue;
+                };
+                let layer = ring_get_or_create_layer(entry, layer_idx as usize);
+                for field in ["mastering_code", "mastering_sid"] {
+                    if let Some(node) = layer_change.get(field) {
+                        ring_set_scalar_field(layer, field, node);
+                    }
+                }
+                for field in ["toolstamps", "mould_sids", "additional_moulds"] {
+                    if let Some(node) = layer_change.get(field) {
+                        let old_csv = normalize_csv_ids(layer[field].as_str().unwrap_or(""));
+                        let new_csv = history_new_value(node)
+                            .and_then(|v| v.as_str())
+                            .map(normalize_csv_ids)
+                            .unwrap_or_default();
+                        let next = if submission_type == SubmissionType::Disc {
+                            merge_csv_ids(&old_csv, &new_csv)
+                        } else {
+                            new_csv
+                        };
+                        layer[field] = serde_json::json!(next);
+                    }
+                }
+            }
+        }
+    }
+
+    removals.sort_unstable();
+    removals.dedup();
+    for idx in removals.into_iter().rev() {
+        rings.remove(idx);
+    }
+    rings.extend(additions);
+    let after_layers = ring_layers_max(&rings);
+    disc_service::sort_ring_codes_json(&mut rings, after_layers);
+
+    Ok(serde_json::json!(rings))
+}
+
+pub fn resolve_submission_snapshot(
+    submission_type: SubmissionType,
+    db_snapshot: &serde_json::Value,
+    changes: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    let mut resolved = db_snapshot.clone();
+    let Some(change_obj) = changes.as_object() else {
+        return Ok(resolved);
+    };
+    let Some(resolved_obj) = resolved.as_object_mut() else {
+        return Ok(resolved);
+    };
+
+    for (key, value) in change_obj {
+        match key.as_str() {
+            "regions" | "languages" => {
+                let old = resolved_obj.get(key).cloned().unwrap_or(serde_json::Value::Null);
+                let updated = apply_regions_languages_change(submission_type, &old, value);
+                resolved_obj.insert(key.clone(), updated);
+            }
+            "serial" | "edition" | "barcode" | "keys" => {
+                let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
+                let updated = apply_string_list_history(&old, value, submission_type == SubmissionType::Edit);
+                if submission_type == SubmissionType::Disc {
+                    let merged = merge_str_vecs(&old, &updated);
+                    resolved_obj.insert(key.clone(), serde_json::json!(merged));
+                } else {
+                    resolved_obj.insert(key.clone(), serde_json::json!(updated));
+                }
+            }
+            "layerbreaks" => {
+                let old: Vec<i32> = resolved_obj
+                    .get(key)
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|x| x as i32)).collect())
+                    .unwrap_or_default();
+                let updated = apply_i32_list_history(&old, value, submission_type == SubmissionType::Edit);
+                if submission_type == SubmissionType::Disc {
+                    let merged = merge_i32_vecs(&old, &updated);
+                    resolved_obj.insert(key.clone(), serde_json::json!(merged));
+                } else {
+                    resolved_obj.insert(key.clone(), serde_json::json!(updated));
+                }
+            }
+            "ring_codes" => {
+                let old = resolved_obj.get(key).cloned().unwrap_or_else(|| serde_json::json!([]));
+                let updated = apply_ring_codes_history(submission_type, &old, value)?;
+                resolved_obj.insert(key.clone(), updated);
+            }
+            _ => {
+                let Some(new_value) = history_new_value(value).cloned() else {
+                    continue;
+                };
+                if submission_type == SubmissionType::Disc {
+                    match key.as_str() {
+                        "questionable" => {
+                            let old = resolved_obj.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+                            let new = new_value.as_bool().unwrap_or(false);
+                            resolved_obj.insert(key.clone(), serde_json::json!(old || new));
+                        }
+                        "enabled" => {
+                            let old = resolved_obj.get(key).and_then(|v| v.as_bool()).unwrap_or(true);
+                            let new = new_value.as_bool().unwrap_or(false);
+                            resolved_obj.insert(key.clone(), serde_json::json!(old || new));
+                        }
+                        "error_count" | "edc" => {
+                            if !new_value.is_null() {
+                                resolved_obj.insert(key.clone(), new_value);
+                            }
+                        }
+                        _ => match &new_value {
+                            serde_json::Value::Null => {}
+                            serde_json::Value::String(text) if text.trim().is_empty() => {}
+                            _ => {
+                                resolved_obj.insert(key.clone(), new_value);
+                            }
+                        },
+                    }
+                } else {
+                    resolved_obj.insert(key.clone(), new_value);
+                }
+            }
+        }
+    }
+
+    Ok(resolved)
+}
+
+async fn resolve_submission_data(
+    pool: &PgPool,
+    sub: &DiscSubmission,
+    changes: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    if let Some(disc_id) = sub.target_disc_id {
+        let detail = disc_service::get_disc_detail(pool, disc_id).await?;
+        let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
+        resolve_submission_snapshot(sub.submission_type, &db_snapshot, changes)
+    } else {
+        Ok(changes.clone())
+    }
+}
+
 /// Atomically reject a submission.  Returns `true` if the rejection was
 /// applied, `false` if the submission was already processed by another
 /// moderator (race condition).
@@ -114,13 +510,18 @@ pub async fn reject_submission(
     reviewer_id: i32,
     review_comment: Option<&str>,
 ) -> AppResult<bool> {
+    let normalized_review_comment: Option<String> = review_comment
+        .map(normalize_newlines)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
     let result = sqlx::query(
         "UPDATE disc_submissions SET status = 'Rejected', reviewer_id = $1,
          review_comment = $2, reviewed_at = NOW()
          WHERE id = $3 AND status = 'Pending'",
     )
     .bind(reviewer_id)
-    .bind(review_comment)
+    .bind(normalized_review_comment.as_deref())
     .bind(id)
     .execute(pool)
     .await?;
@@ -137,21 +538,38 @@ pub async fn reject_submission(
 pub async fn approve_submission(
     pool: &PgPool,
     sub: &DiscSubmission,
-    data: &serde_json::Value,
+    changes: &serde_json::Value,
+    is_sparse_changes: bool,
     reviewer_id: i32,
     review_comment: Option<&str>,
 ) -> AppResult<Option<i32>> {
+    let effective_data = if is_sparse_changes {
+        resolve_submission_data(pool, sub, changes).await?
+    } else {
+        changes.clone()
+    };
+    let stored_data = if is_sparse_changes {
+        changes.clone()
+    } else {
+        effective_data.clone()
+    };
+
     // Atomically claim the submission by setting status = 'Approved'
     // only when it is still 'Pending'.  If another moderator already
     // processed it, rows_affected will be 0.
+    let normalized_review_comment: Option<String> = review_comment
+        .map(normalize_newlines)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
     let claim = sqlx::query(
         "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1,
-         review_comment = $2, reviewed_at = NOW(), data = $3
+         review_comment = $2, reviewed_at = NOW(), changes = $3
          WHERE id = $4 AND status = 'Pending'",
     )
     .bind(reviewer_id)
-    .bind(review_comment)
-    .bind(data)
+    .bind(normalized_review_comment.as_deref())
+    .bind(&stored_data)
     .bind(sub.id)
     .execute(pool)
     .await?;
@@ -161,7 +579,7 @@ pub async fn approve_submission(
     }
 
     let disc_id = if let Some(existing_id) = sub.target_disc_id {
-        disc_service::update_disc(pool, existing_id, data).await?;
+        disc_service::update_disc(pool, existing_id, &effective_data).await?;
 
         if sub.submission_type == SubmissionType::Disc {
             sqlx::query(
@@ -177,7 +595,7 @@ pub async fn approve_submission(
     } else {
         let new_id = disc_service::create_disc_from_submission(
             pool,
-            data,
+            &effective_data,
             sub.submitter_id,
         )
         .await?;
@@ -234,7 +652,7 @@ pub async fn list_submissions(
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("COALESCE(d.system_code, ds.data->>'system_code') = ${idx}"));
+        conditions.push(format!("COALESCE(d.system_code, ds.changes->>'system_code') = ${idx}"));
     }
     if submitter_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -243,8 +661,8 @@ pub async fn list_submissions(
 
     let sort_col = match sort_column {
         "date"      => "ds.created_at",
-        "title"     => "LOWER(COALESCE(d.title, ds.data->>'title', 'Untitled'))",
-        "system"    => "LOWER(COALESCE(d.system_code, ds.data->>'system_code', ''))",
+        "title"     => "LOWER(COALESCE(d.title, ds.changes->>'title', 'Untitled'))",
+        "system"    => "LOWER(COALESCE(d.system_code, ds.changes->>'system_code', ''))",
         "submitter" => "LOWER(u.username)",
         "reviewer"  => "LOWER(COALESCE(ur.username, ''))",
         "type"      => "ds.submission_type",
@@ -255,8 +673,8 @@ pub async fn list_submissions(
 
     let sql = format!(
         "SELECT ds.id, ds.submission_type,
-                COALESCE(d.title, ds.data->>'title', 'Untitled') AS title,
-                COALESCE(d.system_code, ds.data->>'system_code', '') AS system_code,
+                COALESCE(d.title, ds.changes->>'title', 'Untitled') AS title,
+                COALESCE(d.system_code, ds.changes->>'system_code', '') AS system_code,
                 u.username AS submitter,
                 ds.submitter_id,
                 ur.username AS reviewer,
@@ -327,7 +745,7 @@ pub async fn count_submissions(
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("COALESCE(d.system_code, ds.data->>'system_code') = ${idx}"));
+        conditions.push(format!("COALESCE(d.system_code, ds.changes->>'system_code') = ${idx}"));
     }
     if submitter_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -369,4 +787,63 @@ pub async fn count_submissions(
     }
 
     Ok(query.fetch_one(pool).await?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ring_entry(mastering_code: &str, comment: &str) -> serde_json::Value {
+        serde_json::json!({
+            "offset_value": "",
+            "offset_extra_value": "",
+            "sample_start": "",
+            "comment": comment,
+            "layers": [
+                {
+                    "mastering_code": mastering_code,
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn apply_ring_codes_history_uses_sorted_indices() {
+        let old = serde_json::json!([
+            ring_entry("B", ""),
+            ring_entry("A", "")
+        ]);
+        let changes = serde_json::json!([
+            {
+                "index": 0,
+                "comment": { "new": "updated" }
+            }
+        ]);
+
+        let result = apply_ring_codes_history(SubmissionType::Edit, &old, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+        assert_eq!(entries[0]["layers"][0]["mastering_code"], "A");
+        assert_eq!(entries[0]["comment"], "updated");
+    }
+
+    #[test]
+    fn apply_ring_codes_history_rejects_out_of_range_index() {
+        let old = serde_json::json!([ring_entry("A", "")]);
+        let changes = serde_json::json!([
+            {
+                "index": 4,
+                "comment": { "new": "nope" }
+            }
+        ]);
+
+        let err = apply_ring_codes_history(SubmissionType::Edit, &old, &changes).unwrap_err();
+        match err {
+            AppError::BadRequest(msg) => assert!(msg.contains("out of range")),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
 }

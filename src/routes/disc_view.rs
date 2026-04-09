@@ -182,26 +182,10 @@ async fn disc_view(
     let can_edit = user.user().map_or(false, |u| u.role.can_submit());
 
     let mut sorted_entries = detail.ring_entries.clone();
-    sorted_entries.sort_by(|a, b| {
-        let max_layers = a.layers.len().max(b.layers.len());
-        for i in 0..max_layers {
-            let al = a.layers.get(i);
-            let bl = b.layers.get(i);
-            let a_mc = al.and_then(|l| l.mastering_code.as_deref()).unwrap_or("");
-            let b_mc = bl.and_then(|l| l.mastering_code.as_deref()).unwrap_or("");
-            match a_mc.cmp(b_mc) {
-                std::cmp::Ordering::Equal => {}
-                ord => return ord,
-            }
-            let a_ms = al.and_then(|l| l.mastering_sid.as_deref()).unwrap_or("");
-            let b_ms = bl.and_then(|l| l.mastering_sid.as_deref()).unwrap_or("");
-            match a_ms.cmp(b_ms) {
-                std::cmp::Ordering::Equal => {}
-                ord => return ord,
-            }
-        }
-        std::cmp::Ordering::Equal
-    });
+    disc_service::sort_ring_entry_views(
+        &mut sorted_entries,
+        detail.disc.media_type.max_layers() as usize,
+    );
 
     let ring_display_layers = detail.disc.media_type.max_layers().max(2) as usize;
 
@@ -247,9 +231,9 @@ async fn disc_view(
                 layer: format!("L{}", li),
                 mastering_code: ring_tab_replace(&layer.and_then(|l| l.mastering_code.clone()).unwrap_or_default()),
                 mastering_sid: ring_tab_replace(&layer.and_then(|l| l.mastering_sid.clone()).unwrap_or_default()),
-                mould_sids: { let mut v = layer.map(|l| l.mould_sids.clone()).unwrap_or_default(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
-                additional_moulds: { let mut v = layer.map(|l| l.additional_moulds.clone()).unwrap_or_default(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
-                toolstamps: { let mut v = layer.map(|l| l.toolstamps.clone()).unwrap_or_default(); v.sort_unstable(); ring_tab_replace(&v.join(", ")) },
+                mould_sids: ring_tab_replace(&layer.map(|l| l.mould_sids.clone()).unwrap_or_default()),
+                additional_moulds: ring_tab_replace(&layer.map(|l| l.additional_moulds.clone()).unwrap_or_default()),
+                toolstamps: ring_tab_replace(&layer.map(|l| l.toolstamps.clone()).unwrap_or_default()),
                 offset: offset.clone(),
                 offset_extra: offset_extra.clone(),
                 sample_data_start: sample_data_start.clone(),
@@ -361,7 +345,7 @@ async fn disc_view(
                 .iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "),
             comments: format_comments(&detail.disc.comments.clone().unwrap_or_default()),
             contents: format_comments(&detail.disc.contents.clone().unwrap_or_default()),
-            edc_display: detail.disc.edc.map(|e| if e { "Yes" } else { "No" }.to_string()).unwrap_or_default(),
+            edc_display: if detail.disc.edc { "Yes" } else { "No" }.to_string(),
             protection: detail.disc.protection.clone().unwrap_or_default(),
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             file_count: detail.files.len(),
