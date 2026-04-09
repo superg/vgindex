@@ -17,11 +17,16 @@ use crate::AppState;
 
 use super::disc_edit::{
     self, build_category_options, build_check_options, build_flat_changes,
+    build_sparse_disc_changes, build_sparse_edit_changes,
     build_lang_check_options, build_media_has_pic_json, build_media_layers_json,
     build_media_options, build_media_rom_extensions_json, build_system_options,
     build_systems_json, fetch_ref_data, max_layers_for_media, validate_form,
     DiscEditForm, DiscEditTemplate,
 };
+
+fn normalize_newlines(s: &str) -> String {
+    s.replace("\r\n", "\n").replace('\r', "\n")
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -260,7 +265,18 @@ async fn submission_detail(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
 
-    let snapshot = sub.data.clone();
+    let mut snapshot = sub.changes.clone();
+    let mut db_snapshot: Option<serde_json::Value> = None;
+    if let Some(disc_id) = sub.target_disc_id {
+        let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
+        let current_db_snapshot = disc_service::build_snapshot_from_disc(&detail);
+        snapshot = queue_service::resolve_submission_snapshot(
+            sub.submission_type,
+            &current_db_snapshot,
+            &sub.changes,
+        )?;
+        db_snapshot = Some(current_db_snapshot);
+    }
 
     let system_code = snapshot["system_code"].as_str().unwrap_or("").to_string();
     let media_type_code = snapshot["media_type"].as_str().unwrap_or("cd").to_string();
@@ -280,9 +296,7 @@ async fn submission_detail(
         &system_code, &media_type_code, max_layers, has_sys,
     );
 
-    if let Some(disc_id) = sub.target_disc_id {
-        let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
-        let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
+    if let Some(db_snapshot) = db_snapshot {
         let highlights = compute_field_highlights(&snapshot, &db_snapshot);
         apply_highlights(&mut template, highlights);
     }
@@ -344,11 +358,7 @@ fn build_review_template(
         _ => String::new(),
     };
 
-    let edc_value = match &snapshot["edc"] {
-        serde_json::Value::Bool(true) => "true".to_string(),
-        serde_json::Value::Bool(false) => "false".to_string(),
-        _ => String::new(),
-    };
+    let edc_value = snapshot["edc"].as_bool().unwrap_or(false);
 
     let keys = json_str_vec("keys");
     let protection_key_disc_key = keys.first().cloned().unwrap_or_default();
@@ -463,8 +473,8 @@ fn build_review_template(
         protection_key_disc_id,
         has_sample_start: has_sys(|s| s.has_sample_start),
 
-        cue: json_opt_str("cue"),
-        files_xml: json_opt_str("files_xml"),
+        cue: json_opt_str("cuesheet"),
+        files_xml: json_opt_str("dat"),
 
         questionable,
         enabled,
@@ -495,7 +505,7 @@ fn build_review_template(
             .reviewed_at
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
-        changes_json: serde_json::to_string_pretty(&sub.data).unwrap_or_default(),
+        changes_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
     }
 }
 
@@ -548,7 +558,7 @@ async fn render_readonly_detail(
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
         target_disc_id: sub.target_disc_id.unwrap_or(0),
-        changes_json: serde_json::to_string_pretty(&sub.data).unwrap_or_default(),
+        changes_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
     };
 
     Ok(Html(template.render().unwrap()))
@@ -577,7 +587,7 @@ fn compute_field_highlights(
         "disc_number", "disc_title", "filename_suffix", "version",
         "error_count", "exe_date", "edc", "comments", "contents",
         "protection", "sector_ranges", "sbi", "pvd", "header", "bca",
-        "pic", "cue", "files_xml", "enabled", "questionable",
+        "pic", "cuesheet", "dat", "enabled", "questionable",
     ];
 
     let is_empty_val = |v: &serde_json::Value| -> bool {
@@ -729,20 +739,24 @@ fn compute_field_highlights(
     let db_rings = db_snapshot["ring_codes"].as_array();
     let ch_rings = changes["ring_codes"].as_array();
     if let Some(ch_arr) = ch_rings {
-        let db_arr = db_rings.cloned().unwrap_or_default();
-        for ch_entry in ch_arr {
-            let matched = db_arr.iter().find(|db_entry| {
-                disc_edit::ring_entry_key_matches(db_entry, ch_entry)
-            });
-            match matched {
-                None => ring_highlights.push("added".to_string()),
-                Some(db_entry) => {
-                    if db_entry != ch_entry {
-                        ring_highlights.push("changed".to_string());
-                    } else {
-                        ring_highlights.push(String::new());
-                    }
-                }
+        let mut db_arr = db_rings.cloned().unwrap_or_default();
+        let mut ch_arr_sorted = ch_arr.clone();
+        let max_layers = db_arr
+            .iter()
+            .chain(ch_arr_sorted.iter())
+            .map(|e| e["layers"].as_array().map(|a| a.len()).unwrap_or(0))
+            .max()
+            .unwrap_or(0);
+        disc_service::sort_ring_codes_json(&mut db_arr, max_layers);
+        disc_service::sort_ring_codes_json(&mut ch_arr_sorted, max_layers);
+
+        for (idx, ch_entry) in ch_arr_sorted.iter().enumerate() {
+            if idx >= db_arr.len() {
+                ring_highlights.push("added".to_string());
+            } else if db_arr[idx] != *ch_entry {
+                ring_highlights.push("changed".to_string());
+            } else {
+                ring_highlights.push(String::new());
             }
         }
         // Ring codes: only individual entry highlighting via ring_highlights_json,
@@ -817,12 +831,13 @@ async fn review_submit(
     let review_comment = form
         .review_comment
         .as_deref()
-        .map(|s| s.trim())
+        .map(normalize_newlines)
+        .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
     if form.action == "reject" {
         let rejected = queue_service::reject_submission(
-            &state.pool, id, user.id, review_comment,
+            &state.pool, id, user.id, review_comment.as_deref(),
         ).await?;
 
         if !rejected {
@@ -864,14 +879,29 @@ async fn review_submit(
         return Ok(Html(template.render().unwrap()).into_response());
     }
 
-    let form_snapshot = build_flat_changes(&form.disc, &ref_data.all_media_types);
+    let (form_snapshot, is_sparse_changes) = if let Some(disc_id) = sub.target_disc_id {
+        let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
+        let sparse = match sub.submission_type {
+            SubmissionType::Edit => {
+                build_sparse_edit_changes(&form.disc, &detail, &ref_data.all_media_types)
+            }
+            SubmissionType::Disc => {
+                build_sparse_disc_changes(&form.disc, &detail, &ref_data.all_media_types)
+            }
+        };
+        (sparse, true)
+    } else {
+        // New-disc create has no baseline to diff against.
+        (build_flat_changes(&form.disc, &ref_data.all_media_types), false)
+    };
 
     let approved = queue_service::approve_submission(
         &state.pool,
         &sub,
         &form_snapshot,
+        is_sparse_changes,
         user.id,
-        review_comment,
+        review_comment.as_deref(),
     )
     .await?;
 

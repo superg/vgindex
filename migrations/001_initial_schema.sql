@@ -70,7 +70,7 @@ CREATE TABLE discs (
     version VARCHAR(64),
     error_count INT,
     exe_date VARCHAR(16),
-    edc BOOLEAN,
+    edc BOOLEAN NOT NULL DEFAULT FALSE,
     layerbreaks INT[],
     keys TEXT[],
     comments TEXT,
@@ -142,9 +142,9 @@ CREATE TABLE disc_ring_code_layers (
     layer INT NOT NULL,
     mastering_code VARCHAR(255),
     mastering_sid VARCHAR(255),
-    toolstamps TEXT[] NOT NULL DEFAULT '{}',
-    mould_sids TEXT[] NOT NULL DEFAULT '{}',
-    additional_moulds TEXT[] NOT NULL DEFAULT '{}',
+    toolstamps TEXT NOT NULL DEFAULT '',
+    mould_sids TEXT NOT NULL DEFAULT '',
+    additional_moulds TEXT NOT NULL DEFAULT '',
     UNIQUE(entry_id, layer)
 );
 
@@ -213,7 +213,7 @@ CREATE TABLE disc_submissions (
     submitter_id INT NOT NULL REFERENCES users(id),
     submission_comment TEXT,
     target_disc_id INT REFERENCES discs(id),
-    data JSONB NOT NULL,
+    changes JSONB NOT NULL,
     dump_log TEXT,
     extra_upload_url VARCHAR(512),
     status submission_status_enum NOT NULL DEFAULT 'Pending',

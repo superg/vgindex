@@ -240,6 +240,9 @@ function applySystemFieldVisibility() {
         var show = flags[flag] !== undefined ? !!flags[flag] : true;
         var wasHidden = el.style.display === 'none';
         el.style.display = show ? '' : 'none';
+        el.querySelectorAll('input, select, textarea').forEach(function (ctrl) {
+            ctrl.disabled = !show;
+        });
         if (show && wasHidden) {
             el.querySelectorAll('textarea.auto-expand').forEach(function (ta) {
                 autoExpand(ta);
@@ -259,6 +262,9 @@ function applyMediaFieldVisibility() {
     document.querySelectorAll('[data-media-flag="has_pic"]').forEach(function (el) {
         var wasHidden = el.style.display === 'none';
         el.style.display = showPic ? '' : 'none';
+        el.querySelectorAll('input, select, textarea').forEach(function (ctrl) {
+            ctrl.disabled = !showPic;
+        });
         if (showPic && wasHidden) {
             el.querySelectorAll('textarea.auto-expand').forEach(function (ta) {
                 autoExpand(ta);

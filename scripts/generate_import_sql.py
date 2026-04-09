@@ -326,6 +326,11 @@ def sql_bytea(data_bytes):
         return "NULL"
     return f"'\\x{data_bytes.hex()}'"
 
+def normalize_newlines(val):
+    if val is None:
+        return None
+    return val.replace("\r\n", "\n").replace("\r", "\n")
+
 
 def sql_text_array(items):
     """Convert a list of strings to PostgreSQL TEXT[] literal."""
@@ -363,6 +368,25 @@ def sql_timestamp(ts_str):
 def sql_jsonb(obj):
     """Convert a Python object to a SQL JSONB literal."""
     return sql_str(json.dumps(obj, ensure_ascii=False))
+
+
+def sorted_csv(items):
+    """Normalize CSV components: trim, dedupe (case-insensitive), sort, join with ', '."""
+    cleaned = []
+    for item in items:
+        value = str(item).strip()
+        if value:
+            cleaned.append(value)
+    cleaned.sort(key=lambda s: s.lower())
+    out = []
+    seen = set()
+    for value in cleaned:
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+    return ", ".join(out)
 
 # ---------------------------------------------------------------------------
 # Hex dump parsing
@@ -1350,13 +1374,16 @@ def process_all(data_dir, output_path, max_disc_id=None):
 
                 for layer_num in sorted(layers_dict.keys()):
                     layer = layers_dict[layer_num]
+                    mould_sids_csv = sorted_csv(layer["mould_sids"])
+                    toolstamps_csv = sorted_csv(layer["toolstamps"])
+                    additional_moulds_csv = sorted_csv(layer["additional_moulds"])
                     ring_layer_inserts.append(
                         f"({ring_entry_id}, {layer_num}, "
                         f"{sql_str_or_null(layer['mastering_code'])}, "
                         f"{sql_str_or_null(layer['mastering_sid'])}, "
-                        f"{sql_text_array(layer['mould_sids'])}, "
-                        f"{sql_text_array(layer['toolstamps'])}, "
-                        f"{sql_text_array(layer['additional_moulds'])})"
+                        f"{sql_str(mould_sids_csv)}, "
+                        f"{sql_str(toolstamps_csv)}, "
+                        f"{sql_str(additional_moulds_csv)})"
                     )
 
             for off_val, off_extra in offsets:
@@ -1476,7 +1503,7 @@ def process_all(data_dir, output_path, max_disc_id=None):
         print(f"[sql]   Dumpers: {len(dumper_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_submissions",
-            "(submission_type, submitter_id, target_disc_id, data, status, "
+            "(submission_type, submitter_id, target_disc_id, changes, status, "
             "reviewer_id, review_comment, created_at, reviewed_at)",
             submission_inserts)
         print(f"[sql]   Submissions: {len(submission_inserts)} rows", file=sys.stderr)
@@ -1555,13 +1582,22 @@ def _build_empty_disc_insert(disc_id):
         f"({disc_id}, FALSE, 'cd', 1, 'PSX', {sql_str(str(disc_id).zfill(6))}, "
         f"NULL, NULL, NULL, NULL, NULL, NULL, "
         f"'{{}}'::TEXT[], NULL, '{{}}'::TEXT[], '{{}}'::TEXT[], "
-        f"NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, "
+        f"NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL, NULL, NULL, "
         f"NULL, NULL, NULL, FALSE)"
     )
 
 
 def _build_disc_insert(disc_id, data):
     """Build INSERT values for a disc from JSON data."""
+    for key in (
+        "d_comments", "d_contents", "d_cue", "d_ssranges",
+        "d_libcrypt", "d_securom", "d_pvd", "d_pic_data", "d_bca", "d_header",
+        "d_protection", "d_date", "d_title_foreign", "d_label", "d_number", "d_version",
+        "d_version_datfile",
+    ):
+        if key in data and isinstance(data[key], str):
+            data[key] = normalize_newlines(data[key])
+
     system_code = SYSTEM_NAME_TO_CODE.get(data.get("system", ""), "PSX")
     media_code = MEDIA_NAME_TO_CODE.get(data.get("media", ""), "cd")
     category_id = CATEGORY_NAME_TO_ID.get(data.get("d_category", ""), 1)
@@ -1588,7 +1624,7 @@ def _build_disc_insert(disc_id, data):
 
     # EDC
     edc = data.get("d_edc", "")
-    edc_value = None
+    edc_value = False
     if edc.lower() == "yes":
         edc_value = True
     elif edc.lower() == "no":

@@ -1,7 +1,12 @@
 use sqlx::PgPool;
+use std::cmp::Ordering;
 
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
+
+fn normalize_newlines(s: &str) -> String {
+    s.replace("\r\n", "\n").replace('\r', "\n")
+}
 
 pub(crate) fn parse_hex_dump(text: &str) -> Vec<u8> {
     let mut result = Vec::new();
@@ -52,10 +57,146 @@ fn parse_text_array(val: &serde_json::Value) -> Vec<String> {
 }
 
 fn parse_comma_separated(s: &str) -> Vec<String> {
-    s.split(',')
+    let mut out: Vec<String> = s.split(',')
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
-        .collect()
+        .collect();
+    out.sort_by_key(|v| v.to_lowercase());
+    out.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    out
+}
+
+fn normalize_comma_separated(s: &str) -> String {
+    parse_comma_separated(s).join(", ")
+}
+
+fn norm_cmp_str(s: &str) -> String {
+    s.trim().to_lowercase()
+}
+
+fn json_field_norm(entry: &serde_json::Value, key: &str) -> String {
+    entry
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(norm_cmp_str)
+        .unwrap_or_default()
+}
+
+fn json_layer_field_norm(layer: &serde_json::Value, key: &str) -> String {
+    layer
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(norm_cmp_str)
+        .unwrap_or_default()
+}
+
+fn cmp_ring_entry_layers_json(a: &serde_json::Value, b: &serde_json::Value, max_layers: usize) -> Ordering {
+    let a_layers = a["layers"].as_array().cloned().unwrap_or_default();
+    let b_layers = b["layers"].as_array().cloned().unwrap_or_default();
+    for idx in 0..max_layers {
+        let a_layer = a_layers.get(idx).cloned().unwrap_or_else(|| serde_json::json!({}));
+        let b_layer = b_layers.get(idx).cloned().unwrap_or_else(|| serde_json::json!({}));
+
+        let by_mc = json_layer_field_norm(&a_layer, "mastering_code")
+            .cmp(&json_layer_field_norm(&b_layer, "mastering_code"));
+        if by_mc != Ordering::Equal {
+            return by_mc;
+        }
+
+        let by_ms = json_layer_field_norm(&a_layer, "mastering_sid")
+            .cmp(&json_layer_field_norm(&b_layer, "mastering_sid"));
+        if by_ms != Ordering::Equal {
+            return by_ms;
+        }
+    }
+
+    let by_offset = json_field_norm(a, "offset_value").cmp(&json_field_norm(b, "offset_value"));
+    if by_offset != Ordering::Equal {
+        return by_offset;
+    }
+    let by_offset_extra =
+        json_field_norm(a, "offset_extra_value").cmp(&json_field_norm(b, "offset_extra_value"));
+    if by_offset_extra != Ordering::Equal {
+        return by_offset_extra;
+    }
+    let by_sample = json_field_norm(a, "sample_start").cmp(&json_field_norm(b, "sample_start"));
+    if by_sample != Ordering::Equal {
+        return by_sample;
+    }
+    let by_comment = json_field_norm(a, "comment").cmp(&json_field_norm(b, "comment"));
+    if by_comment != Ordering::Equal {
+        return by_comment;
+    }
+
+    let a_id = a.get("id").and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
+    let b_id = b.get("id").and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
+    a_id.cmp(&b_id)
+}
+
+fn layer_field_norm(layer: Option<&DiscRingCodeLayer>, key: &str) -> String {
+    let raw = match (layer, key) {
+        (Some(l), "mastering_code") => l.mastering_code.as_deref().unwrap_or(""),
+        (Some(l), "mastering_sid") => l.mastering_sid.as_deref().unwrap_or(""),
+        _ => "",
+    };
+    norm_cmp_str(raw)
+}
+
+pub fn sort_ring_entry_views(entries: &mut [RingEntryView], max_layers: usize) {
+    entries.sort_by(|a, b| {
+        for idx in 0..max_layers {
+            let a_layer = a.layers.iter().find(|l| l.layer == idx as i32);
+            let b_layer = b.layers.iter().find(|l| l.layer == idx as i32);
+
+            let by_mc = layer_field_norm(a_layer, "mastering_code")
+                .cmp(&layer_field_norm(b_layer, "mastering_code"));
+            if by_mc != Ordering::Equal {
+                return by_mc;
+            }
+
+            let by_ms =
+                layer_field_norm(a_layer, "mastering_sid").cmp(&layer_field_norm(b_layer, "mastering_sid"));
+            if by_ms != Ordering::Equal {
+                return by_ms;
+            }
+        }
+
+        let by_offset = a
+            .offset_value
+            .map(|v| v.to_string())
+            .unwrap_or_default()
+            .cmp(&b.offset_value.map(|v| v.to_string()).unwrap_or_default());
+        if by_offset != Ordering::Equal {
+            return by_offset;
+        }
+        let by_offset_extra = a
+            .offset_extra_value
+            .map(|v| v.to_string())
+            .unwrap_or_default()
+            .cmp(&b.offset_extra_value.map(|v| v.to_string()).unwrap_or_default());
+        if by_offset_extra != Ordering::Equal {
+            return by_offset_extra;
+        }
+        let by_sample = a
+            .sample_data_start
+            .map(|v| v.to_string())
+            .unwrap_or_default()
+            .cmp(&b.sample_data_start.map(|v| v.to_string()).unwrap_or_default());
+        if by_sample != Ordering::Equal {
+            return by_sample;
+        }
+        let by_comment = a.comment.as_deref().unwrap_or("").trim().to_lowercase().cmp(
+            &b.comment.as_deref().unwrap_or("").trim().to_lowercase(),
+        );
+        if by_comment != Ordering::Equal {
+            return by_comment;
+        }
+        a.id.cmp(&b.id)
+    });
+}
+
+pub fn sort_ring_codes_json(entries: &mut [serde_json::Value], max_layers: usize) {
+    entries.sort_by(|a, b| cmp_ring_entry_layers_json(a, b, max_layers));
 }
 
 pub async fn get_all_systems(pool: &PgPool) -> AppResult<Vec<System>> {
@@ -127,6 +268,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         .fetch_all(pool)
         .await?;
         ring_views.push(RingEntryView {
+            id: entry.id,
             offset_value: entry.offset_value,
             offset_extra_value: entry.offset_extra_value,
             sample_data_start: entry.sample_data_start,
@@ -173,6 +315,8 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_all(pool)
     .await?;
 
+    sort_ring_entry_views(&mut ring_views, disc.media_type.max_layers() as usize);
+
     Ok(DiscDetail {
         disc,
         system,
@@ -200,10 +344,10 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     let version = data["version"].as_str().filter(|s| !s.is_empty());
     let edition = parse_text_array(&data["edition"]);
     let barcode = parse_text_array(&data["barcode"]);
-    let comments = data["comments"].as_str().filter(|s| !s.is_empty());
-    let contents = data["contents"].as_str().filter(|s| !s.is_empty());
-    let protection = data["protection"].as_str().filter(|s| !s.is_empty());
-    let sbi = data["sbi"].as_str().filter(|s| !s.is_empty());
+    let comments = data["comments"].as_str().map(normalize_newlines).filter(|s| !s.is_empty());
+    let contents = data["contents"].as_str().map(normalize_newlines).filter(|s| !s.is_empty());
+    let protection = data["protection"].as_str().map(normalize_newlines).filter(|s| !s.is_empty());
+    let sbi = data["sbi"].as_str().map(normalize_newlines).filter(|s| !s.is_empty());
     let keys = parse_text_array(&data["keys"]);
     let keys_opt: Option<Vec<String>> = if keys.is_empty() {
         None
@@ -212,24 +356,20 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     };
     let error_count = data["error_count"].as_i64().map(|v| v as i32);
     let exe_date = data["exe_date"].as_str().filter(|s| !s.is_empty());
-    let edc = if data["edc"].is_boolean() {
-        data["edc"].as_bool()
-    } else {
-        None
-    };
-    let pvd = data["pvd"].as_str()
+    let edc = data["edc"].as_bool().unwrap_or(false);
+    let pvd = data["pvd"].as_str().map(normalize_newlines)
         .filter(|s| !s.is_empty())
-        .map(parse_pvd_hex_dump);
-    let pic = data["pic"].as_str()
+        .map(|s| parse_pvd_hex_dump(&s));
+    let pic = data["pic"].as_str().map(normalize_newlines)
         .filter(|s| !s.is_empty())
-        .map(|s| parse_hex_dump(s));
-    let bca = data["bca"].as_str()
+        .map(|s| parse_hex_dump(&s));
+    let bca = data["bca"].as_str().map(normalize_newlines)
         .filter(|s| !s.is_empty())
-        .map(|s| parse_hex_dump(s));
-    let header = data["header"].as_str()
+        .map(|s| parse_hex_dump(&s));
+    let header = data["header"].as_str().map(normalize_newlines)
         .filter(|s| !s.is_empty())
-        .map(|s| parse_hex_dump(s));
-    let cue = data["cue"].as_str().filter(|s| !s.is_empty());
+        .map(|s| parse_hex_dump(&s));
+    let cue = data["cuesheet"].as_str().map(normalize_newlines).filter(|s| !s.is_empty());
     let layerbreaks: Option<Vec<i32>> = if let Some(arr) = data["layerbreaks"].as_array() {
         let v: Vec<i32> = arr.iter().filter_map(|x| x.as_i64().map(|n| n as i32)).collect();
         if v.is_empty() { None } else { Some(v) }
@@ -355,10 +495,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
 
     // Ring codes
     if let Some(ring_codes) = data["ring_codes"].as_array() {
-        sqlx::query("DELETE FROM disc_ring_code_entries WHERE disc_id = $1")
-            .bind(disc_id)
-            .execute(pool)
-            .await?;
+        let mut keep_entry_ids: Vec<i32> = Vec::new();
 
         for entry_data in ring_codes {
             let offset_value = entry_data["offset_value"]
@@ -372,29 +509,59 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
                 .and_then(|s| s.trim().parse::<i32>().ok());
             let comment = entry_data["comment"].as_str().filter(|s| !s.is_empty());
 
-            let entry_id: i32 = sqlx::query_scalar(
-                "INSERT INTO disc_ring_code_entries (disc_id, offset_value, offset_extra_value, sample_data_start, comment)
-                 VALUES ($1, $2, $3, $4, $5) RETURNING id"
-            )
-            .bind(disc_id)
-            .bind(offset_value)
-            .bind(offset_extra_value)
-            .bind(sample_start)
-            .bind(comment)
-            .fetch_one(pool)
-            .await?;
+            let entry_id: i32 = if let Some(existing_id) = entry_data["id"].as_i64().map(|v| v as i32) {
+                let updated = sqlx::query(
+                    "UPDATE disc_ring_code_entries
+                     SET offset_value = $1, offset_extra_value = $2, sample_data_start = $3, comment = $4
+                     WHERE id = $5 AND disc_id = $6"
+                )
+                .bind(offset_value)
+                .bind(offset_extra_value)
+                .bind(sample_start)
+                .bind(comment)
+                .bind(existing_id)
+                .bind(disc_id)
+                .execute(pool)
+                .await?;
+                if updated.rows_affected() == 0 {
+                    return Err(AppError::BadRequest(format!(
+                        "ring code entry id {} does not belong to disc {}",
+                        existing_id, disc_id
+                    )));
+                }
+                existing_id
+            } else {
+                sqlx::query_scalar(
+                    "INSERT INTO disc_ring_code_entries (disc_id, offset_value, offset_extra_value, sample_data_start, comment)
+                     VALUES ($1, $2, $3, $4, $5) RETURNING id"
+                )
+                .bind(disc_id)
+                .bind(offset_value)
+                .bind(offset_extra_value)
+                .bind(sample_start)
+                .bind(comment)
+                .fetch_one(pool)
+                .await?
+            };
+
+            keep_entry_ids.push(entry_id);
+
+            sqlx::query("DELETE FROM disc_ring_code_layers WHERE entry_id = $1")
+                .bind(entry_id)
+                .execute(pool)
+                .await?;
 
             if let Some(layers) = entry_data["layers"].as_array() {
                 for (li, layer_data) in layers.iter().enumerate() {
                     let mc = layer_data["mastering_code"].as_str().filter(|s| !s.is_empty());
                     let ms = layer_data["mastering_sid"].as_str().filter(|s| !s.is_empty());
-                    let mould_sids = parse_comma_separated(
+                    let mould_sids = normalize_comma_separated(
                         layer_data["mould_sids"].as_str().unwrap_or(""),
                     );
-                    let toolstamps = parse_comma_separated(
+                    let toolstamps = normalize_comma_separated(
                         layer_data["toolstamps"].as_str().unwrap_or(""),
                     );
-                    let additional_moulds = parse_comma_separated(
+                    let additional_moulds = normalize_comma_separated(
                         layer_data["additional_moulds"].as_str().unwrap_or(""),
                     );
 
@@ -422,16 +589,32 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
                 }
             }
         }
+
+        if keep_entry_ids.is_empty() {
+            sqlx::query("DELETE FROM disc_ring_code_entries WHERE disc_id = $1")
+                .bind(disc_id)
+                .execute(pool)
+                .await?;
+        } else {
+            sqlx::query(
+                "DELETE FROM disc_ring_code_entries
+                 WHERE disc_id = $1 AND NOT (id = ANY($2::INT[]))"
+            )
+            .bind(disc_id)
+            .bind(&keep_entry_ids)
+            .execute(pool)
+            .await?;
+        }
     }
 
     // Files (non-cue) from XML
-    if let Some(files_xml) = data["files_xml"].as_str() {
+    if let Some(files_xml) = data["dat"].as_str().map(normalize_newlines) {
         sqlx::query("DELETE FROM files WHERE disc_id = $1 AND track_number IS NOT NULL")
             .bind(disc_id)
             .execute(pool)
             .await?;
         if !files_xml.is_empty() {
-            parse_and_insert_files(pool, disc_id, files_xml).await?;
+            parse_and_insert_files(pool, disc_id, &files_xml).await?;
         }
     }
 
@@ -475,6 +658,37 @@ pub async fn create_disc_from_submission(
         .await?;
 
     Ok(disc_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sort_ring_codes_json_uses_id_as_last_tiebreaker() {
+        let mut entries = vec![
+            serde_json::json!({
+                "id": 9,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{"mastering_code": "AAA", "mastering_sid": "ZZZ"}]
+            }),
+            serde_json::json!({
+                "id": 3,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{"mastering_code": "AAA", "mastering_sid": "ZZZ"}]
+            }),
+        ];
+
+        sort_ring_codes_json(&mut entries, 1);
+        assert_eq!(entries[0]["id"], 3);
+        assert_eq!(entries[1]["id"], 9);
+    }
 }
 
 pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> {
@@ -641,16 +855,18 @@ fn format_pvd_hex_snapshot(data: &[u8]) -> String {
 pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
     let rom_extension = detail.disc.media_type.rom_extension();
     let max_layers = detail.disc.media_type.max_layers();
+    let mut sorted_ring_entries = detail.ring_entries.clone();
+    sort_ring_entry_views(&mut sorted_ring_entries, max_layers as usize);
 
-    let ring_codes: Vec<serde_json::Value> = detail.ring_entries.iter().map(|e| {
+    let ring_codes: Vec<serde_json::Value> = sorted_ring_entries.iter().map(|e| {
         let layers: Vec<serde_json::Value> = (0..max_layers).map(|li| {
             let layer = e.layers.iter().find(|l| l.layer == li as i32);
             serde_json::json!({
                 "mastering_code": layer.and_then(|l| l.mastering_code.as_deref()).unwrap_or(""),
                 "mastering_sid": layer.and_then(|l| l.mastering_sid.as_deref()).unwrap_or(""),
-                "mould_sids": layer.map(|l| l.mould_sids.join(", ")).unwrap_or_default(),
-                "toolstamps": layer.map(|l| l.toolstamps.join(", ")).unwrap_or_default(),
-                "additional_moulds": layer.map(|l| l.additional_moulds.join(", ")).unwrap_or_default(),
+                "mould_sids": layer.map(|l| normalize_comma_separated(&l.mould_sids)).unwrap_or_default(),
+                "toolstamps": layer.map(|l| normalize_comma_separated(&l.toolstamps)).unwrap_or_default(),
+                "additional_moulds": layer.map(|l| normalize_comma_separated(&l.additional_moulds)).unwrap_or_default(),
             })
         }).collect();
         serde_json::json!({
@@ -680,11 +896,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
     let region_codes: Vec<String> = detail.regions.iter().map(|r| r.code.trim().to_string()).collect();
     let lang_codes: Vec<String> = detail.languages.iter().map(|l| l.code.trim().to_string()).collect();
 
-    let edc_value: serde_json::Value = match detail.disc.edc {
-        Some(true) => serde_json::json!(true),
-        Some(false) => serde_json::json!(false),
-        None => serde_json::Value::Null,
-    };
+    let edc_value = detail.disc.edc;
 
     let cue = detail.disc.cue.as_deref()
         .filter(|s| !s.is_empty())
@@ -716,14 +928,14 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "protection": detail.disc.protection,
         "sbi": detail.disc.sbi,
         "keys": detail.disc.keys.clone().unwrap_or_default(),
-        "cue": cue,
+        "cuesheet": cue,
         "questionable": detail.disc.questionable,
         "enabled": detail.disc.enabled,
         "regions": region_codes,
         "languages": lang_codes,
         "ring_codes": ring_codes,
         "sector_ranges": sector_ranges,
-        "files_xml": if files_xml.is_empty() { serde_json::Value::Null } else { serde_json::json!(files_xml) },
+        "dat": if files_xml.is_empty() { serde_json::Value::Null } else { serde_json::json!(files_xml) },
     })
 }
 

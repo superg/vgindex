@@ -210,9 +210,8 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
 
     <div class="inline-field{% if !self.highlight_class("edc").is_empty() %} {{ self.highlight_class("edc") }}{% endif %}" data-field-flag="has_edc"{% if !show_edc %} style="display:none"{% endif %}>
         <span class="inline-field-label">EDC</span>
-        <div class="inline-field-values inline-radios">
-            <label><input type="radio" name="edc" value="false" {% if edc_value == "false" || edc_value.is_empty() %}checked{% endif %}> No</label>
-            <label><input type="radio" name="edc" value="true" {% if edc_value == "true" %}checked{% endif %}> Yes</label>
+        <div class="inline-field-values">
+            <label><input type="checkbox" name="edc" value="true" {% if edc_value %}checked{% endif %}> Enabled</label>
         </div>
     </div>
 
@@ -278,11 +277,11 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
     </label>
 
     <label id="cue-field"{% if !self.highlight_class("cue").is_empty() %} class="{{ self.highlight_class("cue") }}"{% endif %}>Cuesheet
-        <textarea name="cue" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80">{{ cue }}</textarea>
+        <textarea name="cuesheet" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80">{{ cue }}</textarea>
     </label>
 
     <label{% if !self.highlight_class("files_xml").is_empty() %} class="{{ self.highlight_class("files_xml") }}"{% endif %}>Dat
-        <textarea name="files_xml" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ files_xml }}</textarea>
+        <textarea name="dat" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ files_xml }}</textarea>
     </label>
 
     {% if is_add_mode %}

@@ -358,7 +358,7 @@ pub struct Disc {
     pub filename_suffix: Option<String>,
     pub error_count: Option<i32>,
     pub exe_date: Option<String>,
-    pub edc: Option<bool>,
+    pub edc: bool,
     pub layerbreaks: Option<Vec<i32>>,
     pub protection: Option<String>,
     pub sbi: Option<String>,
@@ -389,9 +389,9 @@ pub struct DiscRingCodeLayer {
     pub layer: i32,
     pub mastering_code: Option<String>,
     pub mastering_sid: Option<String>,
-    pub mould_sids: Vec<String>,
-    pub toolstamps: Vec<String>,
-    pub additional_moulds: Vec<String>,
+    pub mould_sids: String,
+    pub toolstamps: String,
+    pub additional_moulds: String,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
@@ -412,7 +412,7 @@ pub struct DiscSubmission {
     pub submitter_id: i32,
     pub submission_comment: Option<String>,
     pub target_disc_id: Option<i32>,
-    pub data: serde_json::Value,
+    pub changes: serde_json::Value,
     pub dump_log: Option<String>,
     pub extra_upload_url: Option<String>,
     pub status: SubmissionStatus,
@@ -478,6 +478,7 @@ pub struct ProtectionRange {
 
 #[derive(Debug, Clone)]
 pub struct RingEntryView {
+    pub id: i32,
     pub offset_value: Option<i32>,
     pub offset_extra_value: Option<i32>,
     pub sample_data_start: Option<i32>,
