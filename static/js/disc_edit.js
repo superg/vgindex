@@ -256,9 +256,12 @@ function applySystemFieldVisibility() {
 
 function applyMediaFieldVisibility() {
     var mediaSel = document.getElementById('media-select');
-    if (!mediaSel || typeof MEDIA_HAS_PIC === 'undefined') return;
+    if (!mediaSel || typeof MEDIA_HAS_PIC === 'undefined' || typeof MEDIA_ROM_EXTENSIONS === 'undefined') return;
     var code = mediaSel.value;
     var showPic = !!MEDIA_HAS_PIC[code];
+    var mediaExt = String(MEDIA_ROM_EXTENSIONS[code] || '').trim().toLowerCase();
+    // Hide by default when media mapping is missing; only show for known non-ISO media.
+    var showErrorCount = mediaExt !== '' && mediaExt !== 'iso';
     document.querySelectorAll('[data-media-flag="has_pic"]').forEach(function (el) {
         var wasHidden = el.style.display === 'none';
         el.style.display = showPic ? '' : 'none';
@@ -271,6 +274,23 @@ function applyMediaFieldVisibility() {
             });
         }
     });
+    var errorCountField = document.getElementById('error-count-field');
+    if (!errorCountField) {
+        var errorInput = document.querySelector('input[name="error_count"]');
+        errorCountField = errorInput ? errorInput.closest('.inline-field') : null;
+    }
+    if (errorCountField) {
+        var wasHidden = errorCountField.style.display === 'none';
+        errorCountField.style.display = showErrorCount ? '' : 'none';
+        errorCountField.querySelectorAll('input, select, textarea').forEach(function (ctrl) {
+            ctrl.disabled = !showErrorCount;
+        });
+        if (showErrorCount && wasHidden) {
+            errorCountField.querySelectorAll('.inline-field-values').forEach(function (c) {
+                fitInlineGroup(c);
+            });
+        }
+    }
 }
 
 function applyCueRules() {
@@ -288,6 +308,15 @@ function applyCueRules() {
             autoExpand(ta);
         }
     }
+}
+
+function refreshMediaDependentUi() {
+    applyMediaFieldVisibility();
+    applyCueRules();
+    renderRingEntries();
+    fitRingColumns();
+    renderLayerbreaks();
+    fitAllInlineGroups();
 }
 
 // System <-> media type filtering
@@ -474,8 +503,7 @@ function renderLayerbreaks() {
 document.addEventListener('DOMContentLoaded', function () {
     filterMediaTypes();
     applySystemFieldVisibility();
-    applyMediaFieldVisibility();
-    applyCueRules();
+    refreshMediaDependentUi();
     initRingEditor();
     renderLayerbreaks();
     initAutoExpand();
@@ -487,21 +515,13 @@ document.addEventListener('DOMContentLoaded', function () {
         sysSel.addEventListener('change', function () {
             filterMediaTypes();
             applySystemFieldVisibility();
-            applyMediaFieldVisibility();
-            applyCueRules();
-            renderRingEntries();
-            fitRingColumns();
-            renderLayerbreaks();
+            refreshMediaDependentUi();
         });
     }
     var mediaSel = document.getElementById('media-select');
     if (mediaSel) {
         mediaSel.addEventListener('change', function () {
-            applyMediaFieldVisibility();
-            applyCueRules();
-            renderRingEntries();
-            fitRingColumns();
-            renderLayerbreaks();
+            refreshMediaDependentUi();
         });
     }
 

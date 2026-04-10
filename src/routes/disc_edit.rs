@@ -276,7 +276,6 @@ pub(crate) fn build_systems_json(
             "has_version": s.has_version,
             "has_edition": s.has_edition,
             "has_barcode": s.has_barcode,
-            "has_error_count": s.has_error_count,
             "has_exe_date": s.has_exe_date,
             "has_edc": s.has_edc,
             "has_keys": s.has_keys,
@@ -319,6 +318,13 @@ pub(crate) fn build_media_has_pic_json(all_media_types: &[EditMediaTypeRow]) -> 
         map.insert(m.code.clone(), serde_json::json!(m.pic));
     }
     serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
+}
+
+fn media_shows_error_count(all_media_types: &[EditMediaTypeRow], media_code: &str) -> bool {
+    all_media_types
+        .iter()
+        .find(|m| m.code == media_code)
+        .map_or(false, |m| m.rom_extension != "iso")
 }
 
 pub(crate) fn build_system_options(all_systems: &[System], selected: &str) -> Vec<SystemOption> {
@@ -558,7 +564,7 @@ async fn edit_page(
             comments: detail.disc.comments.clone().unwrap_or_default(),
             contents: detail.disc.contents.clone().unwrap_or_default(),
 
-            show_error_count: detail.system.has_error_count,
+            show_error_count: rom_extension != "iso",
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             show_exe_date: detail.system.has_exe_date,
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
@@ -873,6 +879,7 @@ async fn render_form_with_errors(
     let media_pic = ref_data.all_media_types.iter()
         .find(|m| m.code == form.media_type)
         .map_or(false, |m| m.pic);
+    let show_error_count = media_shows_error_count(&ref_data.all_media_types, &form.media_type);
 
     let page_title = format_display_title(
         &form.title,
@@ -942,7 +949,7 @@ async fn render_form_with_errors(
         comments: form.comments.clone().unwrap_or_default(),
         contents: form.contents.clone().unwrap_or_default(),
 
-        show_error_count: has_sys(|s| s.has_error_count),
+        show_error_count,
         error_count: form.error_count.clone().unwrap_or_default(),
         show_exe_date: has_sys(|s| s.has_exe_date),
         exe_date: form.exe_date.clone().unwrap_or_default(),
@@ -1388,6 +1395,7 @@ async fn add_page(
 
     let default_system = ref_data.all_systems.iter().find(|s| s.code == "PC");
     let has_sys = |f: fn(&System) -> bool| default_system.map_or(true, f);
+    let show_error_count = false;
 
     Ok(Html(
         DiscEditTemplate {
@@ -1433,7 +1441,7 @@ async fn add_page(
             comments: String::new(),
             contents: String::new(),
 
-            show_error_count: has_sys(|s| s.has_error_count),
+            show_error_count,
             error_count: String::new(),
             show_exe_date: has_sys(|s| s.has_exe_date),
             exe_date: String::new(),
@@ -1873,6 +1881,49 @@ fn scalar_change(old: &serde_json::Value, new: &serde_json::Value) -> Option<ser
     Some(serde_json::Value::Object(out))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DatTrackDigest {
+    size: i64,
+    crc: String,
+    md5: String,
+    sha1: String,
+}
+
+fn dat_attr(line: &str, attr: &str) -> Option<String> {
+    let needle = format!("{attr}=\"");
+    let start = line.find(&needle)? + needle.len();
+    let end = line[start..].find('"')? + start;
+    Some(line[start..end].to_string())
+}
+
+fn dat_track_map(dat: &str) -> Option<std::collections::BTreeMap<String, DatTrackDigest>> {
+    let mut out = std::collections::BTreeMap::new();
+    for raw_line in dat.lines() {
+        let line = raw_line.trim();
+        if !line.starts_with("<rom ") {
+            continue;
+        }
+        let name = dat_attr(line, "name")?;
+        let track = extract_track_from_filename(&name)?;
+        let size = dat_attr(line, "size")?.parse::<i64>().ok()?;
+        let crc = dat_attr(line, "crc")?;
+        let md5 = dat_attr(line, "md5")?;
+        let sha1 = dat_attr(line, "sha1")?;
+        if out.contains_key(&track) {
+            return None;
+        }
+        out.insert(track, DatTrackDigest { size, crc, md5, sha1 });
+    }
+    Some(out)
+}
+
+fn dat_tracks_differ(old: &str, new: &str) -> bool {
+    match (dat_track_map(old), dat_track_map(new)) {
+        (Some(a), Some(b)) => a != b,
+        _ => normalize_multiline(Some(old)) != normalize_multiline(Some(new)),
+    }
+}
+
 fn csv_change(old: &serde_json::Value, new: &serde_json::Value) -> Option<serde_json::Value> {
     let to_items = |v: &serde_json::Value| -> Vec<String> {
         v.as_array()
@@ -2272,7 +2323,7 @@ fn build_history_changes(
         "system_code", "media_type", "category", "title", "title_foreign", "disc_number",
         "disc_title", "filename_suffix", "version", "error_count", "exe_date", "edc",
         "comments", "contents", "protection", "sector_ranges", "sbi", "pvd", "header",
-        "bca", "pic", "cuesheet", "dat", "enabled", "questionable",
+        "bca", "pic", "cuesheet", "enabled", "questionable",
     ] {
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let new = form_obj.get(key).unwrap_or(&serde_json::Value::Null);
@@ -2290,6 +2341,23 @@ fn build_history_changes(
             }
         }
         changes.insert(key.to_string(), change);
+    }
+
+    {
+        let key = "dat";
+        let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
+        let new = form_obj.get(key).unwrap_or(&serde_json::Value::Null);
+        let different = match (old.as_str(), new.as_str()) {
+            (Some(o), Some(n)) => dat_tracks_differ(o, n),
+            _ => old != new,
+        };
+        if different {
+            if let Some(change) = scalar_change(old, new) {
+                if submission_type == SubmissionType::Edit || !is_empty_json(new) {
+                    changes.insert(key.to_string(), change);
+                }
+            }
+        }
     }
 
     for key in ["regions", "languages"] {

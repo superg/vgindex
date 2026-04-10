@@ -254,10 +254,6 @@ SET has_version = TRUE
 WHERE code IN ('PSX', 'PS2', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'GAMEWAVE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'NUON', 'SRE2', 'KEA', 'ITE', 'KFB', 'KM2', 'SRE', 'M2', 'VIS', 'IXL', 'AJCD', 'SP21', 'ARCH', 'PPC', 'KS573', 'PS5');
 
 UPDATE systems
-SET has_error_count = TRUE
-WHERE code IN ('PSX', 'PS2', 'MCD', 'DC', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'PALM', 'PHOTO-CD', 'PC-88', 'ENHANCED-CD', 'KSITE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'KEA', 'ITE', 'KFB', 'NAVI21', 'VIS', 'IXL', 'SP21', 'ARCH', 'PPC', 'X68K', 'IKTV', 'KS573');
-
-UPDATE systems
 SET has_exe_date = TRUE
 WHERE code IN ('PSX', 'PS2', 'MCD', 'DC', 'SS', 'CDTV', 'CD32', 'ACD', 'QIS', 'PC-98', 'FMT', 'HS', 'NAOMI', 'TRF', 'CHIHIRO', 'NGCD', 'NAOMI2', 'KSGV', 'KEA', 'KFB', 'NAVI21', 'KS573');
 
