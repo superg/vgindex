@@ -165,6 +165,14 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
             <input type="text" name="serial" value="{{ s.value }}"{% if !s.highlight.is_empty() %} class="item-{{ s.highlight }}"{% endif %}>
             {% endfor %}
             <input type="text" name="serial" value="">
+            {% if is_review_mode && !removed_serials.is_empty() %}
+            <div class="inline-field-removed">
+                <span class="inline-field-removed-label">Removed:</span>
+                {% for s in removed_serials %}
+                <span class="inline-field-removed-item item-removed">{{ s }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('serial-list','serial')">+</button>
     </div>
@@ -176,6 +184,14 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
             <input type="text" name="edition" value="{{ e.value }}"{% if !e.highlight.is_empty() %} class="item-{{ e.highlight }}"{% endif %}>
             {% endfor %}
             <input type="text" name="edition" value="">
+            {% if is_review_mode && !removed_editions.is_empty() %}
+            <div class="inline-field-removed">
+                <span class="inline-field-removed-label">Removed:</span>
+                {% for e in removed_editions %}
+                <span class="inline-field-removed-item item-removed">{{ e }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('edition-list','edition')">+</button>
     </div>
@@ -187,6 +203,14 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
             <input type="text" name="barcode" value="{{ b.value }}"{% if !b.highlight.is_empty() %} class="item-{{ b.highlight }}"{% endif %}>
             {% endfor %}
             <input type="text" name="barcode" value="">
+            {% if is_review_mode && !removed_barcodes.is_empty() %}
+            <div class="inline-field-removed">
+                <span class="inline-field-removed-label">Removed:</span>
+                {% for b in removed_barcodes %}
+                <span class="inline-field-removed-item item-removed">{{ b }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('barcode-list','barcode')">+</button>
     </div>

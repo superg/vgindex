@@ -870,6 +870,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
             })
         }).collect();
         serde_json::json!({
+            "id": e.id,
             "offset_value": e.offset_value.map(|v| v.to_string()).unwrap_or_default(),
             "offset_extra_value": e.offset_extra_value.map(|v| v.to_string()).unwrap_or_default(),
             "sample_start": e.sample_data_start.map(|v| v.to_string()).unwrap_or_default(),

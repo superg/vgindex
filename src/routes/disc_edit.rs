@@ -89,6 +89,9 @@ pub(crate) struct DiscEditTemplate {
     pub editions: Vec<HighlightedValue>,
     pub show_barcode: bool,
     pub barcodes: Vec<HighlightedValue>,
+    pub removed_serials: Vec<String>,
+    pub removed_editions: Vec<String>,
+    pub removed_barcodes: Vec<String>,
 
     pub ring_codes_json: String,
     pub ring_highlights_json: String,
@@ -460,6 +463,7 @@ async fn edit_page(
                 })
                 .collect();
             serde_json::json!({
+                "id": e.id,
                 "offset_value": e.offset_value.map(|v| v.to_string()).unwrap_or_default(),
                 "offset_extra_value": e.offset_extra_value.map(|v| v.to_string()).unwrap_or_default(),
                 "sample_start": e.sample_data_start.map(|v| v.to_string()).unwrap_or_default(),
@@ -557,6 +561,9 @@ async fn edit_page(
                 .cloned()
                 .map(|s| HighlightedValue { value: s, highlight: String::new() })
                 .collect(),
+            removed_serials: vec![],
+            removed_editions: vec![],
+            removed_barcodes: vec![],
 
             ring_codes_json,
             ring_highlights_json: "[]".to_string(),
@@ -942,6 +949,9 @@ async fn render_form_with_errors(
             .filter(|s| !s.is_empty())
             .map(|s| HighlightedValue { value: s, highlight: String::new() })
             .collect(),
+        removed_serials: vec![],
+        removed_editions: vec![],
+        removed_barcodes: vec![],
 
         ring_codes_json: form.ring_codes_json.clone().unwrap_or_else(|| "[]".into()),
         ring_highlights_json: "[]".to_string(),
@@ -1282,6 +1292,7 @@ fn build_ring_codes_json_from_detail(detail: &DiscDetail) -> serde_json::Value {
                 })
                 .collect();
             serde_json::json!({
+                "id": e.id,
                 "offset_value": e.offset_value.map(|v| v.to_string()).unwrap_or_default(),
                 "offset_extra_value": e.offset_extra_value.map(|v| v.to_string()).unwrap_or_default(),
                 "sample_start": e.sample_data_start.map(|v| v.to_string()).unwrap_or_default(),
@@ -1434,6 +1445,9 @@ async fn add_page(
             editions: vec![],
             show_barcode: has_sys(|s| s.has_barcode),
             barcodes: vec![],
+            removed_serials: vec![],
+            removed_editions: vec![],
+            removed_barcodes: vec![],
 
             ring_codes_json: "[]".to_string(),
             ring_highlights_json: "[]".to_string(),
@@ -2198,7 +2212,7 @@ fn ring_entry_change(
     old_entry: Option<&serde_json::Value>,
     new_entry: Option<&serde_json::Value>,
     allow_removal: bool,
-    entry_index: Option<usize>,
+    entry_id: Option<i32>,
 ) -> Option<serde_json::Value> {
     let is_removal = old_entry.is_some() && new_entry.is_none();
     let old_default = serde_json::json!({
@@ -2213,8 +2227,8 @@ fn ring_entry_change(
     let new_entry = new_entry.unwrap_or(&new_default);
 
     let mut out = serde_json::Map::new();
-    if let Some(idx) = entry_index {
-        out.insert("index".to_string(), serde_json::json!(idx));
+    if let Some(id) = entry_id {
+        out.insert("id".to_string(), serde_json::json!(id));
     }
     if is_removal {
         out.insert("removed".to_string(), serde_json::json!(true));
@@ -2246,7 +2260,7 @@ fn ring_entry_change(
         out.insert("layers".to_string(), serde_json::json!(layer_changes));
     }
 
-    if out.is_empty() || (out.len() == 1 && out.contains_key("index")) {
+    if out.is_empty() || (out.len() == 1 && out.contains_key("id")) {
         None
     } else {
         let _ = allow_removal;
@@ -2270,29 +2284,38 @@ fn ring_codes_history_changes(
     disc_service::sort_ring_codes_json(&mut old_arr, max_layers);
     disc_service::sort_ring_codes_json(&mut new_arr, max_layers);
     let mut changes: Vec<serde_json::Value> = Vec::new();
-    let common = old_arr.len().min(new_arr.len());
-
-    for idx in 0..common {
-        if let Some(change) = ring_entry_change(
-            Some(&old_arr[idx]),
-            Some(&new_arr[idx]),
-            allow_removal,
-            Some(idx),
-        ) {
-            changes.push(change);
+    let mut old_by_id: std::collections::HashMap<i32, &serde_json::Value> = std::collections::HashMap::new();
+    for old_entry in &old_arr {
+        if let Some(id) = old_entry.get("id").and_then(|v| v.as_i64()).map(|v| v as i32) {
+            old_by_id.insert(id, old_entry);
         }
     }
+    let mut seen_old_ids = std::collections::HashSet::new();
 
-    for new_entry in new_arr.iter().skip(common) {
-        if let Some(change) = ring_entry_change(None, Some(new_entry), allow_removal, None) {
+    for new_entry in &new_arr {
+        let maybe_id = new_entry.get("id").and_then(|v| v.as_i64()).map(|v| v as i32);
+        if let Some(id) = maybe_id {
+            if let Some(old_entry) = old_by_id.get(&id) {
+                seen_old_ids.insert(id);
+                if let Some(change) = ring_entry_change(Some(old_entry), Some(new_entry), allow_removal, Some(id)) {
+                    changes.push(change);
+                }
+            } else if let Some(change) = ring_entry_change(None, Some(new_entry), allow_removal, None) {
+                changes.push(change);
+            }
+        } else if let Some(change) = ring_entry_change(None, Some(new_entry), allow_removal, None) {
             changes.push(change);
         }
     }
 
     if allow_removal {
-        for (idx, old_entry) in old_arr.iter().enumerate().skip(common) {
-            if let Some(change) = ring_entry_change(Some(old_entry), None, true, Some(idx)) {
-                changes.push(change);
+        for old_entry in &old_arr {
+            if let Some(id) = old_entry.get("id").and_then(|v| v.as_i64()).map(|v| v as i32) {
+                if !seen_old_ids.contains(&id) {
+                    if let Some(change) = ring_entry_change(Some(old_entry), None, true, Some(id)) {
+                        changes.push(change);
+                    }
+                }
             }
         }
     }
