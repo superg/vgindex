@@ -516,6 +516,21 @@ pre code {
     gap: 0.25rem;
     flex: 1;
 }
+.inline-field-removed {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+}
+.inline-field-removed-label {
+    font-size: 0.72rem;
+    opacity: 0.85;
+}
+.inline-field-removed-item {
+    padding: 0 0.3rem;
+    border-radius: 2px;
+}
 .inline-field-values input {
     margin-bottom: 0;
     flex: 0 0 auto;
@@ -638,7 +653,10 @@ textarea.fixed-80 {
 }
 .item-added { background-color: rgba(76, 175, 80, 0.18); }
 .item-removed { background-color: rgba(244, 67, 54, 0.18); }
+.item-changed { background-color: rgba(255, 235, 59, 0.18); }
 tr.item-added > td { background-color: rgba(76, 175, 80, 0.18); }
+tr.item-removed > td { background-color: rgba(244, 67, 54, 0.18); }
+tr.item-changed > td { background-color: rgba(255, 235, 59, 0.18); }
 tr.field-changed > td { background-color: rgba(255, 235, 59, 0.18); }
 
 /* Queue submission info box */

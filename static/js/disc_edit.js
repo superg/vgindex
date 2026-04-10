@@ -37,6 +37,17 @@ function addArrayEntry(containerId, name) {
 
 // Ring code editor — table-based, matching disc view layout
 var ringEntries = [];
+function ringStatusClass(status) {
+    if (status === 'added') return 'item-added';
+    if (status === 'removed') return 'item-removed';
+    if (status === 'changed') return 'item-changed';
+    return '';
+}
+
+function ringInputClass(baseClass, status) {
+    var extra = ringStatusClass(status);
+    return extra ? (baseClass + ' ' + extra) : baseClass;
+}
 
 function initRingEditor() {
     ringEntries = (typeof RING_CODES !== 'undefined' && Array.isArray(RING_CODES)) ? RING_CODES : [];
@@ -127,6 +138,14 @@ function renderRingEntries() {
     tbody.innerHTML = '';
     for (var ei = 0; ei < ringEntries.length; ei++) {
         var entry = ringEntries[ei];
+        var entryHighlight = (typeof RING_HIGHLIGHTS !== 'undefined' && RING_HIGHLIGHTS && RING_HIGHLIGHTS[ei]) ? RING_HIGHLIGHTS[ei] : null;
+        var entryStatus = '';
+        if (typeof entryHighlight === 'string') {
+            entryStatus = entryHighlight;
+            entryHighlight = null;
+        } else if (entryHighlight && typeof entryHighlight === 'object' && typeof entryHighlight.entry === 'string') {
+            entryStatus = entryHighlight.entry;
+        }
         for (var li = 0; li < ml; li++) {
             var l = entry.layers[li] || emptyLayer();
             var tr = document.createElement('tr');
@@ -134,33 +153,37 @@ function renderRingEntries() {
             tr.dataset.layer = li;
             if (li === 0 && ei > 0) tr.className = 'ring-group-start';
             if (ei % 2 === 1) tr.classList.add('ring-entry-even');
+            if (entryStatus) {
+                var rowClass = ringStatusClass(entryStatus);
+                if (rowClass) tr.classList.add(rowClass);
+            }
+
+            var layerHighlight = null;
+            if (entryHighlight && Array.isArray(entryHighlight.layers) && entryHighlight.layers[li]) {
+                layerHighlight = entryHighlight.layers[li];
+            }
 
             var cells = '';
             if (li === 0) {
                 cells += '<td class="entry-num"' + (ml > 1 ? ' rowspan="' + ml + '"' : '') + '>' + (ei + 1) + '</td>';
             }
             if (ml > 1) cells += '<td><strong>L' + li + '</strong></td>';
-            cells += '<td><input type="text" class="ring-mc" value="' + esc(l.mastering_code || '') + '"></td>';
-            cells += '<td><input type="text" class="ring-ms" value="' + esc(l.mastering_sid || '') + '"></td>';
-            cells += '<td><input type="text" class="ring-tools" value="' + esc(l.toolstamps || '') + '"></td>';
-            cells += '<td><input type="text" class="ring-moulds" value="' + esc(l.mould_sids || '') + '"></td>';
-            cells += '<td><input type="text" class="ring-addmoulds" value="' + esc(l.additional_moulds || '') + '"></td>';
+            cells += '<td><input type="text" class="' + ringInputClass('ring-mc', layerHighlight && layerHighlight.mastering_code) + '" value="' + esc(l.mastering_code || '') + '"></td>';
+            cells += '<td><input type="text" class="' + ringInputClass('ring-ms', layerHighlight && layerHighlight.mastering_sid) + '" value="' + esc(l.mastering_sid || '') + '"></td>';
+            cells += '<td><input type="text" class="' + ringInputClass('ring-tools', layerHighlight && layerHighlight.toolstamps) + '" value="' + esc(l.toolstamps || '') + '"></td>';
+            cells += '<td><input type="text" class="' + ringInputClass('ring-moulds', layerHighlight && layerHighlight.mould_sids) + '" value="' + esc(l.mould_sids || '') + '"></td>';
+            cells += '<td><input type="text" class="' + ringInputClass('ring-addmoulds', layerHighlight && layerHighlight.additional_moulds) + '" value="' + esc(l.additional_moulds || '') + '"></td>';
 
             if (li === 0) {
                 var rs = ml > 1 ? ' rowspan="' + ml + '"' : '';
-                cells += '<td' + rs + '><input type="text" class="ring-offset" value="' + esc(entry.offset_value || '') + '"></td>';
-                if (showOffsetExtra) cells += '<td' + rs + '><input type="text" class="ring-offset-extra" value="' + esc(entry.offset_extra_value || '') + '"></td>';
-                if (showSampleStart) cells += '<td' + rs + '><input type="text" class="ring-sample-start" value="' + esc(entry.sample_start || '') + '"></td>';
-                cells += '<td' + rs + '><input type="text" class="ring-comment" value="' + esc(entry.comment || '') + '"></td>';
+                cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset', entryHighlight && entryHighlight.offset_value) + '" value="' + esc(entry.offset_value || '') + '"></td>';
+                if (showOffsetExtra) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset-extra', entryHighlight && entryHighlight.offset_extra_value) + '" value="' + esc(entry.offset_extra_value || '') + '"></td>';
+                if (showSampleStart) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-sample-start', entryHighlight && entryHighlight.sample_start) + '" value="' + esc(entry.sample_start || '') + '"></td>';
+                cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-comment', entryHighlight && entryHighlight.comment) + '" value="' + esc(entry.comment || '') + '"></td>';
                 cells += '<td' + rs + '><button type="button" class="outline secondary remove-entry" onclick="removeRingEntry(' + ei + ')">&times;</button></td>';
             }
 
             tr.innerHTML = cells;
-            if (typeof RING_HIGHLIGHTS !== 'undefined' && RING_HIGHLIGHTS[ei]) {
-                var hlClass = RING_HIGHLIGHTS[ei] === 'added' ? 'item-added' :
-                              RING_HIGHLIGHTS[ei] === 'changed' ? 'field-changed' : '';
-                if (hlClass) tr.classList.add(hlClass);
-            }
             tbody.appendChild(tr);
         }
     }

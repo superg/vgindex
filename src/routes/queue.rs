@@ -435,6 +435,9 @@ fn build_review_template(
         barcodes: json_str_vec("barcode").into_iter()
             .map(|s| disc_edit::HighlightedValue { value: s, highlight: String::new() })
             .collect(),
+        removed_serials: vec![],
+        removed_editions: vec![],
+        removed_barcodes: vec![],
 
         ring_codes_json,
         ring_highlights_json: "[]".to_string(),
@@ -577,6 +580,9 @@ struct FieldHighlights {
     serial_highlights: std::collections::HashMap<String, String>,
     edition_highlights: std::collections::HashMap<String, String>,
     barcode_highlights: std::collections::HashMap<String, String>,
+    removed_serials: Vec<String>,
+    removed_editions: Vec<String>,
+    removed_barcodes: Vec<String>,
     ring_highlights_json: String,
 }
 
@@ -711,9 +717,19 @@ fn compute_field_highlights(
             serial_highlights.insert(s.clone(), "added".to_string());
         }
     }
+    for s in &db_serials {
+        if !ch_serials.contains(s) {
+            serial_highlights.insert(s.clone(), "removed".to_string());
+        }
+    }
     if !serial_highlights.is_empty() {
         changed_fields.push("serial:changed".to_string());
     }
+    let mut removed_serials: Vec<String> = db_serials
+        .difference(&ch_serials)
+        .cloned()
+        .collect();
+    removed_serials.sort_unstable_by_key(|s| s.to_lowercase());
 
     let mut edition_highlights = std::collections::HashMap::new();
     let db_editions = str_set(&db_snapshot["edition"]);
@@ -723,9 +739,19 @@ fn compute_field_highlights(
             edition_highlights.insert(s.clone(), "added".to_string());
         }
     }
+    for s in &db_editions {
+        if !ch_editions.contains(s) {
+            edition_highlights.insert(s.clone(), "removed".to_string());
+        }
+    }
     if !edition_highlights.is_empty() {
         changed_fields.push("edition:changed".to_string());
     }
+    let mut removed_editions: Vec<String> = db_editions
+        .difference(&ch_editions)
+        .cloned()
+        .collect();
+    removed_editions.sort_unstable_by_key(|s| s.to_lowercase());
 
     let mut barcode_highlights = std::collections::HashMap::new();
     let db_barcodes = str_set(&db_snapshot["barcode"]);
@@ -735,11 +761,63 @@ fn compute_field_highlights(
             barcode_highlights.insert(s.clone(), "added".to_string());
         }
     }
+    for s in &db_barcodes {
+        if !ch_barcodes.contains(s) {
+            barcode_highlights.insert(s.clone(), "removed".to_string());
+        }
+    }
     if !barcode_highlights.is_empty() {
         changed_fields.push("barcode:changed".to_string());
     }
+    let mut removed_barcodes: Vec<String> = db_barcodes
+        .difference(&ch_barcodes)
+        .cloned()
+        .collect();
+    removed_barcodes.sort_unstable_by_key(|s| s.to_lowercase());
 
-    let mut ring_highlights: Vec<String> = Vec::new();
+    let classify_change = |old: &serde_json::Value, new: &serde_json::Value, csv_ids: bool| -> Option<&'static str> {
+        let is_empty = |v: &serde_json::Value| -> bool {
+            match v {
+                serde_json::Value::Null => true,
+                serde_json::Value::String(s) => s.trim().is_empty(),
+                serde_json::Value::Array(a) => a.is_empty(),
+                serde_json::Value::Object(o) => o.is_empty(),
+                serde_json::Value::Bool(_) | serde_json::Value::Number(_) => false,
+            }
+        };
+        if old == new {
+            return None;
+        }
+        let old_empty = is_empty(old);
+        let new_empty = is_empty(new);
+        if old_empty && !new_empty {
+            return Some("added");
+        }
+        if !old_empty && new_empty {
+            return Some("removed");
+        }
+        if csv_ids {
+            let parse = |v: &serde_json::Value| -> std::collections::HashSet<String> {
+                v.as_str()
+                    .unwrap_or("")
+                    .split(',')
+                    .map(|s| s.trim().to_lowercase())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            };
+            let old_set = parse(old);
+            let new_set = parse(new);
+            if old_set == new_set {
+                return None;
+            }
+            // CSV ring fields (toolstamps/mould sids/additional moulds) are compared
+            // as unordered sets. We cannot reliably mark per-token add/remove in UI.
+            return Some("changed");
+        }
+        Some("changed")
+    };
+
+    let mut ring_highlights: Vec<serde_json::Value> = Vec::new();
     let db_rings = db_snapshot["ring_codes"].as_array();
     let ch_rings = changes["ring_codes"].as_array();
     if let Some(ch_arr) = ch_rings {
@@ -753,14 +831,68 @@ fn compute_field_highlights(
             .unwrap_or(0);
         disc_service::sort_ring_codes_json(&mut db_arr, max_layers);
         disc_service::sort_ring_codes_json(&mut ch_arr_sorted, max_layers);
+        let mut db_by_id: std::collections::HashMap<i32, &serde_json::Value> = std::collections::HashMap::new();
+        for entry in &db_arr {
+            if let Some(id) = entry.get("id").and_then(|v| v.as_i64()).map(|v| v as i32) {
+                db_by_id.insert(id, entry);
+            }
+        }
 
-        for (idx, ch_entry) in ch_arr_sorted.iter().enumerate() {
-            if idx >= db_arr.len() {
-                ring_highlights.push("added".to_string());
-            } else if db_arr[idx] != *ch_entry {
-                ring_highlights.push("changed".to_string());
+        for ch_entry in &ch_arr_sorted {
+            let mut entry_highlight = serde_json::Map::new();
+            let db_entry_opt = ch_entry
+                .get("id")
+                .and_then(|v| v.as_i64())
+                .map(|v| v as i32)
+                .and_then(|id| db_by_id.get(&id).copied());
+            if let Some(db_entry) = db_entry_opt {
+                for (field, csv_ids) in [
+                    ("offset_value", false),
+                    ("offset_extra_value", false),
+                    ("sample_start", false),
+                    ("comment", false),
+                ] {
+                    if let Some(status) = classify_change(&db_entry[field], &ch_entry[field], csv_ids) {
+                        entry_highlight.insert(field.to_string(), serde_json::json!(status));
+                    }
+                }
+
+                let db_layers = db_entry["layers"].as_array().cloned().unwrap_or_default();
+                let ch_layers = ch_entry["layers"].as_array().cloned().unwrap_or_default();
+                let max_layers = db_layers.len().max(ch_layers.len());
+                let mut layer_highlights: Vec<serde_json::Value> = Vec::new();
+                let mut has_layer_highlights = false;
+                for li in 0..max_layers {
+                    let db_layer = db_layers.get(li).cloned().unwrap_or_else(|| serde_json::json!({}));
+                    let ch_layer = ch_layers.get(li).cloned().unwrap_or_else(|| serde_json::json!({}));
+                    let mut layer_map = serde_json::Map::new();
+
+                    for (field, csv_ids) in [
+                        ("mastering_code", false),
+                        ("mastering_sid", false),
+                        ("toolstamps", true),
+                        ("mould_sids", true),
+                        ("additional_moulds", true),
+                    ] {
+                        if let Some(status) = classify_change(&db_layer[field], &ch_layer[field], csv_ids) {
+                            layer_map.insert(field.to_string(), serde_json::json!(status));
+                        }
+                    }
+
+                    if !layer_map.is_empty() {
+                        has_layer_highlights = true;
+                    }
+                    layer_highlights.push(serde_json::Value::Object(layer_map));
+                }
+
+                if has_layer_highlights {
+                    entry_highlight.insert("layers".to_string(), serde_json::Value::Array(layer_highlights));
+                }
+
+                ring_highlights.push(serde_json::Value::Object(entry_highlight));
             } else {
-                ring_highlights.push(String::new());
+                entry_highlight.insert("entry".to_string(), serde_json::json!("added"));
+                ring_highlights.push(serde_json::Value::Object(entry_highlight));
             }
         }
         // Ring codes: only individual entry highlighting via ring_highlights_json,
@@ -775,6 +907,9 @@ fn compute_field_highlights(
         serial_highlights,
         edition_highlights,
         barcode_highlights,
+        removed_serials,
+        removed_editions,
+        removed_barcodes,
         ring_highlights_json,
     }
 }
@@ -782,6 +917,9 @@ fn compute_field_highlights(
 fn apply_highlights(template: &mut DiscEditTemplate, highlights: FieldHighlights) {
     template.changed_fields = highlights.changed_fields;
     template.ring_highlights_json = highlights.ring_highlights_json;
+    template.removed_serials = highlights.removed_serials;
+    template.removed_editions = highlights.removed_editions;
+    template.removed_barcodes = highlights.removed_barcodes;
 
     for opt in &mut template.regions {
         if let Some(hl) = highlights.region_highlights.get(&opt.value) {

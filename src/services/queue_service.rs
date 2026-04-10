@@ -299,40 +299,47 @@ fn apply_ring_codes_history(
     let allow_removal = submission_type == SubmissionType::Edit;
     let mut removals: Vec<usize> = Vec::new();
     let mut additions: Vec<serde_json::Value> = Vec::new();
+    let ring_index_by_id = |rings: &[serde_json::Value], id: i32| -> Option<usize> {
+        rings.iter().position(|entry| entry.get("id").and_then(|v| v.as_i64()).map(|v| v as i32) == Some(id))
+    };
 
     for change in changes {
-        let idx = change
-            .get("index")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize);
+        let id = change.get("id").and_then(|v| v.as_i64()).map(|v| v as i32);
+        let resolved_idx = if let Some(id) = id {
+            ring_index_by_id(&rings, id).ok_or_else(|| {
+                AppError::BadRequest(format!("ring_codes id {} not found", id))
+            })?
+        } else {
+            usize::MAX
+        };
         if change.get("removed").and_then(|v| v.as_bool()).unwrap_or(false) {
             if allow_removal {
-                let Some(remove_idx) = idx else {
+                if resolved_idx == usize::MAX {
                     return Err(AppError::BadRequest(
-                        "ring_codes removal requires entry index".to_string(),
+                        "ring_codes removal requires entry id".to_string(),
                     ));
-                };
-                if remove_idx >= rings.len() {
+                }
+                if resolved_idx >= rings.len() {
                     return Err(AppError::BadRequest(format!(
                         "ring_codes index {} out of range (len {})",
-                        remove_idx,
+                        resolved_idx,
                         rings.len()
                     )));
                 }
-                removals.push(remove_idx);
+                removals.push(resolved_idx);
             }
             continue;
         }
 
-        let entry = if let Some(i) = idx {
-            if i >= rings.len() {
+        let entry = if resolved_idx != usize::MAX {
+            if resolved_idx >= rings.len() {
                 return Err(AppError::BadRequest(format!(
                     "ring_codes index {} out of range (len {})",
-                    i,
+                    resolved_idx,
                     rings.len()
                 )));
             }
-            &mut rings[i]
+            &mut rings[resolved_idx]
         } else {
             additions.push(serde_json::json!({
                 "offset_value": "",
@@ -812,37 +819,52 @@ mod tests {
     }
 
     #[test]
-    fn apply_ring_codes_history_uses_sorted_indices() {
+    fn apply_ring_codes_history_uses_entry_id() {
         let old = serde_json::json!([
-            ring_entry("B", ""),
-            ring_entry("A", "")
+            serde_json::json!({
+                "id": 20,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{ "mastering_code": "B", "mastering_sid": "", "toolstamps": "", "mould_sids": "", "additional_moulds": "" }]
+            }),
+            serde_json::json!({
+                "id": 10,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{ "mastering_code": "A", "mastering_sid": "", "toolstamps": "", "mould_sids": "", "additional_moulds": "" }]
+            })
         ]);
         let changes = serde_json::json!([
             {
-                "index": 0,
+                "id": 10,
                 "comment": { "new": "updated" }
             }
         ]);
 
         let result = apply_ring_codes_history(SubmissionType::Edit, &old, &changes).unwrap();
         let entries = result.as_array().unwrap();
+        assert_eq!(entries[0]["id"], 10);
         assert_eq!(entries[0]["layers"][0]["mastering_code"], "A");
         assert_eq!(entries[0]["comment"], "updated");
     }
 
     #[test]
-    fn apply_ring_codes_history_rejects_out_of_range_index() {
+    fn apply_ring_codes_history_rejects_missing_entry_id() {
         let old = serde_json::json!([ring_entry("A", "")]);
         let changes = serde_json::json!([
             {
-                "index": 4,
+                "removed": true,
                 "comment": { "new": "nope" }
             }
         ]);
 
         let err = apply_ring_codes_history(SubmissionType::Edit, &old, &changes).unwrap_err();
         match err {
-            AppError::BadRequest(msg) => assert!(msg.contains("out of range")),
+            AppError::BadRequest(msg) => assert!(msg.contains("requires entry id")),
             other => panic!("unexpected error: {other:?}"),
         }
     }
