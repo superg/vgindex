@@ -442,7 +442,11 @@ fn build_review_template(
         comments: json_opt_str("comments"),
         contents: json_opt_str("contents"),
 
-        show_error_count: has_sys(|s| s.has_error_count),
+        show_error_count: ref_data
+            .all_media_types
+            .iter()
+            .find(|m| m.code == media_type_code)
+            .map_or(false, |m| m.rom_extension != "iso"),
         error_count,
         show_exe_date: has_sys(|s| s.has_exe_date),
         exe_date: json_opt_str("exe_date"),

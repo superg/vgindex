@@ -282,7 +282,6 @@ pub struct System {
     pub has_barcode: bool,
     pub has_version: bool,
     pub has_edition: bool,
-    pub has_error_count: bool,
     pub has_protection: bool,
     pub has_sector_ranges: bool,
     pub has_header: bool,
@@ -710,7 +709,7 @@ fn extract_rom_name_attr(line: &str) -> Option<String> {
     Some(line[start..end].to_string())
 }
 
-fn extract_track_from_filename(filename: &str) -> Option<String> {
+pub(crate) fn extract_track_from_filename(filename: &str) -> Option<String> {
     if filename.ends_with(".iso") {
         return Some("1".to_string());
     }

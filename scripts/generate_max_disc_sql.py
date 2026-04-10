@@ -485,7 +485,7 @@ ON CONFLICT (code) DO UPDATE SET
     (code, name, media_types,
      has_title_foreign, has_disc_title, has_disc_number,
      has_serial, has_version, has_edition, has_barcode,
-     has_error_count, has_exe_date, has_edc,
+     has_exe_date, has_edc,
      has_pvd, has_bca, has_header, has_keys,
      has_protection, has_sector_ranges, has_sbi, has_offset_extra)
 VALUES
@@ -493,7 +493,7 @@ VALUES
      ARRAY[{sql_str(MEDIA_TYPE_CODE)}]::TEXT[],
      TRUE, TRUE, TRUE,
      TRUE, TRUE, TRUE, TRUE,
-     TRUE, TRUE, TRUE,
+     TRUE, TRUE,
      TRUE, TRUE, TRUE, TRUE,
      TRUE, TRUE, TRUE, TRUE)
 ON CONFLICT (code) DO UPDATE SET
@@ -501,7 +501,7 @@ ON CONFLICT (code) DO UPDATE SET
     media_types = EXCLUDED.media_types,
     has_title_foreign = TRUE, has_disc_title = TRUE, has_disc_number = TRUE,
     has_serial = TRUE, has_version = TRUE, has_edition = TRUE, has_barcode = TRUE,
-    has_error_count = TRUE, has_exe_date = TRUE, has_edc = TRUE,
+    has_exe_date = TRUE, has_edc = TRUE,
     has_pvd = TRUE, has_bca = TRUE, has_header = TRUE, has_keys = TRUE,
     has_protection = TRUE, has_sector_ranges = TRUE, has_sbi = TRUE, has_offset_extra = TRUE;\n\n""")
 

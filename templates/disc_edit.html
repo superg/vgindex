@@ -128,7 +128,8 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
     </div>
 
     <div class="grid">
-        <fieldset{% if !self.highlight_class("regions").is_empty() %} class="{{ self.highlight_class("regions") }}"{% endif %}>
+        <div{% if !self.highlight_class("regions").is_empty() %} class="{{ self.highlight_class("regions") }}"{% endif %}>
+        <fieldset>
             <legend>Regions</legend>
             <div class="flag-check-list">
             {% for r in regions %}
@@ -140,7 +141,9 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
             {% endfor %}
             </div>
         </fieldset>
-        <fieldset{% if !self.highlight_class("languages").is_empty() %} class="{{ self.highlight_class("languages") }}"{% endif %}>
+        </div>
+        <div{% if !self.highlight_class("languages").is_empty() %} class="{{ self.highlight_class("languages") }}"{% endif %}>
+        <fieldset>
             <legend>Languages</legend>
             <div class="flag-check-list">
             {% for lang in languages %}
@@ -152,6 +155,7 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
             {% endfor %}
             </div>
         </fieldset>
+        </div>
     </div>
 
     <div class="inline-field{% if !self.highlight_class("serial").is_empty() %} {{ self.highlight_class("serial") }}{% endif %}" data-field-flag="has_serial"{% if !show_serial %} style="display:none"{% endif %}>
@@ -194,7 +198,7 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
         </div>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("error_count").is_empty() %} {{ self.highlight_class("error_count") }}{% endif %}" data-field-flag="has_error_count"{% if !show_error_count %} style="display:none"{% endif %}>
+    <div id="error-count-field" class="inline-field{% if !self.highlight_class("error_count").is_empty() %} {{ self.highlight_class("error_count") }}{% endif %}"{% if !show_error_count %} style="display:none"{% endif %}>
         <span class="inline-field-label">Error Count</span>
         <div class="inline-field-values">
             <input type="number" name="error_count" value="{{ error_count }}">
@@ -228,7 +232,8 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
         </div>
     </div>
 
-    <fieldset{% if !self.highlight_class("ring_codes").is_empty() %} class="{{ self.highlight_class("ring_codes") }}"{% endif %}>
+    <div{% if !self.highlight_class("ring_codes").is_empty() %} class="{{ self.highlight_class("ring_codes") }}"{% endif %}>
+    <fieldset>
         <legend>Ring Codes</legend>
         <div class="table-scroll table-scroll-compact">
         <table class="disc-table ring-table ring-edit-table" id="ring-editor">
@@ -239,6 +244,7 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
         <button type="button" class="outline secondary array-add-btn" onclick="addRingEntry()">+</button>
         <input type="hidden" name="ring_codes_json" id="ring-codes-json">
     </fieldset>
+    </div>
 
     <label{% if !self.highlight_class("comments").is_empty() %} class="{{ self.highlight_class("comments") }}"{% endif %}>Comments
         <textarea name="comments" rows="5" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
