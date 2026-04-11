@@ -125,26 +125,6 @@ fn json_str_vec(value: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn merge_str_vecs(old: &[String], new: &[String]) -> Vec<String> {
-    let mut merged: Vec<String> = old.to_vec();
-    for s in new {
-        if !merged.iter().any(|existing| existing.eq_ignore_ascii_case(s)) {
-            merged.push(s.clone());
-        }
-    }
-    merged
-}
-
-fn merge_i32_vecs(old: &[i32], new: &[i32]) -> Vec<i32> {
-    let mut merged: Vec<i32> = old.to_vec();
-    for value in new {
-        if !merged.contains(value) {
-            merged.push(*value);
-        }
-    }
-    merged.sort_unstable();
-    merged
-}
 
 fn history_new_value(node: &serde_json::Value) -> Option<&serde_json::Value> {
     node.as_object().and_then(|obj| obj.get("new"))
@@ -222,24 +202,12 @@ fn normalize_csv_ids(value: &str) -> String {
     parse_csv_ids(value).join(", ")
 }
 
-fn merge_csv_ids(old_value: &str, new_value: &str) -> String {
-    let old_items = parse_csv_ids(old_value);
-    let new_items = parse_csv_ids(new_value);
-    let merged = merge_str_vecs(&old_items, &new_items);
-    normalize_csv_ids(&merged.join(", "))
-}
 
 fn apply_regions_languages_change(
-    submission_type: SubmissionType,
-    old_value: &serde_json::Value,
     change_node: &serde_json::Value,
 ) -> serde_json::Value {
     let new_csv = history_new_value(change_node).and_then(|v| v.as_str()).unwrap_or("");
-    let mut new_values = parse_csv_ids(new_csv);
-    if submission_type == SubmissionType::Disc {
-        let old_values = json_str_vec(old_value);
-        new_values = merge_str_vecs(&old_values, &new_values);
-    }
+    let new_values = parse_csv_ids(new_csv);
     serde_json::json!(new_values)
 }
 
@@ -285,8 +253,80 @@ fn ring_layers_max(entries: &[serde_json::Value]) -> usize {
         .unwrap_or(0)
 }
 
+fn merge_csv_values(existing: &str, incoming: &str) -> String {
+    let mut combined: Vec<String> = parse_csv_ids(existing);
+    for val in parse_csv_ids(incoming) {
+        if !combined.iter().any(|v| v.eq_ignore_ascii_case(&val)) {
+            combined.push(val);
+        }
+    }
+    combined.sort_by_key(|s| s.to_lowercase());
+    combined.join(", ")
+}
+
+fn resolve_change_new_str(change: &serde_json::Value, key: &str) -> String {
+    change
+        .get(key)
+        .and_then(|node| history_new_value(node))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+fn offsets_match(existing_val: &str, change_val: &str) -> bool {
+    existing_val.is_empty() || change_val.is_empty() || existing_val == change_val
+}
+
+fn find_matching_ring_entry(
+    rings: &[serde_json::Value],
+    change: &serde_json::Value,
+) -> Option<usize> {
+    let change_layers = change.get("layers").and_then(|v| v.as_array())?;
+
+    let change_offset = resolve_change_new_str(change, "offset_value");
+    let change_offset_extra = resolve_change_new_str(change, "offset_extra_value");
+
+    'outer: for (ring_idx, ring) in rings.iter().enumerate() {
+        let ring_offset = ring["offset_value"].as_str().unwrap_or("");
+        let ring_offset_extra = ring["offset_extra_value"].as_str().unwrap_or("");
+
+        if !offsets_match(ring_offset, &change_offset)
+            || !offsets_match(ring_offset_extra, &change_offset_extra)
+        {
+            continue;
+        }
+
+        let ring_layers = ring["layers"].as_array();
+        for cl in change_layers {
+            let Some(layer_idx) = cl.get("index").and_then(|v| v.as_u64()) else {
+                continue;
+            };
+            let layer_idx = layer_idx as usize;
+
+            for field in ["mastering_code", "mastering_sid"] {
+                let change_val = cl
+                    .get(field)
+                    .and_then(|node| history_new_value(node))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                let ring_val = ring_layers
+                    .and_then(|layers| layers.get(layer_idx))
+                    .and_then(|l| l[field].as_str())
+                    .unwrap_or("");
+
+                if change_val != ring_val {
+                    continue 'outer;
+                }
+            }
+        }
+
+        return Some(ring_idx);
+    }
+    None
+}
+
 fn apply_ring_codes_history(
-    submission_type: SubmissionType,
     old_value: &serde_json::Value,
     change_node: &serde_json::Value,
 ) -> AppResult<serde_json::Value> {
@@ -296,7 +336,7 @@ fn apply_ring_codes_history(
     let Some(changes) = change_node.as_array() else {
         return Ok(serde_json::json!(rings));
     };
-    let allow_removal = submission_type == SubmissionType::Edit;
+    let allow_removal = true;
     let mut removals: Vec<usize> = Vec::new();
     let mut additions: Vec<serde_json::Value> = Vec::new();
     let ring_index_by_id = |rings: &[serde_json::Value], id: i32| -> Option<usize> {
@@ -331,6 +371,13 @@ fn apply_ring_codes_history(
             continue;
         }
 
+        let merge_idx = if resolved_idx == usize::MAX {
+            find_matching_ring_entry(&rings, change)
+        } else {
+            None
+        };
+        let is_merge = merge_idx.is_some();
+
         let entry = if resolved_idx != usize::MAX {
             if resolved_idx >= rings.len() {
                 return Err(AppError::BadRequest(format!(
@@ -340,6 +387,8 @@ fn apply_ring_codes_history(
                 )));
             }
             &mut rings[resolved_idx]
+        } else if let Some(mi) = merge_idx {
+            &mut rings[mi]
         } else {
             additions.push(serde_json::json!({
                 "offset_value": "",
@@ -377,17 +426,15 @@ fn apply_ring_codes_history(
                 }
                 for field in ["toolstamps", "mould_sids", "additional_moulds"] {
                     if let Some(node) = layer_change.get(field) {
-                        let old_csv = normalize_csv_ids(layer[field].as_str().unwrap_or(""));
                         let new_csv = history_new_value(node)
                             .and_then(|v| v.as_str())
-                            .map(normalize_csv_ids)
-                            .unwrap_or_default();
-                        let next = if submission_type == SubmissionType::Disc {
-                            merge_csv_ids(&old_csv, &new_csv)
+                            .unwrap_or("");
+                        if is_merge {
+                            let existing = layer[field].as_str().unwrap_or("");
+                            layer[field] = serde_json::json!(merge_csv_values(existing, new_csv));
                         } else {
-                            new_csv
-                        };
-                        layer[field] = serde_json::json!(next);
+                            layer[field] = serde_json::json!(normalize_csv_ids(new_csv));
+                        }
                     }
                 }
             }
@@ -407,7 +454,6 @@ fn apply_ring_codes_history(
 }
 
 pub fn resolve_submission_snapshot(
-    submission_type: SubmissionType,
     db_snapshot: &serde_json::Value,
     changes: &serde_json::Value,
 ) -> AppResult<serde_json::Value> {
@@ -422,19 +468,16 @@ pub fn resolve_submission_snapshot(
     for (key, value) in change_obj {
         match key.as_str() {
             "regions" | "languages" => {
-                let old = resolved_obj.get(key).cloned().unwrap_or(serde_json::Value::Null);
-                let updated = apply_regions_languages_change(submission_type, &old, value);
+                let updated = apply_regions_languages_change(value);
                 resolved_obj.insert(key.clone(), updated);
             }
             "serial" | "edition" | "barcode" | "keys" => {
                 let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
-                let updated = apply_string_list_history(&old, value, submission_type == SubmissionType::Edit);
-                if submission_type == SubmissionType::Disc {
-                    let merged = merge_str_vecs(&old, &updated);
-                    resolved_obj.insert(key.clone(), serde_json::json!(merged));
-                } else {
-                    resolved_obj.insert(key.clone(), serde_json::json!(updated));
+                let mut updated = apply_string_list_history(&old, value, true);
+                if matches!(key.as_str(), "serial" | "edition" | "barcode") {
+                    dedup_case_insensitive(&mut updated);
                 }
+                resolved_obj.insert(key.clone(), serde_json::json!(updated));
             }
             "layerbreaks" => {
                 let old: Vec<i32> = resolved_obj
@@ -442,56 +485,36 @@ pub fn resolve_submission_snapshot(
                     .and_then(|v| v.as_array())
                     .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|x| x as i32)).collect())
                     .unwrap_or_default();
-                let updated = apply_i32_list_history(&old, value, submission_type == SubmissionType::Edit);
-                if submission_type == SubmissionType::Disc {
-                    let merged = merge_i32_vecs(&old, &updated);
-                    resolved_obj.insert(key.clone(), serde_json::json!(merged));
-                } else {
-                    resolved_obj.insert(key.clone(), serde_json::json!(updated));
-                }
+                let updated = apply_i32_list_history(&old, value, true);
+                resolved_obj.insert(key.clone(), serde_json::json!(updated));
             }
             "ring_codes" => {
                 let old = resolved_obj.get(key).cloned().unwrap_or_else(|| serde_json::json!([]));
-                let updated = apply_ring_codes_history(submission_type, &old, value)?;
+                let updated = apply_ring_codes_history(&old, value)?;
                 resolved_obj.insert(key.clone(), updated);
             }
             _ => {
                 let Some(new_value) = history_new_value(value).cloned() else {
                     continue;
                 };
-                if submission_type == SubmissionType::Disc {
-                    match key.as_str() {
-                        "questionable" => {
-                            let old = resolved_obj.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
-                            let new = new_value.as_bool().unwrap_or(false);
-                            resolved_obj.insert(key.clone(), serde_json::json!(old || new));
-                        }
-                        "enabled" => {
-                            let old = resolved_obj.get(key).and_then(|v| v.as_bool()).unwrap_or(true);
-                            let new = new_value.as_bool().unwrap_or(false);
-                            resolved_obj.insert(key.clone(), serde_json::json!(old || new));
-                        }
-                        "error_count" | "edc" => {
-                            if !new_value.is_null() {
-                                resolved_obj.insert(key.clone(), new_value);
-                            }
-                        }
-                        _ => match &new_value {
-                            serde_json::Value::Null => {}
-                            serde_json::Value::String(text) if text.trim().is_empty() => {}
-                            _ => {
-                                resolved_obj.insert(key.clone(), new_value);
-                            }
-                        },
-                    }
-                } else {
-                    resolved_obj.insert(key.clone(), new_value);
-                }
+                resolved_obj.insert(key.clone(), new_value);
             }
         }
     }
 
     Ok(resolved)
+}
+
+fn dedup_case_insensitive(values: &mut Vec<String>) {
+    let mut seen = Vec::new();
+    values.retain(|s| {
+        if seen.iter().any(|existing: &String| existing.eq_ignore_ascii_case(s)) {
+            false
+        } else {
+            seen.push(s.clone());
+            true
+        }
+    });
 }
 
 async fn resolve_submission_data(
@@ -502,9 +525,9 @@ async fn resolve_submission_data(
     if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(pool, disc_id).await?;
         let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
-        resolve_submission_snapshot(sub.submission_type, &db_snapshot, changes)
+        resolve_submission_snapshot(&db_snapshot, changes)
     } else {
-        resolve_submission_snapshot(sub.submission_type, &serde_json::json!({}), changes)
+        resolve_submission_snapshot(&serde_json::json!({}), changes)
     }
 }
 
@@ -845,7 +868,7 @@ mod tests {
             }
         ]);
 
-        let result = apply_ring_codes_history(SubmissionType::Edit, &old, &changes).unwrap();
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
         let entries = result.as_array().unwrap();
         assert_eq!(entries[0]["id"], 10);
         assert_eq!(entries[0]["layers"][0]["mastering_code"], "A");
@@ -862,10 +885,173 @@ mod tests {
             }
         ]);
 
-        let err = apply_ring_codes_history(SubmissionType::Edit, &old, &changes).unwrap_err();
+        let err = apply_ring_codes_history(&old, &changes).unwrap_err();
         match err {
             AppError::BadRequest(msg) => assert!(msg.contains("requires entry id")),
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn merge_ring_entry_when_mastering_matches() {
+        let old = serde_json::json!([{
+            "id": 1,
+            "offset_value": "",
+            "offset_extra_value": "",
+            "sample_start": "",
+            "comment": "",
+            "layers": [{
+                "mastering_code": "ABCD",
+                "mastering_sid": "SID-1",
+                "toolstamps": "TS-A",
+                "mould_sids": "MS-1",
+                "additional_moulds": "AM-X"
+            }]
+        }]);
+        let changes = serde_json::json!([{
+            "layers": [{
+                "index": 0,
+                "mastering_code": { "new": "ABCD" },
+                "mastering_sid": { "new": "SID-1" },
+                "toolstamps": { "new": "TS-B" },
+                "mould_sids": { "new": "MS-2" },
+                "additional_moulds": { "new": "AM-Y" }
+            }]
+        }]);
+
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+        assert_eq!(entries.len(), 1, "should merge, not add new entry");
+        let layer = &entries[0]["layers"][0];
+        assert_eq!(layer["toolstamps"], "TS-A, TS-B");
+        assert_eq!(layer["mould_sids"], "MS-1, MS-2");
+        assert_eq!(layer["additional_moulds"], "AM-X, AM-Y");
+    }
+
+    #[test]
+    fn no_merge_when_mastering_code_differs() {
+        let old = serde_json::json!([{
+            "id": 1,
+            "offset_value": "",
+            "offset_extra_value": "",
+            "sample_start": "",
+            "comment": "",
+            "layers": [{
+                "mastering_code": "ABCD",
+                "mastering_sid": "SID-1",
+                "toolstamps": "TS-A",
+                "mould_sids": "",
+                "additional_moulds": ""
+            }]
+        }]);
+        let changes = serde_json::json!([{
+            "layers": [{
+                "index": 0,
+                "mastering_code": { "new": "DIFFERENT" },
+                "mastering_sid": { "new": "SID-1" },
+                "toolstamps": { "new": "TS-B" }
+            }]
+        }]);
+
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+        assert_eq!(entries.len(), 2, "should add new entry when mastering_code differs");
+    }
+
+    #[test]
+    fn merge_deduplicates_csv_values() {
+        let old = serde_json::json!([{
+            "id": 1,
+            "offset_value": "",
+            "offset_extra_value": "",
+            "sample_start": "",
+            "comment": "",
+            "layers": [{
+                "mastering_code": "X",
+                "mastering_sid": "",
+                "toolstamps": "A, B",
+                "mould_sids": "M1",
+                "additional_moulds": ""
+            }]
+        }]);
+        let changes = serde_json::json!([{
+            "layers": [{
+                "index": 0,
+                "mastering_code": { "new": "X" },
+                "mastering_sid": { "new": "" },
+                "toolstamps": { "new": "B, C" },
+                "mould_sids": { "new": "m1, M2" }
+            }]
+        }]);
+
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+        assert_eq!(entries.len(), 1);
+        let layer = &entries[0]["layers"][0];
+        assert_eq!(layer["toolstamps"], "A, B, C");
+        assert_eq!(layer["mould_sids"], "M1, M2");
+    }
+
+    #[test]
+    fn merge_matches_when_one_offset_empty() {
+        let old = serde_json::json!([{
+            "id": 1,
+            "offset_value": "42",
+            "offset_extra_value": "",
+            "sample_start": "",
+            "comment": "",
+            "layers": [{
+                "mastering_code": "Z",
+                "mastering_sid": "",
+                "toolstamps": "T1",
+                "mould_sids": "",
+                "additional_moulds": ""
+            }]
+        }]);
+        let changes = serde_json::json!([{
+            "offset_value": { "new": "" },
+            "layers": [{
+                "index": 0,
+                "mastering_code": { "new": "Z" },
+                "mastering_sid": { "new": "" },
+                "toolstamps": { "new": "T2" }
+            }]
+        }]);
+
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+        assert_eq!(entries.len(), 1, "empty offset on change side should match");
+        assert_eq!(entries[0]["layers"][0]["toolstamps"], "T1, T2");
+    }
+
+    #[test]
+    fn no_merge_when_offsets_differ() {
+        let old = serde_json::json!([{
+            "id": 1,
+            "offset_value": "42",
+            "offset_extra_value": "",
+            "sample_start": "",
+            "comment": "",
+            "layers": [{
+                "mastering_code": "Z",
+                "mastering_sid": "",
+                "toolstamps": "",
+                "mould_sids": "",
+                "additional_moulds": ""
+            }]
+        }]);
+        let changes = serde_json::json!([{
+            "offset_value": { "new": "99" },
+            "layers": [{
+                "index": 0,
+                "mastering_code": { "new": "Z" },
+                "mastering_sid": { "new": "" },
+                "toolstamps": { "new": "T1" }
+            }]
+        }]);
+
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+        assert_eq!(entries.len(), 2, "different non-empty offsets should not merge");
     }
 }

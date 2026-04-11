@@ -801,21 +801,7 @@ fn extract_attr(line: &str, attr: &str) -> Option<String> {
 }
 
 fn extract_track_number(filename: &str) -> Option<String> {
-    if filename.ends_with(".iso") {
-        return Some("1".to_string());
-    }
-    let lower = filename.to_lowercase();
-    if lower.starts_with("track.") {
-        return Some("1".to_string());
-    }
-    if let Some(pos) = lower.find("track ") {
-        let rest = &filename[pos + 6..];
-        let num: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-        if !num.is_empty() {
-            return Some(num);
-        }
-    }
-    None
+    extract_track_from_filename(filename)
 }
 
 fn format_hex_dump_snapshot(data: &[u8], base_addr: usize) -> String {
