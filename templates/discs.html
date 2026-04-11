@@ -84,29 +84,35 @@
     <table class="disc-table striped">
         <thead>
             <tr>
-                <th><a href="/discs/?sort=region&amp;order={{ next_region_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=system&amp;order={{ next_system_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                {% if current_user.is_some() %}
+                <th class="dumped-by-me-col" title="Dumped by me">👤</th>
+                {% endif %}
+                <th class="region-col"><a href="/discs/?sort=region&amp;order={{ next_region_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="title-col"><a href="/discs/?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="system-col"><a href="/discs/?sort=system&amp;order={{ next_system_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th><a href="/discs/?sort=edition&amp;order={{ next_edition_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Edition{% if sort_column == "edition" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=language&amp;order={{ next_language_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="language-col"><a href="/discs/?sort=language&amp;order={{ next_language_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th><a href="/discs/?sort=serial&amp;order={{ next_serial_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Serial{% if sort_column == "serial" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=status&amp;order={{ next_status_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="status-col"><a href="/discs/?sort=status&amp;order={{ next_status_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
             </tr>
         </thead>
         <tbody>
             {% for disc in discs %}
             <tr>
-                <td>{% for rf in disc.region_flags %}<img class="flag-icon" src="/static/flags/{{ rf.code }}.svg" title="{{ rf.name }}" alt="{{ rf.name }}">{% endfor %}</td>
-                <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
-                <td>{{ disc.system_code }}</td>
+                {% if current_user.is_some() %}
+                <td class="dumped-by-me-col" title="Dumped by me">{% if disc.dumped_by_me %}<span class="dumped-by-me-yes">✔</span>{% else %}<span class="dumped-by-me-no">✘</span>{% endif %}</td>
+                {% endif %}
+                <td class="region-col">{% for rf in disc.region_flags %}<img class="flag-icon" src="/static/flags/{{ rf.code }}.svg" title="{{ rf.name }}" alt="{{ rf.name }}">{% endfor %}</td>
+                <td class="title-col"><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
+                <td class="system-col">{{ disc.system_code }}</td>
                 <td class="truncate" title="{{ disc.edition_display }}">{{ disc.edition_display }}</td>
-                <td>{% for lang in disc.language_flags %}<img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">{% endfor %}</td>
+                <td class="language-col">{% for lang in disc.language_flags %}<img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">{% endfor %}</td>
                 <td class="truncate" title="{{ disc.serial }}"><small>{{ disc.serial }}</small></td>
-                <td title="{{ disc.status_display }}">{{ disc.status_emoji }}</td>
+                <td class="status-col" title="{{ disc.status_display }}">{{ disc.status_emoji }}</td>
             </tr>
             {% endfor %}
             {% if discs.is_empty() %}
-            <tr><td colspan="7">No discs found.</td></tr>
+            <tr><td colspan="{% if current_user.is_some() %}8{% else %}7{% endif %}">No discs found.</td></tr>
             {% endif %}
         </tbody>
     </table>
