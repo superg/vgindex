@@ -81,30 +81,42 @@ button,
 .disc-table td a:hover {
     text-decoration: underline;
 }
-.disc-table td:nth-child(2) a {
+.disc-table .title-col a {
     color: inherit;
 }
 
 /* Merge flags in region and language columns */
-.disc-table td:nth-child(1) .flag-icon,
-.disc-table td:nth-child(5) .flag-icon {
+.disc-table .region-col .flag-icon,
+.disc-table .language-col .flag-icon {
     margin: 0 -1px 0 0;
 }
 
 /* Keep language flags compact but not touching */
-.disc-table td:nth-child(5) .flag-icon {
+.disc-table .language-col .flag-icon {
     margin-right: 1px;
 }
 
-/* Shrink-to-fit columns: Region(1), System(3), Status(7) */
-.disc-table th:nth-child(1),
-.disc-table td:nth-child(1),
-.disc-table th:nth-child(3),
-.disc-table td:nth-child(3),
-.disc-table th:nth-child(7),
-.disc-table td:nth-child(7) {
+/* Shrink-to-fit columns: dumped-by-me, region, system, status */
+.disc-table .dumped-by-me-col,
+.disc-table .region-col,
+.disc-table .system-col,
+.disc-table .status-col {
     width: 1%;
     white-space: nowrap;
+}
+
+.disc-table .dumped-by-me-col {
+    text-align: center;
+}
+
+.disc-table .dumped-by-me-yes {
+    color: #2e7d32;
+    font-weight: 600;
+}
+
+.disc-table .dumped-by-me-no {
+    color: #c62828;
+    font-weight: 600;
 }
 
 /* Ellipsis truncation for Edition and Serial */

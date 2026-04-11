@@ -83,6 +83,7 @@ struct DiscRow {
     id: i32,
     title: String,
     system_code: String,
+    dumped_by_me: bool,
     edition_display: String,
     status_emoji: String,
     status_display: String,
@@ -248,6 +249,15 @@ async fn discs_page(
     }
 
     let where_sql = where_clauses.join(" AND ");
+    let current_user_id = user.user().map(|u| u.id);
+    let dumped_by_me_sql = if current_user_id.is_some() {
+        bind_idx += 1;
+        format!(
+            "EXISTS (SELECT 1 FROM disc_dumpers dd_self WHERE dd_self.disc_id = d.id AND dd_self.user_id = ${bind_idx})"
+        )
+    } else {
+        "FALSE".to_string()
+    };
 
     let sort_column = query.sort.clone().unwrap_or_else(|| "title".to_string());
     let sort_order_str = query.order.clone().unwrap_or_else(|| "asc".to_string());
@@ -278,7 +288,8 @@ async fn discs_page(
                 d.version,
                 array_to_string(d.edition, ', ') AS edition,
                 d.enabled, d.questionable,
-                (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) AS dumper_count
+                (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) AS dumper_count,
+                {dumped_by_me_sql} AS dumped_by_me
          FROM discs d
          JOIN systems s ON s.code = d.system_code
          WHERE {where_sql}
@@ -307,6 +318,9 @@ async fn discs_page(
     if let Some(dumper_id) = filter_dumper_id {
         count_query = count_query.bind(dumper_id);
         select_query = select_query.bind(dumper_id);
+    }
+    if let Some(current_user_id) = current_user_id {
+        select_query = select_query.bind(current_user_id);
     }
 
     let total_count = count_query.fetch_one(&state.pool).await.unwrap_or(0);
@@ -354,6 +368,7 @@ async fn discs_page(
                 r.filename_suffix.as_deref(),
             ),
             system_code: r.system_code,
+            dumped_by_me: r.dumped_by_me,
             edition_display: r.edition.unwrap_or_default(),
             status_emoji: if r.enabled {
                 DiscStatus::compute(r.questionable, r.dumper_count).emoji().to_string()
@@ -438,6 +453,7 @@ struct RawDiscRow {
     enabled: bool,
     questionable: bool,
     dumper_count: i64,
+    dumped_by_me: bool,
 }
 
 #[derive(sqlx::FromRow)]
