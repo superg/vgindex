@@ -16,7 +16,7 @@ use crate::services::{disc_service, queue_service};
 use crate::AppState;
 
 use super::disc_edit::{
-    self, build_category_options, build_check_options, build_flat_changes,
+    self, build_category_options, build_check_options, build_flat_changes, build_new_disc_changes,
     build_sparse_disc_changes, build_sparse_edit_changes,
     build_lang_check_options, build_media_has_pic_json, build_media_layers_json,
     build_media_options, build_media_rom_extensions_json, build_system_options,
@@ -265,7 +265,7 @@ async fn submission_detail(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
 
-    let mut snapshot = sub.changes.clone();
+    let snapshot: serde_json::Value;
     let mut db_snapshot: Option<serde_json::Value> = None;
     if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
@@ -276,6 +276,12 @@ async fn submission_detail(
             &sub.changes,
         )?;
         db_snapshot = Some(current_db_snapshot);
+    } else {
+        snapshot = queue_service::resolve_submission_snapshot(
+            sub.submission_type,
+            &serde_json::json!({}),
+            &sub.changes,
+        )?;
     }
 
     let system_code = snapshot["system_code"].as_str().unwrap_or("").to_string();
@@ -1033,8 +1039,7 @@ async fn review_submit(
         };
         (sparse, true)
     } else {
-        // New-disc create has no baseline to diff against.
-        (build_flat_changes(&form.disc, &ref_data.all_media_types), false)
+        (build_new_disc_changes(&form.disc, &ref_data.all_media_types), true)
     };
 
     let approved = queue_service::approve_submission(
