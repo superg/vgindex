@@ -504,7 +504,7 @@ async fn resolve_submission_data(
         let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
         resolve_submission_snapshot(sub.submission_type, &db_snapshot, changes)
     } else {
-        Ok(changes.clone())
+        resolve_submission_snapshot(sub.submission_type, &serde_json::json!({}), changes)
     }
 }
 
@@ -659,7 +659,7 @@ pub async fn list_submissions(
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("COALESCE(d.system_code, ds.changes->>'system_code') = ${idx}"));
+        conditions.push(format!("COALESCE(d.system_code, ds.changes->'system_code'->>'new') = ${idx}"));
     }
     if submitter_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -668,8 +668,8 @@ pub async fn list_submissions(
 
     let sort_col = match sort_column {
         "date"      => "ds.created_at",
-        "title"     => "LOWER(COALESCE(d.title, ds.changes->>'title', 'Untitled'))",
-        "system"    => "LOWER(COALESCE(d.system_code, ds.changes->>'system_code', ''))",
+        "title"     => "LOWER(COALESCE(d.title, ds.changes->'title'->>'new', 'Untitled'))",
+        "system"    => "LOWER(COALESCE(d.system_code, ds.changes->'system_code'->>'new', ''))",
         "submitter" => "LOWER(u.username)",
         "reviewer"  => "LOWER(COALESCE(ur.username, ''))",
         "type"      => "ds.submission_type",
@@ -680,8 +680,8 @@ pub async fn list_submissions(
 
     let sql = format!(
         "SELECT ds.id, ds.submission_type,
-                COALESCE(d.title, ds.changes->>'title', 'Untitled') AS title,
-                COALESCE(d.system_code, ds.changes->>'system_code', '') AS system_code,
+                COALESCE(d.title, ds.changes->'title'->>'new', 'Untitled') AS title,
+                COALESCE(d.system_code, ds.changes->'system_code'->>'new', '') AS system_code,
                 u.username AS submitter,
                 ds.submitter_id,
                 ur.username AS reviewer,
@@ -752,7 +752,7 @@ pub async fn count_submissions(
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("COALESCE(d.system_code, ds.changes->>'system_code') = ${idx}"));
+        conditions.push(format!("COALESCE(d.system_code, ds.changes->'system_code'->>'new') = ${idx}"));
     }
     if submitter_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;

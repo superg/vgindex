@@ -1550,12 +1550,7 @@ async fn add_submit(
 
     let files_xml_str = form.files_xml.as_deref().unwrap_or("");
     let target_disc_id = queue_service::find_matching_disc(&state.pool, files_xml_str).await;
-    let changes = if let Some(disc_id) = target_disc_id {
-        let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
-        build_sparse_disc_changes(&form, &detail, &ref_data.all_media_types)
-    } else {
-        build_flat_changes(&form, &ref_data.all_media_types)
-    };
+    let changes = build_new_disc_changes(&form, &ref_data.all_media_types);
 
     let submission_comment = form.submission_comment.as_deref()
         .map(normalize_newlines)
@@ -2325,11 +2320,13 @@ fn ring_codes_history_changes(
 
 fn build_history_changes(
     form: &DiscEditForm,
-    detail: &DiscDetail,
+    detail: Option<&DiscDetail>,
     all_media_types: &[EditMediaTypeRow],
     submission_type: SubmissionType,
 ) -> serde_json::Value {
-    let db_snapshot = disc_service::build_snapshot_from_disc(detail);
+    let db_snapshot = detail
+        .map(disc_service::build_snapshot_from_disc)
+        .unwrap_or_else(|| serde_json::json!({}));
     let form_snapshot = build_flat_changes(form, all_media_types);
 
     let Some(db_obj) = db_snapshot.as_object() else {
@@ -2446,7 +2443,9 @@ fn build_history_changes(
     }
 
     {
-        let old_ring_codes_ui = build_ring_codes_json_from_detail(detail);
+        let old_ring_codes_ui = detail
+            .map(build_ring_codes_json_from_detail)
+            .unwrap_or_else(|| serde_json::json!([]));
         let new_ring_codes = form_obj
             .get("ring_codes")
             .cloned()
@@ -2465,7 +2464,7 @@ pub(crate) fn build_sparse_edit_changes(
     detail: &DiscDetail,
     all_media_types: &[EditMediaTypeRow],
 ) -> serde_json::Value {
-    build_history_changes(form, detail, all_media_types, SubmissionType::Edit)
+    build_history_changes(form, Some(detail), all_media_types, SubmissionType::Edit)
 }
 
 pub(crate) fn build_sparse_disc_changes(
@@ -2473,7 +2472,14 @@ pub(crate) fn build_sparse_disc_changes(
     detail: &DiscDetail,
     all_media_types: &[EditMediaTypeRow],
 ) -> serde_json::Value {
-    build_history_changes(form, detail, all_media_types, SubmissionType::Disc)
+    build_history_changes(form, Some(detail), all_media_types, SubmissionType::Disc)
+}
+
+pub(crate) fn build_new_disc_changes(
+    form: &DiscEditForm,
+    all_media_types: &[EditMediaTypeRow],
+) -> serde_json::Value {
+    build_history_changes(form, None, all_media_types, SubmissionType::Disc)
 }
 
 fn merge_opt_str(db: &serde_json::Value, user: Option<String>) -> serde_json::Value {
