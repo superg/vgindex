@@ -2467,14 +2467,6 @@ pub(crate) fn build_sparse_edit_changes(
     build_history_changes(form, Some(detail), all_media_types, SubmissionType::Edit)
 }
 
-pub(crate) fn build_sparse_disc_changes(
-    form: &DiscEditForm,
-    detail: &DiscDetail,
-    all_media_types: &[EditMediaTypeRow],
-) -> serde_json::Value {
-    build_history_changes(form, Some(detail), all_media_types, SubmissionType::Disc)
-}
-
 pub(crate) fn build_new_disc_changes(
     form: &DiscEditForm,
     all_media_types: &[EditMediaTypeRow],

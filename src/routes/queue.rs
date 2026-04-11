@@ -17,7 +17,7 @@ use crate::AppState;
 
 use super::disc_edit::{
     self, build_category_options, build_check_options, build_flat_changes, build_new_disc_changes,
-    build_sparse_disc_changes, build_sparse_edit_changes,
+    build_sparse_edit_changes,
     build_lang_check_options, build_media_has_pic_json, build_media_layers_json,
     build_media_options, build_media_rom_extensions_json, build_system_options,
     build_systems_json, fetch_ref_data, max_layers_for_media, validate_form,
@@ -271,14 +271,12 @@ async fn submission_detail(
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
         let current_db_snapshot = disc_service::build_snapshot_from_disc(&detail);
         snapshot = queue_service::resolve_submission_snapshot(
-            sub.submission_type,
             &current_db_snapshot,
             &sub.changes,
         )?;
         db_snapshot = Some(current_db_snapshot);
     } else {
         snapshot = queue_service::resolve_submission_snapshot(
-            sub.submission_type,
             &serde_json::json!({}),
             &sub.changes,
         )?;
@@ -1029,14 +1027,7 @@ async fn review_submit(
 
     let (form_snapshot, is_sparse_changes) = if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
-        let sparse = match sub.submission_type {
-            SubmissionType::Edit => {
-                build_sparse_edit_changes(&form.disc, &detail, &ref_data.all_media_types)
-            }
-            SubmissionType::Disc => {
-                build_sparse_disc_changes(&form.disc, &detail, &ref_data.all_media_types)
-            }
-        };
+        let sparse = build_sparse_edit_changes(&form.disc, &detail, &ref_data.all_media_types);
         (sparse, true)
     } else {
         (build_new_disc_changes(&form.disc, &ref_data.all_media_types), true)

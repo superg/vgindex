@@ -719,7 +719,7 @@ pub(crate) fn extract_track_from_filename(filename: &str) -> Option<String> {
     }
     if let Some(pos) = lower.find("track ") {
         let rest = &filename[pos + 6..];
-        let num: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+        let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
         if !num.is_empty() {
             return Some(num);
         }

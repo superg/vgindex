@@ -1,3 +1,5 @@
+use crate::db::models::extract_track_from_filename;
+
 pub fn validate_non_negative_int(s: &str) -> Result<i64, String> {
     let s = s.trim();
     if s.is_empty() {
@@ -522,24 +524,7 @@ fn dat_extract_attr(line: &str, attr: &str) -> Option<String> {
 }
 
 fn dat_extract_track_number(filename: &str) -> Option<String> {
-    if filename.ends_with(".iso") {
-        return Some("1".to_string());
-    }
-    let lower = filename.to_lowercase();
-    if lower.starts_with("track.") {
-        return Some("1".to_string());
-    }
-    if let Some(pos) = lower.find("track ") {
-        let rest = &filename[pos + 6..];
-        let num: String = rest
-            .chars()
-            .take_while(|c| c.is_ascii_digit() || *c == '.')
-            .collect();
-        if !num.is_empty() {
-            return Some(num);
-        }
-    }
-    None
+    extract_track_from_filename(filename)
 }
 
 pub fn validate_ring_code_offsets(json_str: &str) -> Vec<String> {
