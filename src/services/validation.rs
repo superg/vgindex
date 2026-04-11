@@ -210,6 +210,8 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
     let mut file_opened = false;
     let mut track_opened = false;
     let mut gap_opened = false;
+    let mut index01_seen = false;
+    let mut last_index: u32 = 0;
     let mut track_count: u32 = 0;
 
     for (line_num, line) in text.lines().enumerate() {
@@ -222,10 +224,14 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
         }
 
         if is_cue_file_line(&upper) {
-            if file_opened {
+            if file_opened && !index01_seen {
                 return Err(format!("row {}: previous FILE not closed", row));
             }
             file_opened = true;
+            track_opened = false;
+            gap_opened = false;
+            index01_seen = false;
+            last_index = 0;
             continue;
         }
 
@@ -241,11 +247,25 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             if !file_opened {
                 return Err(format!("row {}: TRACK without FILE", row));
             }
-            if track_opened {
+            if track_opened && !index01_seen {
                 return Err(format!("row {}: previous TRACK not closed", row));
             }
             track_opened = true;
             track_count += 1;
+            gap_opened = false;
+            index01_seen = false;
+            last_index = 0;
+            continue;
+        }
+
+        if upper.starts_with("CATALOG ") {
+            if file_opened {
+                return Err(format!("row {}: CATALOG must appear before any FILE", row));
+            }
+            let value = &upper[8..];
+            if value.len() != 13 || !value.chars().all(|c| c.is_ascii_digit()) {
+                return Err(format!("row {}: CATALOG must be exactly 13 digits", row));
+            }
             continue;
         }
 
@@ -259,6 +279,9 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             if gap_opened {
                 return Err(format!("row {}: FLAGS after INDEX 00", row));
             }
+            if index01_seen {
+                return Err(format!("row {}: FLAGS after INDEX 01", row));
+            }
             let flags_part = &upper[6..];
             for flag in flags_part.split_whitespace() {
                 if flag != "PRE" && flag != "DCP" {
@@ -268,63 +291,97 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             continue;
         }
 
-        if upper == "INDEX 00 00:00:00" {
+        if upper.starts_with("ISRC ") {
             if !file_opened {
-                return Err(format!("row {}: INDEX without FILE", row));
+                return Err(format!("row {}: ISRC without FILE", row));
             }
             if !track_opened {
-                return Err(format!("row {}: INDEX without TRACK", row));
+                return Err(format!("row {}: ISRC without TRACK", row));
             }
-            if gap_opened {
-                return Err(format!("row {}: gap already opened", row));
+            if gap_opened || index01_seen {
+                return Err(format!("row {}: ISRC must appear before INDEX", row));
             }
-            gap_opened = true;
-            continue;
-        }
-
-        if upper == "INDEX 01 00:00:00" {
-            if !file_opened {
-                return Err(format!("row {}: INDEX without FILE", row));
-            }
-            if !track_opened {
-                return Err(format!("row {}: INDEX without TRACK", row));
-            }
-            if gap_opened {
-                return Err(format!("row {}: gap not closed", row));
-            }
-            file_opened = false;
-            track_opened = false;
-            continue;
-        }
-
-        if let Some((_mm, ss, ff)) = parse_cue_index01(&upper) {
-            if !file_opened {
-                return Err(format!("row {}: INDEX without FILE", row));
-            }
-            if !track_opened {
-                return Err(format!("row {}: INDEX without TRACK", row));
-            }
-            if !gap_opened {
+            let value = &upper[5..];
+            if value.len() != 12 || !value.chars().all(|c| c.is_ascii_alphanumeric()) {
                 return Err(format!(
-                    "row {}: INDEX 01 with non-zero pregap requires INDEX 00 first",
+                    "row {}: ISRC must be exactly 12 alphanumeric characters",
                     row
                 ));
             }
-            if ss >= 60 {
-                return Err(format!("row {}: seconds value {} >= 60", row, ss));
+            continue;
+        }
+
+        if let Some((idx_num, mm, ss, ff)) = parse_cue_index_line(&upper) {
+            if !file_opened {
+                return Err(format!("row {}: INDEX without FILE", row));
             }
-            if ff >= 75 {
-                return Err(format!("row {}: frames value {} >= 75", row, ff));
+            if !track_opened {
+                return Err(format!("row {}: INDEX without TRACK", row));
             }
-            file_opened = false;
-            track_opened = false;
-            gap_opened = false;
+
+            if idx_num == 0 {
+                if mm != 0 || ss != 0 || ff != 0 {
+                    return Err(format!("row {}: INDEX 00 must be 00:00:00", row));
+                }
+                if gap_opened {
+                    return Err(format!("row {}: gap already opened", row));
+                }
+                if index01_seen {
+                    return Err(format!("row {}: INDEX 00 after INDEX 01", row));
+                }
+                gap_opened = true;
+            } else if idx_num == 1 {
+                if mm == 0 && ss == 0 && ff == 0 {
+                    if gap_opened {
+                        return Err(format!("row {}: gap not closed", row));
+                    }
+                } else {
+                    if !gap_opened {
+                        return Err(format!(
+                            "row {}: INDEX 01 with non-zero pregap requires INDEX 00 first",
+                            row
+                        ));
+                    }
+                    if ss >= 60 {
+                        return Err(format!("row {}: seconds value {} >= 60", row, ss));
+                    }
+                    if ff >= 75 {
+                        return Err(format!("row {}: frames value {} >= 75", row, ff));
+                    }
+                    gap_opened = false;
+                }
+                index01_seen = true;
+                last_index = 1;
+            } else {
+                if !index01_seen {
+                    return Err(format!(
+                        "row {}: INDEX {:02} without INDEX 01",
+                        row, idx_num
+                    ));
+                }
+                if idx_num != last_index + 1 {
+                    return Err(format!(
+                        "row {}: INDEX not sequential (expected {:02}, got {:02})",
+                        row,
+                        last_index + 1,
+                        idx_num
+                    ));
+                }
+                if ss >= 60 {
+                    return Err(format!("row {}: seconds value {} >= 60", row, ss));
+                }
+                if ff >= 75 {
+                    return Err(format!("row {}: frames value {} >= 75", row, ff));
+                }
+                last_index = idx_num;
+            }
             continue;
         }
 
         if upper.starts_with("REM")
             || upper.starts_with("PERFORMER")
             || upper.starts_with("TITLE")
+            || upper.starts_with("SONGWRITER")
         {
             continue;
         }
@@ -369,11 +426,22 @@ fn parse_cue_track_line(line: &str) -> Option<(u32, &str)> {
     }
 }
 
-fn parse_cue_index01(line: &str) -> Option<(u32, u32, u32)> {
-    if !line.starts_with("INDEX 01 ") {
+fn parse_cue_index_line(line: &str) -> Option<(u32, u32, u32, u32)> {
+    if !line.starts_with("INDEX ") {
         return None;
     }
-    let time = &line[9..];
+    let rest = &line[6..];
+    if rest.len() < 3 {
+        return None;
+    }
+    if !rest.as_bytes()[0].is_ascii_digit()
+        || !rest.as_bytes()[1].is_ascii_digit()
+        || rest.as_bytes()[2] != b' '
+    {
+        return None;
+    }
+    let idx_num: u32 = rest[..2].parse().ok()?;
+    let time = &rest[3..];
     let parts: Vec<&str> = time.split(':').collect();
     if parts.len() != 3 {
         return None;
@@ -386,7 +454,7 @@ fn parse_cue_index01(line: &str) -> Option<(u32, u32, u32)> {
     let mm = parts[0].parse::<u32>().ok()?;
     let ss = parts[1].parse::<u32>().ok()?;
     let ff = parts[2].parse::<u32>().ok()?;
-    Some((mm, ss, ff))
+    Some((idx_num, mm, ss, ff))
 }
 
 pub fn validate_dat(text: &str) -> Result<(), String> {
@@ -619,6 +687,177 @@ FILE "Track 2.bin" BINARY
     FLAGS DCP
     INDEX 01 00:00:00"#;
         assert!(validate_cuesheet(with_flags).is_ok());
+    }
+
+    #[test]
+    fn test_cuesheet_catalog() {
+        let with_catalog = r#"CATALOG 0000000000000
+FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(with_catalog).is_ok());
+
+        let catalog_after_file = r#"FILE "Track 01.bin" BINARY
+CATALOG 0000000000000
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(catalog_after_file).is_err());
+
+        let catalog_bad_len = r#"CATALOG 123456789
+FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(catalog_bad_len).is_err());
+
+        let catalog_non_digit = r#"CATALOG 000000000000A
+FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(catalog_non_digit).is_err());
+    }
+
+    #[test]
+    fn test_cuesheet_isrc() {
+        let with_isrc = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 AUDIO
+    ISRC ZWUFD3135734
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(with_isrc).is_ok());
+
+        let isrc_without_track = r#"FILE "Track 01.bin" BINARY
+  ISRC ZWUFD3135734
+  TRACK 01 AUDIO
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(isrc_without_track).is_err());
+
+        let isrc_after_index = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 AUDIO
+    INDEX 00 00:00:00
+    ISRC ZWUFD3135734
+    INDEX 01 00:02:00"#;
+        assert!(validate_cuesheet(isrc_after_index).is_err());
+
+        let isrc_bad_len = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 AUDIO
+    ISRC ZWUFD31357
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(isrc_bad_len).is_err());
+
+        let isrc_non_alnum = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 AUDIO
+    ISRC ZWUFD31357-4
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(isrc_non_alnum).is_err());
+    }
+
+    #[test]
+    fn test_cuesheet_songwriter() {
+        let with_songwriter = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 AUDIO
+    TITLE "Song Title"
+    PERFORMER "Artist"
+    SONGWRITER "Writer"
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(with_songwriter).is_ok());
+    }
+
+    #[test]
+    fn test_cuesheet_index_subindexes() {
+        let with_index02 = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00
+    INDEX 02 05:27:51"#;
+        assert!(validate_cuesheet(with_index02).is_ok());
+
+        let with_many_indexes = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00
+    INDEX 02 05:27:51
+    INDEX 03 10:30:00
+    INDEX 04 15:00:00"#;
+        assert!(validate_cuesheet(with_many_indexes).is_ok());
+
+        let indexes_then_next_file = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00
+    INDEX 02 05:27:51
+FILE "Track 02.bin" BINARY
+  TRACK 02 AUDIO
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(indexes_then_next_file).is_ok());
+
+        let index_skip = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00
+    INDEX 03 05:27:51"#;
+        assert!(validate_cuesheet(index_skip).is_err());
+
+        let index02_without_01 = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 02 05:27:51"#;
+        assert!(validate_cuesheet(index02_without_01).is_err());
+
+        let index02_bad_frames = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00
+    INDEX 02 05:27:75"#;
+        assert!(validate_cuesheet(index02_bad_frames).is_err());
+
+        let index02_bad_secs = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00
+    INDEX 02 05:60:00"#;
+        assert!(validate_cuesheet(index02_bad_secs).is_err());
+    }
+
+    #[test]
+    fn test_cuesheet_full_redump() {
+        let full = r#"CATALOG 5099750122020
+REM SINGLE-DENSITY AREA
+FILE "Track 01.bin" BINARY
+  TRACK 01 AUDIO
+    INDEX 01 00:00:00
+FILE "Track 02.bin" BINARY
+  TRACK 02 AUDIO
+    ISRC GAJPN9100001
+    FLAGS DCP
+    INDEX 00 00:00:00
+    INDEX 01 00:02:00
+REM HIGH-DENSITY AREA
+FILE "Track 03.bin" BINARY
+  TRACK 03 MODE2/2352
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(full).is_ok());
+
+        let gdrom_session = r#"REM SESSION 01
+FILE "Track 01.bin" BINARY
+  TRACK 01 AUDIO
+    INDEX 01 00:00:00
+REM LEAD-OUT 01:30:00
+REM SESSION 02
+REM LEAD-IN 01:00:00
+REM PREGAP 00:02:00
+FILE "Track 02.bin" BINARY
+  TRACK 02 MODE2/2352
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(gdrom_session).is_ok());
+
+        let cd_audio = r#"TITLE "ACR Soundtrack"
+PERFORMER "Artist"
+FILE "Track 01.bin" BINARY
+  TRACK 01 AUDIO
+    TITLE "Song 1"
+    PERFORMER "Artist"
+    SONGWRITER "Writer"
+    INDEX 01 00:00:00
+FILE "Track 02.bin" BINARY
+  TRACK 02 AUDIO
+    TITLE "Song 2"
+    PERFORMER "Artist"
+    SONGWRITER "Writer"
+    INDEX 00 00:00:00
+    INDEX 01 00:01:74"#;
+        assert!(validate_cuesheet(cd_audio).is_ok());
     }
 
     #[test]
