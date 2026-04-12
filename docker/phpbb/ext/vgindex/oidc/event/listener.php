@@ -147,7 +147,15 @@ class listener implements EventSubscriberInterface
             return;
         }
 
-        $user_id = (int) $event['user_row']['user_id'];
+        $user_row = isset($event['user_row']) && is_array($event['user_row'])
+            ? $event['user_row']
+            : null;
+        if ($user_row === null || !isset($user_row['user_id']))
+        {
+            return;
+        }
+
+        $user_id = (int) $user_row['user_id'];
         if (!$user_id)
         {
             return;

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     extract::{Query, State},
@@ -168,7 +168,7 @@ async fn authorize(
         _ => return (StatusCode::BAD_REQUEST, "invalid client_id").into_response(),
     };
 
-    if client.redirect_uri != params.redirect_uri {
+    if !redirect_uri_matches(&client.redirect_uri, &params.redirect_uri) {
         return (StatusCode::BAD_REQUEST, "redirect_uri mismatch").into_response();
     }
 
@@ -452,6 +452,90 @@ fn extract_basic_auth(headers: &HeaderMap) -> Option<(String, String)> {
     let decoded = String::from_utf8(STANDARD.decode(encoded).ok()?).ok()?;
     let (id, secret) = decoded.split_once(':')?;
     Some((id.to_string(), secret.to_string()))
+}
+
+fn redirect_uri_matches(registered: &str, requested: &str) -> bool {
+    if registered == requested {
+        return true;
+    }
+
+    let (registered_base, registered_query) = match registered.split_once('?') {
+        Some(parts) => parts,
+        None => return false,
+    };
+    let (requested_base, requested_query) = match requested.split_once('?') {
+        Some(parts) => parts,
+        None => return false,
+    };
+
+    if registered_base != requested_base {
+        return false;
+    }
+
+    let registered_params = parse_query_params(registered_query);
+    let requested_params = parse_query_params(requested_query);
+
+    registered_params.iter().all(|(key, registered_values)| {
+        requested_params
+            .get(key)
+            .map(|requested_values| {
+                registered_values
+                    .iter()
+                    .all(|value| requested_values.contains(value))
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn parse_query_params(query: &str) -> HashMap<String, Vec<String>> {
+    let mut params = HashMap::new();
+
+    for pair in query.split('&').filter(|pair| !pair.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        params
+            .entry(key.to_string())
+            .or_insert_with(Vec::new)
+            .push(value.to_string());
+    }
+
+    params
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redirect_uri_matches;
+
+    #[test]
+    fn redirect_uri_exact_match_still_passes() {
+        assert!(redirect_uri_matches(
+            "https://forum.localhost:8443/ucp.php?mode=login",
+            "https://forum.localhost:8443/ucp.php?mode=login"
+        ));
+    }
+
+    #[test]
+    fn redirect_uri_with_extra_query_params_passes() {
+        assert!(redirect_uri_matches(
+            "https://forum.localhost:8443/ucp.php?mode=login",
+            "https://forum.localhost:8443/ucp.php?mode=login&login=external&oauth_service=vgindex"
+        ));
+    }
+
+    #[test]
+    fn redirect_uri_with_different_base_fails() {
+        assert!(!redirect_uri_matches(
+            "https://forum.localhost:8443/ucp.php?mode=login",
+            "https://evil.localhost:8443/ucp.php?mode=login&login=external"
+        ));
+    }
+
+    #[test]
+    fn redirect_uri_missing_registered_params_fails() {
+        assert!(!redirect_uri_matches(
+            "https://forum.localhost:8443/ucp.php?mode=login&oauth_service=vgindex",
+            "https://forum.localhost:8443/ucp.php?mode=login"
+        ));
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -11,5 +11,5 @@ if (empty($lang) || !is_array($lang))
 }
 
 $lang = array_merge($lang, [
-    'AUTH_PROVIDER_OAUTH_SERVICE_VGINDEX' => 'VGIndex',
+    'AUTH_PROVIDER_OAUTH_SERVICE_VGINDEX' => 'SSO',
 ]);

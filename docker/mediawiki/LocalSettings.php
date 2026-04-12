@@ -59,7 +59,7 @@ $wgGroupPermissions['editor']['upload'] = true;
 wfLoadExtension('PluggableAuth');
 wfLoadExtension('OpenIDConnect');
 
-$wgPluggableAuth_Config['sso'] = [
+$wgPluggableAuth_Config['SSO'] = [
     'plugin' => 'OpenIDConnect',
     'data' => [
         'providerURL' => requireEnv('OIDC_PROVIDER_URL'),
