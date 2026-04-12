@@ -278,7 +278,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     }
 
     let files: Vec<File> = sqlx::query_as(
-        "SELECT * FROM files WHERE disc_id = $1 ORDER BY track_number"
+        "SELECT * FROM files WHERE disc_id = $1 ORDER BY CAST(track_number AS INTEGER) NULLS LAST, track_number NULLS LAST"
     )
     .bind(disc_id)
     .fetch_all(pool)

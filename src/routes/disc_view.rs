@@ -71,6 +71,7 @@ struct DiscViewTemplate {
     ring_rows: Vec<ViewRingRow>,
     ring_vis: RingColVis,
     files: Vec<ViewFile>,
+    dat_filename: String,
     sbi_rows: Vec<SbiRow>,
     pvd_rows: Vec<PvdRow>,
     pic_rows: Vec<HeaderRow>,
@@ -144,6 +145,7 @@ impl RingColVis {
 
 struct ViewFile {
     name: String,
+    short_name: String,
     is_cue: bool,
     size: i64,
     crc32: String,
@@ -266,8 +268,25 @@ async fn disc_view(
         } else {
             (rom_extension, f.track_number.as_deref())
         };
+        let short_name = if is_cue {
+            format!(".cue")
+        } else if total_tracks > 1 {
+            if let Some(t) = track {
+                let n: u32 = t.parse().unwrap_or(0);
+                if total_tracks >= 10 {
+                    format!("(Track {n:02}).{ext}")
+                } else {
+                    format!("(Track {n}).{ext}")
+                }
+            } else {
+                format!(".{ext}")
+            }
+        } else {
+            format!(".{ext}")
+        };
         ViewFile {
             name: build_rom_name(&rom_base_name, track, total_tracks, ext),
+            short_name,
             is_cue,
             size: f.size,
             crc32: f.crc32.clone(),
@@ -389,6 +408,7 @@ async fn disc_view(
             ),
             ring_rows,
             files,
+            dat_filename: rom_base_name.clone(),
             sbi_rows,
             pvd_rows,
             pic_rows,
