@@ -3,36 +3,36 @@
 {% block title %}Home{% endblock %}
 
 {% block content %}
-<hgroup>
-    <h2>Welcome to {{ self.site_name() }}</h2>
-    <p>Disc preservation database</p>
-</hgroup>
+<div class="home-sections">
+    <section class="home-news">
+        <h3>News</h3>
+        <p>Check the <a href="{{ self.forum_url() }}">forum</a> for the latest news.</p>
+    </section>
 
-<div class="grid">
-    <section>
+    <section class="home-recent-dumps">
         <h3>Recent Dumps</h3>
         <table class="recent-dumps">
             <thead>
                 <tr>
                     <th>Date</th>
-                    <th>Region</th>
-                    <th>System</th>
+                    <th class="region-col">Region</th>
                     <th>Title</th>
+                    <th>System</th>
                 </tr>
             </thead>
             <tbody>
                 {% for disc in recent_discs %}
                 <tr>
-                    <td><small>{{ disc.created_at }}</small></td>
-                    <td>
+                    <td>{{ disc.created_at }}</td>
+                    <td class="region-col">
                         {% for rf in disc.region_flags %}
                         <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg"
                              title="{{ rf.name }}"
                              alt="{{ rf.name }}">
                         {% endfor %}
                     </td>
-                    <td><small>{{ disc.system }}</small></td>
                     <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
+                    <td>{{ disc.system }}</td>
                 </tr>
                 {% endfor %}
                 {% if recent_discs.is_empty() %}
@@ -41,11 +41,6 @@
             </tbody>
         </table>
         <p><a href="/discs/?sort=updated&amp;order=desc">More...</a></p>
-    </section>
-
-    <section>
-        <h3>News</h3>
-        <p>Check the <a href="{{ self.forum_url() }}">forum</a> for the latest news.</p>
     </section>
 </div>
 {% endblock %}

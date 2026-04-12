@@ -3,25 +3,25 @@
 {% block title %}Downloads{% endblock %}
 
 {% block content %}
-<h2>Downloads</h2>
-<p>Download datfiles, cuesheets, and SBI archives for each system.</p>
+<h3 class="downloads-page-title">Downloads</h3>
+<p class="downloads-page-desc">Download datfiles, cuesheets, and SBI archives for each system.</p>
 
-<table class="striped">
+<table class="striped downloads-table">
     <thead>
         <tr>
             <th>System</th>
-            <th>Datfile</th>
-            <th>Cuesheets</th>
-            <th>SBI</th>
+            <th class="downloads-group-header">Downloads</th>
         </tr>
     </thead>
     <tbody>
         {% for sys in systems %}
         <tr>
             <td>{{ sys.name }}</td>
-            <td>{% if sys.has_dat %}<a href="/downloads/{{ sys.code }}/dat">Download</a>{% endif %}</td>
-            <td>{% if sys.has_cue %}<a href="/downloads/{{ sys.code }}/cue">Download</a>{% endif %}</td>
-            <td>{% if sys.has_sbi %}<a href="/downloads/{{ sys.code }}/sbi">Download</a>{% endif %}</td>
+            <td class="download-links-cell">
+                {% if sys.has_dat %}<a href="/downloads/{{ sys.code }}/dat">Dat</a>{% endif %}
+                {% if sys.has_cue %}<a href="/downloads/{{ sys.code }}/cue">Cuesheets</a>{% endif %}
+                {% if sys.has_sbi %}<a href="/downloads/{{ sys.code }}/sbi">SBI</a>{% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>
