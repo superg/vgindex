@@ -119,19 +119,26 @@ configure_oidc_sso() {
     client_secret_sql="$(printf "%s" "$PHPBB_OIDC_CLIENT_SECRET" | sed "s/'/''/g")"
     redirect_uri_sql="$(printf "%s" "$redirect_uri" | sed "s/'/''/g")"
 
-    if ! PGPASSWORD="$PHPBB_DB_PASSWORD" psql \
-        -h "$PHPBB_DB_HOST" \
-        -p "$PHPBB_DB_PORT" \
-        -U "$PHPBB_DB_USER" \
-        -d "$POSTGRES_DB" \
-        -v ON_ERROR_STOP=1 \
-        -c "INSERT INTO oauth_clients (client_id, client_secret, redirect_uri, name) VALUES ('$client_id_sql', '$client_secret_sql', '$redirect_uri_sql', 'phpBB Forum')
-            ON CONFLICT (client_id) DO UPDATE SET
-              client_secret = EXCLUDED.client_secret,
-              redirect_uri = EXCLUDED.redirect_uri,
-              name = EXCLUDED.name;" >/dev/null 2>&1; then
-        echo "phpBB entrypoint: warning - could not upsert oauth client in app DB (${POSTGRES_DB})."
-    fi
+    local attempt
+    for attempt in $(seq 1 20); do
+        if PGPASSWORD="$PHPBB_DB_PASSWORD" psql \
+            -h "$PHPBB_DB_HOST" \
+            -p "$PHPBB_DB_PORT" \
+            -U "$PHPBB_DB_USER" \
+            -d "$POSTGRES_DB" \
+            -v ON_ERROR_STOP=1 \
+            -c "INSERT INTO oauth_clients (client_id, client_secret, redirect_uri, name) VALUES ('$client_id_sql', '$client_secret_sql', '$redirect_uri_sql', 'phpBB Forum')
+                ON CONFLICT (client_id) DO UPDATE SET
+                  client_secret = EXCLUDED.client_secret,
+                  redirect_uri = EXCLUDED.redirect_uri,
+                  name = EXCLUDED.name;" >/dev/null 2>&1; then
+            echo "phpBB entrypoint: OIDC client synced in app DB."
+            return 0
+        fi
+        sleep 2
+    done
+
+    echo "phpBB entrypoint: warning - could not upsert oauth client in app DB (${POSTGRES_DB}) after retries."
 }
 
 write_install_config() {
@@ -197,6 +204,10 @@ if ! db_initialized; then
     echo "phpBB entrypoint: install completed, removing install dir."
     rm -rf /var/www/html/install
 fi
+
+# phpBB serves a "board unavailable" page to non-admins while /install exists.
+# Images include this directory by default, so always remove it at startup.
+rm -rf /var/www/html/install
 
 write_config_php
 configure_oidc_sso

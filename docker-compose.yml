@@ -113,6 +113,7 @@ services:
       - OIDC_PROVIDER_URL=http://${APP_HOST:-app}:${APP_PORT:-3000}
       - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
       - MEDIAWIKI_OIDC_CLIENT_SECRET=${MEDIAWIKI_OIDC_CLIENT_SECRET:-changeme-mediawiki-oidc}
+      - POSTGRES_DB=${POSTGRES_DB:-myapp}
     volumes:
       - mediawiki_uploads:/var/www/html/images
       - ./docker/mediawiki/LocalSettings.php:/etc/mediawiki/LocalSettings.php:ro
