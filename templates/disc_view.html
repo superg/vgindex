@@ -109,7 +109,7 @@
 </div>
 
 {% if !ring_rows.is_empty() %}
-<section>
+<section class="left-section">
     <h3>Rings</h3>
     <div class="table-scroll table-scroll-compact">
     <table class="disc-table ring-table">
@@ -197,12 +197,12 @@
 {% endif %}
 
 {% if !pvd_rows.is_empty() %}
-<section>
+<section class="left-section">
     <h3>PVD</h3>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
         <thead>
-            <tr><th>Record / Entry</th><th>Contents</th><th>Date</th><th>Time</th><th>GMT</th></tr>
+            <tr><th></th><th>Contents</th><th>Date</th><th>Time</th><th>GMT</th></tr>
         </thead>
         <tbody>
             {% for row in pvd_rows %}
@@ -265,7 +265,7 @@
 {% endif %}
 
 {% if !pic_rows.is_empty() %}
-<section>
+<section class="left-section">
     <h3>PIC</h3>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
@@ -286,8 +286,9 @@
 </section>
 {% endif %}
 
-<section>
+<section class="left-section">
     <h3>Files</h3>
+    <p class="dat-filename">Filename in dat: <code>{{ dat_filename }}</code></p>
     <div class="table-scroll table-scroll-compact">
     <table class="disc-table striped table-nowrap">
         <thead>
@@ -296,7 +297,7 @@
         <tbody>
             {% for file in files %}
             <tr>
-                <td style="text-align: left;">{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.name }}</a>{% else %}{{ file.name }}{% endif %}</td>
+                <td style="text-align: left;" title="{{ file.name }}">{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.short_name }}</a>{% else %}{{ file.short_name }}{% endif %}</td>
                 <td>{{ file.size }}</td>
                 <td><code>{{ file.crc32 }}</code></td>
                 <td><code>{{ file.md5 }}</code></td>

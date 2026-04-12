@@ -9,16 +9,36 @@
     <link rel="stylesheet" href="/static/css/pico.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
     <link rel="alternate" type="application/rss+xml" title="{{ self.site_name() }} - Recent Dumps" href="/feeds/recent/rss">
+    <script>
+        (function() {
+            var t = localStorage.getItem('theme');
+            if (t) document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
     <script src="/static/js/htmx.min.js" defer></script>
     {% block head %}{% endblock %}
 </head>
 <body>
     <header class="container">
         <nav class="site-nav">
-            <a class="site-banner" href="/" aria-label="Home">
-                <img src="/static/images/branding/redump_info_logo.webp" alt="{{ self.site_name() }}">
-            </a>
-            <ul>
+            <div class="site-nav-top">
+                <a class="site-banner" href="/" aria-label="Home">
+                    <img src="/static/images/branding/redump_info_logo.webp" alt="{{ self.site_name() }}">
+                </a>
+                <form class="quick-search" method="get" action="/discs/">
+                    <input type="text" name="q" placeholder="Search discs..." aria-label="Search">
+                </form>
+                <ul class="site-nav-auth">
+                    {% match current_user %}
+                    {% when Some with (user) %}
+                    <li>{{ user }}</li>
+                    <li><form method="post" action="/logout" style="margin:0"><button type="submit" style="margin:0">Logout</button></form></li>
+                    {% when None %}
+                    <li><a href="/login" role="button">Login</a></li>
+                    {% endmatch %}
+                </ul>
+            </div>
+            <ul class="site-nav-links">
                 <li><a href="/">Home</a></li>
                 <li><a href="/discs/">Discs</a></li>
                 <li><a href="/downloads/">Downloads</a></li>
@@ -33,25 +53,7 @@
                 {% endif %}
                 <li><a href="{{ self.forum_url() }}">Forum</a></li>
                 <li><a href="{{ self.wiki_url() }}">Wiki</a></li>
-            </ul>
-            <ul>
-                <li>
-                    <form class="quick-search" method="get" action="/discs/">
-                        <input type="text" name="q" placeholder="Search discs..."
-                               aria-label="Search">
-                    </form>
-                </li>
-                {% match current_user %}
-                {% when Some with (user) %}
-                <li>{{ user }}</li>
-                <li><form method="post" action="/logout" style="margin:0"><button type="submit" style="margin:0">Logout</button></form></li>
-                {% when None %}
-                <li><a href="/login" role="button">Login</a></li>
-                {# Demo/public mode: disable self-registration link.
-                   Re-enable by uncommenting the line below.
-                <li><a href="/register" role="button">Register</a></li>
-                #}
-                {% endmatch %}
+                <li><a href="/about/">About</a></li>
             </ul>
         </nav>
     </header>
@@ -59,6 +61,18 @@
     <main class="container">
         {% block content %}{% endblock %}
     </main>
+
+    <button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
+        <span class="dark-mode-toggle-thumb"></span>
+    </button>
+    <script>
+        document.getElementById('dark-mode-toggle').addEventListener('click', function() {
+            var html = document.documentElement;
+            var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+        });
+    </script>
 
     <footer class="container">
         <hr>

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}About{% endblock %}
+
+{% block content %}
+<h3 class="about-page-title">About</h3>
+
+<div class="about-qa">
+
+    <section class="qa-item">
+        <h4 class="qa-question">What is redump.info?</h4>
+        <p class="qa-answer">Redump is a card catalog of information about properly dumped game discs. It is a database of information, with each entry representing a unique game disc build version.</p>
+    </section>
+
+    <section class="qa-item">
+        <h4 class="qa-question">Does this website offer game downloads?</h4>
+        <p class="qa-answer">No.</p>
+    </section>
+
+    <section class="qa-item">
+        <h4 class="qa-question">How can I contribute?</h4>
+        <p class="qa-answer">Visit our Getting Started Guide, then join our <a href="https://discord.gg/AHTfxQV">Discord</a>.</p>
+    </section>
+
+    <section class="qa-item">
+        <h4 class="qa-question">Why do I need a specific disc drive brand and model to contribute?</h4>
+        <p class="qa-answer">Certain features are only available on each disc drive model. Important features include: C2 error detection, and others.</p>
+    </section>
+
+    <section class="qa-item">
+        <h4 class="qa-question">What is a dat?</h4>
+        <p class="qa-answer">A .dat file is a card catalog for checking your game disc images against the redump database. This will allow you to check the integrity of your disc image collection. Software such as RomVault and ClrMamePro are used in conjunction with dats.</p>
+    </section>
+
+</div>
+{% endblock %}

@@ -1,3 +1,4 @@
+pub mod about;
 pub mod api;
 pub mod auth_routes;
 pub mod disc_edit;
@@ -23,4 +24,5 @@ pub fn build_router() -> Router<AppState> {
         .merge(queue::routes())
         .merge(feeds::routes())
         .merge(api::routes())
+        .merge(about::routes())
 }

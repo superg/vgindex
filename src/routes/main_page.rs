@@ -69,7 +69,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
                 code: rr.code.to_lowercase(),
                 name: rr.name,
             }).collect(),
-            created_at: r.created_at.map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(),
+            created_at: r.created_at.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default(),
         });
     }
 

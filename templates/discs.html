@@ -4,12 +4,12 @@
 
 {% block content %}
 {% if !filter_dumper_name.is_empty() %}
-<h2>Discs dumped by {{ filter_dumper_name }}</h2>
+<h3 class="disc-page-title">Discs dumped by {{ filter_dumper_name }}</h3>
 {% else %}
-<h2>Disc Database</h2>
+<h3 class="disc-page-title">Disc Database</h3>
 {% endif %}
 
-<details open>
+<details class="filter-details" open>
     <summary>Filters</summary>
     <form method="get" action="/discs/" id="filter-form">
         <label>
@@ -19,6 +19,17 @@
                 {% for sys in systems %}
                 <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
                 {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Status</span>
+            <select name="status" onchange="this.form.submit()">
+                <option value="">All Statuses (🟢🔵🟡)</option>
+                <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🔵🟡🔴)</option>
+                <option value="Verified" {% if filter_status == "Verified" %}selected{% endif %}>Verified (🟢)</option>
+                <option value="Unverified" {% if filter_status == "Unverified" %}selected{% endif %}>Unverified (🔵)</option>
+                <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable (🟡)</option>
+                <option value="Disabled" {% if filter_status == "Disabled" %}selected{% endif %}>Disabled (🔴)</option>
             </select>
         </label>
         <label>
@@ -37,17 +48,6 @@
                 {% for d in dumpers %}
                 <option value="{{ d.id }}" {% if d.selected %}selected{% endif %}>{{ d.name }}</option>
                 {% endfor %}
-            </select>
-        </label>
-        <label>
-            <span>Status</span>
-            <select name="status" onchange="this.form.submit()">
-                <option value="">All Statuses (🟢🔵🟡)</option>
-                <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🔵🟡🔴)</option>
-                <option value="Verified" {% if filter_status == "Verified" %}selected{% endif %}>Verified (🟢)</option>
-                <option value="Unverified" {% if filter_status == "Unverified" %}selected{% endif %}>Unverified (🔵)</option>
-                <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable (🟡)</option>
-                <option value="Disabled" {% if filter_status == "Disabled" %}selected{% endif %}>Disabled (🔴)</option>
             </select>
         </label>
         <input type="hidden" name="q" value="{{ filter_q }}">
@@ -73,7 +73,19 @@
             {% if page > 1 %}
             <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">&laquo; Previous</a></li>
             {% endif %}
-            <li>Page {{ page }} of {{ total_pages }}</li>
+            <li>
+                <form method="get" action="/discs/" class="page-jump-form">
+                    Page <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}" class="page-jump-input"> of {{ total_pages }}
+                    <input type="hidden" name="system" value="{{ filter_system }}">
+                    <input type="hidden" name="region" value="{{ filter_region }}">
+                    <input type="hidden" name="letter" value="{{ filter_letter }}">
+                    <input type="hidden" name="status" value="{{ filter_status }}">
+                    <input type="hidden" name="q" value="{{ filter_q }}">
+                    <input type="hidden" name="sort" value="{{ sort_column }}">
+                    <input type="hidden" name="order" value="{{ sort_order }}">
+                    {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
+                </form>
+            </li>
             {% if page < total_pages %}
             <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Next &raquo;</a></li>
             {% endif %}
@@ -123,7 +135,19 @@
             {% if page > 1 %}
             <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">&laquo; Previous</a></li>
             {% endif %}
-            <li>Page {{ page }} of {{ total_pages }}</li>
+            <li>
+                <form method="get" action="/discs/" class="page-jump-form">
+                    Page <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}" class="page-jump-input"> of {{ total_pages }}
+                    <input type="hidden" name="system" value="{{ filter_system }}">
+                    <input type="hidden" name="region" value="{{ filter_region }}">
+                    <input type="hidden" name="letter" value="{{ filter_letter }}">
+                    <input type="hidden" name="status" value="{{ filter_status }}">
+                    <input type="hidden" name="q" value="{{ filter_q }}">
+                    <input type="hidden" name="sort" value="{{ sort_column }}">
+                    <input type="hidden" name="order" value="{{ sort_order }}">
+                    {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
+                </form>
+            </li>
             {% if page < total_pages %}
             <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Next &raquo;</a></li>
             {% endif %}
