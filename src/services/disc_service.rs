@@ -4,8 +4,16 @@ use std::cmp::Ordering;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 
-fn normalize_newlines(s: &str) -> String {
+fn to_lf_newlines(s: &str) -> String {
     s.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn to_crlf_newlines(s: &str) -> String {
+    to_lf_newlines(s).replace('\n', "\r\n")
+}
+
+fn normalize_newlines(s: &str) -> String {
+    to_lf_newlines(s)
 }
 
 pub(crate) fn parse_hex_dump(text: &str) -> Vec<u8> {
@@ -689,6 +697,24 @@ mod tests {
         assert_eq!(entries[0]["id"], 3);
         assert_eq!(entries[1]["id"], 9);
     }
+
+    #[test]
+    fn newline_helpers_normalize_lf_and_crlf() {
+        let mixed = "A\r\nB\rC\nD";
+        assert_eq!(to_lf_newlines(mixed), "A\nB\nC\nD");
+        assert_eq!(to_crlf_newlines(mixed), "A\r\nB\r\nC\r\nD");
+    }
+
+    #[test]
+    fn cue_hashes_use_crlf_bytes() {
+        let lf = "FILE \"Track 1.bin\" BINARY\n  TRACK 01 AUDIO";
+        let crlf = to_crlf_newlines(lf);
+        let (lf_size, _, _, _) = compute_file_hashes(lf.as_bytes());
+        let (crlf_size, _, _, _) = compute_file_hashes(crlf.as_bytes());
+
+        assert!(crlf.contains("\r\n"));
+        assert_eq!(lf_size + 1, crlf_size);
+    }
 }
 
 pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> {
@@ -733,14 +759,15 @@ pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> 
     let ext = disc.media_type.rom_extension();
 
     let finalized = finalize_cue(raw_cue, &base_name, ext);
+    let finalized_crlf = to_crlf_newlines(&finalized);
 
     sqlx::query("UPDATE discs SET cue = $1 WHERE id = $2")
-        .bind(&finalized)
+        .bind(&finalized_crlf)
         .bind(disc_id)
         .execute(pool)
         .await?;
 
-    let (size, crc32, md5, sha1) = compute_file_hashes(finalized.as_bytes());
+    let (size, crc32, md5, sha1) = compute_file_hashes(finalized_crlf.as_bytes());
 
     sqlx::query(
         "INSERT INTO files (disc_id, track_number, size, crc32, md5, sha1)
