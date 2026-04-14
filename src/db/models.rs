@@ -636,7 +636,8 @@ pub fn build_simple_track_name(
 }
 
 pub fn simplify_cue(raw_cue: &str, extension: &str) -> String {
-    let lines: Vec<&str> = raw_cue.lines().collect();
+    let normalized = raw_cue.replace("\r\n", "\n").replace('\r', "\n");
+    let lines: Vec<&str> = normalized.lines().collect();
     let total_tracks = lines.iter()
         .filter(|l| l.trim_start().starts_with("TRACK "))
         .count();
@@ -793,4 +794,21 @@ pub struct SubmissionListRow {
     pub status: SubmissionStatus,
     pub target_disc_id: Option<i32>,
     pub created_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simplify_cue_outputs_lf_for_crlf_input() {
+        let cue = "FILE \"Game.bin\" BINARY\r\n  TRACK 01 AUDIO\r\n    INDEX 01 00:00:00\r\n";
+        let simplified = simplify_cue(cue, "bin");
+
+        assert_eq!(
+            simplified,
+            "FILE \"Track.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00"
+        );
+        assert!(!simplified.contains('\r'));
+    }
 }

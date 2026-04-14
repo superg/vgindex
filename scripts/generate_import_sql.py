@@ -331,6 +331,11 @@ def normalize_newlines(val):
         return None
     return val.replace("\r\n", "\n").replace("\r", "\n")
 
+def to_crlf_newlines(val):
+    if val is None:
+        return None
+    return normalize_newlines(val).replace("\n", "\r\n")
+
 
 def sql_text_array(items):
     """Convert a list of strings to PostgreSQL TEXT[] literal."""
@@ -1308,7 +1313,10 @@ def process_all(data_dir, output_path, max_disc_id=None):
                     data.get("d_number"), data.get("d_label"),
                     data.get("d_version_datfile"),
                 )
-                data["d_cue"] = finalize_cue(d_cue, base_name, rom_ext)
+                finalized_cue = finalize_cue(normalize_newlines(d_cue), base_name, rom_ext)
+                data["d_cue"] = to_crlf_newlines(finalized_cue)
+
+            finalized_cue = data.get("d_cue", "")
 
             # Build disc INSERT (picks up finalized d_cue)
             disc_sql = _build_disc_insert(disc_id, data)
@@ -1329,8 +1337,8 @@ def process_all(data_dir, output_path, max_disc_id=None):
             d_tracks = data.get("d_tracks", "")
             if d_tracks.strip():
                 track_hashes = parse_track_hashes(d_tracks)
-                if d_cue.strip():
-                    track_numbers = parse_track_numbers_from_cue(d_cue)
+                if finalized_cue.strip():
+                    track_numbers = parse_track_numbers_from_cue(normalize_newlines(finalized_cue))
                 else:
                     track_numbers = [str(i + 1) for i in range(len(track_hashes))]
 
@@ -1342,8 +1350,8 @@ def process_all(data_dir, output_path, max_disc_id=None):
                     )
 
             # CUE file entry (track_number = NULL)
-            if d_cue.strip():
-                cue_size, cue_crc, cue_md5, cue_sha1 = compute_cue_hashes(data["d_cue"])
+            if finalized_cue.strip():
+                cue_size, cue_crc, cue_md5, cue_sha1 = compute_cue_hashes(finalized_cue)
                 file_inserts.append(
                     f"({disc_id}, NULL, {cue_size}, "
                     f"{sql_str(cue_crc)}, {sql_str(cue_md5)}, {sql_str(cue_sha1)})"
@@ -1590,7 +1598,7 @@ def _build_empty_disc_insert(disc_id):
 def _build_disc_insert(disc_id, data):
     """Build INSERT values for a disc from JSON data."""
     for key in (
-        "d_comments", "d_contents", "d_cue", "d_ssranges",
+        "d_comments", "d_contents", "d_ssranges",
         "d_libcrypt", "d_securom", "d_pvd", "d_pic_data", "d_bca", "d_header",
         "d_protection", "d_date", "d_title_foreign", "d_label", "d_number", "d_version",
         "d_version_datfile",
