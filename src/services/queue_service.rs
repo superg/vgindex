@@ -572,6 +572,7 @@ pub async fn approve_submission(
     is_sparse_changes: bool,
     reviewer_id: i32,
     review_comment: Option<&str>,
+    archive_tx: &tokio::sync::mpsc::UnboundedSender<String>,
 ) -> AppResult<Option<i32>> {
     let effective_data = if is_sparse_changes {
         resolve_submission_data(pool, sub, changes).await?
@@ -640,6 +641,18 @@ pub async fn approve_submission(
 
         new_id
     };
+
+    let system_code: Option<String> = sqlx::query_scalar(
+        "SELECT system_code FROM discs WHERE id = $1",
+    )
+    .bind(disc_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    if let Some(code) = system_code {
+        let _ = archive_tx.send(code);
+    }
 
     Ok(Some(disc_id))
 }

@@ -1383,6 +1383,7 @@ async fn edit_submit(
             true,
             user.id,
             None,
+            &state.archive_tx,
         )
         .await?
         .ok_or(AppError::Internal("submission was already processed".into()))?;
@@ -1579,6 +1580,7 @@ async fn add_submit(
             true,
             user.id,
             None,
+            &state.archive_tx,
         )
         .await?
         .ok_or(AppError::Internal("submission was already processed".into()))?;

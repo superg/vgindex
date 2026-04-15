@@ -769,6 +769,44 @@ pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
     result.join("\n")
 }
 
+pub fn parse_qdata_bytes(qdata: &str) -> Vec<u8> {
+    let cleaned: String = qdata.chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .collect();
+    (0..cleaned.len() / 2)
+        .filter_map(|i| u8::from_str_radix(&cleaned[i * 2..i * 2 + 2], 16).ok())
+        .collect()
+}
+
+pub fn build_sbi_binary(sbi_text: &str) -> Vec<u8> {
+    let mut buf: Vec<u8> = Vec::new();
+    buf.extend_from_slice(b"SBI\0");
+    for line in sbi_text.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let msf_str = match line.strip_prefix("MSF: ") {
+            Some(s) => s.split_whitespace().next().unwrap_or(""),
+            None => continue,
+        };
+        let msf_parts: Vec<&str> = msf_str.split(':').collect();
+        if msf_parts.len() != 3 { continue; }
+        let msf_bytes: Vec<u8> = msf_parts.iter()
+            .filter_map(|p| u8::from_str_radix(p, 16).ok())
+            .collect();
+        if msf_bytes.len() != 3 { continue; }
+        let qdata_str = match line.find("Q-Data: ") {
+            Some(i) => &line[i + 8..],
+            None => continue,
+        };
+        let qdata = parse_qdata_bytes(qdata_str);
+        if qdata.len() < 10 { continue; }
+        buf.extend_from_slice(&msf_bytes);
+        buf.push(0x01);
+        buf.extend_from_slice(&qdata[..10]);
+    }
+    buf
+}
+
 pub fn compute_file_hashes(data: &[u8]) -> (i64, String, String, String) {
     let size = data.len() as i64;
 
