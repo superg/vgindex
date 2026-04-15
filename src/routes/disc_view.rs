@@ -666,14 +666,7 @@ fn parse_sbi_display(text: &str) -> Vec<SbiRow> {
     rows
 }
 
-fn parse_qdata_bytes(qdata: &str) -> Vec<u8> {
-    let cleaned: String = qdata.chars()
-        .filter(|c| c.is_ascii_hexdigit())
-        .collect();
-    (0..cleaned.len() / 2)
-        .filter_map(|i| u8::from_str_radix(&cleaned[i * 2..i * 2 + 2], 16).ok())
-        .collect()
-}
+// parse_qdata_bytes is in crate::db::models (imported via *)
 
 fn format_sbi_contents(sector: u32, qdata: &[u8]) -> String {
     let expected = qsector(sector);
@@ -793,29 +786,7 @@ async fn disc_sbi_download(
         .filter(|s| !s.is_empty())
         .ok_or(crate::error::AppError::NotFound)?;
 
-    let mut buf: Vec<u8> = Vec::new();
-    buf.extend_from_slice(b"SBI\0");
-    for line in sbi_text.lines() {
-        let line = line.trim();
-        if line.is_empty() { continue; }
-        let msf_str = line.strip_prefix("MSF: ")
-            .and_then(|s| s.split_whitespace().next())
-            .unwrap_or("");
-        let msf_parts: Vec<&str> = msf_str.split(':').collect();
-        if msf_parts.len() != 3 { continue; }
-        let msf_bytes: Vec<u8> = msf_parts.iter()
-            .filter_map(|p| u8::from_str_radix(p, 16).ok())
-            .collect();
-        if msf_bytes.len() != 3 { continue; }
-        let qdata_str = line.find("Q-Data: ")
-            .map(|i| &line[i + 8..])
-            .unwrap_or("");
-        let qdata = parse_qdata_bytes(qdata_str);
-        if qdata.len() < 10 { continue; }
-        buf.extend_from_slice(&msf_bytes);
-        buf.push(0x01);
-        buf.extend_from_slice(&qdata[..10]);
-    }
+    let buf = build_sbi_binary(&sbi_text);
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
     let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();

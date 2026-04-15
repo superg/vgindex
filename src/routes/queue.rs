@@ -1040,6 +1040,7 @@ async fn review_submit(
         is_sparse_changes,
         user.id,
         review_comment.as_deref(),
+        &state.archive_tx,
     )
     .await?;
 

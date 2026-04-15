@@ -20,6 +20,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: Arc<Config>,
     pub oidc: auth::oidc::OidcProvider,
+    pub archive_tx: tokio::sync::mpsc::UnboundedSender<String>,
 }
 
 #[tokio::main]
@@ -47,11 +48,19 @@ async fn main() {
 
     let oidc = auth::oidc::OidcProvider::new();
 
+    let (archive_tx, archive_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
     let state = AppState {
-        pool,
+        pool: pool.clone(),
         config: Arc::new(config.clone()),
         oidc,
+        archive_tx,
     };
+
+    tokio::spawn(services::archive_service::run_archive_worker(
+        archive_rx,
+        pool,
+    ));
 
     let app = Router::new()
         .merge(routes::build_router())

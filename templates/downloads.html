@@ -18,9 +18,9 @@
         <tr>
             <td>{{ sys.name }}</td>
             <td class="download-links-cell">
-                {% if sys.has_dat %}<a href="/downloads/{{ sys.code }}/dat">Dat</a>{% endif %}
-                {% if sys.has_cue %}<a href="/downloads/{{ sys.code }}/cue">Cuesheets</a>{% endif %}
-                {% if sys.has_sbi %}<a href="/downloads/{{ sys.code }}/sbi">SBI</a>{% endif %}
+                {% if sys.has_dat %}<a href="/datfile/{{ sys.code }}">Dat</a>{% endif %}
+                {% if sys.has_cue %}<a href="/cues/{{ sys.code }}">Cuesheets</a>{% endif %}
+                {% if sys.has_sbi %}<a href="/sbi/{{ sys.code }}">SBI</a>{% endif %}
             </td>
         </tr>
         {% endfor %}

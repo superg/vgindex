@@ -16,7 +16,9 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/downloads", get(downloads_page))
         .route("/downloads/", get(downloads_page))
-        .route("/downloads/{system}/{archive_type}", get(download_archive))
+        .route("/datfile/{system}", get(download_dat))
+        .route("/cues/{system}", get(download_cue))
+        .route("/sbi/{system}", get(download_sbi))
 }
 
 #[derive(Template)]
@@ -41,9 +43,10 @@ async fn downloads_page(
 ) -> Html<String> {
     let rows: Vec<SystemDownloadRow> = sqlx::query_as(
         "SELECT s.code, s.name, s.has_sbi,
-                CASE WHEN 'cd' = ANY(s.media_types) OR 'gdrom' = ANY(s.media_types) THEN true ELSE false END AS has_cue
+                EXISTS(SELECT 1 FROM media_types mt
+                       WHERE mt.code = ANY(s.media_types) AND mt.rom_extension = 'bin') AS has_cue
          FROM systems s
-         ORDER BY LOWER(s.name), s.name"
+         ORDER BY LOWER(s.name), s.name",
     )
     .fetch_all(&state.pool)
     .await
@@ -78,21 +81,40 @@ struct SystemDownloadRow {
     has_cue: bool,
 }
 
-async fn download_archive(
-    State(state): State<AppState>,
-    Path((system, archive_type)): Path<(String, String)>,
-) -> Response {
-    match archive_service::get_or_generate_archive(&state.pool, &state.config, &system, &archive_type).await {
-        Ok(data) => {
-            let filename = format!("{system}-{archive_type}.zip");
-            (
-                [
-                    (header::CONTENT_TYPE, "application/zip".to_string()),
-                    (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\"")),
-                ],
-                data,
-            ).into_response()
-        }
+async fn serve_archive(pool: &sqlx::PgPool, system: &str, archive_type: &str) -> Response {
+    match archive_service::get_or_generate_archive(pool, system, archive_type).await {
+        Ok(result) => (
+            [
+                (header::CONTENT_TYPE, "application/zip".to_string()),
+                (
+                    header::CONTENT_DISPOSITION,
+                    format!("attachment; filename=\"{}\"", result.filename),
+                ),
+            ],
+            result.data,
+        )
+            .into_response(),
         Err(e) => e.into_response(),
     }
+}
+
+async fn download_dat(
+    State(state): State<AppState>,
+    Path(system): Path<String>,
+) -> Response {
+    serve_archive(&state.pool, &system, "dat").await
+}
+
+async fn download_cue(
+    State(state): State<AppState>,
+    Path(system): Path<String>,
+) -> Response {
+    serve_archive(&state.pool, &system, "cue").await
+}
+
+async fn download_sbi(
+    State(state): State<AppState>,
+    Path(system): Path<String>,
+) -> Response {
+    serve_archive(&state.pool, &system, "sbi").await
 }
