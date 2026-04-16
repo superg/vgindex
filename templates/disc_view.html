@@ -4,13 +4,15 @@
 
 {% block content %}
 <div class="disc-view">
-{% if can_edit %}
-<a href="/disc/{{ disc_id }}/edit/" role="button">Edit</a>
-{% endif %}
+<div class="disc-title-row">
+<div class="disc-title-box">
 <h2>{{ title }}</h2>
 {% if !title_foreign.is_empty() %}
 <h2 class="foreign-title">{{ title_foreign }}</h2>
 {% endif %}
+</div>
+{% if can_edit %}<a href="/disc/{{ disc_id }}/edit/" role="button" class="edit-btn">Edit</a>{% endif %}
+</div>
 
 <div class="grid">
     <section>
@@ -34,13 +36,13 @@
             </td></tr>
             {% endif %}
             {% if !serial.is_empty() %}
-            <tr><td><strong>{% if serial_count == 1 %}Serial{% else %}Serials{% endif %}</strong></td><td>{{ serial|safe }}</td></tr>
+            <tr><td><strong>{% if serial_count == 1 %}Serial{% else %}Serials{% endif %}</strong></td><td>{% if serial_count > 6 %}<details class="td-collapse"><summary>{{ serial_count }} serials</summary>{{ serial|safe }}</details>{% else %}{{ serial|safe }}{% endif %}</td></tr>
             {% endif %}
             {% if !edition.is_empty() %}
-            <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td>{{ edition|safe }}</td></tr>
+            <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td>{% if edition_count > 6 %}<details class="td-collapse"><summary>{{ edition_count }} editions</summary>{{ edition|safe }}</details>{% else %}{{ edition|safe }}{% endif %}</td></tr>
             {% endif %}
             {% if !barcode.is_empty() %}
-            <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{{ barcode|safe }}</td></tr>
+            <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{% if barcode_count > 6 %}<details class="td-collapse"><summary>{{ barcode_count }} barcodes</summary>{{ barcode|safe }}</details>{% else %}{{ barcode|safe }}{% endif %}</td></tr>
             {% endif %}
             {% if !version.is_empty() %}
             <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
@@ -81,7 +83,7 @@
             {% endif %}
             <tr>
                 <td><strong>{% if dumper_count <= 1 %}Dumper{% else %}Dumpers{% endif %}</strong></td>
-                <td>{{ dumpers_display|safe }}</td>
+                <td>{% if dumper_count > 15 %}<details class="td-collapse"><summary>{{ dumper_count }} dumpers</summary>{{ dumpers_display|safe }}</details>{% else %}{{ dumpers_display|safe }}{% endif %}</td>
             </tr>
         </table>
     </section>
@@ -89,13 +91,27 @@
     {% if !protection.is_empty() || !contents.is_empty() || !comments.is_empty() %}
     <section>
         {% if !protection.is_empty() %}
+        {% if protection.lines().count() > 5 %}
+        <details class="protection-details">
+            <summary><h3>Protection</h3></summary>
+            <p class="pre-wrap">{{ protection }}</p>
+        </details>
+        {% else %}
         <h3>Protection</h3>
         <p class="pre-wrap">{{ protection }}</p>
         {% endif %}
+        {% endif %}
 
         {% if !comments.is_empty() %}
+        {% if comments.lines().count() > 10 %}
+        <details class="protection-details">
+            <summary><h3>Comments</h3></summary>
+            <p class="pre-wrap">{{ comments|safe }}</p>
+        </details>
+        {% else %}
         <h3>Comments</h3>
         <p class="pre-wrap">{{ comments|safe }}</p>
+        {% endif %}
         {% endif %}
 
         {% if !contents.is_empty() %}
@@ -104,12 +120,46 @@
             <p class="pre-wrap">{{ contents|safe }}</p>
         </details>
         {% endif %}
+
     </section>
     {% endif %}
 </div>
 
+<section class="left-section detail-section">
+    <h3>Files</h3>
+    <p class="dat-filename">Prefix: <code>{{ dat_filename }}</code></p>
+    <div class="table-scroll table-scroll-compact">
+    <table class="disc-table striped table-nowrap">
+        <thead>
+            <tr>
+                <th style="text-align: left;">Suffix</th>
+                {% if show_cd_file_details %}<th>Type</th><th>Pregap</th><th>Length</th><th>Sectors</th>{% endif %}
+                <th>Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for file in files %}
+            <tr>
+                <td style="text-align: left;" title="{{ file.name }}">{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.short_name }}</a>{% else %}{{ file.short_name }}{% endif %}</td>
+                {% if show_cd_file_details %}
+                <td>{% if !file.is_cue %}{{ file.track_type }}{% endif %}</td>
+                <td>{% if !file.is_cue %}{{ file.pregap }}{% endif %}</td>
+                <td>{% if !file.is_cue %}{{ file.length }}{% endif %}</td>
+                <td>{% if !file.is_cue %}{{ file.sectors }}{% endif %}</td>
+                {% endif %}
+                <td>{{ file.size }}</td>
+                <td><code>{{ file.crc32 }}</code></td>
+                <td><code>{{ file.md5 }}</code></td>
+                <td><code>{{ file.sha1 }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+
 {% if !ring_rows.is_empty() %}
-<section class="left-section">
+<section class="left-section detail-section">
     <h3>Rings</h3>
     <div class="table-scroll table-scroll-compact">
     <table class="disc-table ring-table">
@@ -150,54 +200,9 @@
 </section>
 {% endif %}
 
-{% if !sector_ranges.is_empty() %}
-<section>
-    <h3>Sector Ranges</h3>
-    <div class="table-scroll table-scroll-compact">
-    <table class="table-nowrap binary-table">
-        <thead>
-            <tr><th>#</th><th>Start</th><th>End</th></tr>
-        </thead>
-        <tbody>
-            {% for r in sector_ranges %}
-            <tr>
-                <td>{{ r.num }}</td>
-                <td>{{ r.start }}</td>
-                <td>{{ r.end }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</section>
-{% endif %}
-
-{% if !sbi_rows.is_empty() %}
-<section>
-    <h3>SBI</h3>
-    <div class="table-scroll table-scroll-compact">
-    <table class="table-nowrap binary-table">
-        <thead>
-            <tr><th>Sector</th><th>MSF</th><th>Contents</th><th>XOR</th></tr>
-        </thead>
-        <tbody>
-            {% for row in sbi_rows %}
-            <tr>
-                <td>{{ row.sector }}</td>
-                <td><code>{{ row.msf }}</code></td>
-                <td><code>{{ row.contents|safe }}</code></td>
-                <td><code>{{ row.xor }}</code></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-    <p><a href="/disc/{{ disc_id }}/sbi">Download .sbi</a></p>
-</section>
-{% endif %}
 
 {% if !pvd_rows.is_empty() %}
-<section class="left-section">
+<section class="left-section detail-section">
     <h3>PVD</h3>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
@@ -220,8 +225,32 @@
 </section>
 {% endif %}
 
+{% if !sbi_rows.is_empty() %}
+<section class="left-section detail-section">
+    <h3>SBI</h3>
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
+        <thead>
+            <tr><th>Sector</th><th>MSF</th><th>Contents</th><th>XOR</th></tr>
+        </thead>
+        <tbody>
+            {% for row in sbi_rows %}
+            <tr>
+                <td>{{ row.sector }}</td>
+                <td><code>{{ row.msf }}</code></td>
+                <td><code>{{ row.contents|safe }}</code></td>
+                <td><code>{{ row.xor }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p><a href="/disc/{{ disc_id }}/sbi">Download .sbi</a></p>
+</section>
+{% endif %}
+
 {% if !header_rows.is_empty() %}
-<section>
+<section class="left-section detail-section">
     <h3>Header</h3>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
@@ -243,7 +272,7 @@
 {% endif %}
 
 {% if !bca_rows.is_empty() %}
-<section>
+<section class="left-section detail-section">
     <h3>BCA</h3>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
@@ -265,7 +294,28 @@
 {% endif %}
 
 {% if !pic_rows.is_empty() %}
-<section class="left-section">
+<section class="left-section detail-section">
+    {% if pic_rows.len() > 9 %}
+    <details>
+        <summary><h3>PIC</h3></summary>
+        <div class="table-scroll table-scroll-compact">
+        <table class="table-nowrap binary-table">
+            <thead>
+                <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+            </thead>
+            <tbody>
+                {% for row in pic_rows %}
+                <tr>
+                    <td><code>{{ row.offset }}</code></td>
+                    <td><code>{{ row.hex_contents }}</code></td>
+                    <td><code>{{ row.ascii }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </details>
+    {% else %}
     <h3>PIC</h3>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
@@ -283,31 +333,31 @@
         </tbody>
     </table>
     </div>
+    {% endif %}
 </section>
 {% endif %}
 
-<section class="left-section">
-    <h3>Files</h3>
-    <p class="dat-filename">Filename in dat: <code>{{ dat_filename }}</code></p>
+{% if !sector_ranges.is_empty() %}
+<section class="left-section detail-section">
+    <h3>Sector Ranges</h3>
     <div class="table-scroll table-scroll-compact">
-    <table class="disc-table striped table-nowrap">
+    <table class="table-nowrap binary-table">
         <thead>
-            <tr><th style="text-align: left;">Name</th><th>Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th></tr>
+            <tr><th>#</th><th>Start</th><th>End</th></tr>
         </thead>
         <tbody>
-            {% for file in files %}
+            {% for r in sector_ranges %}
             <tr>
-                <td style="text-align: left;" title="{{ file.name }}">{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.short_name }}</a>{% else %}{{ file.short_name }}{% endif %}</td>
-                <td>{{ file.size }}</td>
-                <td><code>{{ file.crc32 }}</code></td>
-                <td><code>{{ file.md5 }}</code></td>
-                <td><code>{{ file.sha1 }}</code></td>
+                <td>{{ r.num }}</td>
+                <td>{{ r.start }}</td>
+                <td>{{ r.end }}</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
     </div>
 </section>
+{% endif %}
 
 </div>
 {% endblock %}
