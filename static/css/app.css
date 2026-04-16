@@ -39,7 +39,7 @@ button,
 main.container {
     padding-top: 0rem;
     padding-bottom: 0.15rem;
-    margin-top: -0.75rem;
+    margin-top: -0.4rem;
 }
 main.container > *:first-child {
     margin-top: 0 !important;
