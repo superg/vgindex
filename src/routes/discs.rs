@@ -82,7 +82,9 @@ impl SiteConfig for DiscsTemplate {}
 struct DiscRow {
     id: i32,
     title: String,
+    title_foreign: String,
     system_code: String,
+    system_display: String,
     dumped_by_me: bool,
     edition_display: String,
     status_emoji: String,
@@ -283,6 +285,7 @@ async fn discs_page(
     );
     let sql_select = format!(
         "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
+                d.title_foreign,
                 s.code AS system_code,
                 array_to_string(d.serial, ', ') AS serial,
                 d.version,
@@ -367,6 +370,8 @@ async fn discs_page(
                 r.disc_title.as_deref(),
                 r.filename_suffix.as_deref(),
             ),
+            title_foreign: r.title_foreign.unwrap_or_default(),
+            system_display: crate::routes::system_display_name(&r.system_code),
             system_code: r.system_code,
             dumped_by_me: r.dumped_by_me,
             edition_display: r.edition.unwrap_or_default(),
@@ -446,6 +451,7 @@ struct RawDiscRow {
     disc_number: Option<String>,
     disc_title: Option<String>,
     filename_suffix: Option<String>,
+    title_foreign: Option<String>,
     system_code: String,
     serial: Option<String>,
     version: Option<String>,

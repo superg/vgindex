@@ -4,7 +4,7 @@
 
 {% block content %}
 <article>
-    <header><h2>Login</h2></header>
+    <header><h2 class="auth-form-title">Login</h2></header>
     {% match error %}
     {% when Some with (err) %}
     <p role="alert" style="color: var(--pico-del-color);">{{ err }}</p>
@@ -16,9 +16,9 @@
         <input type="hidden" name="return_to" value="{{ url }}">
         {% when None %}
         {% endmatch %}
-        <label for="username">Username or Email</label>
+        <label for="username" class="auth-form-label">Username or Email</label>
         <input type="text" id="username" name="username" required autofocus>
-        <label for="password">Password</label>
+        <label for="password" class="auth-form-label">Password</label>
         <input type="password" id="password" name="password" required>
         <button type="submit">Login</button>
     </form>

@@ -39,7 +39,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
              WHERE target_disc_id IS NOT NULL
              GROUP BY target_disc_id
              ORDER BY created_at DESC
-             LIMIT 25
+             LIMIT 40
          ) sub
          JOIN discs d ON d.id = sub.target_disc_id AND d.enabled
          JOIN systems s ON s.code = d.system_code
@@ -64,7 +64,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
         recent_discs.push(RecentDisc {
             id: r.id,
             title: r.title,
-            system: r.system,
+            system: crate::routes::system_display_name(&r.system),
             region_flags: region_rows.into_iter().map(|rr| HomeRegionFlag {
                 code: rr.code.to_lowercase(),
                 name: rr.name,
