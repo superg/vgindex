@@ -61,6 +61,7 @@ struct DiscViewTemplate {
     protection: String,
     error_count: String,
     file_count: usize,
+    show_cd_file_details: bool,
     status_class: String,
     status_emoji: String,
     status_display: String,
@@ -146,11 +147,24 @@ impl RingColVis {
 struct ViewFile {
     name: String,
     short_name: String,
+    file_suffix: String,
     is_cue: bool,
+    track_type: String,
+    pregap: String,
+    length: String,
+    sectors: String,
+    track_sort_num: u32,
     size: i64,
     crc32: String,
     md5: String,
     sha1: String,
+}
+
+#[derive(Default)]
+struct CueTrackMeta {
+    extension: Option<String>,
+    track_type: String,
+    pregap_frames: Option<u32>,
 }
 
 struct SbiRow {
@@ -260,23 +274,50 @@ async fn disc_view(
     );
 
     let total_tracks = detail.files.iter().filter(|f| f.track_number.is_some()).count();
+    let cue_track_meta = detail.disc.cue.as_deref()
+        .map(parse_cue_track_meta)
+        .unwrap_or_default();
 
-    let files: Vec<ViewFile> = detail.files.iter().map(|f| {
+    let mut files: Vec<ViewFile> = detail.files.iter().map(|f| {
         let is_cue = f.track_number.is_none();
-        let (ext, track) = if is_cue {
-            ("cue", None)
+        let track = f.track_number.as_deref();
+        let track_num = track.and_then(|t| t.parse::<u32>().ok()).unwrap_or(0);
+        let cue_meta = track
+            .and_then(|t| cue_track_meta.get(t));
+        let ext = if is_cue {
+            "cue"
         } else {
-            (rom_extension, f.track_number.as_deref())
+            cue_meta
+                .and_then(|m| m.extension.as_deref())
+                .unwrap_or(rom_extension)
         };
+        let sectors = if !is_cue && f.size > 0 {
+            let sector_count = (f.size / 2352).max(0);
+            sector_count.to_string()
+        } else {
+            String::new()
+        };
+        let length = if !is_cue && f.size > 0 {
+            let sector_count = (f.size / 2352).max(0) as u32;
+            format_frames_as_msf(sector_count)
+        } else {
+            String::new()
+        };
+        let pregap = cue_meta
+            .and_then(|m| m.pregap_frames)
+            .map(format_frames_as_msf)
+            .unwrap_or_default();
+        let track_type = cue_meta
+            .map(|m| m.track_type.clone())
+            .unwrap_or_default();
         let short_name = if is_cue {
             format!(".cue")
         } else if total_tracks > 1 {
-            if let Some(t) = track {
-                let n: u32 = t.parse().unwrap_or(0);
+            if track_num > 0 {
                 if total_tracks >= 10 {
-                    format!("(Track {n:02}).{ext}")
+                    format!("(Track {track_num:02}).{ext}")
                 } else {
-                    format!("(Track {n}).{ext}")
+                    format!("(Track {track_num}).{ext}")
                 }
             } else {
                 format!(".{ext}")
@@ -287,13 +328,25 @@ async fn disc_view(
         ViewFile {
             name: build_rom_name(&rom_base_name, track, total_tracks, ext),
             short_name,
+            file_suffix: if is_cue { ".cue".to_string() } else { format!(".{ext}") },
             is_cue,
+            track_type,
+            pregap,
+            length,
+            sectors,
+            track_sort_num: track_num,
             size: f.size,
             crc32: f.crc32.clone(),
             md5: f.md5.clone(),
             sha1: f.sha1.clone(),
         }
     }).collect();
+
+    files.sort_by(|a, b| {
+        a.track_sort_num.cmp(&b.track_sort_num)
+            .then_with(|| a.file_suffix.cmp(&b.file_suffix))
+            .then_with(|| a.name.cmp(&b.name))
+    });
 
     let sbi_rows = detail.disc.sbi.as_deref()
         .map(|text| parse_sbi_display(text))
@@ -368,6 +421,7 @@ async fn disc_view(
             protection: detail.disc.protection.clone().unwrap_or_default(),
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             file_count: detail.files.len(),
+            show_cd_file_details: detail.disc.media_type.is_cd(),
             status_class: if detail.disc.enabled {
                 let dumper_count = detail.dumpers.len() as i64;
                 DiscStatus::compute(detail.disc.questionable, dumper_count).css_class().to_string()
@@ -430,6 +484,109 @@ fn format_signed_offset(offset: Option<i32>) -> String {
         Some(v) => v.to_string(),
         None => String::new(),
     }
+}
+
+fn parse_cue_track_meta(cue: &str) -> std::collections::HashMap<String, CueTrackMeta> {
+    let mut tracks = std::collections::HashMap::new();
+    let mut current_file_ext: Option<String> = None;
+    let mut current_track: Option<String> = None;
+
+    for raw_line in cue.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let upper = line.to_ascii_uppercase();
+        if upper.starts_with("FILE \"") {
+            current_file_ext = extract_file_extension_from_cue_file(line);
+            continue;
+        }
+
+        if let Some((track_num, mode)) = parse_cue_track_line_local(&upper) {
+            let track_key = track_num.to_string();
+            let entry = tracks.entry(track_key.clone()).or_insert_with(CueTrackMeta::default);
+            entry.track_type = mode.to_string();
+            if entry.extension.is_none() {
+                entry.extension = current_file_ext.clone();
+            }
+            current_track = Some(track_key);
+            continue;
+        }
+
+        if let Some((idx_num, mm, ss, ff)) = parse_cue_index_line_local(&upper) {
+            if idx_num == 1 {
+                if let Some(track_key) = current_track.as_ref() {
+                    let entry = tracks.entry(track_key.clone()).or_insert_with(CueTrackMeta::default);
+                    let frames = mm * 60 * 75 + ss * 75 + ff;
+                    if frames > 0 {
+                        entry.pregap_frames = Some(frames);
+                    }
+                }
+            }
+        }
+    }
+
+    tracks
+}
+
+fn extract_file_extension_from_cue_file(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("FILE \"")?;
+    let end_quote = rest.find('"')?;
+    let filename = &rest[..end_quote];
+    let (_, ext) = filename.rsplit_once('.')?;
+    Some(ext.to_ascii_lowercase())
+}
+
+fn parse_cue_track_line_local(line: &str) -> Option<(u32, &str)> {
+    if !line.starts_with("TRACK ") {
+        return None;
+    }
+    let rest = &line[6..];
+    if rest.len() < 3 {
+        return None;
+    }
+    if !rest.as_bytes()[0].is_ascii_digit()
+        || !rest.as_bytes()[1].is_ascii_digit()
+        || rest.as_bytes()[2] != b' '
+    {
+        return None;
+    }
+    let num: u32 = rest[..2].parse().ok()?;
+    Some((num, &rest[3..]))
+}
+
+fn parse_cue_index_line_local(line: &str) -> Option<(u32, u32, u32, u32)> {
+    if !line.starts_with("INDEX ") {
+        return None;
+    }
+    let rest = &line[6..];
+    if rest.len() < 3 {
+        return None;
+    }
+    if !rest.as_bytes()[0].is_ascii_digit()
+        || !rest.as_bytes()[1].is_ascii_digit()
+        || rest.as_bytes()[2] != b' '
+    {
+        return None;
+    }
+    let idx_num: u32 = rest[..2].parse().ok()?;
+    let time = &rest[3..];
+    let parts: Vec<&str> = time.split(':').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let mm = parts[0].parse::<u32>().ok()?;
+    let ss = parts[1].parse::<u32>().ok()?;
+    let ff = parts[2].parse::<u32>().ok()?;
+    Some((idx_num, mm, ss, ff))
+}
+
+fn format_frames_as_msf(frames: u32) -> String {
+    let minutes = frames / (75 * 60);
+    let seconds = (frames % (75 * 60)) / 75;
+    let frame = frames % 75;
+    format!("{minutes:02}:{seconds:02}:{frame:02}")
 }
 
 fn format_comments(raw: &str) -> String {
