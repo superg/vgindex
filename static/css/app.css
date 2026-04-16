@@ -418,7 +418,7 @@ details + p small {
 .disc-view {
     font-size: 0.7rem;
 }
-.disc-view h2 { font-size: 1.1rem; text-align: center; margin-bottom: 0; }
+.disc-view h2 { font-size: 1.1rem; text-align: center; margin-bottom: 0; font-weight: 600; }
 .disc-view h3 { font-size: 0.9rem; text-align: center; margin-bottom: 0.15rem; margin-top: 0.2rem; }
 .disc-view h4 { font-size: 0.78rem; margin-bottom: 0.15rem; }
 /* Center sections and their tables */
@@ -745,6 +745,11 @@ header .site-nav-links > li {
     text-decoration: none;
     line-height: 1;
     font-weight: 500;
+}
+.site-nav-links > li > a:hover,
+.site-nav-links > li > .submenu-label:hover {
+    font-weight: bold;
+    text-decoration: none;
 }
 
 /* Nav submenu dropdown */
