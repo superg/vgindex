@@ -418,7 +418,7 @@ details + p small {
 .disc-view {
     font-size: 0.7rem;
 }
-.disc-view h2 { font-size: 1.1rem; text-align: center; margin-bottom: 0; font-weight: 600; }
+.disc-view h2 { font-size: 1rem; text-align: center; margin-bottom: 0; font-weight: 600; }
 .disc-view h3 { font-size: 0.9rem; text-align: center; margin-bottom: 0.15rem; margin-top: 0.2rem; }
 .disc-view h4 { font-size: 0.78rem; margin-bottom: 0.15rem; }
 /* Center sections and their tables */
@@ -593,7 +593,7 @@ details + p small {
 .disc-title-box {
     border: 1px solid #c8cdd6;
     border-radius: var(--pico-border-radius);
-    padding: 0.55rem 0.8rem 0.7rem;
+    padding: 0.53rem 0.8rem 0.65rem;
     margin: 0 auto 0.75rem; /* overridden to 0 when inside .disc-title-row */
     text-align: center;
     width: fit-content;
@@ -609,7 +609,7 @@ details + p small {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: 1rem;
 }
 .disc-title-row .disc-title-box {
     margin-bottom: 0;
