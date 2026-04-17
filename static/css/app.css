@@ -22,6 +22,15 @@ a:hover {
 html {
     font-size: 100%;
 }
+@media (max-width: 768px) {
+    html {
+        font-size: 80%;
+    }
+    .container {
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+    }
+}
 
 button,
 [type="submit"],
@@ -691,6 +700,7 @@ header .site-nav {
     align-items: center;
     gap: 0;
     padding: 0 !important;
+    padding-top: 0.4rem !important;
     overflow: visible;
 }
 
