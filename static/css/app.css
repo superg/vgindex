@@ -22,6 +22,11 @@ a:hover {
 html {
     font-size: 100%;
 }
+@media (max-width: 768px) {
+    html {
+        font-size: 80%;
+    }
+}
 
 button,
 [type="submit"],
