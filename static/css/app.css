@@ -529,6 +529,9 @@ details + p small {
 .disc-view .left-section h3 {
     text-align: left;
 }
+.disc-view .left-section details > summary {
+    margin: 0;
+}
 
 /* Dat filename label under Files heading — matches PVD row height */
 .dat-filename {
