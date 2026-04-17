@@ -453,7 +453,7 @@ async fn disc_view(
                         d.username.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"),
                     ))
                     .collect::<Vec<_>>()
-                    .join("<br>")
+                    .join(", ")
             },
             ring_vis: RingColVis::from_rows(
                 &ring_rows,
