@@ -529,6 +529,9 @@ details + p small {
 .disc-view .left-section h3 {
     text-align: left;
 }
+.disc-view .left-section details > summary {
+    margin: 0;
+}
 
 /* Dat filename label under Files heading — matches PVD row height */
 .dat-filename {
@@ -618,10 +621,24 @@ details + p small {
     white-space: nowrap;
     align-self: center;
 }
+.dumpers-cell {
+    white-space: normal;
+    max-width: 10rem;
+}
+.td-collapse {
+    display: inline;
+}
 .td-collapse summary {
     cursor: pointer;
     color: var(--pico-primary);
     font-size: inherit;
+    display: inline;
+}
+.td-collapse[open] {
+    display: block;
+}
+.td-collapse[open] summary {
+    display: list-item;
 }
 .td-collapse[open] summary {
     margin-bottom: 0.2rem;
@@ -632,6 +649,7 @@ details + p small {
     margin-top: 0.15rem;
     font-size: 0.9rem;
     color: #0172ad;
+    font-weight: 550;
 }
 [data-theme="dark"] .disc-view h2.foreign-title {
     color: #5ab3e0;
@@ -1043,12 +1061,13 @@ pre code {
 
 /* Edit form — flag checkbox lists */
 .flag-check-list {
-    display: flex;
-    flex-direction: column;
+    columns: 2;
+    column-gap: 0.75rem;
     gap: 0.15rem;
 }
 .flag-check {
-    display: inline-flex !important;
+    display: flex !important;
+    break-inside: avoid;
     align-items: center;
     gap: 0.35rem;
     width: auto;
