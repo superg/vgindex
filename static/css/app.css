@@ -26,6 +26,10 @@ html {
     html {
         font-size: 80%;
     }
+    .container {
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+    }
 }
 
 button,
