@@ -273,6 +273,8 @@ async fn discs_page(
         "language" => "(SELECT MIN(l.sort_order) FROM disc_languages dl JOIN languages l ON l.code = dl.language_code WHERE dl.disc_id = d.id)",
         "serial"   => "LOWER(array_to_string(d.serial, ', '))",
         "status"   => "CASE WHEN d.questionable THEN 3 WHEN (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) > 1 THEN 1 ELSE 2 END",
+        "added"    => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
+        "updated"  => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
         _ => "LOWER(d.title)",
     };
     let sort_dir = match query.order.as_deref() {
