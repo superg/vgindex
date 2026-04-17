@@ -165,54 +165,6 @@ fn timestamp_now() -> String {
     chrono::Utc::now().format("%Y-%m-%d %H-%M-%S").to_string()
 }
 
-fn build_datfile_name(
-    title: &str,
-    regions: &[String],
-    version: Option<&str>,
-    edition: Option<&str>,
-    disc_number: Option<&str>,
-    disc_title: Option<&str>,
-    suffix: Option<&str>,
-) -> String {
-    let mut name = title.to_string();
-    if !regions.is_empty() {
-        name.push_str(&format!(" ({})", regions.join(", ")));
-    }
-    if let Some(v) = version {
-        if !v.is_empty() {
-            name.push_str(&format!(" ({})", v));
-        }
-    }
-    if let Some(e) = edition {
-        if !e.is_empty() {
-            name.push_str(&format!(" ({})", e));
-        }
-    }
-    if let Some(n) = disc_number {
-        if !n.is_empty() {
-            name.push_str(&format!(" (Disc {})", n));
-        }
-    }
-    if let Some(d) = disc_title {
-        if !d.is_empty() {
-            name.push_str(&format!(" ({})", d));
-        }
-    }
-    if let Some(s) = suffix {
-        if !s.is_empty() {
-            name.push_str(&format!(" ({})", s));
-        }
-    }
-    name
-}
-
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
 // ---------------------------------------------------------------------------
 // DAT generation
 // ---------------------------------------------------------------------------
@@ -221,8 +173,6 @@ fn html_escape(s: &str) -> String {
 struct DatfileDisc {
     id: i32,
     title: String,
-    version: Option<String>,
-    edition: Option<String>,
     filename_suffix: Option<String>,
     disc_number: Option<String>,
     disc_title: Option<String>,
@@ -238,8 +188,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
         .ok_or(AppError::NotFound)?;
 
     let discs: Vec<DatfileDisc> = sqlx::query_as(
-        "SELECT d.id, d.title, d.version,
-                NULLIF(array_to_string(d.edition, ', '), '') AS edition,
+        "SELECT d.id, d.title,
                 d.filename_suffix, d.disc_number, d.disc_title,
                 c.name AS category_name,
                 mt.rom_extension
@@ -276,52 +225,87 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
         ts = html_escape(&ts),
     );
 
+    struct GameEntry {
+        name: String,
+        category: String,
+        roms: Vec<RomEntry>,
+    }
+    struct RomEntry {
+        name: String,
+        size: i64,
+        crc: String,
+        md5: String,
+        sha1: String,
+    }
+
+    let mut games: Vec<GameEntry> = Vec::with_capacity(discs.len());
     for disc in &discs {
         let files: Vec<File> = sqlx::query_as(
-            "SELECT * FROM files WHERE disc_id = $1 ORDER BY track_number",
+            "SELECT * FROM files WHERE disc_id = $1",
         )
         .bind(disc.id)
         .fetch_all(pool)
         .await?;
 
-        let regions = get_disc_region_names(pool, disc.id).await;
-        let game_name = build_datfile_name(
+        let region_names = get_disc_region_names(pool, disc.id).await;
+        let language_codes = get_disc_language_codes(pool, disc.id).await;
+        let game_name = build_rom_base_name(
             &disc.title,
-            &regions,
-            disc.version.as_deref(),
-            disc.edition.as_deref(),
+            &region_names,
+            &language_codes,
             disc.disc_number.as_deref(),
             disc.disc_title.as_deref(),
             disc.filename_suffix.as_deref(),
         );
 
+        let total_tracks = files.iter().filter(|f| f.track_number.is_some()).count();
+        let mut roms: Vec<RomEntry> = files
+            .iter()
+            .map(|file| {
+                let ext = if file.track_number.is_some() {
+                    disc.rom_extension.as_str()
+                } else {
+                    "cue"
+                };
+                RomEntry {
+                    name: build_rom_name(
+                        &game_name,
+                        file.track_number.as_deref(),
+                        total_tracks,
+                        ext,
+                    ),
+                    size: file.size,
+                    crc: file.crc32.clone(),
+                    md5: file.md5.clone(),
+                    sha1: file.sha1.clone(),
+                }
+            })
+            .collect();
+        roms.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+        games.push(GameEntry {
+            name: game_name,
+            category: disc.category_name.clone(),
+            roms,
+        });
+    }
+    games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    for game in &games {
         xml.push_str(&format!(
             "\t<game name=\"{name}\">\n\t\t<category>{cat}</category>\n\t\t<description>{name}</description>\n",
-            name = html_escape(&game_name),
-            cat = html_escape(&disc.category_name),
+            name = html_escape(&game.name),
+            cat = html_escape(&game.category),
         ));
 
-        let total_tracks = files.iter().filter(|f| f.track_number.is_some()).count();
-        for file in &files {
-            let ext = if file.track_number.is_some() {
-                disc.rom_extension.as_str()
-            } else {
-                "cue"
-            };
-            let rom_name = build_rom_name(
-                &game_name,
-                file.track_number.as_deref(),
-                total_tracks,
-                ext,
-            );
-
+        for rom in &game.roms {
             xml.push_str(&format!(
                 "\t\t<rom name=\"{name}\" size=\"{size}\" crc=\"{crc}\" md5=\"{md5}\" sha1=\"{sha1}\"/>\n",
-                name = html_escape(&rom_name),
-                size = file.size,
-                crc = file.crc32,
-                md5 = file.md5,
-                sha1 = file.sha1,
+                name = html_escape(&rom.name),
+                size = rom.size,
+                crc = rom.crc,
+                md5 = rom.md5,
+                sha1 = rom.sha1,
             ));
         }
 

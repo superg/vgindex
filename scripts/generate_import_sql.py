@@ -253,6 +253,14 @@ def build_rom_name(base_name, track_number, total_tracks, extension):
     return name + "." + extension
 
 
+# Multi-session REM lines that always carry constant MSF values across the
+# Redump corpus (LEAD-OUT 01:30:00, LEAD-IN 01:00:00, PREGAP 00:02:00 in the
+# vast majority of cases, with a handful of off-by-one variants). They add no
+# information that isn't recoverable from the multi-session structure itself,
+# so we drop them unconditionally during cue canonicalization.
+_STRIP_REM_RE = re.compile(r"^REM\s+(LEAD-OUT|LEAD-IN|PREGAP)\b", re.IGNORECASE)
+
+
 def finalize_cue(raw_cue, base_name, extension):
     """Rewrite FILE tags in a CUE sheet with proper ROM filenames."""
     lines = raw_cue.split("\n")
@@ -262,6 +270,9 @@ def finalize_cue(raw_cue, base_name, extension):
     i = 0
     while i < len(lines):
         stripped = lines[i].lstrip()
+        if _STRIP_REM_RE.match(stripped):
+            i += 1
+            continue
         if stripped.startswith("FILE "):
             track_num = None
             for ahead in lines[i + 1:]:
@@ -277,7 +288,7 @@ def finalize_cue(raw_cue, base_name, extension):
         else:
             result.append(lines[i])
         i += 1
-    return "\n".join(result)
+    return "\n".join(result).rstrip("\r\n") + "\n"
 
 
 def compute_cue_hashes(cue_text):
@@ -1184,7 +1195,8 @@ def disc_id_from_filename(fname):
     return int(base.lstrip("0") or "0")
 
 
-def process_all(data_dir, output_path, max_disc_id=None):
+def process_all(data_dir, output_path, max_disc_id=None, reset=True,
+                dev_users_sql_path=None):
     # Pass 1: collect all usernames, load all disc data, accumulate max-stats
     filenames = sorted(f for f in os.listdir(data_dir) if f.endswith(".json"))
     total = len(filenames)
@@ -1253,6 +1265,20 @@ def process_all(data_dir, output_path, max_disc_id=None):
         out.write("-- Auto-generated import from Redump scrape data\n")
         out.write("-- Generated: {}\n\n".format(datetime.now().astimezone().isoformat()))
         out.write("BEGIN;\n\n")
+
+        if reset:
+            # Wipe all importer-owned tables so this script is rerunnable
+            # against a non-empty database. CASCADE also clears sessions and
+            # oauth_* rows that reference the users we're about to recreate.
+            # RESTART IDENTITY resets the serial sequences; the setval(...)
+            # statements at the end of this file then move them to MAX(id)+1.
+            out.write("-- Reset importer-owned tables (disable with --no-reset)\n")
+            out.write("TRUNCATE TABLE\n")
+            out.write("    disc_submissions, disc_dumpers, files,\n")
+            out.write("    disc_ring_code_layers, disc_ring_code_entries,\n")
+            out.write("    disc_languages, disc_regions, discs,\n")
+            out.write("    users\n")
+            out.write("RESTART IDENTITY CASCADE;\n\n")
 
         # Synthetic system/media type prerequisites
         _write_synthetic_prereqs(out)
@@ -1524,6 +1550,8 @@ def process_all(data_dir, output_path, max_disc_id=None):
         out.write("SELECT setval('files_id_seq', (SELECT COALESCE(MAX(id), 1) FROM files));\n")
         out.write("SELECT setval('disc_submissions_id_seq', (SELECT COALESCE(MAX(id), 1) FROM disc_submissions));\n")
 
+        _write_dev_users(out, dev_users_sql_path)
+
         out.write("\nCOMMIT;\n")
 
     print(f"[done] Wrote {output_path}", file=sys.stderr)
@@ -1582,6 +1610,46 @@ def _write_users(out, user_id_map):
         "(id, username, email, password_hash, role, is_active, email_verified) "
         "OVERRIDING SYSTEM VALUE",
         batch)
+
+
+def _write_dev_users(out, dev_users_sql_path):
+    """Inline an external developer-users SQL file (e.g. users.sql).
+
+    The external file is expected to be a self-contained, idempotent block
+    (typically `INSERT INTO users (...) VALUES (...) ON CONFLICT (username)
+    DO UPDATE SET ...;`). We deliberately do NOT bake the credentials into
+    this importer so it remains safe to commit to version control.
+
+    Must run AFTER the users_id_seq setval, so that any pure-dev usernames
+    that don't collide with imported dumpers pick fresh ids past the imported
+    range. We then realign the sequence once more, in case the upsert burned
+    sequence values on ON CONFLICT rows.
+
+    If `dev_users_sql_path` is None or the file does not exist, this just
+    emits a comment so the absence is visible in the generated SQL.
+    """
+    out.write("\n-- Developer login accounts (inlined from external SQL file)\n")
+    if not dev_users_sql_path:
+        out.write("-- (skipped: no --dev-users-sql path provided)\n")
+        return
+    if not os.path.isfile(dev_users_sql_path):
+        out.write(f"-- (skipped: {dev_users_sql_path} not found)\n")
+        print(f"[sql]   Dev users: {dev_users_sql_path} not found, skipping",
+              file=sys.stderr)
+        return
+
+    with open(dev_users_sql_path, "r") as f:
+        contents = f.read()
+    out.write(f"-- Source: {dev_users_sql_path}\n")
+    out.write(contents)
+    if not contents.endswith("\n"):
+        out.write("\n")
+    # Realign in case the upsert burned sequence values via ON CONFLICT.
+    out.write(
+        "SELECT setval('users_id_seq', "
+        "(SELECT COALESCE(MAX(id), 1) FROM users));\n"
+    )
+    print(f"[sql]   Dev users: inlined {dev_users_sql_path}", file=sys.stderr)
 
 
 def _build_empty_disc_insert(disc_id):
@@ -1739,13 +1807,25 @@ def main():
                         help="Output SQL file path")
     parser.add_argument("--max-id", type=int, default=None,
                         help="Only import discs up to this ID (for faster iteration)")
+    parser.add_argument("--no-reset", dest="reset", action="store_false",
+                        default=True,
+                        help="Do not emit the leading TRUNCATE block; assume "
+                             "the target database is already empty")
+    parser.add_argument("--dev-users-sql", default="users.sql",
+                        help="Path to an external SQL file with developer "
+                             "login accounts to inline at the end of the "
+                             "transaction. Skipped silently if missing. "
+                             "Pass an empty string to disable. "
+                             "Default: users.sql")
     args = parser.parse_args()
 
     if not os.path.isdir(args.data_dir):
         print(f"Error: {args.data_dir} is not a directory", file=sys.stderr)
         sys.exit(1)
 
-    process_all(args.data_dir, args.output, max_disc_id=args.max_id)
+    process_all(args.data_dir, args.output, max_disc_id=args.max_id,
+                reset=args.reset,
+                dev_users_sql_path=args.dev_users_sql or None)
 
 
 if __name__ == "__main__":

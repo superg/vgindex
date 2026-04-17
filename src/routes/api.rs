@@ -1,6 +1,7 @@
 use axum::{extract::State, response::Html, routing::get, Json, Router};
 
 use crate::auth::middleware::CurrentUser;
+use crate::db::models::html_escape;
 use crate::AppState;
 
 const ACTIVE_WINDOW_MINUTES: i32 = 2;
@@ -122,8 +123,3 @@ struct NewsTopicRow {
     topic_views: i64,
 }
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}

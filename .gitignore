@@ -1,8 +1,2 @@
 /target
 .env
-*.swp
-*.swo
-*~
-.venv/
-__pycache__/
-inbox/

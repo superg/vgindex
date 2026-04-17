@@ -635,6 +635,27 @@ pub fn build_simple_track_name(
     name
 }
 
+/// Returns true for `REM LEAD-OUT|LEAD-IN|PREGAP` lines (case-insensitive,
+/// whitespace-delimited) which carry no information beyond the multi-session
+/// structure itself and are therefore dropped during cue canonicalization.
+fn is_strippable_rem(trimmed: &str) -> bool {
+    let upper = trimmed.to_ascii_uppercase();
+    let rest = match upper.strip_prefix("REM ") {
+        Some(r) => r.trim_start(),
+        None => return false,
+    };
+    let tag = rest.split_whitespace().next().unwrap_or("");
+    matches!(tag, "LEAD-OUT" | "LEAD-IN" | "PREGAP")
+}
+
+fn ensure_single_trailing_newline(mut s: String) -> String {
+    while s.ends_with('\n') || s.ends_with('\r') {
+        s.pop();
+    }
+    s.push('\n');
+    s
+}
+
 pub fn simplify_cue(raw_cue: &str, extension: &str) -> String {
     let normalized = raw_cue.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = normalized.lines().collect();
@@ -646,6 +667,10 @@ pub fn simplify_cue(raw_cue: &str, extension: &str) -> String {
     let mut i = 0;
     while i < lines.len() {
         let trimmed = lines[i].trim_start();
+        if is_strippable_rem(trimmed) {
+            i += 1;
+            continue;
+        }
         if trimmed.starts_with("FILE ") {
             let track_num = lines[i + 1..].iter()
                 .find_map(|l| {
@@ -672,7 +697,7 @@ pub fn simplify_cue(raw_cue: &str, extension: &str) -> String {
         }
         i += 1;
     }
-    result.join("\n")
+    ensure_single_trailing_newline(result.join("\n"))
 }
 
 pub fn simplify_files_xml(raw: &str, extension: &str) -> String {
@@ -738,6 +763,10 @@ pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
     let mut i = 0;
     while i < lines.len() {
         let trimmed = lines[i].trim_start();
+        if is_strippable_rem(trimmed) {
+            i += 1;
+            continue;
+        }
         if trimmed.starts_with("FILE ") {
             // Find the next TRACK line to get the track number
             let track_num = lines[i + 1..].iter()
@@ -766,7 +795,7 @@ pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
         }
         i += 1;
     }
-    result.join("\n")
+    ensure_single_trailing_newline(result.join("\n"))
 }
 
 pub fn parse_qdata_bytes(qdata: &str) -> Vec<u8> {
@@ -807,6 +836,13 @@ pub fn build_sbi_binary(sbi_text: &str) -> Vec<u8> {
     buf
 }
 
+pub fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 pub fn compute_file_hashes(data: &[u8]) -> (i64, String, String, String) {
     let size = data.len() as i64;
 
@@ -845,8 +881,69 @@ mod tests {
 
         assert_eq!(
             simplified,
-            "FILE \"Track.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00"
+            "FILE \"Track.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n"
         );
         assert!(!simplified.contains('\r'));
+    }
+
+    #[test]
+    fn simplify_cue_strips_lead_and_pregap_rems_keeps_others() {
+        let cue = "REM SESSION 01\n\
+FILE \"Track 01.bin\" BINARY\n\
+  TRACK 01 AUDIO\n\
+    INDEX 01 00:00:00\n\
+REM LEAD-OUT 02:00:00\n\
+REM SESSION 02\n\
+  rem lead-in 01:00:00\n\
+REM PREGAP 00:02:00\n\
+FILE \"Track 02.bin\" BINARY\n\
+  TRACK 02 AUDIO\n\
+    INDEX 01 00:00:00\n";
+        let simplified = simplify_cue(cue, "bin");
+
+        let expected = "REM SESSION 01\n\
+FILE \"Track 1.bin\" BINARY\n\
+  TRACK 01 AUDIO\n\
+    INDEX 01 00:00:00\n\
+REM SESSION 02\n\
+FILE \"Track 2.bin\" BINARY\n\
+  TRACK 02 AUDIO\n\
+    INDEX 01 00:00:00\n";
+        assert_eq!(simplified, expected);
+        assert!(!simplified.contains("LEAD-OUT"));
+        assert!(!simplified.contains("LEAD-IN"));
+        assert!(!simplified.to_uppercase().contains("PREGAP"));
+        assert!(simplified.contains("REM SESSION 01"));
+        assert!(simplified.contains("REM SESSION 02"));
+    }
+
+    #[test]
+    fn simplify_cue_ends_with_single_newline() {
+        let no_trailing = "FILE \"Game.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00";
+        let many_trailing = "FILE \"Game.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n\n\n";
+
+        for input in [no_trailing, many_trailing] {
+            let out = simplify_cue(input, "bin");
+            assert!(out.ends_with('\n'), "missing trailing newline: {out:?}");
+            assert!(!out.ends_with("\n\n"), "more than one trailing newline: {out:?}");
+        }
+    }
+
+    #[test]
+    fn finalize_cue_strips_lead_rems_and_ends_with_newline() {
+        let cue = "FILE \"Track 01.bin\" BINARY\n\
+                   TRACK 01 AUDIO\n\
+                   INDEX 01 00:00:00\n\
+                   REM LEAD-OUT 02:00:00\n\
+                   REM LEAD-IN 01:00:00\n\
+                   REM PREGAP 00:02:00\n";
+        let out = finalize_cue(cue, "Awesome Game", "bin");
+
+        assert!(out.ends_with('\n'));
+        assert!(!out.ends_with("\n\n"));
+        assert!(!out.contains("LEAD-OUT"));
+        assert!(!out.contains("LEAD-IN"));
+        assert!(!out.to_uppercase().contains("PREGAP"));
+        assert!(out.contains("FILE \"Awesome Game.bin\" BINARY"));
     }
 }

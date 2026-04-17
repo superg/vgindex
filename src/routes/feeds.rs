@@ -6,6 +6,7 @@ use axum::{
     Router,
 };
 
+use crate::db::models::html_escape;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -69,9 +70,3 @@ struct RssRow {
     created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
