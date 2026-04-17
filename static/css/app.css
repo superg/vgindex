@@ -696,6 +696,7 @@ header .site-nav {
     align-items: center;
     gap: 0;
     padding: 0 !important;
+    padding-top: 0.4rem !important;
     overflow: visible;
 }
 
