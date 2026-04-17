@@ -83,21 +83,21 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
 <form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review/{% else if is_add_mode %}/disc/submit/{% else %}/disc/{{ disc_id }}/edit/{% endif %}" id="disc-edit-form" class="disc-edit">
 
     <div class="grid">
-        <label{% if !self.highlight_class("system_code").is_empty() %} class="{{ self.highlight_class("system_code") }}"{% endif %}>System
+        <label{% if !self.highlight_class("system_code").is_empty() %} class="{{ self.highlight_class("system_code") }}"{% endif %}>System:
             <select name="system_code" id="system-select" required>
                 {% for sys in systems %}
                 <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
                 {% endfor %}
             </select>
         </label>
-        <label{% if !self.highlight_class("media_type").is_empty() %} class="{{ self.highlight_class("media_type") }}"{% endif %}>Media
+        <label{% if !self.highlight_class("media_type").is_empty() %} class="{{ self.highlight_class("media_type") }}"{% endif %}>Media:
             <select name="media_type" id="media-select">
                 {% for mt in media_types_all %}
                 <option value="{{ mt.code }}" {% if mt.selected %}selected{% endif %}>{{ mt.name }}</option>
                 {% endfor %}
             </select>
         </label>
-        <label{% if !self.highlight_class("category").is_empty() %} class="{{ self.highlight_class("category") }}"{% endif %}>Category
+        <label{% if !self.highlight_class("category").is_empty() %} class="{{ self.highlight_class("category") }}"{% endif %}>Category:
             <select name="category">
                 {% for cat in categories %}
                 <option value="{{ cat.value }}" {% if cat.selected %}selected{% endif %}>{{ cat.name }}</option>
@@ -107,22 +107,22 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
     </div>
 
     <div class="grid">
-        <label{% if !self.highlight_class("title").is_empty() %} class="{{ self.highlight_class("title") }}"{% endif %}>Title
+        <label{% if !self.highlight_class("title").is_empty() %} class="{{ self.highlight_class("title") }}"{% endif %}>Title:
             <input type="text" name="title" value="{{ title }}" required>
         </label>
-        <label data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}{% if !self.highlight_class("title_foreign").is_empty() %} class="{{ self.highlight_class("title_foreign") }}"{% endif %}>Foreign Title
+        <label data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}{% if !self.highlight_class("title_foreign").is_empty() %} class="{{ self.highlight_class("title_foreign") }}"{% endif %}>Foreign Title:
             <input type="text" name="title_foreign" value="{{ title_foreign }}">
         </label>
     </div>
 
     <div class="grid">
-        <label data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}{% if !self.highlight_class("disc_number").is_empty() %} class="{{ self.highlight_class("disc_number") }}"{% endif %}>Disc Number
+        <label data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}{% if !self.highlight_class("disc_number").is_empty() %} class="{{ self.highlight_class("disc_number") }}"{% endif %}>Disc Number:
             <input type="text" name="disc_number" value="{{ disc_number }}">
         </label>
-        <label data-field-flag="has_disc_title"{% if !show_disc_title %} style="display:none"{% endif %}{% if !self.highlight_class("disc_title").is_empty() %} class="{{ self.highlight_class("disc_title") }}"{% endif %}>Disc Title
+        <label data-field-flag="has_disc_title"{% if !show_disc_title %} style="display:none"{% endif %}{% if !self.highlight_class("disc_title").is_empty() %} class="{{ self.highlight_class("disc_title") }}"{% endif %}>Disc Title:
             <input type="text" name="disc_title" value="{{ disc_title }}">
         </label>
-        <label{% if !self.highlight_class("filename_suffix").is_empty() %} class="{{ self.highlight_class("filename_suffix") }}"{% endif %}>Filename Suffix
+        <label{% if !self.highlight_class("filename_suffix").is_empty() %} class="{{ self.highlight_class("filename_suffix") }}"{% endif %}>Filename Suffix:
             <input type="text" name="filename_suffix" value="{{ filename_suffix }}">
         </label>
     </div>
@@ -130,7 +130,7 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
     <div class="grid">
         <div{% if !self.highlight_class("regions").is_empty() %} class="{{ self.highlight_class("regions") }}"{% endif %}>
         <fieldset>
-            <legend>Regions</legend>
+            <legend>Regions:</legend>
             <div class="flag-check-list">
             {% for r in regions %}
                 <label class="flag-check{% if !r.highlight.is_empty() %} item-{{ r.highlight }}{% endif %}">
@@ -144,7 +144,7 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
         </div>
         <div{% if !self.highlight_class("languages").is_empty() %} class="{{ self.highlight_class("languages") }}"{% endif %}>
         <fieldset>
-            <legend>Languages</legend>
+            <legend>Languages:</legend>
             <div class="flag-check-list">
             {% for lang in languages %}
                 <label class="flag-check{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">

@@ -83,7 +83,7 @@
             {% endif %}
             <tr>
                 <td><strong>{% if dumper_count <= 1 %}Dumper{% else %}Dumpers{% endif %}</strong></td>
-                <td>{% if dumper_count > 15 %}<details class="td-collapse"><summary>{{ dumper_count }} dumpers</summary>{{ dumpers_display|safe }}</details>{% else %}{{ dumpers_display|safe }}{% endif %}</td>
+                <td class="dumpers-cell">{{ dumpers_display|safe }}</td>
             </tr>
         </table>
     </section>
