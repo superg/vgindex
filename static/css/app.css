@@ -23,10 +23,6 @@ html {
     font-size: 100%;
 }
 @media (max-width: 768px) {
-    .container {
-        padding-left: 0.8rem;
-        padding-right: 0.8rem;
-    }
     .disc-table .title-col {
         min-width: 30rem;
     }
@@ -50,6 +46,12 @@ button,
     padding-left: 2rem;
     padding-right: 2rem;
 }
+@media (max-width: 768px) {
+    .container {
+        padding-left: 0.35rem;
+        padding-right: 0.35rem;
+    }
+}
 
 main.container {
     padding-top: 0rem;
@@ -62,6 +64,7 @@ main.container > *:first-child {
 
 footer.container {
     margin-top: -1.4rem;
+    text-align: center;
 }
 [data-theme="dark"] footer hr {
     border-color: rgba(255, 255, 255, 0.1);
@@ -784,6 +787,7 @@ header .site-nav-top {
 header .site-nav-links {
     display: flex !important;
     flex-direction: row !important;
+    flex-wrap: nowrap !important;
     list-style: none;
     margin: 0 !important;
     padding: 0;
@@ -797,9 +801,6 @@ header .site-nav-links > li {
     padding: 0 !important;
     margin: 0 !important;
 }
-.site-nav-auth > li:first-child {
-    margin-right: 0.5rem !important;
-}
 .site-nav-links > li > a,
 .site-nav-links > li > .submenu-label {
     display: inline-flex;
@@ -808,6 +809,10 @@ header .site-nav-links > li {
     text-decoration: none;
     line-height: 1;
     font-weight: 500;
+    color: var(--pico-primary);
+}
+[data-theme="dark"] .site-nav-links > li > a {
+    color: inherit;
 }
 .site-nav-links > li > a:hover,
 .site-nav-links > li > .submenu-label:hover {
@@ -964,27 +969,23 @@ nav .quick-search input[type="text"] {
 .diff-add { background: #e6ffec; }
 .diff-remove { background: #ffebe9; }
 
-/* Dark mode toggle — fixed top-right pill switch */
+/* Dark mode toggle — inline pill switch next to login */
 .dark-mode-toggle {
-    position: fixed;
-    top: 0.65rem;
-    right: 1rem;
-    z-index: 1000;
-    width: 44px;
+    flex-shrink: 0;
+    transform: rotate(90deg);
+    width: 36px;
     height: 24px;
     border-radius: 12px;
     background: #F4F8FB;
-    border: none;
+    border: 1px solid var(--pico-form-element-border-color);
     padding: 0;
     cursor: pointer;
     display: flex;
     align-items: center;
     transition: background 0.2s;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 [data-theme="dark"] .dark-mode-toggle {
     background: #1A1E26;
-    border: 1px solid #2a3140;
 }
 .dark-mode-toggle-thumb {
     display: block;
@@ -996,7 +997,7 @@ nav .quick-search input[type="text"] {
     transition: margin-left 0.2s, background 0.2s;
 }
 [data-theme="dark"] .dark-mode-toggle-thumb {
-    margin-left: 22px;
+    margin-left: 14px;
     background: #EFFFFF;
 }
 
