@@ -32,6 +32,10 @@ html {
     .letter-picker a {
         font-size: 1rem;
     }
+    .about-qa {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
 }
 
 button,
@@ -734,7 +738,7 @@ header .site-nav {
     display: flex !important;
     flex-direction: column !important;
     justify-content: flex-start !important;
-    align-items: center;
+    align-items: stretch;
     gap: 0;
     padding: 0 !important;
     padding-top: 0.4rem !important;
@@ -749,11 +753,14 @@ header .site-nav-top {
     align-items: center;
     justify-content: center;
     gap: 1rem;
+    width: 100%;
+    box-sizing: border-box;
 }
 .site-banner {
     display: inline-flex;
     align-items: center;
     line-height: 0;
+    flex-shrink: 0;
 }
 .site-banner img {
     display: block;
@@ -765,6 +772,7 @@ header .site-nav-top {
 .site-nav-auth {
     display: flex !important;
     flex-direction: row !important;
+    flex-shrink: 0;
     list-style: none;
     margin: 0 !important;
     padding: 0;
@@ -794,6 +802,8 @@ header .site-nav-links {
     align-items: center;
     justify-content: center;
     gap: 0;
+    width: 100%;
+    box-sizing: border-box;
 }
 header .site-nav-links > li {
 }
@@ -875,6 +885,7 @@ nav .quick-search {
     display: flex;
     align-items: center;
     margin: 0;
+    flex-shrink: 0;
 }
 nav .quick-search input[type="text"] {
     margin: 0;
@@ -882,7 +893,7 @@ nav .quick-search input[type="text"] {
     height: var(--nav-bar-height);
     box-sizing: border-box;
     font-size: 0.9rem;
-    width: 200px;
+    width: clamp(100px, 18vw, 200px);
 }
 
 /* Homepage sections */
@@ -972,15 +983,15 @@ nav .quick-search input[type="text"] {
 /* Dark mode toggle — inline pill switch next to login */
 .dark-mode-toggle {
     flex-shrink: 0;
-    transform: rotate(90deg);
-    width: 36px;
-    height: 24px;
+    width: 24px;
+    height: 36px;
     border-radius: 12px;
     background: #F4F8FB;
     border: 1px solid var(--pico-form-element-border-color);
     padding: 0;
     cursor: pointer;
     display: flex;
+    flex-direction: column;
     align-items: center;
     transition: background 0.2s;
 }
@@ -993,11 +1004,11 @@ nav .quick-search input[type="text"] {
     height: 20px;
     border-radius: 50%;
     background: #0172ad;
-    margin-left: 2px;
-    transition: margin-left 0.2s, background 0.2s;
+    margin-top: 2px;
+    transition: margin-top 0.2s, background 0.2s;
 }
 [data-theme="dark"] .dark-mode-toggle-thumb {
-    margin-left: 14px;
+    margin-top: 14px;
     background: #EFFFFF;
 }
 
@@ -1009,9 +1020,6 @@ nav .quick-search input[type="text"] {
     .site-nav-links {
         flex-wrap: wrap;
         justify-content: center;
-    }
-    nav .quick-search input[type="text"] {
-        width: 150px;
     }
     .disc-table {
         font-size: 0.75rem;
