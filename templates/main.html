@@ -52,12 +52,15 @@
         table.style.transform = '';
         table.style.transformOrigin = '';
         wrapper.style.overflow = '';
+        wrapper.style.height = '';
         var containerWidth = wrapper.clientWidth;
         var tableWidth = table.scrollWidth;
         if (tableWidth > containerWidth && containerWidth > 0) {
             var scale = containerWidth / tableWidth;
             table.style.transform = 'scale(' + scale + ')';
             table.style.transformOrigin = 'top left';
+            wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
+            wrapper.style.overflow = 'hidden';
         }
     }
     document.addEventListener('DOMContentLoaded', scaleRecentDumps);
