@@ -6,6 +6,7 @@
 <h3 class="downloads-page-title">Downloads</h3>
 <p class="downloads-page-desc">Download datfiles, cuesheets, and SBI archives for each system.</p>
 
+<div class="downloads-table-scaler">
 <table class="striped downloads-table">
     <thead>
         <tr>
@@ -26,12 +27,13 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
 <script>
 (function() {
     function scaleDownloadsTable() {
-        var table = document.querySelector('.downloads-table');
+        var wrapper = document.querySelector('.downloads-table-scaler');
+        var table = wrapper && wrapper.querySelector('table');
         if (!table) return;
-        var wrapper = table.parentElement;
         table.style.transform = '';
         table.style.transformOrigin = '';
         wrapper.style.height = '';
