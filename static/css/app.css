@@ -630,6 +630,9 @@ details + p small {
     white-space: nowrap;
     align-self: center;
 }
+.col-num {
+    text-align: right;
+}
 .dumpers-cell {
     white-space: normal;
     max-width: 10rem;
