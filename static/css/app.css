@@ -66,6 +66,9 @@ main.container > *:first-child {
 footer.container {
     margin-top: -1.4rem;
 }
+[data-theme="dark"] footer hr {
+    border-color: rgba(255, 255, 255, 0.1);
+}
 
 main > h3 {
     font-size: 1.22rem;
@@ -199,6 +202,8 @@ main > h3 {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.disc-table .edition-col { max-width: 7.5rem; }
+.disc-table .serial-col  { max-width: 7rem; }
 
 /* Striped table rows — matches home page alternating row style */
 table.striped tbody tr:nth-child(odd) td {
@@ -383,6 +388,7 @@ details + p small {
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.15rem;
+    margin-top: 0.4rem;
     margin-bottom: 0.35rem;
 }
 .letter-picker a {
@@ -444,8 +450,20 @@ details + p small {
     text-align: center;
     margin-bottom: 0.5rem;
 }
+.disc-view .grid > section {
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+}
+.disc-view .grid > section.section-collapsible {
+    width: auto;
+}
+.disc-view .grid > section.section-collapsible:has(details[open]) {
+    width: fit-content;
+}
 .disc-view .grid {
     gap: 0.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(max-content, 1fr));
 }
 .disc-view .detail-section {
     border: var(--pico-border-width) solid var(--pico-form-element-border-color);
@@ -470,14 +488,21 @@ details + p small {
     font-size: 0.85rem;
     vertical-align: middle;
 }
+.disc-view .table-compact td:first-child,
+.disc-view .table-compact th:first-child,
+.disc-view .table-scroll-compact > table td:first-child,
+.disc-view .table-scroll-compact > table th:first-child {
+    padding-left: 0.5rem;
+}
+.disc-view .table-compact td:last-child,
+.disc-view .table-compact th:last-child,
+.disc-view .table-scroll-compact > table td:last-child,
+.disc-view .table-scroll-compact > table th:last-child {
+    padding-right: 0.5rem;
+}
 .disc-view .table-compact th,
 .disc-view .table-scroll-compact > table th {
     text-align: left;
-}
-.disc-view .table-fit-section {
-    display: table;
-    width: 100%;
-    max-width: 100%;
 }
 .disc-view .binary-table code {
     font-size: 0.62rem;
@@ -917,6 +942,7 @@ nav .quick-search input[type="text"] {
 .recent-dumps th {
     padding: 0.04rem 0.5rem;
     font-size: 0.9rem;
+    white-space: nowrap;
     text-align: left;
     color: #565e6a;
 }
@@ -924,6 +950,7 @@ nav .quick-search input[type="text"] {
     padding: 0.04rem 0.5rem;
     font-size: 0.85rem;
     vertical-align: middle;
+    white-space: nowrap;
 }
 .recent-dumps .region-col {
     text-align: center;

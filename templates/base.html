@@ -73,6 +73,38 @@
             html.setAttribute('data-theme', next);
             localStorage.setItem('theme', next);
         });
+
+        (function() {
+            function scaleNav() {
+                var header = document.querySelector('header.container');
+                var nav = header && header.querySelector('.site-nav');
+                var navTop = nav && nav.querySelector('.site-nav-top');
+                if (!nav || !navTop) return;
+
+                // Reset
+                nav.style.transform = '';
+                nav.style.transformOrigin = '';
+                header.style.height = '';
+
+                // Measure natural width by forcing no-wrap on both rows
+                var navLinks = nav.querySelector('.site-nav-links');
+                navTop.style.flexWrap = 'nowrap';
+                if (navLinks) navLinks.style.flexWrap = 'nowrap';
+                var containerWidth = header.clientWidth;
+                var navWidth = Math.max(navTop.scrollWidth, navLinks ? navLinks.scrollWidth : 0);
+                navTop.style.flexWrap = '';
+                if (navLinks) navLinks.style.flexWrap = '';
+
+                if (navWidth > containerWidth && containerWidth > 0) {
+                    var scale = containerWidth / navWidth;
+                    nav.style.transform = 'scale(' + scale + ')';
+                    nav.style.transformOrigin = 'top left';
+                    header.style.height = Math.ceil(nav.offsetHeight * scale) + 'px';
+                }
+            }
+            document.addEventListener('DOMContentLoaded', scaleNav);
+            window.addEventListener('resize', scaleNav);
+        })();
     </script>
 
     <footer class="container">
