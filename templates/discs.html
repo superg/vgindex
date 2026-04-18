@@ -93,6 +93,7 @@
     </nav>
     {% endif %}
 
+    <div class="disc-table-scaler">
     <table class="disc-table striped">
         <thead>
             <tr>
@@ -133,6 +134,7 @@
             {% endif %}
         </tbody>
     </table>
+    </div>
 
     {% if total_pages > 1 %}
     <nav aria-label="Pagination">
@@ -160,4 +162,28 @@
     </nav>
     {% endif %}
 </div>
+<script>
+(function() {
+    function scaleDiscTable() {
+        var wrapper = document.querySelector('.disc-table-scaler');
+        var table = wrapper && wrapper.querySelector('table');
+        if (!table) return;
+        table.style.transform = '';
+        table.style.transformOrigin = '';
+        wrapper.style.height = '';
+        wrapper.style.overflow = '';
+        var containerWidth = wrapper.clientWidth;
+        var tableWidth = table.scrollWidth;
+        if (tableWidth > containerWidth && containerWidth > 0) {
+            var scale = containerWidth / tableWidth;
+            table.style.transform = 'scale(' + scale + ')';
+            table.style.transformOrigin = 'top left';
+            wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
+            wrapper.style.overflow = 'hidden';
+        }
+    }
+    document.addEventListener('DOMContentLoaded', scaleDiscTable);
+    window.addEventListener('resize', scaleDiscTable);
+})();
+</script>
 {% endblock %}

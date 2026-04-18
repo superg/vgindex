@@ -81,25 +81,35 @@
                 var navTop = nav && nav.querySelector('.site-nav-top');
                 if (!nav || !navTop) return;
 
-                // Reset
-                nav.style.transform = '';
-                nav.style.transformOrigin = '';
-                header.style.height = '';
-
-                // Measure natural width by forcing no-wrap on both rows
                 var navLinks = nav.querySelector('.site-nav-links');
-                navTop.style.flexWrap = 'nowrap';
-                if (navLinks) navLinks.style.flexWrap = 'nowrap';
-                var containerWidth = header.clientWidth;
-                var navWidth = Math.max(navTop.scrollWidth, navLinks ? navLinks.scrollWidth : 0);
-                navTop.style.flexWrap = '';
-                if (navLinks) navLinks.style.flexWrap = '';
 
-                if (navWidth > containerWidth && containerWidth > 0) {
-                    var scale = containerWidth / navWidth;
-                    nav.style.transform = 'scale(' + scale + ')';
-                    nav.style.transformOrigin = 'top left';
-                    header.style.height = Math.ceil(nav.offsetHeight * scale) + 'px';
+                // Reset
+                navTop.style.transform = '';
+                navTop.style.transformOrigin = '';
+                if (navLinks) {
+                    navLinks.style.transform = '';
+                    navLinks.style.transformOrigin = '';
+                    navLinks.style.marginTop = '';
+                }
+
+                var containerWidth = header.clientWidth;
+                if (containerWidth <= 0) return;
+
+                var scaleTop = navTop.scrollWidth > containerWidth ? containerWidth / navTop.scrollWidth : 1;
+                var scaleLinks = navLinks && navLinks.scrollWidth > containerWidth ? containerWidth / navLinks.scrollWidth : 1;
+
+                if (scaleTop < 1) {
+                    navTop.style.transform = 'scale(' + scaleTop + ')';
+                    navTop.style.transformOrigin = 'top center';
+                    // Pull navLinks up to close the empty space left by the shrunken navTop
+                    if (navLinks) {
+                        var savedPx = navTop.offsetHeight * (1 - scaleTop);
+                        navLinks.style.marginTop = '-' + Math.floor(savedPx) + 'px';
+                    }
+                }
+                if (scaleLinks < 1 && navLinks) {
+                    navLinks.style.transform = 'scale(' + scaleLinks + ')';
+                    navLinks.style.transformOrigin = 'top center';
                 }
             }
             document.addEventListener('DOMContentLoaded', scaleNav);

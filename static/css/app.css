@@ -22,11 +22,14 @@ a:hover {
 html {
     font-size: 100%;
 }
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
     .container {
-        padding-left: 0.8rem;
-        padding-right: 0.8rem;
+        max-width: 100%;
+        padding-left: 0;
+        padding-right: 0;
     }
+}
+@media (max-width: 768px) {
     .disc-table .title-col {
         min-width: 30rem;
     }
@@ -784,6 +787,7 @@ header .site-nav-top {
 header .site-nav-links {
     display: flex !important;
     flex-direction: row !important;
+    flex-wrap: nowrap !important;
     list-style: none;
     margin: 0 !important;
     padding: 0;

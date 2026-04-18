@@ -11,6 +11,7 @@
 
     <section class="home-recent-dumps">
         <h3>Recent Dumps</h3>
+        <div class="recent-dumps-scaler">
         <table class="recent-dumps">
             <thead>
                 <tr>
@@ -40,13 +41,14 @@
                 {% endif %}
             </tbody>
         </table>
+        </div>
         <p><a href="/discs/?sort=added&amp;order=desc">More...</a></p>
     </section>
 </div>
 <script>
 (function() {
     function scaleRecentDumps() {
-        var wrapper = document.querySelector('.home-recent-dumps');
+        var wrapper = document.querySelector('.recent-dumps-scaler');
         var table = wrapper && wrapper.querySelector('table');
         if (!table) return;
         table.style.transform = '';
