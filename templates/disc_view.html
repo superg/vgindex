@@ -133,8 +133,8 @@
         <thead>
             <tr>
                 <th style="text-align: left;">Suffix</th>
-                {% if show_cd_file_details %}<th>Type</th><th>Pregap</th><th>Length</th><th>Sectors</th>{% endif %}
-                <th>Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th>
+                {% if show_cd_file_details %}<th>Type</th><th class="col-num">Pregap</th><th class="col-num">Length</th><th class="col-num">Sectors</th>{% endif %}
+                <th class="col-num">Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th>
             </tr>
         </thead>
         <tbody>
@@ -143,11 +143,11 @@
                 <td style="text-align: left;" title="{{ file.name }}">{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.short_name }}</a>{% else %}{{ file.short_name }}{% endif %}</td>
                 {% if show_cd_file_details %}
                 <td>{% if !file.is_cue %}{{ file.track_type }}{% endif %}</td>
-                <td>{% if !file.is_cue %}{{ file.pregap }}{% endif %}</td>
-                <td>{% if !file.is_cue %}{{ file.length }}{% endif %}</td>
-                <td>{% if !file.is_cue %}{{ file.sectors }}{% endif %}</td>
+                <td class="col-num">{% if !file.is_cue %}{{ file.pregap }}{% endif %}</td>
+                <td class="col-num">{% if !file.is_cue %}{{ file.length }}{% endif %}</td>
+                <td class="col-num">{% if !file.is_cue %}{{ file.sectors }}{% endif %}</td>
                 {% endif %}
-                <td>{{ file.size }}</td>
+                <td class="col-num">{{ file.size }}</td>
                 <td><code>{{ file.crc32 }}</code></td>
                 <td><code>{{ file.md5 }}</code></td>
                 <td><code>{{ file.sha1 }}</code></td>
