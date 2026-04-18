@@ -36,6 +36,7 @@
                     {% when None %}
                     <li><a href="/login" role="button">Login</a></li>
                     {% endmatch %}
+                    <li><button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode"><span class="dark-mode-toggle-thumb"></span></button></li>
                 </ul>
             </div>
             <ul class="site-nav-links">
@@ -63,9 +64,6 @@
         {% block content %}{% endblock %}
     </main>
 
-    <button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
-        <span class="dark-mode-toggle-thumb"></span>
-    </button>
     <script>
         document.getElementById('dark-mode-toggle').addEventListener('click', function() {
             var html = document.documentElement;
