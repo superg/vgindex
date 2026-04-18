@@ -39,7 +39,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
          WHERE ds.target_disc_id IS NOT NULL
          GROUP BY d.id, d.title, s.code
          ORDER BY created_at DESC
-         LIMIT 50"
+         LIMIT 40"
     )
     .fetch_all(&state.pool)
     .await

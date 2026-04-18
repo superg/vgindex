@@ -23,9 +23,6 @@ html {
     font-size: 100%;
 }
 @media (max-width: 768px) {
-    html {
-        font-size: 80%;
-    }
     .container {
         padding-left: 0.8rem;
         padding-right: 0.8rem;
@@ -745,6 +742,7 @@ header .site-nav {
 header .site-nav-top {
     display: flex !important;
     flex-direction: row !important;
+    flex-wrap: nowrap !important;
     align-items: center;
     justify-content: center;
     gap: 1rem;
