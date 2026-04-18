@@ -821,7 +821,8 @@ header .site-nav-links > li {
     font-weight: 500;
     color: var(--pico-primary);
 }
-[data-theme="dark"] .site-nav-links > li > a {
+[data-theme="dark"] .site-nav-links > li > a,
+[data-theme="dark"] .site-nav-links > li > .submenu-label {
     color: inherit;
 }
 .site-nav-links > li > a:hover,
