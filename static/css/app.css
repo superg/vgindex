@@ -30,6 +30,15 @@ html {
         padding-left: 0.8rem;
         padding-right: 0.8rem;
     }
+    .disc-table .title-col {
+        min-width: 30rem;
+    }
+    .disc-table .truncate {
+        max-width: 5rem;
+    }
+    .letter-picker a {
+        font-size: 1rem;
+    }
 }
 
 button,
