@@ -17,7 +17,7 @@
 <div class="grid">
     <section>
         <h3>Disc</h3>
-        <table class="table-compact table-fit-section">
+        <table class="table-compact">
             <tr><td><strong>System</strong></td><td><a href="/discs/?system={{ system_code }}">{{ system_name }}</a></td></tr>
             <tr><td><strong>Media</strong></td><td>{{ media_type }}</td></tr>
             <tr><td><strong>Category</strong></td><td>{{ category }}</td></tr>
@@ -89,7 +89,7 @@
     </section>
 
     {% if !protection.is_empty() || !contents.is_empty() || !comments.is_empty() %}
-    <section>
+    <section class="section-collapsible">
         {% if !protection.is_empty() %}
         {% if protection.lines().count() > 5 %}
         <details class="protection-details">
@@ -360,4 +360,29 @@
 {% endif %}
 
 </div>
+<script>
+(function() {
+    function scaleBottomTables() {
+        document.querySelectorAll('.disc-view .detail-section .table-scroll').forEach(function(wrapper) {
+            var table = wrapper.querySelector('table');
+            if (!table) return;
+            table.style.transform = '';
+            table.style.transformOrigin = '';
+            wrapper.style.height = '';
+            wrapper.style.overflow = '';
+            var containerWidth = wrapper.clientWidth;
+            var tableWidth = table.scrollWidth;
+            if (tableWidth > containerWidth && containerWidth > 0) {
+                var scale = containerWidth / tableWidth;
+                table.style.transform = 'scale(' + scale + ')';
+                table.style.transformOrigin = 'top left';
+                wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
+                wrapper.style.overflow = 'hidden';
+            }
+        });
+    }
+    document.addEventListener('DOMContentLoaded', scaleBottomTables);
+    window.addEventListener('resize', scaleBottomTables);
+})();
+</script>
 {% endblock %}
