@@ -31,7 +31,6 @@
                 <ul class="site-nav-auth">
                     {% match current_user %}
                     {% when Some with (user) %}
-                    <li>{{ user }}</li>
                     <li><form method="post" action="/logout" style="margin:0"><button type="submit" style="margin:0">Logout</button></form></li>
                     {% when None %}
                     <li><a href="/login" role="button">Login</a></li>
@@ -90,11 +89,23 @@
                     navLinks.style.marginTop = '';
                 }
 
-                var containerWidth = header.clientWidth;
+                var containerWidth = nav.clientWidth;
                 if (containerWidth <= 0) return;
 
-                var scaleTop = navTop.scrollWidth > containerWidth ? containerWidth / navTop.scrollWidth : 1;
-                var scaleLinks = navLinks && navLinks.scrollWidth > containerWidth ? containerWidth / navLinks.scrollWidth : 1;
+                // Measure true content width by temporarily left-aligning
+                // (scrollWidth only counts right-side overflow; centered content overflows both sides)
+                navTop.style.justifyContent = 'flex-start';
+                var trueTopWidth = navTop.scrollWidth;
+                navTop.style.justifyContent = '';
+                var scaleTop = trueTopWidth > containerWidth ? containerWidth / trueTopWidth : 1;
+
+                var trueLinksWidth = 1;
+                if (navLinks) {
+                    navLinks.style.justifyContent = 'flex-start';
+                    trueLinksWidth = navLinks.scrollWidth;
+                    navLinks.style.justifyContent = '';
+                }
+                var scaleLinks = trueLinksWidth > containerWidth ? containerWidth / trueLinksWidth : 1;
 
                 if (scaleTop < 1) {
                     navTop.style.transform = 'scale(' + scaleTop + ')';
