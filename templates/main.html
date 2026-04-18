@@ -43,4 +43,25 @@
         <p><a href="/discs/?sort=added&amp;order=desc">More...</a></p>
     </section>
 </div>
+<script>
+(function() {
+    function scaleRecentDumps() {
+        var wrapper = document.querySelector('.home-recent-dumps');
+        var table = wrapper && wrapper.querySelector('table');
+        if (!table) return;
+        table.style.transform = '';
+        table.style.transformOrigin = '';
+        wrapper.style.overflow = '';
+        var containerWidth = wrapper.clientWidth;
+        var tableWidth = table.scrollWidth;
+        if (tableWidth > containerWidth && containerWidth > 0) {
+            var scale = containerWidth / tableWidth;
+            table.style.transform = 'scale(' + scale + ')';
+            table.style.transformOrigin = 'top left';
+        }
+    }
+    document.addEventListener('DOMContentLoaded', scaleRecentDumps);
+    window.addEventListener('resize', scaleRecentDumps);
+})();
+</script>
 {% endblock %}
