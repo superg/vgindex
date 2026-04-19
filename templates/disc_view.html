@@ -127,7 +127,9 @@
 
 <section class="left-section detail-section">
     <h3>Files</h3>
+    <div class="dat-filename-scaler">
     <p class="dat-filename">Prefix: <code>{{ dat_filename }}</code></p>
+    </div>
     <div class="table-scroll table-scroll-compact">
     <table class="disc-table striped table-nowrap">
         <thead>
@@ -140,14 +142,14 @@
         <tbody>
             {% for file in files %}
             <tr>
-                <td style="text-align: left;" title="{{ file.name }}">{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.short_name }}</a>{% else %}{{ file.short_name }}{% endif %}</td>
+                <td style="text-align: left;" title="{{ file.name }}"><code>{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.short_name }}</a>{% else %}{{ file.short_name }}{% endif %}</code></td>
                 {% if show_cd_file_details %}
-                <td>{% if !file.is_cue %}{{ file.track_type }}{% endif %}</td>
-                <td class="col-num">{% if !file.is_cue %}{{ file.pregap }}{% endif %}</td>
-                <td class="col-num">{% if !file.is_cue %}{{ file.length }}{% endif %}</td>
-                <td class="col-num">{% if !file.is_cue %}{{ file.sectors }}{% endif %}</td>
+                <td>{% if !file.is_cue %}<code>{{ file.track_type }}</code>{% endif %}</td>
+                <td class="col-num">{% if !file.is_cue %}<code>{{ file.pregap }}</code>{% endif %}</td>
+                <td class="col-num">{% if !file.is_cue %}<code>{{ file.length }}</code>{% endif %}</td>
+                <td class="col-num">{% if !file.is_cue %}<code>{{ file.sectors }}</code>{% endif %}</td>
                 {% endif %}
-                <td class="col-num">{{ file.size }}</td>
+                <td class="col-num"><code>{{ file.size }}</code></td>
                 <td><code>{{ file.crc32 }}</code></td>
                 <td><code>{{ file.md5 }}</code></td>
                 <td><code>{{ file.sha1 }}</code></td>
@@ -161,7 +163,7 @@
 {% if !ring_rows.is_empty() %}
 <section class="left-section detail-section">
     <h3>Rings</h3>
-    <div class="table-scroll table-scroll-compact">
+    <div class="table-scroll table-scroll-compact scroll-only">
     <table class="disc-table ring-table">
         <thead>
             <tr>
@@ -214,9 +216,9 @@
             <tr>
                 <td>{{ row.label }}</td>
                 <td><code>{{ row.hex_contents }}</code></td>
-                <td>{{ row.date }}</td>
-                <td>{{ row.time }}</td>
-                <td>{{ row.gmt }}</td>
+                <td><code>{{ row.date }}</code></td>
+                <td><code>{{ row.time }}</code></td>
+                <td><code>{{ row.gmt }}</code></td>
             </tr>
             {% endfor %}
         </tbody>
@@ -343,14 +345,14 @@
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
         <thead>
-            <tr><th>#</th><th>Start</th><th>End</th></tr>
+            <tr><th class="col-num">#</th><th class="col-num">Start</th><th class="col-num">End</th></tr>
         </thead>
         <tbody>
             {% for r in sector_ranges %}
             <tr>
-                <td>{{ r.num }}</td>
-                <td>{{ r.start }}</td>
-                <td>{{ r.end }}</td>
+                <td class="col-num"><code>{{ r.num }}</code></td>
+                <td class="col-num"><code>{{ r.start }}</code></td>
+                <td class="col-num"><code>{{ r.end }}</code></td>
             </tr>
             {% endfor %}
         </tbody>
@@ -363,7 +365,7 @@
 <script>
 (function() {
     function scaleBottomTables() {
-        document.querySelectorAll('.disc-view .detail-section .table-scroll').forEach(function(wrapper) {
+        document.querySelectorAll('.disc-view .detail-section .table-scroll:not(.scroll-only)').forEach(function(wrapper) {
             var table = wrapper.querySelector('table');
             if (!table) return;
             table.style.transform = '';
@@ -378,6 +380,21 @@
                 table.style.transformOrigin = 'top left';
                 wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
                 wrapper.style.overflow = 'hidden';
+            }
+        });
+        document.querySelectorAll('.dat-filename-scaler').forEach(function(wrapper) {
+            var p = wrapper.querySelector('.dat-filename');
+            if (!p) return;
+            p.style.transform = '';
+            p.style.transformOrigin = '';
+            wrapper.style.height = '';
+            var containerWidth = wrapper.clientWidth;
+            var contentWidth = p.scrollWidth;
+            if (contentWidth > containerWidth && containerWidth > 0) {
+                var scale = containerWidth / contentWidth;
+                p.style.transform = 'scale(' + scale + ')';
+                p.style.transformOrigin = 'top left';
+                wrapper.style.height = Math.ceil(p.offsetHeight * scale) + 'px';
             }
         });
     }

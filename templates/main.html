@@ -57,13 +57,16 @@
         wrapper.style.height = '';
         var containerWidth = wrapper.clientWidth;
         var tableWidth = table.scrollWidth;
+        var scale = 1;
         if (tableWidth > containerWidth && containerWidth > 0) {
-            var scale = containerWidth / tableWidth;
+            scale = containerWidth / tableWidth;
             table.style.transform = 'scale(' + scale + ')';
             table.style.transformOrigin = 'top left';
             wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
             wrapper.style.overflow = 'hidden';
         }
+        var newsP = document.querySelector('.home-news p');
+        if (newsP) newsP.style.fontSize = scale < 1 ? (0.85 * scale) + 'rem' : '';
     }
     document.addEventListener('DOMContentLoaded', scaleRecentDumps);
     window.addEventListener('resize', scaleRecentDumps);
