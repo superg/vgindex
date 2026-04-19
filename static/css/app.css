@@ -146,7 +146,7 @@ main > h3 {
     color: inherit;
 }
 [data-theme="dark"] .disc-table .title-col a {
-    color: #EFFFFF;
+    color: #E8FCFF;
 }
 .disc-table .title-col .foreign-title {
     margin-top: 0.08rem;
@@ -837,7 +837,7 @@ header .site-nav-links > li {
     color: var(--pico-primary);
 }
 [data-theme="dark"] .submenu-label {
-    color: #EFFFFF;
+    color: #E8FCFF;
 }
 .has-submenu {
     position: relative;
@@ -1010,7 +1010,7 @@ nav .quick-search input[type="text"] {
 }
 [data-theme="dark"] .dark-mode-toggle-thumb {
     margin-top: 14px;
-    background: #EFFFFF;
+    background: #E8FCFF;
 }
 
 /* Responsive nav adjustments */
@@ -1395,10 +1395,10 @@ tr.field-changed > td { background-color: rgba(255, 235, 59, 0.18); }
     color: #ffffff;
 }
 [data-theme="dark"] a {
-    color: #EFFFFF;
+    color: #E8FCFF;
 }
 [data-theme="dark"] a:hover {
-    color: #EFFFFF;
+    color: #E8FCFF;
 }
 /* Headers and More... match h3 heading color in dark mode */
 [data-theme="dark"] .recent-dumps th {
