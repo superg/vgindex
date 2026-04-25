@@ -388,7 +388,7 @@ async fn disc_view(
                 detail.disc.disc_title.as_deref(),
                 detail.disc.filename_suffix.as_deref(),
             ),
-            system_name: detail.system.name.clone(),
+            system_name: detail.system.system_name(),
             system_code: detail.system.code.clone(),
             media_type: detail.disc.media_type.to_string(),
             category: detail.disc.category.to_string(),

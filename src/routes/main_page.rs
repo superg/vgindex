@@ -32,12 +32,13 @@ struct HomeRegionFlag {
 
 async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
     let rows: Vec<RecentDiscRow> = sqlx::query_as(
-        "SELECT d.id, d.title, s.code AS system, MAX(ds.created_at) AS created_at
+        "SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
+                MAX(ds.created_at) AS created_at
          FROM disc_submissions ds
          JOIN discs d ON d.id = ds.target_disc_id AND d.enabled
          JOIN systems s ON s.code = d.system_code
          WHERE ds.target_disc_id IS NOT NULL
-         GROUP BY d.id, d.title, s.code
+         GROUP BY d.id, d.title, s.code, s.short_name
          ORDER BY created_at DESC
          LIMIT 40"
     )
@@ -60,7 +61,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
         recent_discs.push(RecentDisc {
             id: r.id,
             title: r.title,
-            system: crate::routes::system_display_name(&r.system),
+            system: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             region_flags: region_rows.into_iter().map(|rr| HomeRegionFlag {
                 code: rr.code.to_lowercase(),
                 name: rr.name,
@@ -83,7 +84,8 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
 struct RecentDiscRow {
     id: i32,
     title: String,
-    system: String,
+    system_code: String,
+    system_short_name: String,
     created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 

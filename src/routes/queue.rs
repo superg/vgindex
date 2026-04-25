@@ -93,6 +93,7 @@ impl SiteConfig for QueueTemplate {}
 #[derive(sqlx::FromRow)]
 struct SysRow {
     code: String,
+    manufacturer: String,
     name: String,
 }
 
@@ -149,17 +150,22 @@ async fn queue_list(
 
     let total_pages = (total_count + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    let sys_rows: Vec<SysRow> =
-        sqlx::query_as("SELECT code, name FROM systems ORDER BY LOWER(name)")
-            .fetch_all(&state.pool)
-            .await
-            .unwrap_or_default();
+    let sys_rows: Vec<SysRow> = sqlx::query_as(
+        "SELECT code, manufacturer, name FROM systems
+         ORDER BY LOWER(manufacturer), manufacturer, LOWER(name), name",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
 
-    let systems: Vec<SystemOption> = sys_rows.into_iter().map(|s| SystemOption {
-        selected: s.code == filter_system,
-        code: s.code,
-        name: s.name,
-    }).collect();
+    let systems: Vec<SystemOption> = sys_rows
+        .into_iter()
+        .map(|s| SystemOption {
+            selected: s.code == filter_system,
+            name: crate::db::models::build_system_name(&s.manufacturer, &s.name),
+            code: s.code,
+        })
+        .collect();
 
     let submitters: Vec<SubmitterOption> = if is_mod {
         #[derive(sqlx::FromRow)]
@@ -1053,11 +1059,18 @@ async fn review_submit(
 impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
     fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
         use sqlx::Row;
+        let system_code: String = row.try_get("system_code")?;
+        let system_short_name: Option<String> = row.try_get("system_short_name").ok();
+        let system_display = crate::db::models::short_system_display(
+            system_short_name.as_deref().unwrap_or(""),
+            &system_code,
+        );
         Ok(Self {
             id: row.try_get("id")?,
             submission_type: row.try_get("submission_type")?,
             title: row.try_get("title")?,
-            system_code: row.try_get("system_code")?,
+            system_code,
+            system_display,
             submitter: row.try_get("submitter")?,
             submitter_id: row.try_get("submitter_id")?,
             reviewer: row.try_get("reviewer")?,

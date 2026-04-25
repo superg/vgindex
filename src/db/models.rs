@@ -264,11 +264,19 @@ impl std::fmt::Display for SubmissionStatus {
 
 // --- Row structs ---
 
-/// Platform row from `systems` (`code` is the PK, VARCHAR(16); `name` matches Redump's system name).
+/// Platform row from `systems` (`code` is the PK, VARCHAR(16)).
+///
+/// Display naming is derived from `type` / `manufacturer` / `name` via
+/// [`build_system_name`] and [`build_dat_system_name`]; do not concatenate
+/// these fields by hand at call sites.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct System {
     pub code: String,
+    #[sqlx(rename = "type")]
+    pub system_type: String,
+    pub manufacturer: String,
     pub name: String,
+    pub short_name: String,
     pub media_types: Vec<String>,
     pub has_exe_date: bool,
     pub has_sbi: bool,
@@ -545,6 +553,63 @@ pub fn sanitize_filename(s: &str) -> String {
         result = result.replace(from, to);
     }
     result
+}
+
+/// Join non-empty parts with `separator`, dropping empties so we never end up
+/// with leading/trailing/duplicated separators.
+fn join_non_empty(parts: &[&str], separator: &str) -> String {
+    parts
+        .iter()
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
+/// Canonical user-facing system name: `"{manufacturer} {name}"`, with empty
+/// parts omitted (no leading or duplicate spaces).
+pub fn build_system_name(manufacturer: &str, name: &str) -> String {
+    join_non_empty(&[manufacturer, name], " ")
+}
+
+/// Canonical DAT/archive system name: `"{type} - {manufacturer} - {name}"`,
+/// with empty parts (and their dashes) omitted, then run through the shared
+/// filename sanitizer so it is safe to embed in zip/dat filenames.
+pub fn build_dat_system_name(system_type: &str, manufacturer: &str, name: &str) -> String {
+    let joined = join_non_empty(&[system_type, manufacturer, name], " - ");
+    sanitize_filename(&joined)
+}
+
+impl System {
+    /// Full human-readable system name (manufacturer + product name).
+    pub fn system_name(&self) -> String {
+        build_system_name(&self.manufacturer, &self.name)
+    }
+
+    /// Filename-safe system name used for DAT/archive zips and DAT XML.
+    pub fn dat_system_name(&self) -> String {
+        build_dat_system_name(&self.system_type, &self.manufacturer, &self.name)
+    }
+
+    /// Compact UI label: `short_name` if set, otherwise the system code.
+    pub fn short_display(&self) -> String {
+        if self.short_name.is_empty() {
+            self.code.clone()
+        } else {
+            self.short_name.clone()
+        }
+    }
+}
+
+/// Compact UI label given a system's `short_name` and `code` columns.
+/// Mirrors [`System::short_display`] for callers that only have the two
+/// strings (e.g. raw query rows).
+pub fn short_system_display(short_name: &str, code: &str) -> String {
+    if short_name.is_empty() {
+        code.to_string()
+    } else {
+        short_name.to_string()
+    }
 }
 
 pub fn build_rom_base_name(
@@ -861,6 +926,7 @@ pub struct SubmissionListRow {
     pub submission_type: SubmissionType,
     pub title: String,
     pub system_code: String,
+    pub system_display: String,
     pub submitter: String,
     pub submitter_id: i32,
     pub reviewer: Option<String>,
@@ -945,5 +1011,51 @@ FILE \"Track 2.bin\" BINARY\n\
         assert!(!out.contains("LEAD-IN"));
         assert!(!out.to_uppercase().contains("PREGAP"));
         assert!(out.contains("FILE \"Awesome Game.bin\" BINARY"));
+    }
+
+    #[test]
+    fn system_name_drops_empty_parts() {
+        assert_eq!(build_system_name("Sony", "PlayStation"), "Sony PlayStation");
+        assert_eq!(build_system_name("", "Audio CD"), "Audio CD");
+        assert_eq!(build_system_name("Sony", ""), "Sony");
+        assert_eq!(build_system_name("", ""), "");
+        assert_eq!(build_system_name("  Sony  ", "  PlayStation  "), "Sony PlayStation");
+    }
+
+    #[test]
+    fn dat_system_name_drops_empty_parts_and_sanitizes() {
+        assert_eq!(
+            build_dat_system_name("Arcade", "Sega", "Naomi"),
+            "Arcade - Sega - Naomi"
+        );
+        assert_eq!(
+            build_dat_system_name("", "Sony", "PlayStation"),
+            "Sony - PlayStation"
+        );
+        assert_eq!(
+            build_dat_system_name("Arcade", "", "Lindbergh"),
+            "Arcade - Lindbergh"
+        );
+        assert_eq!(build_dat_system_name("", "", "Audio CD"), "Audio CD");
+        assert_eq!(build_dat_system_name("", "", ""), "");
+    }
+
+    #[test]
+    fn dat_system_name_colon_sanitization() {
+        assert_eq!(
+            build_dat_system_name("", "", "Foo: Bar"),
+            "Foo - Bar",
+            "': ' must be replaced with ' - ' before ':' is mapped to '-'"
+        );
+        assert_eq!(
+            build_dat_system_name("", "", "Foo:Bar"),
+            "Foo-Bar"
+        );
+    }
+
+    #[test]
+    fn short_system_display_falls_back_to_code() {
+        assert_eq!(short_system_display("Wii", "WII"), "Wii");
+        assert_eq!(short_system_display("", "PSX"), "PSX");
     }
 }
