@@ -189,6 +189,7 @@ LANG2_SORT_ORDER = {
 MEDIA_CODE_TO_ROM_EXT = {"cd": "bin", "gdrom": "bin", "test4l": "bin"}
 
 _FILENAME_REPLACEMENTS = [
+    # Order matters: ": " must come before ":" so " - " replacement wins.
     ("Böse", "Boese"),
     (": ", " - "),
     ('"', ""),
@@ -216,18 +217,70 @@ _FILENAME_REPLACEMENTS = [
 # ---------------------------------------------------------------------------
 
 def sanitize_filename(s):
-    """Replace filesystem-unsafe and special characters in filenames."""
+    """Replace filesystem-unsafe and special characters in filenames.
+
+    Mirrors `crate::db::models::sanitize_filename` in the Rust app so that
+    importer-side filenames stay byte-for-byte identical to the ones produced
+    at runtime.
+    """
     for old, new in _FILENAME_REPLACEMENTS:
         s = s.replace(old, new)
     return s
 
 
+def _join_non_empty(parts, separator):
+    """Join `parts` with `separator`, dropping empty/whitespace-only entries.
+
+    Matches `join_non_empty` in `src/db/models.rs`.
+    """
+    return separator.join(p.strip() for p in parts if p and p.strip())
+
+
+def build_system_name(manufacturer, name):
+    """`{manufacturer} {name}` with empty parts omitted.
+
+    Matches `build_system_name` in `src/db/models.rs`.
+    """
+    return _join_non_empty([manufacturer, name], " ")
+
+
+def build_dat_system_name(system_type, manufacturer, name):
+    """`{type} - {manufacturer} - {name}` for DAT/archive filenames.
+
+    Matches `build_dat_system_name` in `src/db/models.rs`: empty parts (and
+    their dashes) are omitted, then the result is run through
+    `sanitize_filename` so it is safe to embed in zip/dat filenames.
+    """
+    joined = _join_non_empty([system_type, manufacturer, name], " - ")
+    return sanitize_filename(joined)
+
+
+# Lightweight self-checks (no formal test harness in this script). These run
+# on import so any regression in the naming/sanitization rules is loud.
+assert build_system_name("Sony", "PlayStation") == "Sony PlayStation"
+assert build_system_name("", "Audio CD") == "Audio CD"
+assert build_system_name("Sony", "") == "Sony"
+assert build_system_name("", "") == ""
+assert build_dat_system_name("Arcade", "Sega", "Naomi") == "Arcade - Sega - Naomi"
+assert build_dat_system_name("", "Sony", "PlayStation") == "Sony - PlayStation"
+assert build_dat_system_name("Arcade", "", "Lindbergh") == "Arcade - Lindbergh"
+assert build_dat_system_name("", "", "Audio CD") == "Audio CD"
+assert build_dat_system_name("", "", "Foo: Bar") == "Foo - Bar"
+assert build_dat_system_name("", "", "Foo:Bar") == "Foo-Bar"
+
+
 def build_rom_base_name(title, region_names, lang2_codes, disc_number, disc_label, filename_suffix):
-    """Build the base ROM name (game name) without track suffix or extension."""
+    """Build the base ROM name (game name) without track suffix or extension.
+
+    Mirrors `crate::db::models::build_rom_base_name` exactly. Note the
+    asymmetric delimiters (intentional, matches Redump conventions):
+      * regions use ", " (comma + space)
+      * languages use "," (comma only)
+    """
     name = title
     sorted_regions = sorted(region_names, key=lambda r: REGION_SORT_ORDER.get(r, 9999))
     if sorted_regions:
-        name += " ({})".format(",".join(sorted_regions))
+        name += " ({})".format(", ".join(sorted_regions))
     sorted_langs = sorted(lang2_codes, key=lambda c: LANG2_SORT_ORDER.get(c, 9999))
     if len(sorted_langs) > 1:
         capitalized = [c[0].upper() + c[1:] for c in sorted_langs]
@@ -239,6 +292,18 @@ def build_rom_base_name(title, region_names, lang2_codes, disc_number, disc_labe
     if filename_suffix:
         name += " ({})".format(filename_suffix)
     return sanitize_filename(name)
+
+
+# Parity self-checks for the ROM-name delimiter rules. These guard the exact
+# Rust/Python behavior that drove a previous bug where regions were joined
+# with "," instead of ", " in stored cue sheets.
+assert build_rom_base_name("Game", ["USA"], [], None, None, None) == "Game (USA)"
+assert build_rom_base_name("Game", ["USA", "Europe"], [], None, None, None) \
+    == "Game (USA, Europe)"
+assert build_rom_base_name("Game", [], ["en", "fr"], None, None, None) \
+    == "Game (En,Fr)"
+assert build_rom_base_name("Game", ["USA", "Europe"], ["en", "fr"], None, None, None) \
+    == "Game (USA, Europe) (En,Fr)"
 
 
 def build_rom_name(base_name, track_number, total_tracks, extension):
@@ -829,7 +894,10 @@ def _get_status_changes(fields_list):
 
 SYNTHETIC_DISC_ID = 1
 SYNTHETIC_SYSTEM_CODE = "MAXTEST"
+SYNTHETIC_SYSTEM_TYPE = ""
+SYNTHETIC_SYSTEM_MANUFACTURER = ""
 SYNTHETIC_SYSTEM_NAME = "Max Complexity Test System"
+SYNTHETIC_SYSTEM_SHORT_NAME = ""
 SYNTHETIC_MEDIA_CODE = "test4l"
 SYNTHETIC_MEDIA_NAME = "Max Test (4-layer)"
 SYNTHETIC_MEDIA_LAYERS = 4
@@ -1570,7 +1638,7 @@ def _write_synthetic_prereqs(out):
     )
     out.write(
         f"INSERT INTO systems\n"
-        f"    (code, name, media_types,\n"
+        f"    (code, type, manufacturer, name, short_name, media_types,\n"
         f"     has_title_foreign, has_disc_title, has_disc_number,\n"
         f"     has_serial, has_version, has_edition, has_barcode,\n"
         f"     has_exe_date, has_edc,\n"
@@ -1578,7 +1646,11 @@ def _write_synthetic_prereqs(out):
         f"     has_protection, has_sector_ranges, has_sbi,\n"
         f"     has_sample_start, has_offset_extra)\n"
         f"VALUES\n"
-        f"    ({sql_str(SYNTHETIC_SYSTEM_CODE)}, {sql_str(SYNTHETIC_SYSTEM_NAME)},\n"
+        f"    ({sql_str(SYNTHETIC_SYSTEM_CODE)},\n"
+        f"     {sql_str(SYNTHETIC_SYSTEM_TYPE)},\n"
+        f"     {sql_str(SYNTHETIC_SYSTEM_MANUFACTURER)},\n"
+        f"     {sql_str(SYNTHETIC_SYSTEM_NAME)},\n"
+        f"     {sql_str(SYNTHETIC_SYSTEM_SHORT_NAME)},\n"
         f"     ARRAY[{sql_str(SYNTHETIC_MEDIA_CODE)}]::TEXT[],\n"
         f"     TRUE, TRUE, TRUE,\n"
         f"     TRUE, TRUE, TRUE, TRUE,\n"
@@ -1587,7 +1659,9 @@ def _write_synthetic_prereqs(out):
         f"     TRUE, TRUE, TRUE,\n"
         f"     TRUE, TRUE)\n"
         f"ON CONFLICT (code) DO UPDATE SET\n"
-        f"    name = EXCLUDED.name, media_types = EXCLUDED.media_types,\n"
+        f"    type = EXCLUDED.type, manufacturer = EXCLUDED.manufacturer,\n"
+        f"    name = EXCLUDED.name, short_name = EXCLUDED.short_name,\n"
+        f"    media_types = EXCLUDED.media_types,\n"
         f"    has_title_foreign = TRUE, has_disc_title = TRUE, has_disc_number = TRUE,\n"
         f"    has_serial = TRUE, has_version = TRUE, has_edition = TRUE, has_barcode = TRUE,\n"
         f"    has_exe_date = TRUE, has_edc = TRUE,\n"

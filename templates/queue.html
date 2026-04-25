@@ -85,7 +85,7 @@
             <tr>
                 <td>{{ entry.created_at.format("%Y-%m-%d %H:%M") }}</td>
                 <td><a href="/queue/{{ entry.id }}/">{{ entry.title }}</a></td>
-                <td>{{ entry.system_code }}</td>
+                <td>{{ entry.system_display }}</td>
                 <td><a href="/discs/?dumper={{ entry.submitter_id }}">{{ entry.submitter }}</a></td>
                 <td>{% match entry.reviewer_id %}{% when Some with (rid) %}<a href="/discs/?dumper={{ rid }}">{{ entry.reviewer.as_deref().unwrap_or("") }}</a>{% when None %}{% endmatch %}</td>
                 <td>{{ entry.submission_type }}</td>

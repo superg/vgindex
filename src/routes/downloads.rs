@@ -42,11 +42,11 @@ async fn downloads_page(
     user: CurrentUser,
 ) -> Html<String> {
     let rows: Vec<SystemDownloadRow> = sqlx::query_as(
-        "SELECT s.code, s.name, s.has_sbi,
+        "SELECT s.code, s.manufacturer, s.name, s.has_sbi,
                 EXISTS(SELECT 1 FROM media_types mt
                        WHERE mt.code = ANY(s.media_types) AND mt.rom_extension = 'bin') AS has_cue
          FROM systems s
-         ORDER BY LOWER(s.name), s.name",
+         ORDER BY LOWER(s.manufacturer), s.manufacturer, LOWER(s.name), s.name",
     )
     .fetch_all(&state.pool)
     .await
@@ -55,8 +55,8 @@ async fn downloads_page(
     let systems = rows
         .into_iter()
         .map(|r| SystemDownload {
+            name: crate::db::models::build_system_name(&r.manufacturer, &r.name),
             code: r.code,
-            name: r.name,
             has_dat: true,
             has_cue: r.has_cue,
             has_sbi: r.has_sbi,
@@ -76,6 +76,7 @@ async fn downloads_page(
 #[derive(sqlx::FromRow)]
 struct SystemDownloadRow {
     code: String,
+    manufacturer: String,
     name: String,
     has_sbi: bool,
     has_cue: bool,

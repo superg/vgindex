@@ -27,7 +27,10 @@ CREATE TABLE languages (
 
 CREATE TABLE systems (
     code VARCHAR(16) PRIMARY KEY,
+    type VARCHAR(8) NOT NULL,
+    manufacturer VARCHAR(32) NOT NULL,
     name VARCHAR(64) NOT NULL,
+    short_name VARCHAR(32) NOT NULL DEFAULT '',
     media_types TEXT[] NOT NULL DEFAULT '{}',
 
     -- optional fields

@@ -204,7 +204,8 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
 
     let ts = timestamp_now();
     let disc_count = discs.len();
-    let description = format!("{} - Discs ({}) ({})", sys.name, disc_count, ts);
+    let dat_name = sys.dat_system_name();
+    let description = format!("{} - Datfile ({}) ({})", dat_name, disc_count, ts);
 
     let mut xml = format!(
         r#"<?xml version="1.0"?>
@@ -220,12 +221,13 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
 		<url>https://vgindex.org/</url>
 	</header>
 "#,
-        name = html_escape(&sys.name),
+        name = html_escape(&dat_name),
         desc = html_escape(&description),
         ts = html_escape(&ts),
     );
 
     struct GameEntry {
+        id: i32,
         name: String,
         category: String,
         roms: Vec<RomEntry>,
@@ -284,6 +286,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
         roms.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
         games.push(GameEntry {
+            id: disc.id,
             name: game_name,
             category: disc.category_name.clone(),
             roms,
@@ -293,8 +296,9 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
 
     for game in &games {
         xml.push_str(&format!(
-            "\t<game name=\"{name}\">\n\t\t<category>{cat}</category>\n\t\t<description>{name}</description>\n",
+            "\t<game name=\"{name}\" id=\"{id}\">\n\t\t<category>{cat}</category>\n\t\t<description>{name}</description>\n",
             name = html_escape(&game.name),
+            id = game.id,
             cat = html_escape(&game.category),
         ));
 
@@ -328,7 +332,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
             .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    let zip_filename = format!("{} - Datfile ({}) ({}).zip", sys.name, disc_count, ts);
+    let zip_filename = format!("{}.zip", description);
     Ok(ArchiveResult {
         data: buf,
         filename: zip_filename,
@@ -402,7 +406,12 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Arc
             .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    let zip_filename = format!("{} - Cuesheets ({}) ({}).zip", sys.name, cue_count, ts);
+    let zip_filename = format!(
+        "{} - Cuesheets ({}) ({}).zip",
+        sys.dat_system_name(),
+        cue_count,
+        ts
+    );
     Ok(ArchiveResult {
         data: buf,
         filename: zip_filename,
@@ -479,7 +488,9 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveR
 
     let zip_filename = format!(
         "{} - SBI Subchannels ({}) ({}).zip",
-        sys.name, sbi_count, ts
+        sys.dat_system_name(),
+        sbi_count,
+        ts
     );
     Ok(ArchiveResult {
         data: buf,

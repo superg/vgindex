@@ -151,17 +151,22 @@ async fn discs_page(
         String::new()
     };
 
-    let sys_rows: Vec<SysRow> =
-        sqlx::query_as("SELECT code, name FROM systems ORDER BY LOWER(name)")
-            .fetch_all(&state.pool)
-            .await
-            .unwrap_or_default();
+    let sys_rows: Vec<SystemDropdownRow> = sqlx::query_as(
+        "SELECT code, manufacturer, name FROM systems
+         ORDER BY LOWER(manufacturer), manufacturer, LOWER(name), name",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
 
-    let systems: Vec<SystemOption> = sys_rows.into_iter().map(|s| SystemOption {
-        selected: s.code == filter_system,
-        code: s.code,
-        name: s.name,
-    }).collect();
+    let systems: Vec<SystemOption> = sys_rows
+        .into_iter()
+        .map(|s| SystemOption {
+            selected: s.code == filter_system,
+            name: crate::db::models::build_system_name(&s.manufacturer, &s.name),
+            code: s.code,
+        })
+        .collect();
 
     let region_rows: Vec<SysRow> =
         sqlx::query_as("SELECT code, name FROM regions ORDER BY LOWER(name)")
@@ -267,7 +272,7 @@ async fn discs_page(
     let sort_col = match sort_column.as_str() {
         "region"   => "(SELECT MIN(r.sort_order) FROM disc_regions dr JOIN regions r ON r.code = dr.region_code WHERE dr.disc_id = d.id)",
         "title"    => "LOWER(d.title)",
-        "system"   => "LOWER(s.code)",
+        "system"   => "LOWER(s.manufacturer), s.manufacturer, LOWER(s.name), s.name",
         "version"  => "LOWER(d.version)",
         "edition"  => "LOWER(array_to_string(d.edition, ', '))",
         "language" => "(SELECT MIN(l.sort_order) FROM disc_languages dl JOIN languages l ON l.code = dl.language_code WHERE dl.disc_id = d.id)",
@@ -289,6 +294,7 @@ async fn discs_page(
         "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
                 d.title_foreign,
                 s.code AS system_code,
+                s.short_name AS system_short_name,
                 array_to_string(d.serial, ', ') AS serial,
                 d.version,
                 array_to_string(d.edition, ', ') AS edition,
@@ -373,7 +379,7 @@ async fn discs_page(
                 r.filename_suffix.as_deref(),
             ),
             title_foreign: r.title_foreign.unwrap_or_default(),
-            system_display: crate::routes::system_display_name(&r.system_code),
+            system_display: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             system_code: r.system_code,
             dumped_by_me: r.dumped_by_me,
             edition_display: r.edition.unwrap_or_default(),
@@ -455,6 +461,7 @@ struct RawDiscRow {
     filename_suffix: Option<String>,
     title_foreign: Option<String>,
     system_code: String,
+    system_short_name: String,
     serial: Option<String>,
     version: Option<String>,
     edition: Option<String>,
@@ -462,6 +469,13 @@ struct RawDiscRow {
     questionable: bool,
     dumper_count: i64,
     dumped_by_me: bool,
+}
+
+#[derive(sqlx::FromRow)]
+struct SystemDropdownRow {
+    code: String,
+    manufacturer: String,
+    name: String,
 }
 
 #[derive(sqlx::FromRow)]

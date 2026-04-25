@@ -335,7 +335,7 @@ pub(crate) fn build_system_options(all_systems: &[System], selected: &str) -> Ve
         .iter()
         .map(|s| SystemOption {
             code: s.code.clone(),
-            name: s.name.clone(),
+            name: s.system_name(),
             selected: s.code == selected,
         })
         .collect();

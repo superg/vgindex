@@ -705,7 +705,9 @@ pub async fn list_submissions(
     let sort_col = match sort_column {
         "date"      => "ds.created_at",
         "title"     => "LOWER(COALESCE(d.title, ds.changes->'title'->>'new', 'Untitled'))",
-        "system"    => "LOWER(COALESCE(d.system_code, ds.changes->'system_code'->>'new', ''))",
+        "system"    => "LOWER(COALESCE(s.manufacturer, '')), COALESCE(s.manufacturer, ''), \
+                        LOWER(COALESCE(s.name, COALESCE(d.system_code, ds.changes->'system_code'->>'new', ''))), \
+                        COALESCE(s.name, COALESCE(d.system_code, ds.changes->'system_code'->>'new', ''))",
         "submitter" => "LOWER(u.username)",
         "reviewer"  => "LOWER(COALESCE(ur.username, ''))",
         "type"      => "ds.submission_type",
@@ -718,6 +720,7 @@ pub async fn list_submissions(
         "SELECT ds.id, ds.submission_type,
                 COALESCE(d.title, ds.changes->'title'->>'new', 'Untitled') AS title,
                 COALESCE(d.system_code, ds.changes->'system_code'->>'new', '') AS system_code,
+                COALESCE(s.short_name, '') AS system_short_name,
                 u.username AS submitter,
                 ds.submitter_id,
                 ur.username AS reviewer,
@@ -729,6 +732,8 @@ pub async fn list_submissions(
          JOIN users u ON u.id = ds.submitter_id
          LEFT JOIN users ur ON ur.id = ds.reviewer_id
          LEFT JOIN discs d ON d.id = ds.target_disc_id
+         LEFT JOIN systems s
+             ON s.code = COALESCE(d.system_code, ds.changes->'system_code'->>'new')
          WHERE {}
          ORDER BY {sort_col} {sort_dir}
          LIMIT {page_size} OFFSET {offset}",
