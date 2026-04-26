@@ -18,6 +18,7 @@ pub fn routes() -> Router<AppState> {
         .route("/downloads/", get(downloads_page))
         .route("/datfile/{system}", get(download_dat))
         .route("/cues/{system}", get(download_cue))
+        .route("/keys/{system}", get(download_key))
         .route("/sbi/{system}", get(download_sbi))
 }
 
@@ -34,6 +35,7 @@ struct SystemDownload {
     name: String,
     has_dat: bool,
     has_cue: bool,
+    has_key: bool,
     has_sbi: bool,
 }
 
@@ -41,10 +43,20 @@ async fn downloads_page(
     State(state): State<AppState>,
     user: CurrentUser,
 ) -> Html<String> {
+    let media_types: Vec<MediaTypeCdRow> = sqlx::query_as(
+        "SELECT code, rom_extension FROM media_types",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+    let cd_media_codes: std::collections::HashSet<String> = media_types
+        .into_iter()
+        .filter(|mt| crate::db::models::is_cd_rom_extension(&mt.rom_extension))
+        .map(|mt| mt.code)
+        .collect();
+
     let rows: Vec<SystemDownloadRow> = sqlx::query_as(
-        "SELECT s.code, s.manufacturer, s.name, s.has_sbi,
-                EXISTS(SELECT 1 FROM media_types mt
-                       WHERE mt.code = ANY(s.media_types) AND mt.rom_extension = 'bin') AS has_cue
+        "SELECT s.code, s.manufacturer, s.name, s.has_key, s.has_sbi, s.media_types
          FROM systems s
          ORDER BY LOWER(s.manufacturer), s.manufacturer, LOWER(s.name), s.name",
     )
@@ -58,7 +70,11 @@ async fn downloads_page(
             name: crate::db::models::build_system_name(&r.manufacturer, &r.name),
             code: r.code,
             has_dat: true,
-            has_cue: r.has_cue,
+            has_cue: r
+                .media_types
+                .iter()
+                .any(|code| cd_media_codes.contains(code)),
+            has_key: r.has_key,
             has_sbi: r.has_sbi,
         })
         .collect();
@@ -78,8 +94,15 @@ struct SystemDownloadRow {
     code: String,
     manufacturer: String,
     name: String,
+    has_key: bool,
     has_sbi: bool,
-    has_cue: bool,
+    media_types: Vec<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct MediaTypeCdRow {
+    code: String,
+    rom_extension: String,
 }
 
 async fn serve_archive(pool: &sqlx::PgPool, system: &str, archive_type: &str) -> Response {
@@ -111,6 +134,13 @@ async fn download_cue(
     Path(system): Path<String>,
 ) -> Response {
     serve_archive(&state.pool, &system, "cue").await
+}
+
+async fn download_key(
+    State(state): State<AppState>,
+    Path(system): Path<String>,
+) -> Response {
+    serve_archive(&state.pool, &system, "key").await
 }
 
 async fn download_sbi(

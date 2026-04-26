@@ -79,6 +79,12 @@ function systemHasOffsetExtra() {
     return systemHasFlag('has_offset_extra');
 }
 
+function mediaIsCd() {
+    var sel = document.getElementById('media-select');
+    if (!sel || typeof MEDIA_IS_CD === 'undefined') return false;
+    return !!MEDIA_IS_CD[sel.value];
+}
+
 function emptyLayer() {
     return { mastering_code: '', mastering_sid: '', toolstamps: '', mould_sids: '', additional_moulds: '' };
 }
@@ -121,14 +127,15 @@ function renderRingEntries() {
         while (ringEntries[i].layers.length < ml) ringEntries[i].layers.push(emptyLayer());
     }
 
-    var showSampleStart = systemHasFlag('has_sample_start');
-    var showOffsetExtra = systemHasOffsetExtra();
+    var showOffset = mediaIsCd();
+    var showSampleStart = showOffset && systemHasFlag('has_sample_start');
+    var showOffsetExtra = showOffset && systemHasOffsetExtra();
 
     // Build header
     var hdr = '<tr><th>#</th>';
     if (ml > 1) hdr += '<th></th>';
-    hdr += '<th>Mastering Code</th><th>Mastering SID</th><th>Toolstamp(s)</th><th>Mould SID(s)</th><th>Additional Mould(s)</th>';
-    hdr += '<th>Offset</th>';
+    hdr += '<th>Mastering Code</th><th>Mastering SID</th><th>Toolstamps</th><th>Mould SIDs</th><th>Additional Moulds</th>';
+    if (showOffset) hdr += '<th>Offset</th>';
     if (showOffsetExtra) hdr += '<th>Extra Offset</th>';
     if (showSampleStart) hdr += '<th>Sample Start</th>';
     hdr += '<th>Comment</th><th></th></tr>';
@@ -176,7 +183,7 @@ function renderRingEntries() {
 
             if (li === 0) {
                 var rs = ml > 1 ? ' rowspan="' + ml + '"' : '';
-                cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset', entryHighlight && entryHighlight.offset_value) + '" value="' + esc(entry.offset_value || '') + '"></td>';
+                if (showOffset) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset', entryHighlight && entryHighlight.offset_value) + '" value="' + esc(entry.offset_value || '') + '"></td>';
                 if (showOffsetExtra) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset-extra', entryHighlight && entryHighlight.offset_extra_value) + '" value="' + esc(entry.offset_extra_value || '') + '"></td>';
                 if (showSampleStart) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-sample-start', entryHighlight && entryHighlight.sample_start) + '" value="' + esc(entry.sample_start || '') + '"></td>';
                 cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-comment', entryHighlight && entryHighlight.comment) + '" value="' + esc(entry.comment || '') + '"></td>';
@@ -279,12 +286,10 @@ function applySystemFieldVisibility() {
 
 function applyMediaFieldVisibility() {
     var mediaSel = document.getElementById('media-select');
-    if (!mediaSel || typeof MEDIA_HAS_PIC === 'undefined' || typeof MEDIA_ROM_EXTENSIONS === 'undefined') return;
+    if (!mediaSel || typeof MEDIA_HAS_PIC === 'undefined' || typeof MEDIA_IS_CD === 'undefined') return;
     var code = mediaSel.value;
     var showPic = !!MEDIA_HAS_PIC[code];
-    var mediaExt = String(MEDIA_ROM_EXTENSIONS[code] || '').trim().toLowerCase();
-    // Hide by default when media mapping is missing; only show for known non-ISO media.
-    var showErrorCount = mediaExt !== '' && mediaExt !== 'iso';
+    var showErrorCount = !!MEDIA_IS_CD[code];
     document.querySelectorAll('[data-media-flag="has_pic"]').forEach(function (el) {
         var wasHidden = el.style.display === 'none';
         el.style.display = showPic ? '' : 'none';
@@ -319,9 +324,8 @@ function applyMediaFieldVisibility() {
 function applyCueRules() {
     var mediaSel = document.getElementById('media-select');
     var cueField = document.getElementById('cue-field');
-    if (!mediaSel || !cueField || typeof MEDIA_ROM_EXTENSIONS === 'undefined') return;
-    var ext = MEDIA_ROM_EXTENSIONS[mediaSel.value];
-    var isBin = ext === 'bin';
+    if (!mediaSel || !cueField || typeof MEDIA_IS_CD === 'undefined') return;
+    var isBin = !!MEDIA_IS_CD[mediaSel.value];
     var wasHidden = cueField.style.display === 'none';
     cueField.style.display = isBin ? '' : 'none';
     var ta = cueField.querySelector('textarea');

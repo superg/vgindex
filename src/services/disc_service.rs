@@ -64,6 +64,31 @@ fn parse_text_array(val: &serde_json::Value) -> Vec<String> {
     }
 }
 
+fn parse_hex_text_bytes(val: Option<&str>) -> AppResult<Option<Vec<u8>>> {
+    let Some(raw) = val else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(AppError::BadRequest("disc_key must contain only hexadecimal characters".into()));
+    }
+    if trimmed.len() % 2 != 0 {
+        return Err(AppError::BadRequest("disc_key must contain an even number of hexadecimal characters".into()));
+    }
+    let mut bytes = Vec::with_capacity(trimmed.len() / 2);
+    for pair in trimmed.as_bytes().chunks_exact(2) {
+        let token = std::str::from_utf8(pair)
+            .map_err(|_| AppError::BadRequest("disc_key contains invalid UTF-8".into()))?;
+        let byte = u8::from_str_radix(token, 16)
+            .map_err(|_| AppError::BadRequest("disc_key contains invalid hex bytes".into()))?;
+        bytes.push(byte);
+    }
+    Ok(Some(bytes))
+}
+
 fn parse_comma_separated(s: &str) -> Vec<String> {
     let mut out: Vec<String> = s.split(',')
         .map(|v| v.trim().to_string())
@@ -359,12 +384,8 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     let contents = data["contents"].as_str().map(normalize_newlines).filter(|s| !s.is_empty());
     let protection = data["protection"].as_str().map(normalize_newlines).filter(|s| !s.is_empty());
     let sbi = data["sbi"].as_str().map(normalize_newlines).filter(|s| !s.is_empty());
-    let keys = parse_text_array(&data["keys"]);
-    let keys_opt: Option<Vec<String>> = if keys.is_empty() {
-        None
-    } else {
-        Some(keys)
-    };
+    let disc_id_text = data["disc_id"].as_str().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let disc_key = parse_hex_text_bytes(data["disc_key"].as_str())?;
     let error_count = data["error_count"].as_i64().map(|v| v as i32);
     let exe_date = data["exe_date"].as_str().filter(|s| !s.is_empty());
     let edc = data["edc"].as_bool().unwrap_or(false);
@@ -402,10 +423,10 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
          error_count = $15, exe_date = $16, edc = $17,
          layerbreaks = $18,
          pvd = $19, pic = $20, bca = $21, header = $22,
-         protection = $23, sbi = $24, keys = $25,
-         cue = $26,
-         questionable = $27, enabled = $28
-         WHERE id = $29"
+         protection = $23, sbi = $24, disc_id = $25, disc_key = $26,
+         cue = $27,
+         questionable = $28, enabled = $29
+         WHERE id = $30"
     )
     .bind(title)               // $1
     .bind(system_code)         // $2
@@ -431,11 +452,12 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     .bind(&header)             // $22
     .bind(protection)          // $23
     .bind(sbi)                 // $24
-    .bind(&keys_opt)            // $25
-    .bind(cue)                 // $26
-    .bind(questionable)        // $27
-    .bind(enabled)             // $28
-    .bind(disc_id)             // $29
+    .bind(disc_id_text)        // $25
+    .bind(&disc_key)           // $26
+    .bind(cue)                 // $27
+    .bind(questionable)        // $28
+    .bind(enabled)             // $29
+    .bind(disc_id)             // $30
     .execute(pool)
     .await?;
 
@@ -944,7 +966,8 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "header": detail.disc.header.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
         "protection": detail.disc.protection,
         "sbi": detail.disc.sbi,
-        "keys": detail.disc.keys.clone().unwrap_or_default(),
+        "disc_id": detail.disc.disc_id,
+        "disc_key": detail.disc.disc_key.as_ref().map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()),
         "cuesheet": cue,
         "questionable": detail.disc.questionable,
         "enabled": detail.disc.enabled,

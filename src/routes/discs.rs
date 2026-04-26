@@ -293,6 +293,7 @@ async fn discs_page(
     let sql_select = format!(
         "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
                 d.title_foreign,
+                s.has_title_foreign, s.has_disc_number, s.has_disc_title, s.has_edition, s.has_serial,
                 s.code AS system_code,
                 s.short_name AS system_short_name,
                 array_to_string(d.serial, ', ') AS serial,
@@ -374,15 +375,23 @@ async fn discs_page(
             id: r.id,
             title: format_display_title(
                 &r.title,
-                r.disc_number.as_deref(),
-                r.disc_title.as_deref(),
+                if r.has_disc_number { r.disc_number.as_deref() } else { None },
+                if r.has_disc_title { r.disc_title.as_deref() } else { None },
                 r.filename_suffix.as_deref(),
             ),
-            title_foreign: r.title_foreign.unwrap_or_default(),
+            title_foreign: if r.has_title_foreign {
+                r.title_foreign.unwrap_or_default()
+            } else {
+                String::new()
+            },
             system_display: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             system_code: r.system_code,
             dumped_by_me: r.dumped_by_me,
-            edition_display: r.edition.unwrap_or_default(),
+            edition_display: if r.has_edition {
+                r.edition.unwrap_or_default()
+            } else {
+                String::new()
+            },
             status_emoji: if r.enabled {
                 DiscStatus::compute(r.questionable, r.dumper_count).emoji().to_string()
             } else {
@@ -401,7 +410,11 @@ async fn discs_page(
                 code: l.code.to_lowercase(),
                 name: l.name,
             }).collect(),
-            serial: r.serial.unwrap_or_default(),
+            serial: if r.has_serial {
+                r.serial.unwrap_or_default()
+            } else {
+                String::new()
+            },
         });
     }
 
@@ -460,6 +473,11 @@ struct RawDiscRow {
     disc_title: Option<String>,
     filename_suffix: Option<String>,
     title_foreign: Option<String>,
+    has_title_foreign: bool,
+    has_disc_number: bool,
+    has_disc_title: bool,
+    has_edition: bool,
+    has_serial: bool,
     system_code: String,
     system_short_name: String,
     serial: Option<String>,

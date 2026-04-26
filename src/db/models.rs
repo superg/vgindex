@@ -23,7 +23,7 @@ impl MediaType {
     }
 
     pub fn is_cd(&self) -> bool {
-        self.rom_extension == "bin"
+        is_cd_rom_extension(&self.rom_extension)
     }
 
     pub fn has_pic(&self) -> bool {
@@ -37,6 +37,10 @@ impl MediaType {
     pub fn max_layers(&self) -> u32 {
         self.layer_count as u32
     }
+}
+
+pub fn is_cd_rom_extension(rom_extension: &str) -> bool {
+    rom_extension.eq_ignore_ascii_case("bin")
 }
 
 impl std::fmt::Display for MediaType {
@@ -282,7 +286,8 @@ pub struct System {
     pub has_sbi: bool,
     pub has_pvd: bool,
     pub has_edc: bool,
-    pub has_keys: bool,
+    pub has_disc_id: bool,
+    pub has_key: bool,
     pub has_title_foreign: bool,
     pub has_disc_title: bool,
     pub has_disc_number: bool,
@@ -369,7 +374,8 @@ pub struct Disc {
     pub layerbreaks: Option<Vec<i32>>,
     pub protection: Option<String>,
     pub sbi: Option<String>,
-    pub keys: Option<Vec<String>>,
+    pub disc_id: Option<String>,
+    pub disc_key: Option<Vec<u8>>,
     pub cue: Option<String>,
     pub pvd: Option<Vec<u8>>,
     pub pic: Option<Vec<u8>>,

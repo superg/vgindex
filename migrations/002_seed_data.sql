@@ -288,7 +288,11 @@ SET has_edc = TRUE
 WHERE code IN ('PSX');
 
 UPDATE systems
-SET has_keys = TRUE
+SET has_disc_id = TRUE
+WHERE code IN ('PS3');
+
+UPDATE systems
+SET has_key = TRUE
 WHERE code IN ('PS3', 'WIIU');
 
 UPDATE systems
