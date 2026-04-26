@@ -18,7 +18,7 @@ use crate::AppState;
 use super::disc_edit::{
     self, build_category_options, build_check_options, build_flat_changes, build_new_disc_changes,
     build_sparse_edit_changes,
-    build_lang_check_options, build_media_has_pic_json, build_media_layers_json,
+    build_lang_check_options, build_media_has_pic_json, build_media_is_cd_json, build_media_layers_json,
     build_media_options, build_media_rom_extensions_json, build_system_options,
     build_systems_json, fetch_ref_data, max_layers_for_media, validate_form,
     DiscEditForm, DiscEditTemplate,
@@ -269,6 +269,7 @@ async fn submission_detail(
         build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+    let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
 
     let snapshot: serde_json::Value;
@@ -302,7 +303,7 @@ async fn submission_detail(
     let mut template = build_review_template(
         &user.username, &sub, &submitter_name, &reviewer_name,
         &snapshot, &ref_data, &systems_media_json, &systems_has_flags_json,
-        &media_layers_json, &media_rom_extensions_json, &media_has_pic_json,
+        &media_layers_json, &media_rom_extensions_json, &media_is_cd_json, &media_has_pic_json,
         &system_code, &media_type_code, max_layers, has_sys,
     );
 
@@ -325,6 +326,7 @@ fn build_review_template(
     systems_has_flags_json: &str,
     media_layers_json: &str,
     media_rom_extensions_json: &str,
+    media_is_cd_json: &str,
     media_has_pic_json: &str,
     system_code: &str,
     media_type_code: &str,
@@ -370,9 +372,8 @@ fn build_review_template(
 
     let edc_value = snapshot["edc"].as_bool().unwrap_or(false);
 
-    let keys = json_str_vec("keys");
-    let protection_key_disc_key = keys.first().cloned().unwrap_or_default();
-    let protection_key_disc_id = keys.get(1).cloned().unwrap_or_default();
+    let protection_key_disc_key = json_opt_str("disc_key");
+    let protection_key_disc_id = json_opt_str("disc_id");
 
     let questionable = snapshot["questionable"].as_bool().unwrap_or(false);
     let enabled = snapshot["enabled"].as_bool().unwrap_or(true);
@@ -421,6 +422,7 @@ fn build_review_template(
         systems_media_json: systems_media_json.to_string(),
         systems_has_flags_json: systems_has_flags_json.to_string(),
         media_rom_extensions_json: media_rom_extensions_json.to_string(),
+        media_is_cd_json: media_is_cd_json.to_string(),
 
         title: json_str("title"),
         show_title_foreign: has_sys(|s| s.has_title_foreign),
@@ -459,7 +461,7 @@ fn build_review_template(
             .all_media_types
             .iter()
             .find(|m| m.code == media_type_code)
-            .map_or(false, |m| m.rom_extension != "iso"),
+            .map_or(false, |m| is_cd_rom_extension(&m.rom_extension)),
         error_count,
         show_exe_date: has_sys(|s| s.has_exe_date),
         exe_date: json_opt_str("exe_date"),
@@ -479,7 +481,8 @@ fn build_review_template(
         show_header: has_sys(|s| s.has_header),
         header_hex: json_opt_str("header"),
 
-        show_keys: has_sys(|s| s.has_keys),
+        show_disc_id: has_sys(|s| s.has_disc_id),
+        show_key: has_sys(|s| s.has_key),
         show_protection: has_sys(|s| s.has_protection),
         protection: json_opt_str("protection"),
         show_sector_ranges: has_sys(|s| s.has_sector_ranges),
@@ -606,7 +609,7 @@ fn compute_field_highlights(
         "system_code", "media_type", "category", "title", "title_foreign",
         "disc_number", "disc_title", "filename_suffix", "version",
         "error_count", "exe_date", "edc", "comments", "contents",
-        "protection", "sector_ranges", "sbi", "pvd", "header", "bca",
+        "protection", "sector_ranges", "sbi", "disc_id", "disc_key", "pvd", "header", "bca",
         "pic", "cuesheet", "dat", "enabled", "questionable",
     ];
 
@@ -662,21 +665,6 @@ fn compute_field_highlights(
             changed_fields.push(format!("{}:removed", layerbreaks_field));
         } else {
             changed_fields.push(format!("{}:changed", layerbreaks_field));
-        }
-    }
-
-    let keys_field = "keys";
-    let db_keys = &db_snapshot[keys_field];
-    let ch_keys = &changes[keys_field];
-    if db_keys != ch_keys {
-        let db_keys_empty = db_keys.as_array().map_or(true, |a| a.iter().all(|v| is_empty_val(v)));
-        let ch_keys_empty = ch_keys.as_array().map_or(true, |a| a.iter().all(|v| is_empty_val(v)));
-        if db_keys_empty && !ch_keys_empty {
-            changed_fields.push(format!("{}:added", keys_field));
-        } else if !db_keys_empty && ch_keys_empty {
-            changed_fields.push(format!("{}:removed", keys_field));
-        } else {
-            changed_fields.push(format!("{}:changed", keys_field));
         }
     }
 
@@ -1012,6 +1000,7 @@ async fn review_submit(
             build_systems_json(&ref_data.all_systems);
         let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
         let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+        let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
         let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
         let snapshot = build_flat_changes(&form.disc, &ref_data.all_media_types);
         let system_code = form.disc.system_code.clone();
@@ -1023,7 +1012,7 @@ async fn review_submit(
         let mut template = build_review_template(
             &user.username, &sub, &submitter_name, "",
             &snapshot, &ref_data, &systems_media_json, &systems_has_flags_json,
-            &media_layers_json, &media_rom_extensions_json, &media_has_pic_json,
+            &media_layers_json, &media_rom_extensions_json, &media_is_cd_json, &media_has_pic_json,
             &system_code, &media_type_code, max_layers, has_sys,
         );
         template.validation_errors = errors;

@@ -711,6 +711,26 @@ details + p small {
     width: auto;
     white-space: nowrap;
 }
+.files-table th,
+.files-table td {
+    width: auto;
+    white-space: nowrap;
+}
+/* Keep ring rows aligned when # column is row-spanned */
+.disc-view .table-scroll-compact > table.ring-table {
+    table-layout: fixed;
+}
+.disc-view .table-scroll-compact > table.ring-table td:first-child,
+.disc-view .table-scroll-compact > table.ring-table th:first-child,
+.disc-view .table-scroll-compact > table.ring-table .ring-layer-col {
+    text-align: center;
+    width: 3ch;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+}
+.disc-view .table-scroll-compact > table.ring-table .ring-entry-col {
+    width: 3ch;
+}
 .ring-group-start > td {
     border-top: 1px solid #F5F9FC;
 }
@@ -722,14 +742,32 @@ details + p small {
 }
 .ring-table .entry-num {
     vertical-align: middle !important;
-    text-align: center;
     font-weight: 600;
+}
+.ring-table .ring-fixed-cell {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.72rem;
+}
+.ring-table .ring-fixed-cell * {
+    font-family: inherit;
+    font-size: inherit;
 }
 .ring-tab-marker {
     display: inline-block;
     width: 3ch;
     height: 1em;
     vertical-align: -0.1em;
+}
+
+.disc-view .tracks-table.striped tbody tr.tracks-session-row td {
+    text-align: left !important;
+    background: rgba(0, 0, 0, 0.06) !important;
+}
+[data-theme="dark"] .disc-view .tracks-table.striped tbody tr.tracks-session-row td {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+.tracks-table .tracks-total-row td {
+    border-top: var(--pico-border-width) solid var(--pico-form-element-border-color);
 }
 
 /* ===== Nav: two-row layout ===== */

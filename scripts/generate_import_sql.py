@@ -748,16 +748,27 @@ def build_protection(data):
     return ", ".join(parts) if parts else None
 
 
-def build_keys(data):
-    """Collect d_d1_key and d_d2_key into a text array."""
-    keys = []
+def build_disc_key_fields(data):
+    """Map d_d1_key -> disc_key bytes and d_d2_key -> disc_id text.
+
+    Important: mapping is by field name, not positional fallback.
+    If d_d1_key is missing/empty but d_d2_key exists, disc_key stays NULL and
+    disc_id is still populated from d_d2_key.
+    """
     d1 = data.get("d_d1_key", "")
     d2 = data.get("d_d2_key", "")
-    if d1:
-        keys.append(d1.strip().replace(" ", ""))
-    if d2:
-        keys.append(d2.strip().replace(" ", ""))
-    return keys if keys else None
+    d1_norm = d1.strip().replace(" ", "") if d1 else ""
+    d2_norm = d2.strip().replace(" ", "") if d2 else ""
+
+    disc_key_bytes = None
+    if d1_norm:
+        try:
+            disc_key_bytes = bytes.fromhex(d1_norm)
+        except ValueError:
+            print(f"[warn] disc key is not valid hex, disc_key=NULL: {d1_norm!r}", file=sys.stderr)
+
+    disc_id = d2_norm or None
+    return disc_key_bytes, disc_id
 
 # ---------------------------------------------------------------------------
 # Redump field name -> internal schema key mapping
@@ -1079,13 +1090,23 @@ class MaxStats:
                 self.max_sector_ranges_count = len(ranges)
                 self.sector_ranges_values = list(ranges)
 
-        keys = build_keys(data)
-        if keys:
-            if len(keys) > self.max_protection_keys_count:
-                self.max_protection_keys_count = len(keys)
-                self.protection_key_elements = list(keys)
-            for k in keys:
-                self.longest_protection_key = _keep_longest(self.longest_protection_key, k)
+        disc_key_bytes, disc_id = build_disc_key_fields(data)
+        if disc_key_bytes:
+            disc_key_hex = disc_key_bytes.hex()
+            if self.max_protection_keys_count < 1:
+                self.max_protection_keys_count = 1
+                self.protection_key_elements = [disc_key_hex]
+            self.longest_protection_key = _keep_longest(self.longest_protection_key, disc_key_hex)
+        if disc_id:
+            if self.max_protection_keys_count < 2:
+                self.max_protection_keys_count = 2
+                if self.protection_key_elements:
+                    self.protection_key_elements = [self.protection_key_elements[0], disc_id]
+                else:
+                    self.protection_key_elements = ["", disc_id]
+            elif len(self.protection_key_elements) > 1:
+                self.protection_key_elements[1] = disc_id
+            self.longest_protection_key = _keep_longest(self.longest_protection_key, disc_id)
 
         self.longest_cue = _keep_longest(self.longest_cue, data.get("d_cue"))
 
@@ -1572,7 +1593,7 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
             "filename_suffix, comments, contents, title_foreign, disc_title, "
             "disc_number, serial, version, edition, barcode, error_count, "
             "exe_date, edc, layerbreaks, pvd, pic, bca, header, protection, "
-            "sector_ranges, sbi, keys, cue, "
+            "sector_ranges, sbi, disc_id, disc_key, cue, "
             "questionable) OVERRIDING SYSTEM VALUE",
             disc_inserts,
         )
@@ -1642,7 +1663,7 @@ def _write_synthetic_prereqs(out):
         f"     has_title_foreign, has_disc_title, has_disc_number,\n"
         f"     has_serial, has_version, has_edition, has_barcode,\n"
         f"     has_exe_date, has_edc,\n"
-        f"     has_pvd, has_bca, has_header, has_keys,\n"
+        f"     has_pvd, has_bca, has_header, has_disc_id, has_key,\n"
         f"     has_protection, has_sector_ranges, has_sbi,\n"
         f"     has_sample_start, has_offset_extra)\n"
         f"VALUES\n"
@@ -1655,7 +1676,7 @@ def _write_synthetic_prereqs(out):
         f"     TRUE, TRUE, TRUE,\n"
         f"     TRUE, TRUE, TRUE, TRUE,\n"
         f"     TRUE, TRUE,\n"
-        f"     TRUE, TRUE, TRUE, TRUE,\n"
+        f"     TRUE, TRUE, TRUE, TRUE, TRUE,\n"
         f"     TRUE, TRUE, TRUE,\n"
         f"     TRUE, TRUE)\n"
         f"ON CONFLICT (code) DO UPDATE SET\n"
@@ -1665,7 +1686,7 @@ def _write_synthetic_prereqs(out):
         f"    has_title_foreign = TRUE, has_disc_title = TRUE, has_disc_number = TRUE,\n"
         f"    has_serial = TRUE, has_version = TRUE, has_edition = TRUE, has_barcode = TRUE,\n"
         f"    has_exe_date = TRUE, has_edc = TRUE,\n"
-        f"    has_pvd = TRUE, has_bca = TRUE, has_header = TRUE, has_keys = TRUE,\n"
+        f"    has_pvd = TRUE, has_bca = TRUE, has_header = TRUE, has_disc_id = TRUE, has_key = TRUE,\n"
         f"    has_protection = TRUE, has_sector_ranges = TRUE, has_sbi = TRUE,\n"
         f"    has_sample_start = TRUE, has_offset_extra = TRUE;\n\n"
     )
@@ -1733,7 +1754,7 @@ def _build_empty_disc_insert(disc_id):
         f"NULL, NULL, NULL, NULL, NULL, NULL, "
         f"'{{}}'::TEXT[], NULL, '{{}}'::TEXT[], '{{}}'::TEXT[], "
         f"NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL, NULL, NULL, "
-        f"NULL, NULL, NULL, FALSE)"
+        f"NULL, NULL, NULL, NULL, FALSE)"
     )
 
 
@@ -1818,8 +1839,8 @@ def _build_disc_insert(disc_id, data):
     # SBI
     sbi = data.get("d_libcrypt") or data.get("d_securom") or None
 
-    # Keys
-    keys = build_keys(data)
+    # Protection key fields
+    disc_key_bytes, disc_id_text = build_disc_key_fields(data)
 
     # Cue
     cue = data.get("d_cue") or None
@@ -1849,7 +1870,8 @@ def _build_disc_insert(disc_id, data):
         f"{sql_str_or_null(protection)}, "
         f"{sql_int4range_array(sector_ranges) if sector_ranges else 'NULL'}, "
         f"{sql_str_or_null(sbi)}, "
-        f"{sql_text_array(keys) if keys else 'NULL'}, "
+        f"{sql_str_or_null(disc_id_text)}, "
+        f"{sql_bytea(disc_key_bytes)}, "
         f"{sql_str_or_null(cue)}, "
         f"{sql_bool(questionable)})"
     )

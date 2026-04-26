@@ -10,6 +10,7 @@ const MEDIA_LAYERS = {{ media_layers_json|safe }};
 const SYSTEMS_MEDIA = {{ systems_media_json|safe }};
 const SYSTEMS_HAS_FLAGS = {{ systems_has_flags_json|safe }};
 const MEDIA_ROM_EXTENSIONS = {{ media_rom_extensions_json|safe }};
+const MEDIA_IS_CD = {{ media_is_cd_json|safe }};
 const MEDIA_HAS_PIC = {{ media_has_pic_json|safe }};
 const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{% endif %}{% endfor %}];
 const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
@@ -248,11 +249,17 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
         <div id="layerbreak-list" class="inline-field-values"></div>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("keys").is_empty() %} {{ self.highlight_class("keys") }}{% endif %}" data-field-flag="has_keys"{% if !show_keys %} style="display:none"{% endif %}>
-        <span class="inline-field-label">Disc Key / ID</span>
+    <div class="inline-field{% if !self.highlight_class("disc_id").is_empty() %} {{ self.highlight_class("disc_id") }}{% endif %}" data-field-flag="has_disc_id"{% if !show_disc_id %} style="display:none"{% endif %}>
+        <span class="inline-field-label">Disc ID</span>
+        <div class="inline-field-values">
+            <input type="text" name="protection_key_disc_id" value="{{ protection_key_disc_id }}">
+        </div>
+    </div>
+
+    <div class="inline-field{% if !self.highlight_class("disc_key").is_empty() %} {{ self.highlight_class("disc_key") }}{% endif %}" data-field-flag="has_key"{% if !show_key %} style="display:none"{% endif %}>
+        <span class="inline-field-label">Disc Key</span>
         <div class="inline-field-values">
             <input type="text" name="protection_key_disc_key" value="{{ protection_key_disc_key }}">
-            <input type="text" name="protection_key_disc_id" value="{{ protection_key_disc_id }}">
         </div>
     </div>
 

@@ -4,7 +4,7 @@
 
 {% block content %}
 <h3 class="downloads-page-title">Downloads</h3>
-<p class="downloads-page-desc">Download datfiles, cuesheets, and SBI archives for each system.</p>
+<p class="downloads-page-desc">Download datfiles, cuesheets, keys, and SBI archives for each system.</p>
 
 <div class="downloads-table-scaler">
 <table class="striped downloads-table">
@@ -21,6 +21,7 @@
             <td class="download-links-cell">
                 {% if sys.has_dat %}<a href="/datfile/{{ sys.code }}">Dat</a>{% endif %}
                 {% if sys.has_cue %}<a href="/cues/{{ sys.code }}">Cuesheets</a>{% endif %}
+                {% if sys.has_key %}<a href="/keys/{{ sys.code }}">Keys</a>{% endif %}
                 {% if sys.has_sbi %}<a href="/sbi/{{ sys.code }}">SBI</a>{% endif %}
             </td>
         </tr>

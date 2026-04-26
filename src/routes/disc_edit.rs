@@ -71,6 +71,7 @@ pub(crate) struct DiscEditTemplate {
     pub systems_media_json: String,
     pub systems_has_flags_json: String,
     pub media_rom_extensions_json: String,
+    pub media_is_cd_json: String,
 
     pub title: String,
     pub show_title_foreign: bool,
@@ -117,7 +118,8 @@ pub(crate) struct DiscEditTemplate {
     pub show_header: bool,
     pub header_hex: String,
 
-    pub show_keys: bool,
+    pub show_disc_id: bool,
+    pub show_key: bool,
     pub show_protection: bool,
     pub protection: String,
     pub show_sector_ranges: bool,
@@ -281,7 +283,8 @@ pub(crate) fn build_systems_json(
             "has_barcode": s.has_barcode,
             "has_exe_date": s.has_exe_date,
             "has_edc": s.has_edc,
-            "has_keys": s.has_keys,
+            "has_disc_id": s.has_disc_id,
+            "has_key": s.has_key,
             "has_pvd": s.has_pvd,
             "has_bca": s.has_bca,
             "has_header": s.has_header,
@@ -307,6 +310,14 @@ pub(crate) fn build_media_rom_extensions_json(all_media_types: &[EditMediaTypeRo
     serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
 }
 
+pub(crate) fn build_media_is_cd_json(all_media_types: &[EditMediaTypeRow]) -> String {
+    let mut map = serde_json::Map::new();
+    for m in all_media_types {
+        map.insert(m.code.clone(), serde_json::json!(is_cd_rom_extension(&m.rom_extension)));
+    }
+    serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
+}
+
 pub(crate) fn build_media_layers_json(all_media_types: &[EditMediaTypeRow]) -> String {
     let mut media_layers_map = serde_json::Map::new();
     for m in all_media_types {
@@ -327,7 +338,7 @@ fn media_shows_error_count(all_media_types: &[EditMediaTypeRow], media_code: &st
     all_media_types
         .iter()
         .find(|m| m.code == media_code)
-        .map_or(false, |m| m.rom_extension != "iso")
+        .map_or(false, |m| is_cd_rom_extension(&m.rom_extension))
 }
 
 pub(crate) fn build_system_options(all_systems: &[System], selected: &str) -> Vec<SystemOption> {
@@ -438,6 +449,7 @@ async fn edit_page(
         build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+    let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let max_layers = detail.disc.media_type.max_layers();
     let ring_layer_count = ring_layers(max_layers);
@@ -531,6 +543,7 @@ async fn edit_page(
             systems_media_json,
             systems_has_flags_json,
             media_rom_extensions_json,
+            media_is_cd_json,
 
             title: detail.disc.title.clone(),
             show_title_foreign: detail.system.has_title_foreign,
@@ -571,7 +584,7 @@ async fn edit_page(
             comments: detail.disc.comments.clone().unwrap_or_default(),
             contents: detail.disc.contents.clone().unwrap_or_default(),
 
-            show_error_count: rom_extension != "iso",
+            show_error_count: detail.disc.media_type.is_cd(),
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             show_exe_date: detail.system.has_exe_date,
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
@@ -616,7 +629,8 @@ async fn edit_page(
                 .map(|data| format_header_hex_dump(data))
                 .unwrap_or_default(),
 
-            show_keys: detail.system.has_keys,
+            show_disc_id: detail.system.has_disc_id,
+            show_key: detail.system.has_key,
             show_protection: detail.system.has_protection,
             protection: detail.disc.protection.clone().unwrap_or_default(),
             show_sector_ranges: detail.system.has_sector_ranges,
@@ -626,20 +640,11 @@ async fn edit_page(
             has_sample_start: detail.system.has_sample_start,
             protection_key_disc_key: detail
                 .disc
-                .keys
-                .as_deref()
-                .unwrap_or_default()
-                .first()
-                .cloned()
+                .disc_key
+                .as_ref()
+                .map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>())
                 .unwrap_or_default(),
-            protection_key_disc_id: detail
-                .disc
-                .keys
-                .as_deref()
-                .unwrap_or_default()
-                .get(1)
-                .cloned()
-                .unwrap_or_default(),
+            protection_key_disc_id: detail.disc.disc_id.clone().unwrap_or_default(),
 
             cue: detail.disc.cue.as_deref()
                 .filter(|s| !s.is_empty())
@@ -824,12 +829,22 @@ pub(crate) fn validate_form(form: &DiscEditForm, all_media_types: &[EditMediaTyp
         }
     }
 
-    let rom_ext = all_media_types.iter()
-        .find(|m| m.code == form.media_type)
-        .map(|m| m.rom_extension.as_str())
-        .unwrap_or("");
+    if let Some(ref text) = form.protection_key_disc_key {
+        let text = text.trim();
+        if !text.is_empty() {
+            if !text.chars().all(|c| c.is_ascii_hexdigit()) {
+                errors.push("Disc Key: must contain only hexadecimal characters".into());
+            } else if text.len() % 2 != 0 {
+                errors.push("Disc Key: must have an even number of hexadecimal characters".into());
+            }
+        }
+    }
 
-    if rom_ext == "bin" {
+    let is_cd_media = all_media_types.iter()
+        .find(|m| m.code == form.media_type)
+        .map_or(false, |m| is_cd_rom_extension(&m.rom_extension));
+
+    if is_cd_media {
         match form.cue.as_deref().map(|s| s.trim()) {
             None | Some("") => {
                 errors.push("Cuesheet: required for this media type".into());
@@ -878,6 +893,7 @@ async fn render_form_with_errors(
         build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+    let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let max_layers = max_layers_for_media(&ref_data.all_media_types, &form.media_type);
 
@@ -913,6 +929,7 @@ async fn render_form_with_errors(
         systems_media_json,
         systems_has_flags_json,
         media_rom_extensions_json,
+        media_is_cd_json,
 
         title: form.title.clone(),
         show_title_foreign: has_sys(|s| s.has_title_foreign),
@@ -977,7 +994,8 @@ async fn render_form_with_errors(
         show_header: has_sys(|s| s.has_header),
         header_hex: form.header.clone().unwrap_or_default(),
 
-        show_keys: has_sys(|s| s.has_keys),
+        show_disc_id: has_sys(|s| s.has_disc_id),
+        show_key: has_sys(|s| s.has_key),
         show_protection: has_sys(|s| s.has_protection),
         protection: form.protection.clone().unwrap_or_default(),
         show_sector_ranges: has_sys(|s| s.has_sector_ranges),
@@ -1403,6 +1421,7 @@ async fn add_page(
         build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+    let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
 
     let default_system = ref_data.all_systems.iter().find(|s| s.code == "PC");
@@ -1428,6 +1447,7 @@ async fn add_page(
             systems_media_json,
             systems_has_flags_json,
             media_rom_extensions_json,
+            media_is_cd_json,
 
             title: String::new(),
             show_title_foreign: has_sys(|s| s.has_title_foreign),
@@ -1474,7 +1494,8 @@ async fn add_page(
             show_header: has_sys(|s| s.has_header),
             header_hex: String::new(),
 
-            show_keys: has_sys(|s| s.has_keys),
+            show_disc_id: has_sys(|s| s.has_disc_id),
+            show_key: has_sys(|s| s.has_key),
             show_protection: has_sys(|s| s.has_protection),
             protection: String::new(),
             show_sector_ranges: has_sys(|s| s.has_sector_ranges),
@@ -1709,15 +1730,20 @@ fn compute_verification_diff(
         }
     }
 
-    let new_keys: Vec<String> = [
-        form.protection_key_disc_key.as_deref().unwrap_or("").trim(),
-        form.protection_key_disc_id.as_deref().unwrap_or("").trim(),
-    ].iter().filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
-    if !new_keys.is_empty() {
-        let old_keys: Vec<String> = detail.disc.keys.clone().unwrap_or_default();
-        if new_keys != old_keys {
-            diff_str_vec(&mut changes, "keys", &old_keys, &new_keys);
+    let new_disc_key = norm_opt_str(form.protection_key_disc_key.as_deref());
+    if new_disc_key.is_some() {
+        let old_disc_key = detail
+            .disc
+            .disc_key
+            .as_ref()
+            .map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>());
+        if new_disc_key.as_deref() != old_disc_key.as_deref() {
+            diff_opt_str(&mut changes, "disc_key", old_disc_key.as_deref(), new_disc_key.as_deref());
         }
+    }
+    let new_disc_id = norm_opt_str(form.protection_key_disc_id.as_deref());
+    if new_disc_id.is_some() && new_disc_id.as_deref() != detail.disc.disc_id.as_deref() {
+        diff_opt_str(&mut changes, "disc_id", detail.disc.disc_id.as_deref(), new_disc_id.as_deref());
     }
 
     let new_layerbreaks: Vec<i32> = form.layerbreak.iter()
@@ -1808,10 +1834,8 @@ pub(crate) fn build_flat_changes(form: &DiscEditForm, all_media_types: &[EditMed
     let new_layerbreaks: Vec<i32> = form.layerbreak.iter()
         .filter_map(|s| { let s = s.trim(); if s.is_empty() { None } else { s.parse::<i32>().ok() } })
         .collect();
-    let new_keys: Vec<String> = [
-        form.protection_key_disc_key.as_deref().unwrap_or("").trim(),
-        form.protection_key_disc_id.as_deref().unwrap_or("").trim(),
-    ].iter().filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
+    let new_disc_key = norm_opt_str(form.protection_key_disc_key.as_deref());
+    let new_disc_id = norm_opt_str(form.protection_key_disc_id.as_deref());
     let new_ring_codes = form.ring_codes_json.as_deref()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
         .unwrap_or(serde_json::json!([]));
@@ -1858,7 +1882,8 @@ pub(crate) fn build_flat_changes(form: &DiscEditForm, all_media_types: &[EditMed
         "header": norm_opt_multiline_str(form.header.as_deref()),
         "protection": norm_opt_multiline_str(form.protection.as_deref()),
         "sbi": norm_opt_multiline_str(form.sbi.as_deref()),
-        "keys": new_keys,
+        "disc_id": new_disc_id,
+        "disc_key": new_disc_key,
         "cuesheet": new_cue,
         "dat": norm_opt_multiline_str(form.files_xml.as_deref()).map(|s| simplify_files_xml(&s, rom_ext)),
         "regions": new_regions,
@@ -2344,7 +2369,7 @@ fn build_history_changes(
     for key in [
         "system_code", "media_type", "category", "title", "title_foreign", "disc_number",
         "disc_title", "filename_suffix", "version", "error_count", "exe_date", "edc",
-        "comments", "contents", "protection", "sector_ranges", "sbi", "pvd", "header",
+        "comments", "contents", "protection", "sector_ranges", "sbi", "disc_id", "disc_key", "pvd", "header",
         "bca", "pic", "cuesheet", "enabled", "questionable",
     ] {
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
@@ -2428,23 +2453,6 @@ fn build_history_changes(
     }
 
     {
-        let old_keys: Vec<String> = db_obj
-            .get("keys")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-            .unwrap_or_default();
-        let new_keys: Vec<String> = form_obj
-            .get("keys")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
-            .unwrap_or_default();
-        let list = string_list_changes(&old_keys, &new_keys, false, allow_removal, false);
-        if list.as_array().map(|a| !a.is_empty()).unwrap_or(false) {
-            changes.insert("keys".to_string(), list);
-        }
-    }
-
-    {
         let old_ring_codes_ui = detail
             .map(build_ring_codes_json_from_detail)
             .unwrap_or_else(|| serde_json::json!([]));
@@ -2523,6 +2531,8 @@ pub(crate) fn build_merged_changes(
     let contents = merge_opt_str(&db["contents"], u_str("contents"));
     let protection = merge_opt_str(&db["protection"], u_str("protection"));
     let sbi = merge_opt_str(&db["sbi"], u_str("sbi"));
+    let disc_id = merge_opt_str(&db["disc_id"], u_str("disc_id"));
+    let disc_key = merge_opt_str(&db["disc_key"], u_str("disc_key"));
     let pvd = merge_opt_str(&db["pvd"], u_str("pvd"));
     let header = merge_opt_str(&db["header"], u_str("header"));
     let bca = merge_opt_str(&db["bca"], u_str("bca"));
@@ -2536,10 +2546,6 @@ pub(crate) fn build_merged_changes(
     let layerbreaks = {
         let u = user["layerbreaks"].as_array();
         if u.map_or(true, |a| a.is_empty()) { db["layerbreaks"].clone() } else { user["layerbreaks"].clone() }
-    };
-    let keys = {
-        let u = user["keys"].as_array();
-        if u.map_or(true, |a| a.is_empty()) { db["keys"].clone() } else { user["keys"].clone() }
     };
     let sector_ranges = {
         let u = user["sector_ranges"].as_array();
@@ -2594,7 +2600,8 @@ pub(crate) fn build_merged_changes(
         "header": header,
         "protection": protection,
         "sbi": sbi,
-        "keys": keys,
+        "disc_id": disc_id,
+        "disc_key": disc_key,
         "cuesheet": cue,
         "dat": files_xml,
         "regions": regions,

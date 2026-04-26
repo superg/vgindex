@@ -7,7 +7,7 @@
 <div class="disc-title-row">
 <div class="disc-title-box">
 <h2>{{ title }}</h2>
-{% if !title_foreign.is_empty() %}
+{% if show_title_foreign && !title_foreign.is_empty() %}
 <h2 class="foreign-title">{{ title_foreign }}</h2>
 {% endif %}
 </div>
@@ -35,35 +35,35 @@
                 {% endfor %}
             </td></tr>
             {% endif %}
-            {% if !serial.is_empty() %}
+            {% if show_serial && !serial.is_empty() %}
             <tr><td><strong>{% if serial_count == 1 %}Serial{% else %}Serials{% endif %}</strong></td><td>{% if serial_count > 6 %}<details class="td-collapse"><summary>{{ serial_count }} serials</summary>{{ serial|safe }}</details>{% else %}{{ serial|safe }}{% endif %}</td></tr>
             {% endif %}
-            {% if !edition.is_empty() %}
+            {% if show_edition && !edition.is_empty() %}
             <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td>{% if edition_count > 6 %}<details class="td-collapse"><summary>{{ edition_count }} editions</summary>{{ edition|safe }}</details>{% else %}{{ edition|safe }}{% endif %}</td></tr>
             {% endif %}
-            {% if !barcode.is_empty() %}
+            {% if show_barcode && !barcode.is_empty() %}
             <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{% if barcode_count > 6 %}<details class="td-collapse"><summary>{{ barcode_count }} barcodes</summary>{{ barcode|safe }}</details>{% else %}{{ barcode|safe }}{% endif %}</td></tr>
             {% endif %}
-            {% if !version.is_empty() %}
+            {% if show_version && !version.is_empty() %}
             <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
             {% endif %}
             {% if !error_count.is_empty() %}
             <tr><td><strong>Errors</strong></td><td>{{ error_count }}</td></tr>
             {% endif %}
-            {% if !exe_date.is_empty() %}
+            {% if show_exe_date && !exe_date.is_empty() %}
             <tr><td><strong>EXE Date</strong></td><td>{{ exe_date }}</td></tr>
             {% endif %}
-            {% if !edc_display.is_empty() %}
+            {% if show_edc && !edc_display.is_empty() %}
             <tr><td><strong>EDC</strong></td><td>{{ edc_display }}</td></tr>
             {% endif %}
             {% if !layerbreaks.is_empty() %}
             <tr><td><strong>Layerbreak</strong></td><td>{{ layerbreaks }}</td></tr>
             {% endif %}
-            {% if show_keys && !disc_key.is_empty() %}
-            <tr><td><strong>Disc Key</strong></td><td>{{ disc_key }}</td></tr>
+            {% if show_disc_id && !disc_id_text.is_empty() %}
+            <tr><td><strong>Disc ID</strong></td><td>{{ disc_id_text }}</td></tr>
             {% endif %}
-            {% if show_keys && !disc_id_hex.is_empty() %}
-            <tr><td><strong>Disc ID</strong></td><td>{{ disc_id_hex }}</td></tr>
+            {% if show_key && !disc_key.is_empty() %}
+            <tr><td><strong>Disc Key</strong></td><td>{{ disc_key }}</td></tr>
             {% endif %}
         </table>
     </section>
@@ -88,9 +88,9 @@
         </table>
     </section>
 
-    {% if !protection.is_empty() || !contents.is_empty() || !comments.is_empty() %}
+    {% if (show_protection && !protection.is_empty()) || !contents.is_empty() || !comments.is_empty() %}
     <section class="section-collapsible">
-        {% if !protection.is_empty() %}
+        {% if show_protection && !protection.is_empty() %}
         {% if protection.lines().count() > 5 %}
         <details class="protection-details">
             <summary><h3>Protection</h3></summary>
@@ -125,30 +125,65 @@
     {% endif %}
 </div>
 
+{% if show_tracks_table %}
 <section class="left-section detail-section">
-    <h3>Files</h3>
-    <div class="dat-filename-scaler">
-    <p class="dat-filename">Prefix: <code>{{ dat_filename }}</code></p>
-    </div>
+    <h3>Tracks</h3>
     <div class="table-scroll table-scroll-compact">
-    <table class="disc-table striped table-nowrap">
+    <table class="disc-table striped table-nowrap tracks-table">
         <thead>
             <tr>
-                <th style="text-align: left;">Suffix</th>
-                {% if show_cd_file_details %}<th>Type</th><th class="col-num">Pregap</th><th class="col-num">Length</th><th class="col-num">Sectors</th>{% endif %}
+                {% if track_col_vis.track_num %}<th>#</th>{% endif %}
+                {% if track_col_vis.type_display %}<th>Type</th>{% endif %}
+                {% if track_col_vis.flags %}<th>Flags</th>{% endif %}
+                {% if track_col_vis.pregap %}<th>Pregap</th>{% endif %}
+                {% if track_col_vis.length %}<th>Length</th>{% endif %}
+                {% if track_col_vis.sectors %}<th>Sectors</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in track_rows %}
+            {% if row.is_session_header %}
+            <tr class="tracks-session-row"><td colspan="{{ track_col_vis.visible_count }}"><strong>{{ row.session_label }}</strong></td></tr>
+            {% else if row.is_total_row %}
+            <tr class="tracks-total-row">
+                {% if track_col_vis.track_num %}<td></td>{% endif %}
+                {% if track_col_vis.type_display %}<td><strong>{{ row.type_display }}</strong></td>{% endif %}
+                {% if track_col_vis.flags %}<td></td>{% endif %}
+                {% if track_col_vis.pregap %}<td></td>{% endif %}
+                {% if track_col_vis.length %}<td class="col-num"><strong><code>{{ row.length }}</code></strong></td>{% endif %}
+                {% if track_col_vis.sectors %}<td class="col-num"><strong>{{ row.sectors }}</strong></td>{% endif %}
+            </tr>
+            {% else %}
+            <tr>
+                {% if track_col_vis.track_num %}<td>{{ row.track_num }}</td>{% endif %}
+                {% if track_col_vis.type_display %}<td>{{ row.type_display }}</td>{% endif %}
+                {% if track_col_vis.flags %}<td>{{ row.flags_display }}</td>{% endif %}
+                {% if track_col_vis.pregap %}<td class="col-num"><code>{{ row.pregap }}</code></td>{% endif %}
+                {% if track_col_vis.length %}<td class="col-num"><code>{{ row.length }}</code></td>{% endif %}
+                {% if track_col_vis.sectors %}<td class="col-num">{{ row.sectors }}</td>{% endif %}
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+<section class="left-section detail-section">
+    <h3>Files</h3>
+    <div class="table-scroll table-scroll-compact scroll-only">
+    <table class="disc-table files-table">
+        <thead>
+            <tr>
+                <th style="text-align: left;">Filename</th>
                 <th class="col-num">Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th>
             </tr>
         </thead>
         <tbody>
             {% for file in files %}
             <tr>
-                <td style="text-align: left;" title="{{ file.name }}"><code>{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.short_name }}</a>{% else %}{{ file.short_name }}{% endif %}</code></td>
-                {% if show_cd_file_details %}
-                <td>{% if !file.is_cue %}<code>{{ file.track_type }}</code>{% endif %}</td>
-                <td class="col-num">{% if !file.is_cue %}<code>{{ file.pregap }}</code>{% endif %}</td>
-                <td class="col-num">{% if !file.is_cue %}<code>{{ file.length }}</code>{% endif %}</td>
-                <td class="col-num">{% if !file.is_cue %}<code>{{ file.sectors }}</code>{% endif %}</td>
-                {% endif %}
+                <td style="text-align: left;" title="{{ file.name }}"><code>{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.name }}</a>{% else %}{{ file.name }}{% endif %}</code></td>
                 <td class="col-num"><code>{{ file.size }}</code></td>
                 <td><code>{{ file.crc32 }}</code></td>
                 <td><code>{{ file.md5 }}</code></td>
@@ -165,15 +200,19 @@
     <h3>Rings</h3>
     <div class="table-scroll table-scroll-compact scroll-only">
     <table class="disc-table ring-table">
+        <colgroup>
+            <col class="ring-entry-col">
+            {% if ring_vis.layer %}<col class="ring-layer-col">{% endif %}
+        </colgroup>
         <thead>
             <tr>
-                <th>#</th>
-                {% if ring_vis.layer %}<th></th>{% endif %}
+                <th class="ring-entry-col">#</th>
+                {% if ring_vis.layer %}<th class="ring-layer-col"></th>{% endif %}
                 {% if ring_vis.mastering_code %}<th>Mastering Code</th>{% endif %}
                 {% if ring_vis.mastering_sid %}<th>Mastering SID</th>{% endif %}
-                {% if ring_vis.toolstamps %}<th>Toolstamp(s)</th>{% endif %}
-                {% if ring_vis.mould_sids %}<th>Mould SID(s)</th>{% endif %}
-                {% if ring_vis.additional_moulds %}<th>Additional Mould(s)</th>{% endif %}
+                {% if ring_vis.toolstamps %}<th>Toolstamps</th>{% endif %}
+                {% if ring_vis.mould_sids %}<th>Mould SIDs</th>{% endif %}
+                {% if ring_vis.additional_moulds %}<th>Additional Moulds</th>{% endif %}
                 {% if ring_vis.offset %}<th>Offset</th>{% endif %}
                 {% if ring_vis.offset_extra %}<th>Extra Offset</th>{% endif %}
                 {% if ring_vis.sample_data_start %}<th>Sample Start</th>{% endif %}
@@ -184,12 +223,12 @@
             {% for row in ring_rows %}
             <tr class="{% if row.first_in_entry && row.entry_num > 1 %}ring-group-start{% endif %}{% if row.entry_even %} ring-entry-even{% endif %}">
                 {% if row.entry_rowspan > 0 %}<td class="entry-num"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
-                {% if ring_vis.layer %}<td><strong>{{ row.layer }}</strong></td>{% endif %}
-                {% if ring_vis.mastering_code %}<td>{{ row.mastering_code|safe }}</td>{% endif %}
-                {% if ring_vis.mastering_sid %}<td>{{ row.mastering_sid|safe }}</td>{% endif %}
-                {% if ring_vis.toolstamps %}<td>{{ row.toolstamps|safe }}</td>{% endif %}
-                {% if ring_vis.mould_sids %}<td>{{ row.mould_sids|safe }}</td>{% endif %}
-                {% if ring_vis.additional_moulds %}<td>{{ row.additional_moulds|safe }}</td>{% endif %}
+                {% if ring_vis.layer %}<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>{% endif %}
+                {% if ring_vis.mastering_code %}<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>{% endif %}
+                {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell">{{ row.mastering_sid|safe }}</td>{% endif %}
+                {% if ring_vis.toolstamps %}<td class="ring-fixed-cell">{{ row.toolstamps|safe }}</td>{% endif %}
+                {% if ring_vis.mould_sids %}<td class="ring-fixed-cell">{{ row.mould_sids|safe }}</td>{% endif %}
+                {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell">{{ row.additional_moulds|safe }}</td>{% endif %}
                 {% if ring_vis.offset %}<td>{{ row.offset }}</td>{% endif %}
                 {% if ring_vis.offset_extra %}<td>{{ row.offset_extra }}</td>{% endif %}
                 {% if ring_vis.sample_data_start %}<td>{{ row.sample_data_start }}</td>{% endif %}
@@ -203,7 +242,7 @@
 {% endif %}
 
 
-{% if !pvd_rows.is_empty() %}
+{% if show_pvd && !pvd_rows.is_empty() %}
 <section class="left-section detail-section">
     <h3>PVD</h3>
     <div class="table-scroll table-scroll-compact">
@@ -227,7 +266,7 @@
 </section>
 {% endif %}
 
-{% if !sbi_rows.is_empty() %}
+{% if show_sbi && !sbi_rows.is_empty() %}
 <section class="left-section detail-section">
     <h3>SBI</h3>
     <div class="table-scroll table-scroll-compact">
@@ -251,7 +290,7 @@
 </section>
 {% endif %}
 
-{% if !header_rows.is_empty() %}
+{% if show_header && !header_rows.is_empty() %}
 <section class="left-section detail-section">
     <h3>Header</h3>
     <div class="table-scroll table-scroll-compact">
@@ -273,7 +312,7 @@
 </section>
 {% endif %}
 
-{% if !bca_rows.is_empty() %}
+{% if show_bca && !bca_rows.is_empty() %}
 <section class="left-section detail-section">
     <h3>BCA</h3>
     <div class="table-scroll table-scroll-compact">
@@ -339,7 +378,7 @@
 </section>
 {% endif %}
 
-{% if !sector_ranges.is_empty() %}
+{% if show_sector_ranges && !sector_ranges.is_empty() %}
 <section class="left-section detail-section">
     <h3>Sector Ranges</h3>
     <div class="table-scroll table-scroll-compact">
@@ -380,21 +419,6 @@
                 table.style.transformOrigin = 'top left';
                 wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
                 wrapper.style.overflow = 'hidden';
-            }
-        });
-        document.querySelectorAll('.dat-filename-scaler').forEach(function(wrapper) {
-            var p = wrapper.querySelector('.dat-filename');
-            if (!p) return;
-            p.style.transform = '';
-            p.style.transformOrigin = '';
-            wrapper.style.height = '';
-            var containerWidth = wrapper.clientWidth;
-            var contentWidth = p.scrollWidth;
-            if (contentWidth > containerWidth && containerWidth > 0) {
-                var scale = containerWidth / contentWidth;
-                p.style.transform = 'scale(' + scale + ')';
-                p.style.transformOrigin = 'top left';
-                wrapper.style.height = Math.ceil(p.offsetHeight * scale) + 'px';
             }
         });
     }

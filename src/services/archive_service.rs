@@ -65,6 +65,7 @@ pub async fn get_or_generate_archive(
     let result = match archive_type {
         "dat" => generate_datfile_archive(pool, system).await?,
         "cue" => generate_cuesheet_archive(pool, system).await?,
+        "key" => generate_key_archive(pool, system).await?,
         "sbi" => generate_sbi_archive(pool, system).await?,
         _ => return Err(AppError::NotFound),
     };
@@ -89,6 +90,12 @@ pub async fn regenerate_system_archives(pool: &PgPool, system: &str) {
     if system_has_cd_media(pool, &sys.media_types).await {
         if let Ok(result) = generate_cuesheet_archive(pool, &sys.code).await {
             store_archive(&sys.code, "cue", &result);
+        }
+    }
+
+    if sys.has_key {
+        if let Ok(result) = generate_key_archive(pool, &sys.code).await {
+            store_archive(&sys.code, "key", &result);
         }
     }
 
@@ -127,14 +134,14 @@ async fn system_has_cd_media(pool: &PgPool, media_type_codes: &[String]) -> bool
     if media_type_codes.is_empty() {
         return false;
     }
-    let result: Option<bool> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM media_types WHERE code = ANY($1) AND rom_extension = 'bin')",
+    let extensions: Vec<String> = sqlx::query_scalar(
+        "SELECT rom_extension FROM media_types WHERE code = ANY($1)",
     )
     .bind(media_type_codes)
-    .fetch_one(pool)
+    .fetch_all(pool)
     .await
-    .unwrap_or(Some(false));
-    result.unwrap_or(false)
+    .unwrap_or_default();
+    extensions.iter().any(|ext| is_cd_rom_extension(ext))
 }
 
 async fn get_disc_region_names(pool: &PgPool, disc_id: i32) -> Vec<String> {
@@ -412,6 +419,80 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Arc
         cue_count,
         ts
     );
+    Ok(ArchiveResult {
+        data: buf,
+        filename: zip_filename,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Keys generation
+// ---------------------------------------------------------------------------
+
+#[derive(sqlx::FromRow)]
+struct KeyArchiveDisc {
+    id: i32,
+    title: String,
+    disc_number: Option<String>,
+    disc_title: Option<String>,
+    filename_suffix: Option<String>,
+    disc_key: Vec<u8>,
+}
+
+async fn generate_key_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveResult> {
+    let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
+        .bind(system)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    if !sys.has_key {
+        return Err(AppError::NotFound);
+    }
+
+    let discs: Vec<KeyArchiveDisc> = sqlx::query_as(
+        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.disc_key
+         FROM discs d
+         WHERE d.system_code = $1 AND d.disc_key IS NOT NULL
+               AND d.enabled AND NOT d.questionable
+         ORDER BY d.title",
+    )
+    .bind(&sys.code)
+    .fetch_all(pool)
+    .await?;
+
+    let ts = timestamp_now();
+    let key_count = discs.len();
+
+    let mut buf = Vec::new();
+    {
+        let mut zip = ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+        for disc in &discs {
+            let region_names = get_disc_region_names(pool, disc.id).await;
+            let language_codes = get_disc_language_codes(pool, disc.id).await;
+            let base_name = build_rom_base_name(
+                &disc.title,
+                &region_names,
+                &language_codes,
+                disc.disc_number.as_deref(),
+                disc.disc_title.as_deref(),
+                disc.filename_suffix.as_deref(),
+            );
+            let filename = format!("{base_name}.key");
+            zip.start_file(&filename, options)
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+            zip.write_all(&disc.disc_key)
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+        }
+
+        zip.finish()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+    }
+
+    let zip_filename = format!("{} - Keys ({}) ({}).zip", sys.dat_system_name(), key_count, ts);
     Ok(ArchiveResult {
         data: buf,
         filename: zip_filename,

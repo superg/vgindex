@@ -471,7 +471,7 @@ pub fn resolve_submission_snapshot(
                 let updated = apply_regions_languages_change(value);
                 resolved_obj.insert(key.clone(), updated);
             }
-            "serial" | "edition" | "barcode" | "keys" => {
+            "serial" | "edition" | "barcode" => {
                 let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
                 let mut updated = apply_string_list_history(&old, value, true);
                 if matches!(key.as_str(), "serial" | "edition" | "barcode") {

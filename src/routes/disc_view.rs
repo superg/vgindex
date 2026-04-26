@@ -43,25 +43,32 @@ struct DiscViewTemplate {
     category: String,
     regions: Vec<ViewFlag>,
     lang_flags: Vec<ViewFlag>,
+    show_title_foreign: bool,
     title_foreign: String,
     disc_title: String,
     disc_number: String,
     serial: String,
     serial_count: usize,
+    show_serial: bool,
     exe_date: String,
+    show_exe_date: bool,
     version: String,
+    show_version: bool,
     edition: String,
     edition_count: usize,
+    show_edition: bool,
     barcode: String,
     barcode_count: usize,
+    show_barcode: bool,
     layerbreaks: String,
     comments: String,
     contents: String,
     edc_display: String,
+    show_edc: bool,
     protection: String,
+    show_protection: bool,
     error_count: String,
     file_count: usize,
-    show_cd_file_details: bool,
     status_class: String,
     status_emoji: String,
     status_display: String,
@@ -71,17 +78,25 @@ struct DiscViewTemplate {
     dumpers_display: String,
     ring_rows: Vec<ViewRingRow>,
     ring_vis: RingColVis,
+    show_tracks_table: bool,
+    track_rows: Vec<ViewTrackTableRow>,
+    track_col_vis: TrackColVis,
     files: Vec<ViewFile>,
-    dat_filename: String,
     sbi_rows: Vec<SbiRow>,
+    show_sbi: bool,
     pvd_rows: Vec<PvdRow>,
+    show_pvd: bool,
     pic_rows: Vec<HeaderRow>,
-    show_keys: bool,
+    show_disc_id: bool,
+    show_key: bool,
     disc_key: String,
-    disc_id_hex: String,
+    disc_id_text: String,
     sector_ranges: Vec<ProtectionRangeRow>,
+    show_sector_ranges: bool,
     header_rows: Vec<HeaderRow>,
+    show_header: bool,
     bca_rows: Vec<HeaderRow>,
+    show_bca: bool,
 }
 impl SiteConfig for DiscViewTemplate {}
 
@@ -128,7 +143,12 @@ struct RingColVis {
 }
 
 impl RingColVis {
-    fn from_rows(rows: &[ViewRingRow], has_sample_start: bool, has_offset_extra: bool) -> Self {
+    fn from_rows(
+        rows: &[ViewRingRow],
+        is_cd: bool,
+        has_sample_start: bool,
+        has_offset_extra: bool,
+    ) -> Self {
         Self {
             layer: rows.iter().any(|r| r.entry_rowspan > 1),
             mastering_code: rows.iter().any(|r| !r.mastering_code.is_empty()),
@@ -136,9 +156,9 @@ impl RingColVis {
             mould_sids: rows.iter().any(|r| !r.mould_sids.is_empty()),
             additional_moulds: rows.iter().any(|r| !r.additional_moulds.is_empty()),
             toolstamps: rows.iter().any(|r| !r.toolstamps.is_empty()),
-            offset: rows.iter().any(|r| !r.offset.is_empty()),
-            offset_extra: has_offset_extra,
-            sample_data_start: has_sample_start && rows.iter().any(|r| !r.sample_data_start.is_empty()),
+            offset: is_cd && rows.iter().any(|r| !r.offset.is_empty()),
+            offset_extra: is_cd && has_offset_extra,
+            sample_data_start: is_cd && has_sample_start && rows.iter().any(|r| !r.sample_data_start.is_empty()),
             comment: rows.iter().any(|r| !r.comment.is_empty()),
         }
     }
@@ -146,13 +166,8 @@ impl RingColVis {
 
 struct ViewFile {
     name: String,
-    short_name: String,
     file_suffix: String,
     is_cue: bool,
-    track_type: String,
-    pregap: String,
-    length: String,
-    sectors: String,
     track_sort_num: u32,
     size: i64,
     crc32: String,
@@ -186,6 +201,37 @@ struct HeaderRow {
     offset: String,
     hex_contents: String,
     ascii: String,
+}
+
+struct ParsedCueTrack {
+    session_num: u32,
+    track_num: u32,
+    track_display: String,
+    track_type: String,
+    flags: Vec<String>,
+    index01_frames: Option<u32>,
+}
+
+struct ViewTrackTableRow {
+    is_session_header: bool,
+    is_total_row: bool,
+    session_label: String,
+    track_num: String,
+    type_display: String,
+    flags_display: String,
+    pregap: String,
+    length: String,
+    sectors: String,
+}
+
+struct TrackColVis {
+    track_num: bool,
+    type_display: bool,
+    flags: bool,
+    pregap: bool,
+    length: bool,
+    sectors: bool,
+    visible_count: usize,
 }
 
 async fn disc_view(
@@ -268,8 +314,8 @@ async fn disc_view(
         &detail.disc.title,
         &region_names,
         &language_codes,
-        detail.disc.disc_number.as_deref(),
-        detail.disc.disc_title.as_deref(),
+        if detail.system.has_disc_number { detail.disc.disc_number.as_deref() } else { None },
+        if detail.system.has_disc_title { detail.disc.disc_title.as_deref() } else { None },
         detail.disc.filename_suffix.as_deref(),
     );
 
@@ -291,49 +337,10 @@ async fn disc_view(
                 .and_then(|m| m.extension.as_deref())
                 .unwrap_or(rom_extension)
         };
-        let sectors = if !is_cue && f.size > 0 {
-            let sector_count = (f.size / 2352).max(0);
-            sector_count.to_string()
-        } else {
-            String::new()
-        };
-        let length = if !is_cue && f.size > 0 {
-            let sector_count = (f.size / 2352).max(0) as u32;
-            format_frames_as_msf(sector_count)
-        } else {
-            String::new()
-        };
-        let pregap = cue_meta
-            .and_then(|m| m.pregap_frames)
-            .map(format_frames_as_msf)
-            .unwrap_or_default();
-        let track_type = cue_meta
-            .map(|m| m.track_type.clone())
-            .unwrap_or_default();
-        let short_name = if is_cue {
-            format!(".cue")
-        } else if total_tracks > 1 {
-            if track_num > 0 {
-                if total_tracks >= 10 {
-                    format!("(Track {track_num:02}).{ext}")
-                } else {
-                    format!("(Track {track_num}).{ext}")
-                }
-            } else {
-                format!(".{ext}")
-            }
-        } else {
-            format!(".{ext}")
-        };
         ViewFile {
             name: build_rom_name(&rom_base_name, track, total_tracks, ext),
-            short_name,
             file_suffix: if is_cue { ".cue".to_string() } else { format!(".{ext}") },
             is_cue,
-            track_type,
-            pregap,
-            length,
-            sectors,
             track_sort_num: track_num,
             size: f.size,
             crc32: f.crc32.clone(),
@@ -348,6 +355,18 @@ async fn disc_view(
             .then_with(|| a.name.cmp(&b.name))
     });
 
+    let track_rows = if detail.disc.media_type.is_cd() {
+        detail
+            .disc
+            .cue
+            .as_deref()
+            .map(|cue| build_track_table_rows(cue, &detail.files))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let track_col_vis = compute_track_col_vis(&track_rows);
+
     let sbi_rows = detail.disc.sbi.as_deref()
         .map(|text| parse_sbi_display(text))
         .unwrap_or_default();
@@ -360,9 +379,13 @@ async fn disc_view(
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
 
-    let keys = detail.disc.keys.as_deref().unwrap_or_default();
-    let disc_key = keys.first().cloned().unwrap_or_default();
-    let disc_id_hex = keys.get(1).cloned().unwrap_or_default();
+    let disc_key = detail
+        .disc
+        .disc_key
+        .as_ref()
+        .map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>())
+        .unwrap_or_default();
+    let disc_id_text = detail.disc.disc_id.clone().unwrap_or_default();
 
     let sector_ranges: Vec<ProtectionRangeRow> = detail.sector_ranges.iter()
         .enumerate()
@@ -384,8 +407,8 @@ async fn disc_view(
             disc_id: id,
             title: format_display_title(
                 &detail.disc.title,
-                detail.disc.disc_number.as_deref(),
-                detail.disc.disc_title.as_deref(),
+                if detail.system.has_disc_number { detail.disc.disc_number.as_deref() } else { None },
+                if detail.system.has_disc_title { detail.disc.disc_title.as_deref() } else { None },
                 detail.disc.filename_suffix.as_deref(),
             ),
             system_name: detail.system.system_name(),
@@ -402,15 +425,21 @@ async fn disc_view(
                 region_code: String::new(),
                 name: l.name.clone(),
             }).collect(),
+            show_title_foreign: detail.system.has_title_foreign,
             title_foreign: detail.disc.title_foreign.clone().unwrap_or_default(),
             disc_title: detail.disc.disc_title.clone().unwrap_or_default(),
             disc_number: detail.disc.disc_number.clone().unwrap_or_default(),
+            show_serial: detail.system.has_serial,
             serial_count: detail.disc.serial.len(),
             serial: detail.disc.serial.join("<br>"),
+            show_exe_date: detail.system.has_exe_date,
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
+            show_version: detail.system.has_version,
             version: detail.disc.version.clone().unwrap_or_default(),
+            show_edition: detail.system.has_edition,
             edition_count: detail.disc.edition.len(),
             edition: detail.disc.edition.join("<br>"),
+            show_barcode: detail.system.has_barcode,
             barcode_count: detail.disc.barcode.len(),
             barcode: detail.disc.barcode.join("<br>"),
             layerbreaks: detail.disc.layerbreaks.as_deref().unwrap_or_default()
@@ -418,10 +447,11 @@ async fn disc_view(
             comments: format_comments(&detail.disc.comments.clone().unwrap_or_default()),
             contents: format_comments(&detail.disc.contents.clone().unwrap_or_default()),
             edc_display: if detail.disc.edc { "Yes" } else { "No" }.to_string(),
+            show_edc: detail.system.has_edc,
             protection: detail.disc.protection.clone().unwrap_or_default(),
+            show_protection: detail.system.has_protection,
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             file_count: detail.files.len(),
-            show_cd_file_details: detail.disc.media_type.is_cd(),
             status_class: if detail.disc.enabled {
                 let dumper_count = detail.dumpers.len() as i64;
                 DiscStatus::compute(detail.disc.questionable, dumper_count).css_class().to_string()
@@ -457,21 +487,30 @@ async fn disc_view(
             },
             ring_vis: RingColVis::from_rows(
                 &ring_rows,
+                detail.disc.media_type.is_cd(),
                 detail.system.has_sample_start,
                 detail.system.has_offset_extra,
             ),
             ring_rows,
+            show_tracks_table: !track_rows.is_empty() && track_col_vis.visible_count > 0,
+            track_rows,
+            track_col_vis,
             files,
-            dat_filename: rom_base_name.clone(),
             sbi_rows,
+            show_sbi: detail.system.has_sbi,
             pvd_rows,
+            show_pvd: detail.system.has_pvd,
             pic_rows,
-            show_keys: detail.system.has_keys,
+            show_disc_id: detail.system.has_disc_id,
+            show_key: detail.system.has_key,
             disc_key,
-            disc_id_hex,
+            disc_id_text,
             sector_ranges,
+            show_sector_ranges: detail.system.has_sector_ranges,
             header_rows,
+            show_header: detail.system.has_header,
             bca_rows,
+            show_bca: detail.system.has_bca,
         }
         .render()
         .unwrap(),
@@ -587,6 +626,196 @@ fn format_frames_as_msf(frames: u32) -> String {
     let seconds = (frames % (75 * 60)) / 75;
     let frame = frames % 75;
     format!("{minutes:02}:{seconds:02}:{frame:02}")
+}
+
+fn parse_session_from_rem(line: &str) -> Option<u32> {
+    let upper = line.to_ascii_uppercase();
+    if upper.starts_with("REM SINGLE-DENSITY AREA") {
+        return Some(1);
+    }
+    if upper.starts_with("REM HIGH-DENSITY AREA") {
+        return Some(2);
+    }
+    if !upper.starts_with("REM SESSION ") {
+        return None;
+    }
+    line[12..].trim().parse::<u32>().ok()
+}
+
+fn parse_flags_line(line: &str) -> Option<Vec<String>> {
+    if !line.to_ascii_uppercase().starts_with("FLAGS ") {
+        return None;
+    }
+    let parts: Vec<String> = line[6..]
+        .split_whitespace()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect();
+    Some(parts)
+}
+
+fn parse_cue_tracks_with_sessions(cue: &str) -> Vec<ParsedCueTrack> {
+    let mut tracks = Vec::new();
+    let mut current_session = 1u32;
+    let mut current_track_idx: Option<usize> = None;
+
+    for raw_line in cue.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if let Some(session_num) = parse_session_from_rem(line) {
+            current_session = session_num;
+            continue;
+        }
+
+        let upper = line.to_ascii_uppercase();
+        if let Some((track_num, mode)) = parse_cue_track_line_local(&upper) {
+            tracks.push(ParsedCueTrack {
+                session_num: current_session,
+                track_num,
+                track_display: format!("{track_num:02}"),
+                track_type: mode.to_string(),
+                flags: Vec::new(),
+                index01_frames: None,
+            });
+            current_track_idx = Some(tracks.len() - 1);
+            continue;
+        }
+
+        if let Some(flags) = parse_flags_line(line) {
+            if let Some(idx) = current_track_idx {
+                tracks[idx].flags = flags;
+            }
+            continue;
+        }
+
+        if let Some((idx_num, mm, ss, ff)) = parse_cue_index_line_local(&upper) {
+            if idx_num == 1 {
+                if let Some(idx) = current_track_idx {
+                    tracks[idx].index01_frames = Some(mm * 60 * 75 + ss * 75 + ff);
+                }
+            }
+        }
+    }
+
+    tracks
+}
+
+fn display_track_type(raw: &str) -> String {
+    match raw {
+        "AUDIO" => "Audio".to_string(),
+        "MODE1/2352" => "Data/Mode 1".to_string(),
+        "MODE2/2352" => "Data/Mode 2".to_string(),
+        _ => raw.to_string(),
+    }
+}
+
+fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
+    let parsed_tracks = parse_cue_tracks_with_sessions(cue);
+    if parsed_tracks.is_empty() {
+        return Vec::new();
+    }
+
+    let mut sectors_by_track = std::collections::HashMap::<u32, u32>::new();
+    for f in files {
+        if let Some(track_str) = f.track_number.as_deref() {
+            if let Ok(track_num) = track_str.parse::<u32>() {
+                let sectors = (f.size / 2352).max(0) as u32;
+                let entry = sectors_by_track.entry(track_num).or_insert(0);
+                *entry += sectors;
+            }
+        }
+    }
+
+    let mut rows = Vec::new();
+    let mut total_sectors: u64 = 0;
+    let session_count = parsed_tracks
+        .iter()
+        .map(|t| t.session_num)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let show_sessions = session_count > 1;
+    let mut last_session: Option<u32> = None;
+
+    for track in parsed_tracks {
+        if show_sessions && last_session != Some(track.session_num) {
+            rows.push(ViewTrackTableRow {
+                is_session_header: true,
+                is_total_row: false,
+                session_label: format!("Session {}", track.session_num),
+                track_num: String::new(),
+                type_display: String::new(),
+                flags_display: String::new(),
+                pregap: String::new(),
+                length: String::new(),
+                sectors: String::new(),
+            });
+            last_session = Some(track.session_num);
+        }
+
+        let sectors = sectors_by_track.get(&track.track_num).copied().unwrap_or(0);
+        total_sectors += sectors as u64;
+        rows.push(ViewTrackTableRow {
+            is_session_header: false,
+            is_total_row: false,
+            session_label: String::new(),
+            track_num: track.track_display,
+            type_display: display_track_type(&track.track_type),
+            flags_display: track.flags.join(", "),
+            pregap: track
+                .index01_frames
+                .map(format_frames_as_msf)
+                .unwrap_or_default(),
+            length: format_frames_as_msf(sectors),
+            sectors: sectors.to_string(),
+        });
+    }
+
+    rows.push(ViewTrackTableRow {
+        is_session_header: false,
+        is_total_row: true,
+        session_label: String::new(),
+        track_num: String::new(),
+        type_display: "Total".to_string(),
+        flags_display: String::new(),
+        pregap: String::new(),
+        length: format_frames_as_msf(total_sectors as u32),
+        sectors: total_sectors.to_string(),
+    });
+
+    rows
+}
+
+fn compute_track_col_vis(rows: &[ViewTrackTableRow]) -> TrackColVis {
+    let non_session_rows: Vec<&ViewTrackTableRow> = rows.iter().filter(|r| !r.is_session_header).collect();
+    let track_num = non_session_rows.iter().any(|r| !r.track_num.is_empty());
+    let type_display = non_session_rows.iter().any(|r| !r.type_display.is_empty());
+    let flags = non_session_rows.iter().any(|r| !r.flags_display.is_empty());
+    let pregap = non_session_rows.iter().any(|r| !r.pregap.is_empty());
+    let length = non_session_rows.iter().any(|r| !r.length.is_empty());
+    let sectors = non_session_rows.iter().any(|r| !r.sectors.is_empty());
+    let visible_count = [
+        track_num,
+        type_display,
+        flags,
+        pregap,
+        length,
+        sectors,
+    ]
+    .into_iter()
+    .filter(|v| *v)
+    .count();
+    TrackColVis {
+        track_num,
+        type_display,
+        flags,
+        pregap,
+        length,
+        sectors,
+        visible_count,
+    }
 }
 
 fn format_comments(raw: &str) -> String {
