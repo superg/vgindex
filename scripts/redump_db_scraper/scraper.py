@@ -468,23 +468,40 @@ def fetch_changed_ids_from_rss(
     return sorted(latest.items())
 
 
+def _output_relpath(disc_id: int, dates_only: bool = False) -> str:
+    """Return output filename relative to output_dir for a disc ID."""
+    if dates_only:
+        return os.path.join("date", f"{disc_id:06d}.date.json")
+    return f"{disc_id:06d}.json"
+
+
 def filter_stale_ids(
     rss_entries: list[tuple[int, datetime]],
     output_dir: str,
+    dates_only: bool = False,
 ) -> list[int]:
     """Return disc IDs whose local JSON is missing or older than the RSS pubDate."""
     stale = []
     for disc_id, pub_dt in rss_entries:
-        path = os.path.join(output_dir, f"{disc_id:06d}.json")
+        path = os.path.join(output_dir, _output_relpath(disc_id, dates_only=dates_only))
         if not os.path.isfile(path) or os.path.getsize(path) == 0:
             stale.append(disc_id)
             continue
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            scraped_at = datetime.fromisoformat(data["scraped_at"])
-            if scraped_at < pub_dt:
-                stale.append(disc_id)
+            if dates_only:
+                if not isinstance(data, dict):
+                    stale.append(disc_id)
+                    continue
+                pub_dt_utc = pub_dt.astimezone(timezone.utc) if pub_dt.tzinfo else pub_dt.replace(tzinfo=timezone.utc)
+                file_mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
+                if file_mtime < pub_dt_utc:
+                    stale.append(disc_id)
+            else:
+                scraped_at = datetime.fromisoformat(data["scraped_at"])
+                if scraped_at < pub_dt:
+                    stale.append(disc_id)
         except (json.JSONDecodeError, KeyError, ValueError):
             stale.append(disc_id)
     return stale
@@ -507,6 +524,55 @@ def create_session(cookie_str: str) -> requests.Session:
 def _strip_empty(d: dict) -> dict:
     """Remove keys with empty string values from a dict."""
     return {k: v for k, v in d.items() if v != ""}
+
+
+def parse_disc_dates_page(html: str) -> dict:
+    """Parse disc page and return any found Added/Last modified fields."""
+    soup = BeautifulSoup(html, "lxml")
+    result: dict = {}
+
+    # Common case on tabular pages.
+    for tr in soup.find_all("tr"):
+        th = tr.find("th")
+        td = tr.find("td")
+        if not th or not td:
+            continue
+        label = th.get_text(" ", strip=True).lower().rstrip(":")
+        value = td.get_text(" ", strip=True)
+        if not value:
+            continue
+        if label == "added":
+            result["added"] = value
+        elif label == "last modified":
+            result["modified"] = value
+
+    # Alternate metadata layouts use <dt>/<dd>.
+    if "added" not in result or "modified" not in result:
+        dts = soup.find_all("dt")
+        dds = soup.find_all("dd")
+        for dt, dd in zip(dts, dds):
+            label = dt.get_text(" ", strip=True).lower().rstrip(":")
+            value = dd.get_text(" ", strip=True)
+            if not value:
+                continue
+            if label == "added" and "added" not in result:
+                result["added"] = value
+            elif label == "last modified" and "modified" not in result:
+                result["modified"] = value
+
+    # Fallback: plain text lines with labels and values.
+    if "added" not in result or "modified" not in result:
+        text = soup.get_text("\n", strip=True)
+        if "added" not in result:
+            m = re.search(r"(?im)^Added\s*:?\s*(.+)$", text)
+            if m and m.group(1).strip():
+                result["added"] = m.group(1).strip()
+        if "modified" not in result:
+            m = re.search(r"(?im)^Last modified\s*:?\s*(.+)$", text)
+            if m and m.group(1).strip():
+                result["modified"] = m.group(1).strip()
+
+    return result
 
 
 class _Interrupted(Exception):
@@ -598,6 +664,35 @@ def scrape_disc(
     return result, warnings
 
 
+def scrape_disc_dates(
+    session: requests.Session, disc_id: int, delay: float = 0.0,
+) -> tuple[dict | str | None, list[str]]:
+    """Scrape only Added/Last modified metadata for a disc ID."""
+    warnings: list[str] = []
+    disc_url = f"{BASE_URL}/disc/{disc_id}/"
+    try:
+        resp = _rate_limited_get(session, disc_url, delay, timeout=30)
+    except _Interrupted:
+        return None, warnings
+    except requests.RequestException as e:
+        warnings.append(f"[disc] Request failed: {e}")
+        return None, warnings
+
+    if resp.status_code in (403, 404):
+        return None, warnings
+    if resp.url.rstrip("/") != disc_url.rstrip("/"):
+        warnings.append(f"[disc] Redirected to {resp.url}")
+        return None, warnings
+    if resp.status_code != 200:
+        warnings.append(f"[disc] HTTP {resp.status_code}")
+        return None, warnings
+
+    if re.search(r'with ID ".+" doesn\'t exist', resp.text):
+        return "nonexistent", warnings
+
+    return parse_disc_dates_page(resp.text), warnings
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -650,6 +745,11 @@ def main():
         action="store_true",
         help="Fetch RSS recent-changes feed and re-scrape only stale entries. Overrides --start-id / --end-id.",
     )
+    parser.add_argument(
+        "--dates-only",
+        action="store_true",
+        help="Scrape only Added/Last modified into date/{disc_id}.date.json files.",
+    )
 
     args = parser.parse_args()
 
@@ -667,6 +767,8 @@ def main():
             parser.error("end_id must be >= start_id")
 
     os.makedirs(args.output_dir, exist_ok=True)
+    if args.dates_only:
+        os.makedirs(os.path.join(args.output_dir, "date"), exist_ok=True)
     session = create_session(args.cookie)
 
     # Per-thread sessions for thread safety (requests.Session is not thread-safe)
@@ -681,7 +783,10 @@ def main():
         if interrupted:
             return disc_id, None, []
         s = session if args.workers == 1 else _get_session()
-        result, warnings = scrape_disc(s, disc_id, delay=args.delay)
+        if args.dates_only:
+            result, warnings = scrape_disc_dates(s, disc_id, delay=args.delay)
+        else:
+            result, warnings = scrape_disc(s, disc_id, delay=args.delay)
         return disc_id, result, warnings
 
     # Build list of disc IDs to process
@@ -689,15 +794,21 @@ def main():
         print("Fetching recent-changes RSS feed...")
         rss_entries = fetch_changed_ids_from_rss(session)
         print(f"RSS feed contains {len(rss_entries)} unique disc(s)")
-        disc_ids = filter_stale_ids(rss_entries, args.output_dir)
+        disc_ids = filter_stale_ids(rss_entries, args.output_dir, dates_only=args.dates_only)
         print(f"{len(disc_ids)} disc(s) need updating")
     elif args.force:
         disc_ids = list(range(args.start_id, args.end_id + 1))
     else:
         disc_ids = []
-        existing = set(os.listdir(args.output_dir))
+        if args.dates_only:
+            existing_dir = os.path.join(args.output_dir, "date")
+            existing = set(os.listdir(existing_dir))
+        else:
+            existing = set(os.listdir(args.output_dir))
         for disc_id in range(args.start_id, args.end_id + 1):
-            if f"{disc_id:06d}.json" in existing:
+            relpath = _output_relpath(disc_id, dates_only=args.dates_only)
+            filename = os.path.basename(relpath)
+            if filename in existing:
                 stats["skipped_exists"] += 1
             else:
                 disc_ids.append(disc_id)
@@ -722,7 +833,15 @@ def main():
                 break
             completed += 1
             _, result, warnings = worker_scrape(disc_id)
-            _save_result(disc_id, completed, total, result, warnings, args.output_dir)
+            _save_result(
+                disc_id,
+                completed,
+                total,
+                result,
+                warnings,
+                args.output_dir,
+                dates_only=args.dates_only,
+            )
     else:
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
             futures = {executor.submit(worker_scrape, did): did for did in disc_ids}
@@ -732,7 +851,15 @@ def main():
                     break
                 disc_id, result, warnings = future.result()
                 completed += 1
-                _save_result(disc_id, completed, total, result, warnings, args.output_dir)
+                _save_result(
+                    disc_id,
+                    completed,
+                    total,
+                    result,
+                    warnings,
+                    args.output_dir,
+                    dates_only=args.dates_only,
+                )
 
     print_summary()
     if interrupted:
@@ -740,10 +867,12 @@ def main():
 
 
 def _save_result(disc_id: int, progress: int, total: int,
-                 result: dict | str | None, warnings: list[str], output_dir: str):
+                 result: dict | str | None, warnings: list[str], output_dir: str,
+                 dates_only: bool = False):
     """Save scrape result to JSON and update stats. Output is atomic per disc."""
     lines = []
-    out_path = os.path.join(output_dir, f"{disc_id:06d}.json")
+    out_path = os.path.join(output_dir, _output_relpath(disc_id, dates_only=dates_only))
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     if result == "nonexistent":
         status = "skipped (doesn't exist)"
         try:
@@ -760,8 +889,11 @@ def _save_result(disc_id: int, progress: int, total: int,
         try:
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
-            title = result.get("d_title", "")
-            status = f"OK{f' - {title}' if title else ''}"
+            if dates_only:
+                status = "OK"
+            else:
+                title = result.get("d_title", "")
+                status = f"OK{f' - {title}' if title else ''}"
             with stats_lock:
                 stats["scraped"] += 1
         except OSError as e:

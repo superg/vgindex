@@ -20,6 +20,13 @@ import re
 import sys
 from datetime import datetime
 
+# Sentinel created_at for disc_submissions rows that mark discs which had no
+# `added` timestamp on redump.org (early-era entries before the field was
+# tracked, plus historical outage windows). Postgres' MIN(created_at) returns
+# this value for affected discs, and the website's disc-view rendering checks
+# for an exact match against this constant to suppress the "Added" row.
+NO_ADDED_SENTINEL_TS = "1970-01-01 00:00:00+00"
+
 # ---------------------------------------------------------------------------
 # Lookup maps (from 002_seed_data.sql)
 # ---------------------------------------------------------------------------
@@ -659,6 +666,57 @@ def parse_change_date(date_str):
     except ValueError:
         return None
 
+
+def parse_change_date_dt(date_str):
+    """Parse 'Mar 21 2026, 11:27' -> datetime, or None."""
+    if not date_str:
+        return None
+    try:
+        return datetime.strptime(date_str.strip(), "%b %d %Y, %H:%M")
+    except ValueError:
+        return None
+
+
+def parse_redump_date_field(s):
+    """Parse an `added` or `modified` field from <id>.date.json -> datetime.
+
+    Observed format on redump is 'YYYY-MM-DD HH:MM'; we also accept the
+    ':SS' variant defensively. Returns None for missing/unparseable input.
+    """
+    if not s:
+        return None
+    s = s.strip()
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def load_disc_dates(date_dir, disc_id):
+    """Load (added_dt, modified_dt) from <date_dir>/<NNNNNN>.date.json.
+
+    Each component is None if missing/unparseable. Returns (None, None)
+    if the file is absent, 0-byte, or unreadable.
+    """
+    path = os.path.join(date_dir, f"{disc_id:06d}.date.json")
+    try:
+        if os.path.getsize(path) == 0:
+            return None, None
+    except OSError:
+        return None, None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None, None
+    return (
+        parse_redump_date_field(payload.get("added")),
+        parse_redump_date_field(payload.get("modified")),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Merge helpers
 # ---------------------------------------------------------------------------
@@ -898,6 +956,66 @@ def _get_status_changes(fields_list):
             continue
         return _map_status_change(f.get("old_value"), f.get("new_value"))
     return {}
+
+
+def _pick_uid_from_change(change, user_id_map):
+    """Return the user_id_map uid for a given change's author, or None."""
+    name = change.get("user", "")
+    return user_id_map.get(name) if name else None
+
+
+def _pick_uid_for_added(changes_list, data, user_id_map):
+    """Submitter for an added-sentinel / added-backfill row.
+
+    - If `changes_list` is non-empty: use the author of the change with
+      the oldest (min) parseable date. If that change's author isn't
+      mappable (very rare; user field empty), walk to the next-oldest.
+    - If `changes_list` is empty: fall back to the first mappable name
+      from the dumpers list.
+    - Otherwise: return None and the caller skips the row.
+    """
+    if changes_list:
+        dated = [
+            (parse_change_date_dt(c.get("date", "")), c)
+            for c in changes_list
+        ]
+        dated = [(dt, c) for dt, c in dated if dt is not None]
+        for _, change in sorted(dated, key=lambda p: p[0]):
+            uid = _pick_uid_from_change(change, user_id_map)
+            if uid:
+                return uid
+        return None
+    for name in merge_dumpers(data):
+        uid = user_id_map.get(name)
+        if uid:
+            return uid
+    return None
+
+
+def _pick_uid_for_modified(changes_list, data, user_id_map):
+    """Submitter for a modified-backfill row.
+
+    Same shape as ``_pick_uid_for_added`` but ordered newest-first when
+    `changes_list` is non-empty; falls back to the dumpers list only
+    when there are no changes.
+    """
+    if changes_list:
+        dated = [
+            (parse_change_date_dt(c.get("date", "")), c)
+            for c in changes_list
+        ]
+        dated = [(dt, c) for dt, c in dated if dt is not None]
+        for _, change in sorted(dated, key=lambda p: p[0], reverse=True):
+            uid = _pick_uid_from_change(change, user_id_map)
+            if uid:
+                return uid
+        return None
+    for name in merge_dumpers(data):
+        uid = user_id_map.get(name)
+        if uid:
+            return uid
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Max-stats accumulator (merged from generate_max_disc_sql.py)
@@ -1285,7 +1403,9 @@ def disc_id_from_filename(fname):
 
 
 def process_all(data_dir, output_path, max_disc_id=None, reset=True,
-                dev_users_sql_path=None):
+                dev_users_sql_path=None, date_dir=None):
+    if date_dir is None:
+        date_dir = os.path.join(data_dir, "date")
     # Pass 1: collect all usernames, load all disc data, accumulate max-stats
     filenames = sorted(f for f in os.listdir(data_dir) if f.endswith(".json"))
     total = len(filenames)
@@ -1582,6 +1702,79 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
                         f"{sql_jsonb(payload)}, "
                         f"'Legacy', {uid}, {sql_str('inherited')}, "
                         f"{sql_timestamp(ts)}, {sql_timestamp(ts)})"
+                    )
+
+            # Date-driven Added/Modified backfill + sentinel.
+            #
+            # Reads <date_dir>/<NNNNNN>.date.json for the disc's `added`
+            # and `modified` timestamps and emits up to two extra
+            # disc_submissions rows so MIN()/MAX(created_at) match what
+            # redump itself shows on the disc page:
+            #
+            # Added side:
+            #   - no `added` field           -> emit NO_ADDED_SENTINEL row
+            #     (1970-01-01); the website matches this exact value and
+            #     hides the "Added" row on the disc view.
+            #   - `added` predates the oldest change (or no changes
+            #     exist) -> emit a backfill row with created_at = added so
+            #     MIN() surfaces the real first-known date.
+            #   - oldest change matches or precedes `added` -> nothing to
+            #     do; the existing change-derived rows already give MIN()
+            #     the right value.
+            #
+            # Modified side:
+            #   - `modified` strictly newer than the newest change (or
+            #     no changes exist) -> emit a backfill row with
+            #     created_at = modified so MAX() surfaces it.
+            #   - `modified` matches or predates the newest change ->
+            #     no-op (this also absorbs the ~60s rounding skew where
+            #     redump rounds the changes-page and disc-page timestamps
+            #     in opposite directions).
+            #   - `modified` missing -> no-op; MAX(change date) remains
+            #     a reasonable "last activity" fallback.
+            #
+            # Submitter attribution is side-specific: added rows go to
+            # the oldest change author, modified rows go to the newest
+            # change author. Dumpers are consulted only when there are
+            # no changes; if neither yields a uid the row is skipped.
+            added_dt, modified_dt = load_disc_dates(date_dir, disc_id)
+            change_dts = [parse_change_date_dt(c.get("date", "")) for c in changes_list]
+            change_dts = [dt for dt in change_dts if dt is not None]
+            oldest_change_dt = min(change_dts) if change_dts else None
+            newest_change_dt = max(change_dts) if change_dts else None
+
+            if added_dt is None:
+                add_ts = NO_ADDED_SENTINEL_TS
+                add_comment = "no-added-sentinel"
+                emit_added = True
+            elif oldest_change_dt is None or added_dt < oldest_change_dt:
+                add_ts = added_dt.strftime("%Y-%m-%d %H:%M:00+00")
+                add_comment = "added-backfill"
+                emit_added = True
+            else:
+                emit_added = False
+
+            if emit_added:
+                add_uid = _pick_uid_for_added(changes_list, data, user_id_map)
+                if add_uid is not None:
+                    submission_inserts.append(
+                        f"('Disc', {add_uid}, {disc_id}, "
+                        f"{sql_jsonb({})}, "
+                        f"'Legacy', NULL, {sql_str(add_comment)}, "
+                        f"{sql_str(add_ts)}, NULL)"
+                    )
+
+            if modified_dt is not None and (
+                newest_change_dt is None or modified_dt > newest_change_dt
+            ):
+                mod_uid = _pick_uid_for_modified(changes_list, data, user_id_map)
+                if mod_uid is not None:
+                    mod_ts = modified_dt.strftime("%Y-%m-%d %H:%M:00+00")
+                    submission_inserts.append(
+                        f"('Disc', {mod_uid}, {disc_id}, "
+                        f"{sql_jsonb({})}, "
+                        f"'Legacy', NULL, {sql_str('modified-backfill')}, "
+                        f"{sql_str(mod_ts)}, NULL)"
                     )
 
             if processed % 10000 == 0:
@@ -1913,15 +2106,27 @@ def main():
                              "transaction. Skipped silently if missing. "
                              "Pass an empty string to disable. "
                              "Default: users.sql")
+    parser.add_argument("--date-dir", default=None,
+                        help="Directory of <id>.date.json files produced by "
+                             "the redump scraper's --dates-only mode. Used to "
+                             "backfill or sentinel each disc's `added` "
+                             "timestamp into disc_submissions. Defaults to "
+                             "<data_dir>/date.")
     args = parser.parse_args()
 
     if not os.path.isdir(args.data_dir):
         print(f"Error: {args.data_dir} is not a directory", file=sys.stderr)
         sys.exit(1)
 
+    date_dir = args.date_dir or os.path.join(args.data_dir, "date")
+    if not os.path.isdir(date_dir):
+        print(f"Error: {date_dir} is not a directory", file=sys.stderr)
+        sys.exit(1)
+
     process_all(args.data_dir, args.output, max_disc_id=args.max_id,
                 reset=args.reset,
-                dev_users_sql_path=args.dev_users_sql or None)
+                dev_users_sql_path=args.dev_users_sql or None,
+                date_dir=date_dir)
 
 
 if __name__ == "__main__":
