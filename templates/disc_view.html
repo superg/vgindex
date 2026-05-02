@@ -421,6 +421,21 @@
                 wrapper.style.overflow = 'hidden';
             }
         });
+        document.querySelectorAll('.dat-filename-scaler').forEach(function(wrapper) {
+            var p = wrapper.querySelector('.dat-filename');
+            if (!p) return;
+            p.style.transform = '';
+            p.style.transformOrigin = '';
+            wrapper.style.height = '';
+            var containerWidth = wrapper.clientWidth;
+            var contentWidth = p.scrollWidth;
+            if (contentWidth > containerWidth && containerWidth > 0) {
+                var scale = containerWidth / contentWidth;
+                p.style.transform = 'scale(' + scale + ')';
+                p.style.transformOrigin = 'top left';
+                wrapper.style.height = Math.ceil(p.offsetHeight * scale) + 'px';
+            }
+        });
     }
     document.addEventListener('DOMContentLoaded', scaleBottomTables);
     window.addEventListener('resize', scaleBottomTables);
