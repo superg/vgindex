@@ -5,6 +5,7 @@ use axum::{
     routing::get,
     Router,
 };
+use chrono::{DateTime, Utc};
 
 use crate::auth::middleware::CurrentUser;
 use crate::config::SiteConfig;
@@ -12,6 +13,14 @@ use crate::db::models::*;
 use crate::error::AppResult;
 use crate::services::disc_service;
 use crate::AppState;
+
+/// Sentinel `created_at` for `disc_submissions` rows that mark discs which had
+/// no `added` timestamp on redump.org. The import script
+/// (`scripts/generate_import_sql.py`, constant `NO_ADDED_SENTINEL_TS`) emits
+/// one such row per affected disc; `MIN(created_at)` then surfaces this exact
+/// value as the disc's `added_at`, which we recognize here to suppress the
+/// "Added" row in the disc view.
+const NO_ADDED_SENTINEL: DateTime<Utc> = DateTime::<Utc>::UNIX_EPOCH;
 
 fn ring_tab_replace(s: &str) -> String {
     let escaped = s
@@ -470,7 +479,10 @@ async fn disc_view(
             } else {
                 "Disabled".to_string()
             },
-            created_at: detail.added_at.map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(),
+            created_at: detail.added_at
+                .filter(|d| *d != NO_ADDED_SENTINEL)
+                .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_default(),
             updated_at: detail.modified_at.map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(),
             dumper_count: detail.dumpers.len(),
             dumpers_display: if detail.dumpers.is_empty() {
