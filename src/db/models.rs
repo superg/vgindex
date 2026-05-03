@@ -478,6 +478,7 @@ pub struct DiscDetail {
     pub ring_entries: Vec<RingEntryView>,
     pub files: Vec<File>,
     pub dumpers: Vec<DumperInfo>,
+    pub disc_submission_count: i64,
     pub sector_ranges: Vec<ProtectionRange>,
     pub added_at: Option<DateTime<Utc>>,
     pub modified_at: Option<DateTime<Utc>>,
@@ -503,6 +504,7 @@ pub struct RingEntryView {
 pub struct DumperInfo {
     pub user_id: i32,
     pub username: String,
+    pub disc_submission_count: i64,
 }
 
 pub fn format_display_title(

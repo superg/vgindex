@@ -1,9 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Queue{% endblock %}
+{% block title %}{{ page_title }}{% endblock %}
 
 {% block content %}
-<h3 class="downloads-page-title">Queue</h3>
+<h3 class="downloads-page-title">{{ page_title }}</h3>
+{% if is_public_history %}
+<p><small>Public history only shows approved and legacy submissions.</small></p>
+{% endif %}
 
 <details open>
     <summary></summary>
@@ -11,11 +14,17 @@
         <label>
             <span>Status</span>
             <select name="status" onchange="this.form.submit()">
+                {% if can_view_all_statuses %}
                 <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🟡🔴⚪)</option>
                 <option value="Pending" {% if filter_status == "Pending" %}selected{% endif %}>Pending (🟡)</option>
                 <option value="Approved" {% if filter_status == "Approved" %}selected{% endif %}>Approved (🟢)</option>
                 <option value="Rejected" {% if filter_status == "Rejected" %}selected{% endif %}>Rejected (🔴)</option>
                 <option value="Legacy" {% if filter_status == "Legacy" %}selected{% endif %}>Legacy (⚪)</option>
+                {% else %}
+                <option value="All Visible" {% if filter_status == "All Visible" %}selected{% endif %}>All Visible (🟢⚪)</option>
+                <option value="Approved" {% if filter_status == "Approved" %}selected{% endif %}>Approved (🟢)</option>
+                <option value="Legacy" {% if filter_status == "Legacy" %}selected{% endif %}>Legacy (⚪)</option>
+                {% endif %}
             </select>
         </label>
         <label>
@@ -35,7 +44,7 @@
                 {% endfor %}
             </select>
         </label>
-        {% if is_moderator %}
+        {% if is_moderator && filter_disc_id.is_empty() %}
         <label>
             <span>Submitter</span>
             <select name="submitter" onchange="this.form.submit()">
@@ -48,6 +57,9 @@
         {% endif %}
         <input type="hidden" name="sort" value="{{ sort_column }}">
         <input type="hidden" name="order" value="{{ sort_order }}">
+        {% if !filter_disc_id.is_empty() %}
+        <input type="hidden" name="disc_id" value="{{ filter_disc_id }}">
+        {% endif %}
     </form>
 </details>
 
@@ -58,11 +70,11 @@
     <nav aria-label="Pagination">
         <ul>
             {% if page > 1 %}
-            <li><a href="/queue/?page={{ prev_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}">&laquo; Previous</a></li>
+            <li><a href="/queue/?page={{ prev_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">&laquo; Previous</a></li>
             {% endif %}
             <li>Page {{ page }} of {{ total_pages }}</li>
             {% if page < total_pages %}
-            <li><a href="/queue/?page={{ next_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}">Next &raquo;</a></li>
+            <li><a href="/queue/?page={{ next_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Next &raquo;</a></li>
             {% endif %}
         </ul>
     </nav>
@@ -71,20 +83,20 @@
     <table class="disc-table striped">
         <thead>
             <tr>
-                <th><a href="/queue/?sort=date&amp;order={{ next_date_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}">Date{% if sort_column == "date" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/queue/?sort=title&amp;order={{ next_title_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/queue/?sort=system&amp;order={{ next_system_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/queue/?sort=submitter&amp;order={{ next_submitter_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}">Submitter{% if sort_column == "submitter" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/queue/?sort=reviewer&amp;order={{ next_reviewer_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}">Reviewer{% if sort_column == "reviewer" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/queue/?sort=type&amp;order={{ next_type_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}">Type{% if sort_column == "type" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/queue/?sort=status&amp;order={{ next_status_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=date&amp;order={{ next_date_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Date{% if sort_column == "date" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=title&amp;order={{ next_title_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=system&amp;order={{ next_system_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=submitter&amp;order={{ next_submitter_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Submitter{% if sort_column == "submitter" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=reviewer&amp;order={{ next_reviewer_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Reviewer{% if sort_column == "reviewer" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=type&amp;order={{ next_type_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Type{% if sort_column == "type" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/queue/?sort=status&amp;order={{ next_status_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
             </tr>
         </thead>
         <tbody>
             {% for entry in entries %}
             <tr>
                 <td>{{ entry.created_at.format("%Y-%m-%d %H:%M") }}</td>
-                <td><a href="/queue/{{ entry.id }}/">{{ entry.title }}</a></td>
+                <td>{% if self.can_open_entry(entry) %}<a href="/queue/{{ entry.id }}/">{{ entry.title }}</a>{% else %}{{ entry.title }}{% endif %}</td>
                 <td>{{ entry.system_display }}</td>
                 <td><a href="/discs/?dumper={{ entry.submitter_id }}">{{ entry.submitter }}</a></td>
                 <td>{% match entry.reviewer_id %}{% when Some with (rid) %}<a href="/discs/?dumper={{ rid }}">{{ entry.reviewer.as_deref().unwrap_or("") }}</a>{% when None %}{% endmatch %}</td>
@@ -102,11 +114,11 @@
     <nav aria-label="Pagination">
         <ul>
             {% if page > 1 %}
-            <li><a href="/queue/?page={{ prev_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}">&laquo; Previous</a></li>
+            <li><a href="/queue/?page={{ prev_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">&laquo; Previous</a></li>
             {% endif %}
             <li>Page {{ page }} of {{ total_pages }}</li>
             {% if page < total_pages %}
-            <li><a href="/queue/?page={{ next_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}">Next &raquo;</a></li>
+            <li><a href="/queue/?page={{ next_page }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Next &raquo;</a></li>
             {% endif %}
         </ul>
     </nav>

@@ -72,6 +72,7 @@ struct DiscsTemplate {
     next_region_order: String,
     next_title_order: String,
     next_system_order: String,
+    next_version_order: String,
     next_edition_order: String,
     next_language_order: String,
     next_serial_order: String,
@@ -86,6 +87,7 @@ struct DiscRow {
     system_code: String,
     system_display: String,
     dumped_by_me: bool,
+    version: String,
     edition_display: String,
     status_emoji: String,
     status_display: String,
@@ -278,8 +280,14 @@ async fn discs_page(
         "language" => "(SELECT MIN(l.sort_order) FROM disc_languages dl JOIN languages l ON l.code = dl.language_code WHERE dl.disc_id = d.id)",
         "serial"   => "LOWER(array_to_string(d.serial, ', '))",
         "status"   => "CASE WHEN d.questionable THEN 3 WHEN (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) > 1 THEN 1 ELSE 2 END",
-        "added"    => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
-        "updated"  => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
+        // Filter out DUMPER_CREDIT_SENTINEL_TS (1970-01-02) rows so the
+        // synthetic credit-marker submissions added by the importer's
+        // dumper-credit and Green-status fallback passes never surface as a
+        // disc's "added" or "updated" sort key. The 1970-01-01 sentinel is
+        // intentionally retained: it survives MIN() so the disc-view
+        // template can recognize it and suppress the "Added" row.
+        "added"    => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id AND created_at != '1970-01-02 00:00:00+00')",
+        "updated"  => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id AND created_at != '1970-01-02 00:00:00+00')",
         _ => "LOWER(d.title)",
     };
     let sort_dir = match query.order.as_deref() {
@@ -387,6 +395,7 @@ async fn discs_page(
             system_display: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             system_code: r.system_code,
             dumped_by_me: r.dumped_by_me,
+            version: r.version.unwrap_or_default(),
             edition_display: if r.has_edition {
                 r.edition.unwrap_or_default()
             } else {
@@ -448,6 +457,7 @@ async fn discs_page(
             next_region_order: next_order("region"),
             next_title_order: next_order("title"),
             next_system_order: next_order("system"),
+            next_version_order: next_order("version"),
             next_edition_order: next_order("edition"),
             next_language_order: next_order("language"),
             next_serial_order: next_order("serial"),

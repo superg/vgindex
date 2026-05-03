@@ -668,6 +668,8 @@ pub async fn get_submission(pool: &PgPool, id: i32) -> AppResult<DiscSubmission>
 pub async fn list_submissions(
     pool: &PgPool,
     user_id_filter: Option<i32>,
+    disc_id_filter: Option<i32>,
+    restrict_to_public_statuses: bool,
     status_filter: Option<&str>,
     type_filter: Option<&str>,
     system_filter: Option<&str>,
@@ -684,6 +686,13 @@ pub async fn list_submissions(
     if user_id_filter.is_some() {
         idx += 1;
         conditions.push(format!("ds.submitter_id = ${idx}"));
+    }
+    if disc_id_filter.is_some() {
+        idx += 1;
+        conditions.push(format!("ds.target_disc_id = ${idx}"));
+    }
+    if restrict_to_public_statuses {
+        conditions.push("ds.status IN ('Approved', 'Legacy')".to_string());
     }
     if status_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -744,6 +753,9 @@ pub async fn list_submissions(
     if let Some(uid) = user_id_filter {
         query = query.bind(uid);
     }
+    if let Some(disc_id) = disc_id_filter {
+        query = query.bind(disc_id);
+    }
     if let Some(status) = status_filter {
         if !status.is_empty() {
             query = query.bind(status.to_string());
@@ -771,6 +783,8 @@ pub async fn list_submissions(
 pub async fn count_submissions(
     pool: &PgPool,
     user_id_filter: Option<i32>,
+    disc_id_filter: Option<i32>,
+    restrict_to_public_statuses: bool,
     status_filter: Option<&str>,
     type_filter: Option<&str>,
     system_filter: Option<&str>,
@@ -782,6 +796,13 @@ pub async fn count_submissions(
     if user_id_filter.is_some() {
         idx += 1;
         conditions.push(format!("ds.submitter_id = ${idx}"));
+    }
+    if disc_id_filter.is_some() {
+        idx += 1;
+        conditions.push(format!("ds.target_disc_id = ${idx}"));
+    }
+    if restrict_to_public_statuses {
+        conditions.push("ds.status IN ('Approved', 'Legacy')".to_string());
     }
     if status_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -812,6 +833,9 @@ pub async fn count_submissions(
     let mut query = sqlx::query_scalar::<_, i64>(&sql);
     if let Some(uid) = user_id_filter {
         query = query.bind(uid);
+    }
+    if let Some(disc_id) = disc_id_filter {
+        query = query.bind(disc_id);
     }
     if let Some(status) = status_filter {
         if !status.is_empty() {

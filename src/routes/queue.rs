@@ -8,7 +8,7 @@ use axum::{
 use axum_extra::extract::Form;
 use serde::Deserialize;
 
-use crate::auth::middleware::{RequireAuth, RequireModerator};
+use crate::auth::middleware::{CurrentUser, RequireModerator};
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
@@ -44,6 +44,7 @@ pub struct QueueQuery {
     pub sub_type: Option<String>,
     pub system: Option<String>,
     pub submitter: Option<String>,
+    pub disc_id: Option<i32>,
     pub sort: Option<String>,
     pub order: Option<String>,
     pub page: Option<i64>,
@@ -65,10 +66,15 @@ struct SubmitterOption {
 #[template(path = "queue.html")]
 struct QueueTemplate {
     current_user: Option<String>,
+    current_user_id: Option<i32>,
+    page_title: String,
+    is_public_history: bool,
     is_moderator: bool,
+    can_view_all_statuses: bool,
     entries: Vec<SubmissionListRow>,
     systems: Vec<SystemOption>,
     submitters: Vec<SubmitterOption>,
+    filter_disc_id: String,
     filter_status: String,
     filter_type: String,
     filter_system: String,
@@ -89,6 +95,14 @@ struct QueueTemplate {
     next_status_order: String,
 }
 impl SiteConfig for QueueTemplate {}
+impl QueueTemplate {
+    fn can_open_entry(&self, entry: &SubmissionListRow) -> bool {
+        self.is_moderator
+            || self.can_view_all_statuses
+            || self.current_user_id == Some(entry.submitter_id)
+            || matches!(entry.status, SubmissionStatus::Approved | SubmissionStatus::Legacy)
+    }
+}
 
 #[derive(sqlx::FromRow)]
 struct SysRow {
@@ -101,25 +115,67 @@ const PAGE_SIZE: i64 = 50;
 
 async fn queue_list(
     State(state): State<AppState>,
-    RequireAuth(user): RequireAuth,
+    user: CurrentUser,
     Query(query): Query<QueueQuery>,
 ) -> AppResult<Html<String>> {
-    let page = query.page.unwrap_or(1).max(1);
-    let is_mod = user.role.can_moderate();
+    let current = user.user();
+    let is_logged_in = current.is_some();
+    let is_mod = current.is_some_and(|u| u.role.can_moderate());
+    let can_view_all_statuses = current.is_some_and(|u| u.role.can_edit_directly());
+    let disc_id_filter = query.disc_id;
+    let is_public_history = disc_id_filter.is_some() && !is_logged_in;
 
-    let filter_status = query.status.clone().unwrap_or_else(|| "Pending".to_string());
+    if disc_id_filter.is_none() && !is_logged_in {
+        return Err(AppError::Unauthorized);
+    }
+
+    let page = query.page.unwrap_or(1).max(1);
+    let requested_status = query.status.clone().unwrap_or_else(|| {
+        if disc_id_filter.is_some() {
+            if can_view_all_statuses {
+                "All Statuses".to_string()
+            } else {
+                "All Visible".to_string()
+            }
+        } else if can_view_all_statuses {
+            "Pending".to_string()
+        } else {
+            "All Visible".to_string()
+        }
+    });
+    let filter_status = if can_view_all_statuses {
+        if requested_status.is_empty() {
+            "Pending".to_string()
+        } else {
+            requested_status
+        }
+    } else {
+        match requested_status.as_str() {
+            "Approved" | "Legacy" => requested_status,
+            _ => "All Visible".to_string(),
+        }
+    };
     let filter_type = query.sub_type.clone().unwrap_or_default();
     let filter_system = query.system.clone().unwrap_or_default();
-    let filter_submitter = if is_mod { query.submitter.clone().unwrap_or_default() } else { String::new() };
+    let filter_submitter = if is_mod && disc_id_filter.is_none() {
+        query.submitter.clone().unwrap_or_default()
+    } else {
+        String::new()
+    };
     let sort_column = query.sort.clone().unwrap_or_else(|| "date".to_string());
     let sort_order = query.order.clone().unwrap_or_else(|| "desc".to_string());
 
-    let status_for_query = if filter_status == "All Statuses" {
-        None
-    } else if filter_status.is_empty() {
-        Some("Pending")
+    let status_for_query = if can_view_all_statuses {
+        if filter_status == "All Statuses" {
+            None
+        } else {
+            Some(filter_status.as_str())
+        }
     } else {
-        Some(filter_status.as_str())
+        match filter_status.as_str() {
+            "Approved" | "Legacy" => Some(filter_status.as_str()),
+            _ => None,
+        }
     };
 
     let type_for_query = if filter_type.is_empty() { None } else { Some(filter_type.as_str()) };
@@ -128,7 +184,13 @@ async fn queue_list(
 
     let entries = queue_service::list_submissions(
         &state.pool,
-        if is_mod { None } else { Some(user.id) },
+        if disc_id_filter.is_some() || is_mod {
+            None
+        } else {
+            current.map(|u| u.id)
+        },
+        disc_id_filter,
+        !can_view_all_statuses,
         status_for_query,
         type_for_query,
         system_for_query,
@@ -141,7 +203,13 @@ async fn queue_list(
 
     let total_count = queue_service::count_submissions(
         &state.pool,
-        if is_mod { None } else { Some(user.id) },
+        if disc_id_filter.is_some() || is_mod {
+            None
+        } else {
+            current.map(|u| u.id)
+        },
+        disc_id_filter,
+        !can_view_all_statuses,
         status_for_query,
         type_for_query,
         system_for_query,
@@ -167,7 +235,7 @@ async fn queue_list(
         })
         .collect();
 
-    let submitters: Vec<SubmitterOption> = if is_mod {
+    let submitters: Vec<SubmitterOption> = if is_mod && disc_id_filter.is_none() {
         #[derive(sqlx::FromRow)]
         struct SubRow { id: i32, username: String }
         let sub_rows: Vec<SubRow> = sqlx::query_as(
@@ -195,12 +263,19 @@ async fn queue_list(
 
     Ok(Html(
         QueueTemplate {
-            current_user: Some(user.username),
+            current_user: current.map(|u| u.username.clone()),
+            current_user_id: current.map(|u| u.id),
+            page_title: disc_id_filter
+                .map(|disc_id| format!("History: Disc #{disc_id}"))
+                .unwrap_or_else(|| "Queue".to_string()),
+            is_public_history,
             is_moderator: is_mod,
+            can_view_all_statuses,
             entries,
             systems,
             submitters,
-            filter_status: if filter_status.is_empty() { "Pending".to_string() } else { filter_status },
+            filter_disc_id: disc_id_filter.map(|disc_id| disc_id.to_string()).unwrap_or_default(),
+            filter_status,
             filter_type,
             filter_system,
             filter_submitter,
@@ -228,13 +303,18 @@ async fn queue_list(
 
 async fn submission_detail(
     State(state): State<AppState>,
-    RequireAuth(user): RequireAuth,
+    user: CurrentUser,
     Path(id): Path<i32>,
 ) -> AppResult<Html<String>> {
     let sub = queue_service::get_submission(&state.pool, id).await?;
 
-    let is_mod = user.role.can_moderate();
-    if !is_mod && sub.submitter_id != user.id {
+    let current = user.user();
+    let is_mod = current.is_some_and(|u| u.role.can_moderate());
+    let can_view_all_statuses = current.is_some_and(|u| u.role.can_edit_directly());
+    let is_submitter = current.is_some_and(|u| u.id == sub.submitter_id);
+    let is_public_status = matches!(sub.status, SubmissionStatus::Approved | SubmissionStatus::Legacy);
+
+    if !(is_mod || can_view_all_statuses || is_submitter || is_public_status) {
         return Err(AppError::Forbidden);
     }
 
@@ -259,10 +339,17 @@ async fn submission_detail(
 
     if !show_review_form {
         return render_readonly_detail(
-            &user.username, &sub, &submitter_name, &reviewer_name,
+            current.map(|u| u.username.as_str()),
+            &sub,
+            &submitter_name,
+            &reviewer_name,
         )
         .await;
     }
+
+    let reviewer_username = current
+        .map(|u| u.username.clone())
+        .ok_or(AppError::Unauthorized)?;
 
     let ref_data = fetch_ref_data(&state.pool).await?;
     let (systems_media_json, systems_has_flags_json) =
@@ -301,7 +388,7 @@ async fn submission_detail(
     let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
 
     let mut template = build_review_template(
-        &user.username, &sub, &submitter_name, &reviewer_name,
+        &reviewer_username, &sub, &submitter_name, &reviewer_name,
         &snapshot, &ref_data, &systems_media_json, &systems_has_flags_json,
         &media_layers_json, &media_rom_extensions_json, &media_is_cd_json, &media_has_pic_json,
         &system_code, &media_type_code, max_layers, has_sys,
@@ -554,13 +641,13 @@ struct QueueDetailTemplate {
 impl SiteConfig for QueueDetailTemplate {}
 
 async fn render_readonly_detail(
-    username: &str,
+    username: Option<&str>,
     sub: &DiscSubmission,
     submitter_name: &str,
     reviewer_name: &str,
 ) -> AppResult<Html<String>> {
     let template = QueueDetailTemplate {
-        current_user: Some(username.to_string()),
+        current_user: username.map(|name| name.to_string()),
         submission_id: sub.id,
         submission_type_display: sub.submission_type.to_string(),
         submitter_id: sub.submitter_id,

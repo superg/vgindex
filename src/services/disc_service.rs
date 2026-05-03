@@ -321,7 +321,16 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .await?;
 
     let dumpers: Vec<DumperInfo> = sqlx::query_as(
-        "SELECT u.id AS user_id, u.username FROM disc_dumpers dd
+        "SELECT u.id AS user_id,
+                u.username,
+                (
+                    SELECT COUNT(*)
+                    FROM disc_submissions ds
+                    WHERE ds.target_disc_id = $1
+                      AND ds.submitter_id = u.id
+                      AND ds.submission_type = 'Disc'
+                ) AS disc_submission_count
+         FROM disc_dumpers dd
          JOIN users u ON u.id = dd.user_id
          WHERE dd.disc_id = $1"
     )
@@ -329,15 +338,36 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_all(pool)
     .await?;
 
+    let disc_submission_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM disc_submissions
+         WHERE target_disc_id = $1
+           AND submission_type = 'Disc'"
+    )
+    .bind(disc_id)
+    .fetch_one(pool)
+    .await?;
+
+    // Exclude DUMPER_CREDIT_SENTINEL_TS (1970-01-02) rows: these are
+    // synthetic credit markers added by the importer's dumper-credit closure
+    // and Green-status fallback passes, NOT real activity timestamps. Letting
+    // them surface here would push the disc's "Added" date to 1970-01-02 for
+    // any disc with co-credited dumpers who never authored a change. The
+    // older NO_ADDED_SENTINEL (1970-01-01) is intentionally NOT filtered:
+    // the disc-view rendering checks for it explicitly to suppress the
+    // "Added" row when redump itself never tracked the date.
     let added_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = $1"
+        "SELECT MIN(created_at) FROM disc_submissions
+         WHERE target_disc_id = $1
+           AND created_at != '1970-01-02 00:00:00+00'"
     )
     .bind(disc_id)
     .fetch_one(pool)
     .await?;
 
     let modified_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = $1"
+        "SELECT MAX(created_at) FROM disc_submissions
+         WHERE target_disc_id = $1
+           AND created_at != '1970-01-02 00:00:00+00'"
     )
     .bind(disc_id)
     .fetch_one(pool)
@@ -361,6 +391,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         ring_entries: ring_views,
         files,
         dumpers,
+        disc_submission_count,
         sector_ranges,
         added_at,
         modified_at,
@@ -986,6 +1017,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for DumperInfo {
         Ok(Self {
             user_id: row.try_get("user_id")?,
             username: row.try_get("username")?,
+            disc_submission_count: row.try_get("disc_submission_count")?,
         })
     }
 }

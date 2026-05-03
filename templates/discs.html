@@ -103,6 +103,7 @@
                 <th class="region-col"><a href="/discs/?sort=region&amp;order={{ next_region_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="title-col"><a href="/discs/?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="system-col"><a href="/discs/?sort=system&amp;order={{ next_system_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=version&amp;order={{ next_version_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Version{% if sort_column == "version" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th><a href="/discs/?sort=edition&amp;order={{ next_edition_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Edition{% if sort_column == "edition" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="language-col"><a href="/discs/?sort=language&amp;order={{ next_language_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th><a href="/discs/?sort=serial&amp;order={{ next_serial_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper }}{% endif %}">Serial{% if sort_column == "serial" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
@@ -123,6 +124,7 @@
                     {% endif %}
                 </td>
                 <td class="system-col">{{ disc.system_display }}</td>
+                <td class="truncate version-col" title="{{ disc.version }}"><small>{{ disc.version }}</small></td>
                 <td class="truncate edition-col" title="{{ disc.edition_display }}">{{ disc.edition_display }}</td>
                 <td class="language-col">{% for lang in disc.language_flags %}<img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">{% endfor %}</td>
                 <td class="truncate serial-col" title="{{ disc.serial }}"><small>{{ disc.serial }}</small></td>
@@ -130,7 +132,7 @@
             </tr>
             {% endfor %}
             {% if discs.is_empty() %}
-            <tr><td colspan="{% if current_user.is_some() %}8{% else %}7{% endif %}">No discs found.</td></tr>
+            <tr><td colspan="{% if current_user.is_some() %}9{% else %}8{% endif %}">No discs found.</td></tr>
             {% endif %}
         </tbody>
     </table>

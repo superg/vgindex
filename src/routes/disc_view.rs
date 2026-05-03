@@ -462,20 +462,17 @@ async fn disc_view(
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             file_count: detail.files.len(),
             status_class: if detail.disc.enabled {
-                let dumper_count = detail.dumpers.len() as i64;
-                DiscStatus::compute(detail.disc.questionable, dumper_count).css_class().to_string()
+                DiscStatus::compute(detail.disc.questionable, detail.disc_submission_count).css_class().to_string()
             } else {
                 "bad".to_string()
             },
             status_emoji: if detail.disc.enabled {
-                let dumper_count = detail.dumpers.len() as i64;
-                DiscStatus::compute(detail.disc.questionable, dumper_count).emoji().to_string()
+                DiscStatus::compute(detail.disc.questionable, detail.disc_submission_count).emoji().to_string()
             } else {
                 "🔴".to_string()
             },
             status_display: if detail.disc.enabled {
-                let dumper_count = detail.dumpers.len() as i64;
-                DiscStatus::compute(detail.disc.questionable, dumper_count).to_string()
+                DiscStatus::compute(detail.disc.questionable, detail.disc_submission_count).to_string()
             } else {
                 "Disabled".to_string()
             },
@@ -490,9 +487,14 @@ async fn disc_view(
             } else {
                 detail.dumpers.iter()
                     .map(|d| format!(
-                        "<a href=\"/discs/?dumper={}\">{}</a>",
+                        "<a href=\"/discs/?dumper={}\">{}</a>{}",
                         d.user_id,
                         d.username.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"),
+                        if d.disc_submission_count > 1 {
+                            format!(" ({})", d.disc_submission_count)
+                        } else {
+                            String::new()
+                        },
                     ))
                     .collect::<Vec<_>>()
                     .join(", ")
