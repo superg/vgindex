@@ -206,6 +206,7 @@ main > h3 {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.disc-table .version-col { max-width: 7rem; }
 .disc-table .edition-col { max-width: 7.5rem; }
 .disc-table .serial-col  { max-width: 7rem; }
 
@@ -664,9 +665,20 @@ details + p small {
 .disc-title-row .disc-title-box {
     margin-bottom: 0;
 }
-.disc-view .edit-btn {
+.disc-view .title-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
     white-space: nowrap;
     align-self: center;
+}
+.disc-view .title-action-link {
+    font-size: 1rem;
+    font-weight: 500;
+}
+.disc-view .title-action-separator {
+    font-size: 1rem;
+    opacity: 0.7;
 }
 .col-num {
     text-align: right;

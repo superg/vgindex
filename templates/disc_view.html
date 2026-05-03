@@ -11,7 +11,13 @@
 <h2 class="foreign-title">{{ title_foreign }}</h2>
 {% endif %}
 </div>
-{% if can_edit %}<a href="/disc/{{ disc_id }}/edit/" role="button" class="edit-btn">Edit</a>{% endif %}
+<div class="title-actions">
+    {% if can_edit %}
+    <a href="/disc/{{ disc_id }}/edit/" class="title-action-link">Edit</a>
+    <span class="title-action-separator" aria-hidden="true">/</span>
+    {% endif %}
+    <a href="/queue/?disc_id={{ disc_id }}" class="title-action-link">History</a>
+</div>
 </div>
 
 <div class="grid">
