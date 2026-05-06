@@ -2,16 +2,16 @@
 """
 Redump.org disc database scraper.
 
-Scrapes edit page fields and change history for disc IDs from redump.org.
-Requires a valid session cookie copied from your browser's dev tools.
+By default, the scraper loads configuration from scraper.cfg located in the
+same directory as this script.
 
 Usage:
-    python scraper.py --end-id 100 --cookie "redump_cookie=BASE64VALUE"
-    python scraper.py --start-id 1 --end-id 132192 --cookie "redump_cookie=BASE64VALUE" --delay 2.0
-    python scraper.py --update --cookie "redump_cookie=BASE64VALUE"
+    python scraper.py
+    python scraper.py --config /path/to/scraper.cfg
 """
 
 import argparse
+import configparser
 import json
 import os
 import re
@@ -20,13 +20,29 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from email.utils import parsedate_to_datetime
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urljoin
 
 import requests
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 BASE_URL = "http://redump.org"
+DEFAULT_MODIFIED_LIST_URL = f"{BASE_URL}/discs/sort/modified/dir/desc/"
+DEFAULT_OUTPUT_DIR = "data/redump/db"
+CONFIG_SECTION = "scraper"
+NONEXISTENT_DISC_RE = re.compile(r'with ID ".+" doesn\'t exist')
+
+
+@dataclass
+class ScraperConfig:
+    config_path: Path
+    last_known_disc_id: int
+    cookie: str
+    delay_seconds: float
+    workers: int = 1
+    output_dir: str = DEFAULT_OUTPUT_DIR
 
 # Stats tracked globally for signal handler access
 stats = {"scraped": 0, "skipped_exists": 0, "skipped_inaccessible": 0, "failed": 0}
@@ -348,7 +364,7 @@ def _parse_change_tables(dd: Tag) -> list[dict]:
             br.replace_with("\n")
         return td.get_text().strip()
 
-    for table_idx, table in enumerate(tables):
+    for table in tables:
         rows = table.find_all("tr")
         i = 0
         while i < len(rows):
@@ -427,84 +443,116 @@ def _detect_change_type(td_style: str, tr_style: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# RSS update detection
+# Config and listing helpers
 # ---------------------------------------------------------------------------
 
-RSS_URL = f"{BASE_URL}/feeds/recentchanges/rss"
 _DISC_ID_RE = re.compile(r"/disc/(\d+)/")
 
 
-def fetch_changed_ids_from_rss(
-    session: requests.Session,
-) -> list[tuple[int, datetime]]:
-    """Fetch the recent-changes RSS feed and return (disc_id, pub_datetime) pairs.
-
-    Deduplicates by disc ID, keeping the latest pubDate per disc.
-    Returns a sorted list of (disc_id, pub_datetime) tuples.
-    """
-    resp = session.get(RSS_URL, timeout=30)
-    resp.raise_for_status()
-
-    soup = BeautifulSoup(resp.content, "xml")
-    latest: dict[int, datetime] = {}
-
-    for item in soup.find_all("item"):
-        link_tag = item.find("link")
-        pub_tag = item.find("pubDate")
-        if not link_tag or not pub_tag:
-            continue
-
-        link_text = link_tag.get_text(strip=True)
-        m = _DISC_ID_RE.search(link_text)
-        if not m:
-            continue
-
-        disc_id = int(m.group(1))
-        pub_dt = parsedate_to_datetime(pub_tag.get_text(strip=True))
-
-        if disc_id not in latest or pub_dt > latest[disc_id]:
-            latest[disc_id] = pub_dt
-
-    return sorted(latest.items())
+def default_config_path() -> Path:
+    return Path(__file__).resolve().with_name("scraper.cfg")
 
 
-def _output_relpath(disc_id: int, dates_only: bool = False) -> str:
-    """Return output filename relative to output_dir for a disc ID."""
-    if dates_only:
-        return os.path.join("date", f"{disc_id:06d}.date.json")
+def _read_config_section(parser: configparser.ConfigParser):
+    if parser.has_section(CONFIG_SECTION):
+        return parser[CONFIG_SECTION]
+    return parser["DEFAULT"]
+
+
+def load_config(config_path: Path) -> ScraperConfig:
+    parser = configparser.ConfigParser(interpolation=None)
+    if not parser.read(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    section = _read_config_section(parser)
+
+    try:
+        last_known_disc_id = section.getint("last_known_disc_id")
+    except (ValueError, configparser.Error) as exc:
+        raise ValueError("Config key last_known_disc_id must be an integer") from exc
+    cookie = section.get("cookie", "").strip()
+    if not cookie:
+        raise ValueError("Config key cookie is required")
+
+    delay_raw = section.get("delay_seconds", "0.1")
+    try:
+        delay_seconds = float(delay_raw)
+    except ValueError as exc:
+        raise ValueError("Config key delay_seconds must be a float") from exc
+    if delay_seconds < 0:
+        raise ValueError("Config key delay_seconds must be >= 0")
+    if last_known_disc_id < 1:
+        raise ValueError("Config key last_known_disc_id must be >= 1")
+    workers_raw = section.get("workers", "1")
+    try:
+        workers = int(workers_raw)
+    except ValueError as exc:
+        raise ValueError("Config key workers must be an integer") from exc
+    if workers < 1:
+        raise ValueError("Config key workers must be >= 1")
+
+    output_dir = section.get("output_dir", DEFAULT_OUTPUT_DIR).strip() or DEFAULT_OUTPUT_DIR
+    return ScraperConfig(
+        config_path=config_path,
+        last_known_disc_id=last_known_disc_id,
+        cookie=cookie,
+        delay_seconds=delay_seconds,
+        workers=workers,
+        output_dir=output_dir,
+    )
+
+
+def update_last_known_disc_id(config: ScraperConfig, new_last_known_disc_id: int) -> None:
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read(config.config_path)
+    if not parser.has_section(CONFIG_SECTION):
+        parser.add_section(CONFIG_SECTION)
+    parser[CONFIG_SECTION]["last_known_disc_id"] = str(new_last_known_disc_id)
+    if "cookie" not in parser[CONFIG_SECTION]:
+        parser[CONFIG_SECTION]["cookie"] = config.cookie
+    if "delay_seconds" not in parser[CONFIG_SECTION]:
+        parser[CONFIG_SECTION]["delay_seconds"] = str(config.delay_seconds)
+    if "workers" not in parser[CONFIG_SECTION]:
+        parser[CONFIG_SECTION]["workers"] = str(config.workers)
+    if "output_dir" not in parser[CONFIG_SECTION] and config.output_dir != DEFAULT_OUTPUT_DIR:
+        parser[CONFIG_SECTION]["output_dir"] = config.output_dir
+    with open(config.config_path, "w", encoding="utf-8") as f:
+        parser.write(f)
+
+
+def _output_relpath(disc_id: int) -> str:
     return f"{disc_id:06d}.json"
 
 
-def filter_stale_ids(
-    rss_entries: list[tuple[int, datetime]],
-    output_dir: str,
-    dates_only: bool = False,
-) -> list[int]:
-    """Return disc IDs whose local JSON is missing or older than the RSS pubDate."""
-    stale = []
-    for disc_id, pub_dt in rss_entries:
-        path = os.path.join(output_dir, _output_relpath(disc_id, dates_only=dates_only))
-        if not os.path.isfile(path) or os.path.getsize(path) == 0:
-            stale.append(disc_id)
+def parse_modified_list_page(html: str, page_url: str) -> tuple[list[int], str | None]:
+    soup = BeautifulSoup(html, "lxml")
+
+    disc_ids = []
+    seen = set()
+    for a in soup.find_all("a", href=True):
+        m = _DISC_ID_RE.search(a["href"])
+        if not m:
             continue
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if dates_only:
-                if not isinstance(data, dict):
-                    stale.append(disc_id)
-                    continue
-                pub_dt_utc = pub_dt.astimezone(timezone.utc) if pub_dt.tzinfo else pub_dt.replace(tzinfo=timezone.utc)
-                file_mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
-                if file_mtime < pub_dt_utc:
-                    stale.append(disc_id)
-            else:
-                scraped_at = datetime.fromisoformat(data["scraped_at"])
-                if scraped_at < pub_dt:
-                    stale.append(disc_id)
-        except (json.JSONDecodeError, KeyError, ValueError):
-            stale.append(disc_id)
-    return stale
+        disc_id = int(m.group(1))
+        if disc_id in seen:
+            continue
+        seen.add(disc_id)
+        disc_ids.append(disc_id)
+
+    next_url = None
+    next_link = soup.find("a", rel=lambda v: isinstance(v, list) and "next" in v)
+    if not next_link:
+        next_link = soup.find("a", rel="next")
+    if next_link and next_link.get("href"):
+        next_url = urljoin(page_url, next_link["href"])
+    else:
+        for a in soup.find_all("a", href=True):
+            text = a.get_text(" ", strip=True).lower()
+            if text in {"next", "next »", ">", ">>", "older"}:
+                next_url = urljoin(page_url, a["href"])
+                break
+
+    return disc_ids, next_url
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +572,15 @@ def create_session(cookie_str: str) -> requests.Session:
 def _strip_empty(d: dict) -> dict:
     """Remove keys with empty string values from a dict."""
     return {k: v for k, v in d.items() if v != ""}
+
+
+def _is_complete_redump_html(html: str) -> bool:
+    """Best-effort truncation guard for redump HTML pages."""
+    lowered = html.lower()
+    if "</html>" not in lowered or "</body>" not in lowered:
+        return False
+    # Footer marker is present on normal disc/edit/changes pages.
+    return "redump 0.4" in lowered
 
 
 def parse_disc_dates_page(html: str) -> dict:
@@ -575,8 +632,58 @@ def parse_disc_dates_page(html: str) -> dict:
     return result
 
 
+def _find_row_value_cell(soup: BeautifulSoup, label: str) -> Tag | None:
+    needle = label.lower().rstrip(":")
+    for tr in soup.find_all("tr"):
+        th = tr.find("th")
+        if not th:
+            continue
+        key = th.get_text(" ", strip=True).lower().rstrip(":")
+        if key == needle:
+            return tr.find("td")
+    return None
+
+
+def _extract_dumpers_from_cell(td: Tag) -> list[str]:
+    def _is_control_entry(text: str) -> bool:
+        t = text.strip()
+        return t == "[+]"
+
+    # Root disc page may fold long dumper lists in UI, but hidden entries are still present in DOM.
+    # Collect both linked and plain-text usernames in DOM order so output preserves redump ordering.
+    dumpers = []
+    seen = set()
+    for node in td.descendants:
+        name = ""
+        if isinstance(node, Tag) and node.name == "a":
+            href = node.get("href", "")
+            if "/discs/dumper/" not in href:
+                continue
+            name = node.get_text(" ", strip=True)
+        elif isinstance(node, NavigableString):
+            if node.parent and getattr(node.parent, "name", "") == "a":
+                continue
+            name = str(node).strip(" \n\r\t,")
+        else:
+            continue
+        if not name or _is_control_entry(name) or name in seen:
+            continue
+        seen.add(name)
+        dumpers.append(name)
+    return dumpers
+
+
+def parse_disc_root_metadata(html: str) -> dict:
+    soup = BeautifulSoup(html, "lxml")
+    result = parse_disc_dates_page(html)
+    dumpers_td = _find_row_value_cell(soup, "Dumpers")
+    if dumpers_td is not None:
+        result["d_dumpers[]"] = _extract_dumpers_from_cell(dumpers_td)
+    return result
+
+
 class _Interrupted(Exception):
-    """Raised when a worker detects the interrupted flag during a wait."""
+    """Raised when an operation is interrupted during rate-limited wait."""
 
 
 def _rate_limited_get(
@@ -601,15 +708,42 @@ _rate_limited_get.last_request_time = 0.0
 
 
 def scrape_disc(
-    session: requests.Session, disc_id: int, delay: float = 0.0,
+    session: requests.Session, disc_id: int, delay: float = 0.0, root_metadata: dict | None = None
 ) -> tuple[dict | str | None, list[str]]:
-    """Scrape both edit and changes pages for a single disc ID.
-    Returns (result_dict_or_None, list_of_warnings)."""
+    """Scrape root, edit, and changes pages for a single disc ID."""
     warnings: list[str] = []
     result: dict = {
         "disc_id": disc_id,
         "scraped_at": datetime.now(timezone.utc).isoformat(),
     }
+
+    if root_metadata is None:
+        disc_url = f"{BASE_URL}/disc/{disc_id}/"
+        try:
+            resp = _rate_limited_get(session, disc_url, delay, timeout=30)
+        except _Interrupted:
+            return None, warnings
+        except requests.RequestException as e:
+            warnings.append(f"[disc] Request failed: {e}")
+            return None, warnings
+
+        if resp.status_code in (403, 404):
+            return None, warnings
+        if resp.url.rstrip("/") != disc_url.rstrip("/"):
+            warnings.append(f"[disc] Redirected to {resp.url}")
+            return None, warnings
+        if resp.status_code != 200:
+            warnings.append(f"[disc] HTTP {resp.status_code}")
+            return None, warnings
+        if NONEXISTENT_DISC_RE.search(resp.text):
+            return "nonexistent", warnings
+        if not _is_complete_redump_html(resp.text):
+            warnings.append("[disc] Incomplete/truncated HTML")
+            return None, warnings
+        root_metadata = parse_disc_root_metadata(resp.text)
+
+    if root_metadata:
+        result.update(_strip_empty(root_metadata))
 
     # Fetch edit page
     edit_url = f"{BASE_URL}/disc/{disc_id}/edit/"
@@ -631,8 +765,11 @@ def scrape_disc(
         warnings.append(f"[edit] HTTP {resp.status_code}")
         return None, warnings
 
-    if re.search(r'with ID ".+" doesn\'t exist', resp.text):
+    if NONEXISTENT_DISC_RE.search(resp.text):
         return "nonexistent", warnings
+    if not _is_complete_redump_html(resp.text):
+        warnings.append("[edit] Incomplete/truncated HTML")
+        return None, warnings
 
     edit_data = parse_edit_page(resp.text)
     if edit_data is None:
@@ -640,8 +777,15 @@ def scrape_disc(
             return None, warnings
         warnings.append("[edit] No form found in response")
         return None, warnings
+    if "d_title" not in edit_data:
+        warnings.append("[edit] Missing required title field")
+        return None, warnings
 
     result.update(_strip_empty(edit_data))
+    if root_metadata is not None and "d_dumpers[]" in root_metadata:
+        # Root page provides merged and correctly ordered dumpers.
+        result["d_dumpers[]"] = root_metadata["d_dumpers[]"]
+        result.pop("d_dumpers_text", None)
 
     # Fetch changes page
     changes_url = f"{BASE_URL}/disc/{disc_id}/changes/"
@@ -654,7 +798,13 @@ def scrape_disc(
         return None, warnings
 
     if resp.status_code == 200:
+        if not _is_complete_redump_html(resp.text):
+            warnings.append("[changes] Incomplete/truncated HTML")
+            return None, warnings
         changes_data = parse_changes_page(resp.text)
+        if changes_data is None:
+            warnings.append("[changes] Could not parse changes list")
+            return None, warnings
         if changes_data:
             result["changes"] = changes_data
     else:
@@ -664,10 +814,9 @@ def scrape_disc(
     return result, warnings
 
 
-def scrape_disc_dates(
-    session: requests.Session, disc_id: int, delay: float = 0.0,
+def fetch_root_metadata(
+    session: requests.Session, disc_id: int, delay: float
 ) -> tuple[dict | str | None, list[str]]:
-    """Scrape only Added/Last modified metadata for a disc ID."""
     warnings: list[str] = []
     disc_url = f"{BASE_URL}/disc/{disc_id}/"
     try:
@@ -686,11 +835,13 @@ def scrape_disc_dates(
     if resp.status_code != 200:
         warnings.append(f"[disc] HTTP {resp.status_code}")
         return None, warnings
-
-    if re.search(r'with ID ".+" doesn\'t exist', resp.text):
+    if NONEXISTENT_DISC_RE.search(resp.text):
         return "nonexistent", warnings
-
-    return parse_disc_dates_page(resp.text), warnings
+    if not _is_complete_redump_html(resp.text):
+        warnings.append("[disc] Incomplete/truncated HTML")
+        return None, warnings
+    metadata = parse_disc_root_metadata(resp.text)
+    return metadata, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -699,179 +850,234 @@ def scrape_disc_dates(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Scrape disc data from redump.org (edit pages and change history)."
+        description="Scrape disc data from redump.org using scraper.cfg settings."
     )
     parser.add_argument(
-        "--start-id",
-        type=int,
-        default=1,
-        help="First disc ID to scrape (default: 1).",
+        "--config",
+        help="Path to scraper config file. Defaults to scraper.cfg next to this script.",
     )
-    parser.add_argument(
-        "--end-id",
-        type=int,
-        default=None,
-        help="Last disc ID to scrape (range is start_id..end_id inclusive).",
-    )
-    parser.add_argument(
-        "--cookie",
-        required=True,
-        help='Full Cookie header value from browser dev tools (e.g. "redump_cookie=BASE64VALUE").',
-    )
-    parser.add_argument(
-        "--delay",
-        type=float,
-        default=1.0,
-        help="Delay in seconds between requests (default: 1.0).",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default="data/redump/db",
-        help="Output directory for JSON files (default: data/redump/db).",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=1,
-        help="Number of parallel workers (default: 1).",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Re-scrape even if JSON file already exists.",
-    )
-    parser.add_argument(
-        "--update",
-        action="store_true",
-        help="Fetch RSS recent-changes feed and re-scrape only stale entries. Overrides --start-id / --end-id.",
-    )
-    parser.add_argument(
-        "--dates-only",
-        action="store_true",
-        help="Scrape only Added/Last modified into date/{disc_id}.date.json files.",
-    )
-
     args = parser.parse_args()
+    config_path = Path(args.config).expanduser().resolve() if args.config else default_config_path()
 
-    if not args.update and args.end_id is None:
-        parser.error("--end-id is required unless --update is used")
+    try:
+        config = load_config(config_path)
+    except (FileNotFoundError, ValueError) as exc:
+        parser.error(str(exc))
 
-    if args.delay < 0:
-        parser.error("delay must be >= 0")
-    if args.workers < 1:
-        parser.error("workers must be >= 1")
-    if not args.update:
-        if args.start_id < 1:
-            parser.error("start_id must be >= 1")
-        if args.end_id < args.start_id:
-            parser.error("end_id must be >= start_id")
+    os.makedirs(config.output_dir, exist_ok=True)
+    session = create_session(config.cookie)
 
-    os.makedirs(args.output_dir, exist_ok=True)
-    if args.dates_only:
-        os.makedirs(os.path.join(args.output_dir, "date"), exist_ok=True)
-    session = create_session(args.cookie)
-
-    # Per-thread sessions for thread safety (requests.Session is not thread-safe)
-    _thread_local = threading.local()
-
-    def _get_session() -> requests.Session:
-        if not hasattr(_thread_local, "session"):
-            _thread_local.session = create_session(args.cookie)
-        return _thread_local.session
-
-    def worker_scrape(disc_id: int) -> tuple[int, dict | str | None, list[str]]:
-        if interrupted:
-            return disc_id, None, []
-        s = session if args.workers == 1 else _get_session()
-        if args.dates_only:
-            result, warnings = scrape_disc_dates(s, disc_id, delay=args.delay)
-        else:
-            result, warnings = scrape_disc(s, disc_id, delay=args.delay)
-        return disc_id, result, warnings
-
-    # Build list of disc IDs to process
-    if args.update:
-        print("Fetching recent-changes RSS feed...")
-        rss_entries = fetch_changed_ids_from_rss(session)
-        print(f"RSS feed contains {len(rss_entries)} unique disc(s)")
-        disc_ids = filter_stale_ids(rss_entries, args.output_dir, dates_only=args.dates_only)
-        print(f"{len(disc_ids)} disc(s) need updating")
-    elif args.force:
-        disc_ids = list(range(args.start_id, args.end_id + 1))
-    else:
-        disc_ids = []
-        if args.dates_only:
-            existing_dir = os.path.join(args.output_dir, "date")
-            existing = set(os.listdir(existing_dir))
-        else:
-            existing = set(os.listdir(args.output_dir))
-        for disc_id in range(args.start_id, args.end_id + 1):
-            relpath = _output_relpath(disc_id, dates_only=args.dates_only)
-            filename = os.path.basename(relpath)
-            if filename in existing:
-                stats["skipped_exists"] += 1
-            else:
-                disc_ids.append(disc_id)
-
-    total = len(disc_ids)
-
-    if not args.update:
-        if stats["skipped_exists"] > 0:
-            print(f"Skipping {stats['skipped_exists']} already scraped (use --force to re-scrape)")
-            print()
-        print(f"Scraping discs {args.start_id}..{args.end_id} ({total} entries)")
-
-    print(f"Output: {os.path.abspath(args.output_dir)}")
-    print(f"Delay: {args.delay}s, Workers: {args.workers}")
+    print(f"Config: {config.config_path}")
+    print(f"Output: {os.path.abspath(config.output_dir)}")
+    print(f"Delay: {config.delay_seconds}s, Workers: {config.workers}")
     print()
 
-    completed = 0
-
-    if args.workers == 1:
-        for disc_id in disc_ids:
-            if interrupted:
-                break
-            completed += 1
-            _, result, warnings = worker_scrape(disc_id)
-            _save_result(
-                disc_id,
-                completed,
-                total,
-                result,
-                warnings,
-                args.output_dir,
-                dates_only=args.dates_only,
-            )
-    else:
-        with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            futures = {executor.submit(worker_scrape, did): did for did in disc_ids}
-            for future in as_completed(futures):
-                if interrupted:
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    break
-                disc_id, result, warnings = future.result()
-                completed += 1
-                _save_result(
-                    disc_id,
-                    completed,
-                    total,
-                    result,
-                    warnings,
-                    args.output_dir,
-                    dates_only=args.dates_only,
-                )
+    run_backfill_phase(session, config)
+    if not interrupted:
+        run_discovery_phase(session, config)
+    if not interrupted:
+        run_modified_rescrape_phase(session, config)
 
     print_summary()
     if interrupted:
         sys.exit(1)
 
 
+def _load_local_disc_json(output_dir: str, disc_id: int) -> dict | None:
+    path = os.path.join(output_dir, _output_relpath(disc_id))
+    if not os.path.isfile(path) or os.path.getsize(path) == 0:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except (OSError, json.JSONDecodeError):
+        return None
+    return None
+
+
+def _has_nonexistent_marker(output_dir: str, disc_id: int) -> bool:
+    path = os.path.join(output_dir, _output_relpath(disc_id))
+    return os.path.isfile(path) and os.path.getsize(path) == 0
+
+
+def _collect_missing_historical_ids(output_dir: str, last_known_disc_id: int) -> list[int]:
+    missing = []
+    for disc_id in range(1, last_known_disc_id + 1):
+        path = os.path.join(output_dir, _output_relpath(disc_id))
+        if os.path.isfile(path):
+            with stats_lock:
+                stats["skipped_exists"] += 1
+            continue
+        missing.append(disc_id)
+    return missing
+
+
+def run_backfill_phase(session: requests.Session, config: ScraperConfig) -> None:
+    disc_ids = _collect_missing_historical_ids(config.output_dir, config.last_known_disc_id)
+    if stats["skipped_exists"] > 0:
+        print(f"Skipping {stats['skipped_exists']} already scraped")
+    print(f"Backfill phase: {len(disc_ids)} missing disc(s) in 1..{config.last_known_disc_id}")
+    if config.workers == 1:
+        for idx, disc_id in enumerate(disc_ids, start=1):
+            if interrupted:
+                return
+            result, warnings = scrape_disc(session, disc_id, delay=config.delay_seconds)
+            _save_result(disc_id, idx, len(disc_ids), result, warnings, config.output_dir)
+    else:
+        thread_local = threading.local()
+
+        def _get_worker_session() -> requests.Session:
+            if not hasattr(thread_local, "session"):
+                thread_local.session = create_session(config.cookie)
+            return thread_local.session
+
+        def worker_scrape(disc_id: int):
+            if interrupted:
+                return disc_id, None, []
+            s = _get_worker_session()
+            result, warnings = scrape_disc(s, disc_id, delay=config.delay_seconds)
+            return disc_id, result, warnings
+
+        completed = 0
+        with ThreadPoolExecutor(max_workers=config.workers) as executor:
+            futures = {executor.submit(worker_scrape, did): did for did in disc_ids}
+            for future in as_completed(futures):
+                if interrupted:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    return
+                disc_id, result, warnings = future.result()
+                completed += 1
+                _save_result(disc_id, completed, len(disc_ids), result, warnings, config.output_dir)
+    print()
+
+
+def run_discovery_phase(session: requests.Session, config: ScraperConfig) -> None:
+    print("Discovery phase: probing for new disc IDs...")
+    disc_id = config.last_known_disc_id + 1
+    scraped_new = 0
+    new_last_known = config.last_known_disc_id
+
+    while not interrupted:
+        if _has_nonexistent_marker(config.output_dir, disc_id):
+            # Nonexistent markers can become stale when new discs are added later.
+            print(f"Discovery probe at disc {disc_id}: local nonexistent marker exists, re-checking remotely.")
+
+        result, warnings = scrape_disc(session, disc_id, delay=config.delay_seconds)
+        scraped_new += 1
+        _save_result(disc_id, scraped_new, 0, result, warnings, config.output_dir)
+
+        if result == "nonexistent":
+            break
+        if result is None:
+            print("Discovery stopped due to request failure before reaching nonexistent disc.")
+            return
+
+        new_last_known = disc_id
+        disc_id += 1
+
+    if new_last_known != config.last_known_disc_id:
+        update_last_known_disc_id(config, new_last_known)
+        config.last_known_disc_id = new_last_known
+        print(f"Updated last_known_disc_id in config to {new_last_known}")
+    else:
+        print("No new discs discovered beyond configured last_known_disc_id")
+    print()
+
+
+def iter_modified_disc_ids(session: requests.Session, delay: float):
+    url = DEFAULT_MODIFIED_LIST_URL
+    seen_pages = set()
+    max_attempts = 5
+    backoff_seconds = 1.0
+    while url and not interrupted:
+        if url in seen_pages:
+            break
+        seen_pages.add(url)
+        resp = None
+        for attempt in range(1, max_attempts + 1):
+            if interrupted:
+                return
+            try:
+                # Listing pages are heavier and can take longer to generate server-side.
+                resp = _rate_limited_get(session, url, delay, timeout=(10, 90))
+                resp.raise_for_status()
+                break
+            except requests.RequestException as exc:
+                if attempt == max_attempts:
+                    print(f"Failed to fetch modified listing page {url}: {exc}")
+                    return
+                wait_for = min(backoff_seconds * (2 ** (attempt - 1)), 30.0)
+                print(
+                    f"Modified listing fetch failed (attempt {attempt}/{max_attempts}) for {url}: {exc}; "
+                    f"retrying in {wait_for:.1f}s..."
+                )
+                deadline = time.monotonic() + wait_for
+                while time.monotonic() < deadline:
+                    if interrupted:
+                        return
+                    time.sleep(min(0.25, deadline - time.monotonic()))
+        disc_ids, next_url = parse_modified_list_page(resp.text, url)
+        for disc_id in disc_ids:
+            yield disc_id
+        url = next_url
+
+
+def run_modified_rescrape_phase(session: requests.Session, config: ScraperConfig) -> None:
+    print("Modified phase: scanning modified listing until stored modified date matches.")
+    checked = 0
+    for disc_id in iter_modified_disc_ids(session, config.delay_seconds):
+        if interrupted:
+            return
+        if _has_nonexistent_marker(config.output_dir, disc_id):
+            continue
+        checked += 1
+
+        root_metadata, root_warnings = fetch_root_metadata(session, disc_id, config.delay_seconds)
+        if root_metadata == "nonexistent":
+            continue
+        if not isinstance(root_metadata, dict):
+            _save_result(
+                disc_id,
+                checked,
+                0,
+                None,
+                root_warnings,
+                config.output_dir,
+            )
+            continue
+
+        local_json = _load_local_disc_json(config.output_dir, disc_id)
+        local_modified = str(local_json.get("modified", "")).strip() if local_json else ""
+        remote_modified = str(root_metadata.get("modified", "")).strip()
+
+        if local_modified and remote_modified and local_modified == remote_modified:
+            print(f"Stop at disc {disc_id}: modified date unchanged ({remote_modified}).")
+            break
+
+        result, warnings = scrape_disc(
+            session,
+            disc_id,
+            delay=config.delay_seconds,
+            root_metadata=root_metadata,
+        )
+        _save_result(
+            disc_id,
+            checked,
+            0,
+            result,
+            root_warnings + warnings,
+            config.output_dir,
+        )
+    print()
+
+
 def _save_result(disc_id: int, progress: int, total: int,
-                 result: dict | str | None, warnings: list[str], output_dir: str,
-                 dates_only: bool = False):
+                 result: dict | str | None, warnings: list[str], output_dir: str):
     """Save scrape result to JSON and update stats. Output is atomic per disc."""
     lines = []
-    out_path = os.path.join(output_dir, _output_relpath(disc_id, dates_only=dates_only))
+    out_path = os.path.join(output_dir, _output_relpath(disc_id))
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     if result == "nonexistent":
         status = "skipped (doesn't exist)"
@@ -889,11 +1095,8 @@ def _save_result(disc_id: int, progress: int, total: int,
         try:
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
-            if dates_only:
-                status = "OK"
-            else:
-                title = result.get("d_title", "")
-                status = f"OK{f' - {title}' if title else ''}"
+            title = result.get("d_title", "")
+            status = f"OK{f' - {title}' if title else ''}"
             with stats_lock:
                 stats["scraped"] += 1
         except OSError as e:

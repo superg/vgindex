@@ -691,7 +691,7 @@ def parse_change_date_dt(date_str):
 
 
 def parse_redump_date_field(s):
-    """Parse an `added` or `modified` field from <id>.date.json -> datetime.
+    """Parse an `added` or `modified` field value into datetime.
 
     Observed format on redump is 'YYYY-MM-DD HH:MM'; we also accept the
     ':SS' variant defensively. Returns None for missing/unparseable input.
@@ -707,27 +707,14 @@ def parse_redump_date_field(s):
     return None
 
 
-def load_disc_dates(date_dir, disc_id):
-    """Load (added_dt, modified_dt) from <date_dir>/<NNNNNN>.date.json.
+def load_disc_dates(data):
+    """Load (added_dt, modified_dt) directly from main disc JSON fields."""
+    if not isinstance(data, dict):
+        return None, None
 
-    Each component is None if missing/unparseable. Returns (None, None)
-    if the file is absent, 0-byte, or unreadable.
-    """
-    path = os.path.join(date_dir, f"{disc_id:06d}.date.json")
-    try:
-        if os.path.getsize(path) == 0:
-            return None, None
-    except OSError:
-        return None, None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return None, None
-    return (
-        parse_redump_date_field(payload.get("added")),
-        parse_redump_date_field(payload.get("modified")),
-    )
+    added_dt = parse_redump_date_field(data.get("added"))
+    modified_dt = parse_redump_date_field(data.get("modified"))
+    return added_dt, modified_dt
 
 
 # ---------------------------------------------------------------------------
@@ -1552,9 +1539,7 @@ def disc_id_from_filename(fname):
 
 
 def process_all(data_dir, output_path, max_disc_id=None, reset=True,
-                dev_users_sql_path=None, date_dir=None):
-    if date_dir is None:
-        date_dir = os.path.join(data_dir, "date")
+                dev_users_sql_path=None):
     # Pass 1: collect all usernames, load all disc data, accumulate max-stats
     filenames = sorted(f for f in os.listdir(data_dir) if f.endswith(".json"))
     total = len(filenames)
@@ -1920,8 +1905,8 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
 
             # Date-driven Added/Modified backfill + sentinel.
             #
-            # Reads <date_dir>/<NNNNNN>.date.json for the disc's `added`
-            # and `modified` timestamps and emits up to two extra
+            # Reads each disc JSON's `added` and `modified` fields and emits
+            # up to two extra
             # disc_submissions rows so MIN()/MAX(created_at) match what
             # redump itself shows on the disc page:
             #
@@ -1962,7 +1947,7 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
             # at 1970-01-01, making him look like two distinct dumpers
             # of the same disc. Edit rows still participate in MIN/MAX,
             # so the timestamp behaviour is unchanged.
-            added_dt, modified_dt = load_disc_dates(date_dir, disc_id)
+            added_dt, modified_dt = load_disc_dates(data)
             change_dts = [parse_change_date_dt(c.get("date", "")) for c in changes_list]
             change_dts = [dt for dt in change_dts if dt is not None]
             oldest_change_dt = min(change_dts) if change_dts else None
@@ -2481,27 +2466,15 @@ def main():
                              "transaction. Skipped silently if missing. "
                              "Pass an empty string to disable. "
                              "Default: users.sql")
-    parser.add_argument("--date-dir", default=None,
-                        help="Directory of <id>.date.json files produced by "
-                             "the redump scraper's --dates-only mode. Used to "
-                             "backfill or sentinel each disc's `added` "
-                             "timestamp into disc_submissions. Defaults to "
-                             "<data_dir>/date.")
     args = parser.parse_args()
 
     if not os.path.isdir(args.data_dir):
         print(f"Error: {args.data_dir} is not a directory", file=sys.stderr)
         sys.exit(1)
 
-    date_dir = args.date_dir or os.path.join(args.data_dir, "date")
-    if not os.path.isdir(date_dir):
-        print(f"Error: {date_dir} is not a directory", file=sys.stderr)
-        sys.exit(1)
-
     process_all(args.data_dir, args.output, max_disc_id=args.max_id,
                 reset=args.reset,
-                dev_users_sql_path=args.dev_users_sql or None,
-                date_dir=date_dir)
+                dev_users_sql_path=args.dev_users_sql or None)
 
 
 if __name__ == "__main__":
