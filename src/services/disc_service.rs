@@ -322,14 +322,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
 
     let dumpers: Vec<DumperInfo> = sqlx::query_as(
         "SELECT u.id AS user_id,
-                u.username,
-                (
-                    SELECT COUNT(*)
-                    FROM disc_submissions ds
-                    WHERE ds.target_disc_id = $1
-                      AND ds.submitter_id = u.id
-                      AND ds.submission_type = 'Disc'
-                ) AS disc_submission_count
+                u.username
          FROM disc_dumpers dd
          JOIN users u ON u.id = dd.user_id
          WHERE dd.disc_id = $1
@@ -1010,7 +1003,6 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for DumperInfo {
         Ok(Self {
             user_id: row.try_get("user_id")?,
             username: row.try_get("username")?,
-            disc_submission_count: row.try_get("disc_submission_count")?,
         })
     }
 }

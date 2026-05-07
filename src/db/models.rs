@@ -495,7 +495,6 @@ pub struct RingEntryView {
 pub struct DumperInfo {
     pub user_id: i32,
     pub username: String,
-    pub disc_submission_count: i64,
 }
 
 pub fn format_display_title(

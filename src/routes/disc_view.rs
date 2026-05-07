@@ -473,14 +473,9 @@ async fn disc_view(
             } else {
                 detail.dumpers.iter()
                     .map(|d| format!(
-                        "<a href=\"/discs/?dumper={}\">{}</a>{}",
+                        "<a href=\"/discs/?dumper={}\">{}</a>",
                         d.user_id,
                         d.username.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"),
-                        if d.disc_submission_count > 1 {
-                            format!(" ({})", d.disc_submission_count)
-                        } else {
-                            String::new()
-                        },
                     ))
                     .collect::<Vec<_>>()
                     .join(", ")
