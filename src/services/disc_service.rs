@@ -332,7 +332,8 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
                 ) AS disc_submission_count
          FROM disc_dumpers dd
          JOIN users u ON u.id = dd.user_id
-         WHERE dd.disc_id = $1"
+         WHERE dd.disc_id = $1
+         ORDER BY dd.position"
     )
     .bind(disc_id)
     .fetch_all(pool)
@@ -708,7 +709,7 @@ pub async fn create_disc_from_submission(
 
     update_disc(pool, disc_id, data).await?;
 
-    sqlx::query("INSERT INTO disc_dumpers (disc_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+    sqlx::query("INSERT INTO disc_dumpers (disc_id, user_id, position) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING")
         .bind(disc_id)
         .bind(submitter_id)
         .execute(pool)

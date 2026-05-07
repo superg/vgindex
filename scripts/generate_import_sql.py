@@ -1629,10 +1629,14 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
                     )
 
             # Dumpers
-            for dumper_name in merge_dumpers(data):
+            for position, dumper_name in enumerate(merge_dumpers(data)):
                 uid = user_id_map.get(dumper_name)
-                if uid:
-                    dumper_inserts.append(f"({disc_id}, {uid})")
+                if uid is None:
+                    raise RuntimeError(
+                        f"Unknown dumper {dumper_name!r} for disc {disc_id} — "
+                        f"user_id_map should already contain every scraped dumper"
+                    )
+                dumper_inserts.append(f"({disc_id}, {uid}, {position})")
 
             # Submissions (changes).
             #
@@ -1836,7 +1840,7 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
         print(f"[sql]   Ring layers: {len(ring_layer_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_dumpers",
-            "(disc_id, user_id)", dumper_inserts)
+            "(disc_id, user_id, position)", dumper_inserts)
         print(f"[sql]   Dumpers: {len(dumper_inserts)} rows", file=sys.stderr)
 
         _write_batched(out, "disc_submissions",

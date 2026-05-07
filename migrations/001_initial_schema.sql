@@ -208,6 +208,7 @@ CREATE INDEX idx_sessions_expires ON sessions(expires_at);
 CREATE TABLE disc_dumpers (
     disc_id INT NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
     user_id INT NOT NULL REFERENCES users(id),
+    position INT NOT NULL,
     PRIMARY KEY (disc_id, user_id)
 );
 

@@ -622,7 +622,9 @@ pub async fn approve_submission(
 
         if sub.submission_type == SubmissionType::Disc {
             sqlx::query(
-                "INSERT INTO disc_dumpers (disc_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                "INSERT INTO disc_dumpers (disc_id, user_id, position)
+                 VALUES ($1, $2, COALESCE((SELECT MAX(position) + 1 FROM disc_dumpers WHERE disc_id = $1), 0))
+                 ON CONFLICT DO NOTHING",
             )
             .bind(existing_id)
             .bind(sub.submitter_id)
