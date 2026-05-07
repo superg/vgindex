@@ -96,6 +96,7 @@ main > h3 {
     height: 12px;
     border-radius: 50%;
     vertical-align: middle;
+    margin-right: 0.2rem;
 }
 .status-dot.verified { background: var(--status-verified); }
 .status-dot.unverified { background: var(--status-good); }
@@ -1253,6 +1254,31 @@ pre code {
 .inline-field .array-add-btn {
     flex-shrink: 0;
     margin: 0;
+}
+
+.disc-edit .status-inline-row {
+    border-top: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    margin-top: 0.25rem;
+    padding-top: 0.3rem;
+    justify-content: flex-start;
+}
+
+.disc-edit .status-inline-row .inline-field-label {
+    min-width: 0;
+    text-align: left;
+}
+
+.disc-edit .status-inline-row .inline-field-values {
+    flex: 0 0 auto;
+}
+
+.disc-edit .status-select-compact {
+    width: auto;
+    min-width: 9rem;
+    flex: 0 0 auto;
+    display: inline-block;
+    margin-bottom: 0;
+    padding-right: 1.6rem;
 }
 
 /* Repeatable array fields (layerbreaks, etc.) */

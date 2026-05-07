@@ -89,7 +89,7 @@ struct DiscRow {
     dumped_by_me: bool,
     version: String,
     edition_display: String,
-    status_emoji: String,
+    status_class: String,
     status_display: String,
     region_flags: Vec<RegionFlag>,
     language_flags: Vec<LangFlag>,
@@ -218,17 +218,17 @@ async fn discs_page(
         where_clauses.push(format!("upper(left(d.title, 1)) = upper(${bind_idx})"));
     }
     if filter_status == "Disabled" {
-        where_clauses.push("NOT d.enabled".to_string());
+        where_clauses.push("d.status = 'Disabled'".to_string());
     } else if filter_status == "All Statuses" {
         // no filter — show both enabled and disabled
     } else if filter_status == "Questionable" {
-        where_clauses.push("d.enabled AND d.questionable".to_string());
+        where_clauses.push("d.status = 'Questionable'".to_string());
     } else if filter_status == "Verified" {
-        where_clauses.push("d.enabled AND NOT d.questionable AND (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) > 1".to_string());
+        where_clauses.push("d.status = 'Verified'".to_string());
     } else if filter_status == "Unverified" {
-        where_clauses.push("d.enabled AND NOT d.questionable AND (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) <= 1".to_string());
+        where_clauses.push("d.status = 'Unverified'".to_string());
     } else {
-        where_clauses.push("d.enabled".to_string());
+        where_clauses.push("d.status != 'Disabled'".to_string());
     }
     if !filter_q.is_empty() {
         bind_idx += 1;
@@ -279,7 +279,7 @@ async fn discs_page(
         "edition"  => "LOWER(array_to_string(d.edition, ', '))",
         "language" => "(SELECT MIN(l.sort_order) FROM disc_languages dl JOIN languages l ON l.code = dl.language_code WHERE dl.disc_id = d.id)",
         "serial"   => "LOWER(array_to_string(d.serial, ', '))",
-        "status"   => "CASE WHEN d.questionable THEN 3 WHEN (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) > 1 THEN 1 ELSE 2 END",
+        "status"   => "CASE d.status WHEN 'Verified' THEN 1 WHEN 'Unverified' THEN 2 WHEN 'Questionable' THEN 3 ELSE 4 END",
         "added"    => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
         "updated"  => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
         _ => "LOWER(d.title)",
@@ -301,8 +301,7 @@ async fn discs_page(
                 array_to_string(d.serial, ', ') AS serial,
                 d.version,
                 array_to_string(d.edition, ', ') AS edition,
-                d.enabled, d.questionable,
-                (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) AS dumper_count,
+                d.status,
                 {dumped_by_me_sql} AS dumped_by_me
          FROM discs d
          JOIN systems s ON s.code = d.system_code
@@ -373,6 +372,7 @@ async fn discs_page(
         .await
         .unwrap_or_default();
 
+        let status = r.status;
         discs.push(DiscRow {
             id: r.id,
             title: format_display_title(
@@ -395,16 +395,8 @@ async fn discs_page(
             } else {
                 String::new()
             },
-            status_emoji: if r.enabled {
-                DiscStatus::compute(r.questionable, r.dumper_count).emoji().to_string()
-            } else {
-                "🔴".to_string()
-            },
-            status_display: if r.enabled {
-                DiscStatus::compute(r.questionable, r.dumper_count).to_string()
-            } else {
-                "Disabled".to_string()
-            },
+            status_class: status.css_class().to_string(),
+            status_display: status.to_string(),
             region_flags: region_rows.into_iter().map(|r| RegionFlag {
                 code: r.code.to_lowercase(),
                 name: r.name,
@@ -487,9 +479,7 @@ struct RawDiscRow {
     serial: Option<String>,
     version: Option<String>,
     edition: Option<String>,
-    enabled: bool,
-    questionable: bool,
-    dumper_count: i64,
+    status: DiscStatus,
     dumped_by_me: bool,
 }
 

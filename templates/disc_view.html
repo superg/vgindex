@@ -79,7 +79,7 @@
         <table class="table-compact">
             <tr>
                 <td><strong>Status</strong></td>
-                <td>{{ status_emoji }} {{ status_display }}</td>
+                <td><span class="status-dot {{ status_class }}"></span> {{ status_display }}</td>
             </tr>
             {% if !created_at.is_empty() %}
             <tr><td><strong>Added</strong></td><td>{{ created_at }}</td></tr>

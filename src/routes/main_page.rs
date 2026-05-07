@@ -35,7 +35,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
         "SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
                 MAX(ds.created_at) AS created_at
          FROM disc_submissions ds
-         JOIN discs d ON d.id = ds.target_disc_id AND d.enabled
+         JOIN discs d ON d.id = ds.target_disc_id AND d.status != 'Disabled'
          JOIN systems s ON s.code = d.system_code
          WHERE ds.target_disc_id IS NOT NULL
          GROUP BY d.id, d.title, s.code, s.short_name

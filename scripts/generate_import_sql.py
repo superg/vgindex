@@ -860,21 +860,23 @@ def _to_snake_case(name):
     return s.strip('_')
 
 
-def _map_status_change(old_val, new_val):
-    """Map a Redump status code change to enabled/questionable diffs.
+def map_d_status_to_status(status_code):
+    """Map Redump d_status code to disc status enum text."""
+    return {
+        "2": "Disabled",
+        "3": "Questionable",
+        "4": "Unverified",
+        "5": "Verified",
+    }.get(status_code, "Unverified")
 
-    Status codes: "2" = Red (disabled), "3" = Yellow (questionable).
-    """
-    changes = {}
-    old_enabled = old_val != "2" if old_val else True
-    new_enabled = new_val != "2" if new_val else True
-    if old_enabled != new_enabled:
-        changes["enabled"] = {"old": old_enabled, "new": new_enabled}
-    old_q = old_val == "3" if old_val else False
-    new_q = new_val == "3" if new_val else False
-    if old_q != new_q:
-        changes["questionable"] = {"old": old_q, "new": new_q}
-    return changes
+
+def _map_status_change(old_val, new_val):
+    """Map a Redump status code change to status diff payload."""
+    old_status = map_d_status_to_status(old_val)
+    new_status = map_d_status_to_status(new_val)
+    if old_status == new_status:
+        return {}
+    return {"status": {"old": old_status, "new": new_status}}
 
 
 # ---------------------------------------------------------------------------
@@ -937,7 +939,7 @@ def _has_dumpers_change(fields_list):
 
 
 def _get_status_changes(fields_list):
-    """Extract enabled/questionable diffs from a Status field change."""
+    """Extract status diff from a Status field change."""
     for f in fields_list:
         if f.get("field") != "Status":
             continue
@@ -1802,12 +1804,11 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
 
         # Write all batched inserts
         _write_batched(out, "discs",
-            "(id, enabled, media_type_code, category_id, system_code, title, "
+            "(id, status, media_type_code, category_id, system_code, title, "
             "filename_suffix, comments, contents, title_foreign, disc_title, "
             "disc_number, serial, version, edition, barcode, error_count, "
             "exe_date, edc, layerbreaks, pvd, pic, bca, header, protection, "
-            "sector_ranges, sbi, disc_id, disc_key, cue, "
-            "questionable) OVERRIDING SYSTEM VALUE",
+            "sector_ranges, sbi, disc_id, disc_key, cue) OVERRIDING SYSTEM VALUE",
             disc_inserts,
         )
         print(f"[sql]   Discs: {len(disc_inserts)} rows", file=sys.stderr)
@@ -1963,11 +1964,11 @@ def _write_dev_users(out, dev_users_sql_path):
 def _build_empty_disc_insert(disc_id):
     """Build INSERT values for an empty/nonexistent disc."""
     return (
-        f"({disc_id}, FALSE, 'cd', 1, 'PSX', {sql_str(str(disc_id).zfill(6))}, "
+        f"({disc_id}, 'Disabled', 'cd', 1, 'PSX', {sql_str(str(disc_id).zfill(6))}, "
         f"NULL, NULL, NULL, NULL, NULL, NULL, "
         f"'{{}}'::TEXT[], NULL, '{{}}'::TEXT[], '{{}}'::TEXT[], "
         f"NULL, NULL, FALSE, NULL, NULL, NULL, NULL, NULL, NULL, NULL, "
-        f"NULL, NULL, NULL, NULL, FALSE)"
+        f"NULL, NULL, NULL, NULL)"
     )
 
 
@@ -1991,9 +1992,7 @@ def _build_disc_insert(disc_id, data):
         title = str(disc_id)
 
     # Status
-    status = data.get("d_status", "")
-    enabled = status != "2"
-    questionable = status == "3"
+    status = map_d_status_to_status(data.get("d_status", ""))
 
     # Edition
     edition = merge_editions(data)
@@ -2059,7 +2058,7 @@ def _build_disc_insert(disc_id, data):
     cue = data.get("d_cue") or None
 
     return (
-        f"({disc_id}, {sql_bool(enabled)}, "
+        f"({disc_id}, {sql_str(status)}::disc_status_enum, "
         f"{sql_str(media_code)}, {category_id}, {sql_str(system_code)}, "
         f"{sql_str(title)}, "
         f"{sql_str_or_null(data.get('d_version_datfile'))}, "
@@ -2085,8 +2084,7 @@ def _build_disc_insert(disc_id, data):
         f"{sql_str_or_null(sbi)}, "
         f"{sql_str_or_null(disc_id_text)}, "
         f"{sql_bytea(disc_key_bytes)}, "
-        f"{sql_str_or_null(cue)}, "
-        f"{sql_bool(questionable)})"
+        f"{sql_str_or_null(cue)})"
     )
 
 

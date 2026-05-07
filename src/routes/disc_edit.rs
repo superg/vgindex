@@ -133,8 +133,7 @@ pub(crate) struct DiscEditTemplate {
     pub cue: String,
     pub files_xml: String,
 
-    pub questionable: bool,
-    pub enabled: bool,
+    pub status: String,
 
     pub is_add_mode: bool,
     pub dump_log: String,
@@ -652,8 +651,7 @@ async fn edit_page(
                 .unwrap_or_default(),
             files_xml,
 
-            questionable: detail.disc.questionable,
-            enabled: detail.disc.enabled,
+            status: detail.disc.status.to_string(),
 
             is_add_mode: false,
             dump_log: String::new(),
@@ -728,10 +726,8 @@ pub struct DiscEditForm {
     pub cue: Option<String>,
     #[serde(rename = "dat")]
     pub files_xml: Option<String>,
-    #[serde(default, deserialize_with = "one_or_many_strings")]
-    pub questionable: Vec<String>,
-    #[serde(default, deserialize_with = "one_or_many_strings")]
-    pub enabled: Vec<String>,
+    #[serde(default)]
+    pub status: String,
     pub submission_comment: Option<String>,
     pub dump_log: Option<String>,
     pub extra_upload_url: Option<String>,
@@ -1009,8 +1005,7 @@ async fn render_form_with_errors(
         cue: form.cue.clone().unwrap_or_default(),
         files_xml: form.files_xml.clone().unwrap_or_default(),
 
-        questionable: form.questionable.iter().any(|v| v == "true"),
-        enabled: form.enabled.iter().any(|v| v == "true"),
+        status: normalized_disc_status(&form.status),
 
         is_add_mode,
         dump_log: form.dump_log.clone().unwrap_or_default(),
@@ -1080,6 +1075,15 @@ fn norm_str_vec_keep_order_with_internal_blanks(v: Vec<String>) -> Vec<String> {
 
 fn form_edc_bool(form: &DiscEditForm) -> bool {
     form.edc.iter().any(|v| v == "true")
+}
+
+fn normalized_disc_status(raw: &str) -> String {
+    match raw {
+        "Disabled" => "Disabled".to_string(),
+        "Questionable" => "Questionable".to_string(),
+        "Verified" => "Verified".to_string(),
+        _ => "Unverified".to_string(),
+    }
 }
 
 fn diff_str(changes: &mut serde_json::Map<String, serde_json::Value>, key: &str, old: &str, new: &str) {
@@ -1509,8 +1513,7 @@ async fn add_page(
             cue: String::new(),
             files_xml: String::new(),
 
-            questionable: false,
-            enabled: true,
+            status: "Unverified".to_string(),
 
             is_add_mode: true,
             dump_log: String::new(),
@@ -1890,8 +1893,7 @@ pub(crate) fn build_flat_changes(form: &DiscEditForm, all_media_types: &[EditMed
         "languages": new_languages,
         "ring_codes": new_ring_codes,
         "sector_ranges": new_sector_ranges,
-        "questionable": form.questionable.iter().any(|v| v == "true"),
-        "enabled": form.enabled.iter().any(|v| v == "true"),
+        "status": normalized_disc_status(&form.status),
     })
 }
 
@@ -2370,22 +2372,15 @@ fn build_history_changes(
         "system_code", "media_type", "category", "title", "title_foreign", "disc_number",
         "disc_title", "filename_suffix", "version", "error_count", "exe_date", "edc",
         "comments", "contents", "protection", "sector_ranges", "sbi", "disc_id", "disc_key", "pvd", "header",
-        "bca", "pic", "cuesheet", "enabled", "questionable",
+        "bca", "pic", "cuesheet", "status",
     ] {
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let new = form_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let Some(change) = scalar_change(old, new) else {
             continue;
         };
-        if submission_type == SubmissionType::Disc {
-            let include = match key {
-                "questionable" => new.as_bool().unwrap_or(false) && !old.as_bool().unwrap_or(false),
-                "enabled" => new.as_bool().unwrap_or(false) && !old.as_bool().unwrap_or(false),
-                _ => !is_empty_json(new),
-            };
-            if !include {
-                continue;
-            }
+        if submission_type == SubmissionType::Disc && is_empty_json(new) {
+            continue;
         }
         changes.insert(key.to_string(), change);
     }
@@ -2552,11 +2547,11 @@ pub(crate) fn build_merged_changes(
         if u.map_or(true, |a| a.is_empty()) { db["sector_ranges"].clone() } else { user["sector_ranges"].clone() }
     };
 
-    let questionable = user["questionable"].as_bool().unwrap_or(
-        db["questionable"].as_bool().unwrap_or(false)
-    );
-    let enabled = user["enabled"].as_bool().unwrap_or(
-        db["enabled"].as_bool().unwrap_or(true)
+    let status = normalized_disc_status(
+        user["status"]
+            .as_str()
+            .or_else(|| db["status"].as_str())
+            .unwrap_or("Unverified"),
     );
 
     let db_serials: Vec<String> = db["serial"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
@@ -2608,8 +2603,7 @@ pub(crate) fn build_merged_changes(
         "languages": languages,
         "ring_codes": ring_codes,
         "sector_ranges": sector_ranges,
-        "questionable": questionable,
-        "enabled": enabled,
+        "status": status,
     })
 }
 

@@ -462,8 +462,7 @@ fn build_review_template(
     let protection_key_disc_key = json_opt_str("disc_key");
     let protection_key_disc_id = json_opt_str("disc_id");
 
-    let questionable = snapshot["questionable"].as_bool().unwrap_or(false);
-    let enabled = snapshot["enabled"].as_bool().unwrap_or(true);
+    let status = snapshot["status"].as_str().unwrap_or("Unverified").to_string();
 
     let sector_ranges_text = snapshot["sector_ranges"]
         .as_array()
@@ -583,8 +582,7 @@ fn build_review_template(
         cue: json_opt_str("cuesheet"),
         files_xml: json_opt_str("dat"),
 
-        questionable,
-        enabled,
+        status,
 
         is_add_mode: false,
         dump_log: String::new(),
@@ -697,7 +695,7 @@ fn compute_field_highlights(
         "disc_number", "disc_title", "filename_suffix", "version",
         "error_count", "exe_date", "edc", "comments", "contents",
         "protection", "sector_ranges", "sbi", "disc_id", "disc_key", "pvd", "header", "bca",
-        "pic", "cuesheet", "dat", "enabled", "questionable",
+        "pic", "cuesheet", "dat", "status",
     ];
 
     let is_empty_val = |v: &serde_json::Value| -> bool {

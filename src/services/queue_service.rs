@@ -574,11 +574,19 @@ pub async fn approve_submission(
     review_comment: Option<&str>,
     archive_tx: &tokio::sync::mpsc::UnboundedSender<String>,
 ) -> AppResult<Option<i32>> {
-    let effective_data = if is_sparse_changes {
+    let mut effective_data = if is_sparse_changes {
         resolve_submission_data(pool, sub, changes).await?
     } else {
         changes.clone()
     };
+
+    if let Some(obj) = effective_data.as_object_mut() {
+        if sub.target_disc_id.is_none() {
+            obj.insert("status".to_string(), serde_json::json!("Unverified"));
+        } else if sub.submission_type == SubmissionType::Disc {
+            obj.insert("status".to_string(), serde_json::json!("Verified"));
+        }
+    }
     let stored_data = if is_sparse_changes {
         changes.clone()
     } else {
