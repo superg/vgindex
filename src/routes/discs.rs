@@ -280,14 +280,8 @@ async fn discs_page(
         "language" => "(SELECT MIN(l.sort_order) FROM disc_languages dl JOIN languages l ON l.code = dl.language_code WHERE dl.disc_id = d.id)",
         "serial"   => "LOWER(array_to_string(d.serial, ', '))",
         "status"   => "CASE WHEN d.questionable THEN 3 WHEN (SELECT COUNT(*) FROM disc_dumpers dd WHERE dd.disc_id = d.id) > 1 THEN 1 ELSE 2 END",
-        // Filter out DUMPER_CREDIT_SENTINEL_TS (1970-01-02) rows so the
-        // synthetic credit-marker submissions added by the importer's
-        // dumper-credit and Green-status fallback passes never surface as a
-        // disc's "added" or "updated" sort key. The 1970-01-01 sentinel is
-        // intentionally retained: it survives MIN() so the disc-view
-        // template can recognize it and suppress the "Added" row.
-        "added"    => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id AND created_at != '1970-01-02 00:00:00+00')",
-        "updated"  => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id AND created_at != '1970-01-02 00:00:00+00')",
+        "added"    => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
+        "updated"  => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
         _ => "LOWER(d.title)",
     };
     let sort_dir = match query.order.as_deref() {
