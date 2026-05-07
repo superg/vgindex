@@ -347,18 +347,9 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_one(pool)
     .await?;
 
-    // Exclude DUMPER_CREDIT_SENTINEL_TS (1970-01-02) rows: these are
-    // synthetic credit markers added by the importer's dumper-credit closure
-    // and Green-status fallback passes, NOT real activity timestamps. Letting
-    // them surface here would push the disc's "Added" date to 1970-01-02 for
-    // any disc with co-credited dumpers who never authored a change. The
-    // older NO_ADDED_SENTINEL (1970-01-01) is intentionally NOT filtered:
-    // the disc-view rendering checks for it explicitly to suppress the
-    // "Added" row when redump itself never tracked the date.
     let added_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
         "SELECT MIN(created_at) FROM disc_submissions
-         WHERE target_disc_id = $1
-           AND created_at != '1970-01-02 00:00:00+00'"
+         WHERE target_disc_id = $1"
     )
     .bind(disc_id)
     .fetch_one(pool)
@@ -366,8 +357,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
 
     let modified_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
         "SELECT MAX(created_at) FROM disc_submissions
-         WHERE target_disc_id = $1
-           AND created_at != '1970-01-02 00:00:00+00'"
+         WHERE target_disc_id = $1"
     )
     .bind(disc_id)
     .fetch_one(pool)

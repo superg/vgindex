@@ -18,7 +18,6 @@ import json
 import os
 import re
 import sys
-from collections import Counter
 from datetime import datetime
 
 # Sentinel created_at for disc_submissions rows that mark discs which had no
@@ -27,18 +26,6 @@ from datetime import datetime
 # this value for affected discs, and the website's disc-view rendering checks
 # for an exact match against this constant to suppress the "Added" row.
 NO_ADDED_SENTINEL_TS = "1970-01-01 00:00:00+00"
-
-# Sentinel created_at for synthetic disc_submissions rows produced by the
-# dumper-credit closure pass and the d_status==5 (Green) fallback pass. These
-# rows credit dumpers who never authored anything in the disc's changes log
-# (or whose credit needs to be invented to satisfy the Green=>=2-Disc
-# invariant), so they are NOT real activity timestamps and must be excluded
-# from MIN(created_at) / MAX(created_at) computations in the website. The
-# value is deliberately distinct from NO_ADDED_SENTINEL_TS so the two cases
-# can be distinguished in future UI features. The two pass kinds (dumper
-# credit vs Green fallback) share the same timestamp but are distinguished
-# by `review_comment` ('dumper-credit-sentinel' vs 'status5-fallback-sentinel').
-DUMPER_CREDIT_SENTINEL_TS = "1970-01-02 00:00:00+00"
 
 # ---------------------------------------------------------------------------
 # Lookup maps (from 002_seed_data.sql)
@@ -958,142 +945,6 @@ def _get_status_changes(fields_list):
     return {}
 
 
-# ---------------------------------------------------------------------------
-# Disc-signal classification (Edit -> Disc reclassification rules)
-# ---------------------------------------------------------------------------
-#
-# When a change in the legacy history doesn't add a new dumper but its
-# fields[] carry signals that nonetheless imply a new physical disc / new
-# verification (extra barcode, an extra mould SID, a re-dump producing new
-# hashes, etc.), we want to reclassify it as `Disc` instead of `Edit` so the
-# new website's submission-type analytics line up with reality.
-#
-# All helpers below operate on raw redump CSV strings as they appear in the
-# scraped JSON. They are intentionally conservative: pure reorderings,
-# whitespace cleanups and `Original, GH` -> `Original, Greatest Hits` style
-# rename edits all stay `Edit`. Serial / Languages / Header are deliberately
-# NOT in this set per maintainer guidance: those fields are commonly
-# corrected on existing discs (foreign-region serial transcription, language
-# typo fixes, etc.) and would generate false positives.
-
-def _is_csv_strict_superset(old, new):
-    """True if `new` (CSV) contains every element of `old` (CSV) plus at
-    least one more, comparing case-insensitively. Used for `Edition` and
-    `Barcode` where each comma element represents an independent variant
-    or scanned barcode. `|` and `;` inside an element are literal text.
-    """
-    o = {x.strip().lower() for x in (old or "").split(",") if x.strip()}
-    n = {x.strip().lower() for x in (new or "").split(",") if x.strip()}
-    return n > o
-
-
-def _is_offset_csv_strict_superset(old, new):
-    """True if `new` adds at least one new write-offset value to `old`.
-
-    Each comma-separated element may itself carry an `|<extra>` suffix
-    (mirroring `_parse_offset_value`); we strip that suffix before
-    comparison so pure `+13` -> `+13|+13` enrichment edits stay `Edit`,
-    while `-647` -> `-647|-647, -12` (a new offset added) flips to `Disc`.
-    """
-    def norm(s):
-        return {p.split("|", 1)[0].strip()
-                for p in (s or "").split(",") if p.strip()}
-    return norm(new) > norm(old)
-
-
-def _ring_text_grew(old, new):
-    """True if `new` ring-code text contains every token of `old` plus at
-    least one more.
-
-    Ring text on redump is multiline (one line per layer side) and each
-    line packs tokens with mixed comma+tab separators. We tokenize on
-    those separators and use multiset comparison so that:
-      - reorderings (same tokens, different order) stay `Edit`
-      - additions (extra toolstamp, extra mould SID, additional mould)
-        flip to `Disc`
-      - deletions or replacements (some tokens removed) stay `Edit`,
-        because Redump cleanups occasionally happen
-    """
-    if not new:
-        return False
-    if not old:
-        return True
-
-    def tokens(s):
-        c = Counter()
-        for line in s.split("\n"):
-            for tok in re.split(r"[,\t]+", line):
-                t = tok.strip()
-                if t:
-                    c[t] += 1
-        return c
-
-    o, n = tokens(old), tokens(new)
-    return bool(n - o) and not (o - n)
-
-
-# Field labels checked by `_classify_change_disc_signal`. Sorted by rule
-# group; the corresponding reason strings line up with the corpus-scan
-# counters reported in the [sql] log at the end of pass 2.
-_HASH_FIELDS = ("SHA-1", "MD5", "CRC-32", "Size")
-_RING_FIELDS = ("Ring", "Ring (old)", "Ring old")
-
-
-def _classify_change_disc_signal(fields_list):
-    """Inspect a change's fields[] and return a reason string if any rule
-    fires, else None. Multiple matching rules are joined with '+' in
-    deterministic insertion order (so e.g. `barcode-expanded+ring-grew`).
-
-    Caller contract: only invoked when the change has NO Dumpers field
-    (the Dumpers branch wins first; see the change loop in `process_all`).
-    """
-    reasons = []
-    seen = set()
-
-    def _add(reason):
-        if reason not in seen:
-            seen.add(reason)
-            reasons.append(reason)
-
-    for f in fields_list:
-        field = f.get("field", "")
-        ftype = f.get("type", "")
-        old_val = f.get("old_value")
-        new_val = f.get("new_value")
-
-        if field == "Edition":
-            if ftype == "added" or (
-                ftype == "modified"
-                and _is_csv_strict_superset(old_val, new_val)
-            ):
-                _add("edition-expanded")
-        elif field == "Barcode":
-            if ftype == "added" or (
-                ftype == "modified"
-                and _is_csv_strict_superset(old_val, new_val)
-            ):
-                _add("barcode-expanded")
-        elif field == "Write offset":
-            if ftype == "added" or (
-                ftype == "modified"
-                and _is_offset_csv_strict_superset(old_val, new_val)
-            ):
-                _add("write_offset-expanded")
-        elif field in _HASH_FIELDS:
-            if ftype in ("added", "modified"):
-                _add("hash-changed")
-        elif field == "Tracks count":
-            if ftype == "modified":
-                _add("tracks-count-changed")
-        elif field in _RING_FIELDS:
-            if ftype == "added":
-                _add("ring-added")
-            elif ftype == "modified" and _ring_text_grew(old_val, new_val):
-                _add("ring-grew")
-
-    return "+".join(reasons) if reasons else None
-
-
 def _pick_uid_from_change(change, user_id_map):
     """Return the user_id_map uid for a given change's author, or None."""
     name = change.get("user", "")
@@ -1643,15 +1494,6 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
         dumper_inserts = []
         submission_inserts = []
 
-        # Submission-classification counters (printed after pass 2). All are
-        # global across the whole import and only used for log reporting.
-        reclassified_count = 0           # Edit -> Disc by content rules
-        reclassified_per_rule = Counter()
-        dumper_flip_count = 0            # Edit -> Disc in dumper-credit pass
-        dumper_synth_count = 0           # synthetic Disc rows added in dumper-credit pass
-        status5_flip_count = 0           # Edit -> Disc in Green fallback
-        status5_synth_count = 0          # synthetic Disc rows added in Green fallback
-
         processed = 0
         for fname, data in disc_files:
             disc_id = disc_id_from_filename(fname)
@@ -1794,42 +1636,24 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
             #
             # The legacy redump history doesn't distinguish between "new
             # disc / verification" (Disc) and "metadata edit" (Edit); every
-            # entry is just a "change". We classify each change here, then
-            # run two follow-up passes (dumper-credit + Green-status
-            # fallback) that flip Edit -> Disc or synthesize new Disc rows
-            # to enforce the new website's submission-type invariants.
+            # entry is just a "change". We classify each change with a
+            # single rule that promotes Edit -> Disc; everything else
+            # stays Edit:
             #
-            # Records pipeline: each emitted row is first appended to a
-            # per-disc list of dicts (see `disc_submission_records` below)
-            # so the follow-up passes can flip an existing Edit -> Disc by
-            # mutating the dict in place without having to re-parse SQL.
-            # Date-driven backfill rows go through the same list.
+            #   Dumpers field changed AND at least one new dumper name
+            #   was added -> fan out into one Disc row per newly-added
+            #   dumper (each row's submitter_id is the dumper themselves;
+            #   the change author is the reviewer). Pure removals / no-op
+            #   Dumpers edits do NOT qualify -- e.g. on disc 131840
+            #   (Chelnov) NovaAurora removed her own name before Mr.
+            #   Saturn was added; she is acting as a moderator on that
+            #   change and stays Edit.
             #
-            # Per-change classification rules (first match wins):
-            #   1. Dumpers field changed -> fan out into one Disc row per
-            #      newly-added dumper name (each row's submitter_id is the
-            #      dumper themselves; the change author is the reviewer).
-            #   2. Otherwise, content-driven Disc-signal rules:
-            #      `_classify_change_disc_signal` checks Edition / Barcode
-            #      / Write offset / Ring* expansions, hash changes, and
-            #      Tracks count modifications. When any rule fires the
-            #      change becomes a single Disc row attributed to the
-            #      change author with `review_comment = 'inherited (<reason>)'`.
-            #   3. Edit fallback. Empty-oldest changes (which the previous
-            #      version of this script special-cased into a Disc row)
-            #      land here too and get reclassified back to Disc by the
-            #      dumper-credit pass when their author is in the disc's
-            #      merged dumpers list.
+            # The Added/Modified backfill block below appends two extra
+            # Edit rows (date anchors only); they don't classify as Disc
+            # under any circumstance.
             disc_submission_records = []
             changes_list = data.get("changes", [])
-            # Pre-compute the merged dumpers list once per disc:
-            #  - drives the content-signal Disc-reclassification gate
-            #    below (only credit the change author with a Disc row when
-            #    they are an actual dumper for this disc; moderators
-            #    cleaning up barcodes/rings/etc. should stay as Edit), and
-            #  - reused by the dumper-credit closure pass further down.
-            merged_dumpers = merge_dumpers(data)
-            merged_dumpers_set = set(merged_dumpers)
             for ci, change in enumerate(changes_list):
                 user = change.get("user", "")
                 uid = user_id_map.get(user)
@@ -1859,38 +1683,10 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
                             })
                         continue
                     # else: pure removal or no-op Dumpers change (the editor
-                    # took someone OFF the credits, or normalized the list
-                    # in place). The editor is acting as a moderator, not as
-                    # a dumper, so we fall through to the content-signal and
-                    # Edit-fallback branches below rather than synthesizing
-                    # a Disc credit for them. Concrete example: disc 131840
-                    # (Chelnov), where NovaAurora removed her own name from
-                    # the dumpers list before adding Mr. Saturn -- previously
-                    # the removal change incorrectly got NovaAurora a Disc
-                    # row.
-
-                reason = _classify_change_disc_signal(fields)
-                # Gate: only reclassify Edit -> Disc when the change author
-                # is an actual dumper for this disc. A moderator who
-                # extends a barcode, normalizes a ring entry or fixes a
-                # hash on someone else's dump shouldn't be credited as a
-                # disc submitter -- the legitimate dumper still gets their
-                # Disc credit through the dumper-credit closure pass below.
-                if reason and user in merged_dumpers_set:
-                    disc_submission_records.append({
-                        "type": "Disc",
-                        "submitter_uid": uid,
-                        "payload": payload,
-                        "reviewer_uid": uid,
-                        "review_comment": f"inherited ({reason})",
-                        "created_at": ts,
-                        "reviewed_at": ts,
-                        "_change_idx": ci,
-                    })
-                    reclassified_count += 1
-                    for r in reason.split("+"):
-                        reclassified_per_rule[r] += 1
-                    continue
+                    # took someone OFF the credits or normalized the list
+                    # in place). The editor is acting as a moderator, not
+                    # as a dumper, so we fall through to the Edit fallback
+                    # below rather than synthesizing a Disc credit.
 
                 disc_submission_records.append({
                     "type": "Edit",
@@ -1906,9 +1702,8 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
             # Date-driven Added/Modified backfill + sentinel.
             #
             # Reads each disc JSON's `added` and `modified` fields and emits
-            # up to two extra
-            # disc_submissions rows so MIN()/MAX(created_at) match what
-            # redump itself shows on the disc page:
+            # up to two extra disc_submissions rows so MIN()/MAX(created_at)
+            # match what redump itself shows on the disc page:
             #
             # Added side:
             #   - no `added` field           -> emit NO_ADDED_SENTINEL row
@@ -1937,16 +1732,10 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
             # change author. Dumpers are consulted only when there are
             # no changes; if neither yields a uid the row is skipped.
             #
-            # Submission type for these rows is `Edit`, NOT `Disc`. They
-            # exist purely to anchor MIN/MAX(created_at) so the website
-            # can render the "Added" / "Modified" dates; they do not
-            # represent a dumping/verification act. Marking them `Disc`
-            # was double-crediting the same dumper -- e.g. on disc 2,
-            # Peepo_UK had both a real Edition-added Disc row at
-            # 2008-05-03 12:25 AND a separate no-added-sentinel Disc row
-            # at 1970-01-01, making him look like two distinct dumpers
-            # of the same disc. Edit rows still participate in MIN/MAX,
-            # so the timestamp behaviour is unchanged.
+            # Both rows are `Edit`. They exist purely to anchor
+            # MIN/MAX(created_at) so the disc-view "Added" / "Modified"
+            # dates render correctly; they do NOT represent a dumping or
+            # verification act and never classify as Disc.
             added_dt, modified_dt = load_disc_dates(data)
             change_dts = [parse_change_date_dt(c.get("date", "")) for c in changes_list]
             change_dts = [dt for dt in change_dts if dt is not None]
@@ -1995,114 +1784,9 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
                         "_change_idx": None,
                     })
 
-            # Dumper-credit closure pass.
-            #
-            # Every name in the disc's MERGED dumpers list (d_dumpers[] U
-            # d_dumpers_text, via `merge_dumpers`) needs at least one Disc
-            # submission attributed to them. The change-history tends to
-            # only record the form's submitter, so co-credited dumpers
-            # routinely have no Disc row. We close that gap by either
-            # flipping their oldest real-change Edit row -> Disc, or
-            # appending a synthetic empty Disc row stamped with
-            # DUMPER_CREDIT_SENTINEL_TS.
-            #
-            # Iteration walks `disc_submission_records` in REVERSE because
-            # records are appended in change-loop order (newest change at
-            # index 0, oldest change at the largest index, then date-backfill
-            # rows after); reversed iteration finds the oldest matching
-            # Edit first. Records with `_change_idx is None` (date backfill
-            # / sentinel rows) are skipped on purpose: those rows are
-            # timestamp anchors, not real change events, and rewriting their
-            # type / review_comment would erase that semantic.
-            credited = {
-                r["submitter_uid"]
-                for r in disc_submission_records
-                if r["type"] == "Disc"
-            }
-            for dumper_name in merged_dumpers:
-                d_uid = user_id_map.get(dumper_name)
-                if not d_uid or d_uid in credited:
-                    continue
-                flipped = False
-                for r in reversed(disc_submission_records):
-                    if r["_change_idx"] is None:
-                        continue
-                    if r["type"] == "Edit" and r["submitter_uid"] == d_uid:
-                        r["type"] = "Disc"
-                        r["review_comment"] = "inherited (dumper-credit)"
-                        flipped = True
-                        break
-                if flipped:
-                    credited.add(d_uid)
-                    dumper_flip_count += 1
-                    continue
-                disc_submission_records.append({
-                    "type": "Disc",
-                    "submitter_uid": d_uid,
-                    "payload": {},
-                    "reviewer_uid": None,
-                    "review_comment": "dumper-credit-sentinel",
-                    "created_at": DUMPER_CREDIT_SENTINEL_TS,
-                    "reviewed_at": None,
-                    "_change_idx": None,
-                })
-                credited.add(d_uid)
-                dumper_synth_count += 1
-
-            # d_status==5 (Green) fallback pass.
-            #
-            # Green discs on redump are those with at least two
-            # independent verifications, so the new schema expects them to
-            # have >=2 Disc submissions. After the dumper-credit closure
-            # pass above, the only Greens still short are those with a
-            # single-entry merged dumpers list. We make the disc reach the
-            # invariant by flipping one more real-change Edit -> Disc (any
-            # author), or, if no real-change Edit remains, by synthesizing
-            # one extra Disc row attributed to the disc's existing single
-            # Disc submitter. Date-backfill / sentinel rows are skipped
-            # for the same reason as in the closure pass above.
-            if str(data.get("d_status", "")).strip() == "5":
-                disc_n = sum(
-                    1 for r in disc_submission_records if r["type"] == "Disc"
-                )
-                if disc_n < 2:
-                    flipped = False
-                    for r in reversed(disc_submission_records):
-                        if r["_change_idx"] is None:
-                            continue
-                        if r["type"] == "Edit":
-                            r["type"] = "Disc"
-                            r["review_comment"] = "inherited (status5-fallback)"
-                            flipped = True
-                            break
-                    if flipped:
-                        status5_flip_count += 1
-                    else:
-                        existing_disc_uids = [
-                            r["submitter_uid"]
-                            for r in disc_submission_records
-                            if r["type"] == "Disc"
-                        ]
-                        fallback_uid = (
-                            existing_disc_uids[0] if existing_disc_uids else None
-                        )
-                        if fallback_uid is not None:
-                            disc_submission_records.append({
-                                "type": "Disc",
-                                "submitter_uid": fallback_uid,
-                                "payload": {},
-                                "reviewer_uid": None,
-                                "review_comment": "status5-fallback-sentinel",
-                                "created_at": DUMPER_CREDIT_SENTINEL_TS,
-                                "reviewed_at": None,
-                                "_change_idx": None,
-                            })
-                            status5_synth_count += 1
-
             # Serialize the per-disc records into SQL VALUES tuples so the
             # existing batched INSERT pipeline (`_write_batched`) consumes
-            # them unchanged. This stays right next to the classification
-            # passes so the pipeline order is obvious at a glance.
+            # them unchanged.
             for r in disc_submission_records:
                 submission_inserts.append(
                     f"('{r['type']}', {r['submitter_uid']}, {disc_id}, "
@@ -2159,30 +1843,6 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
             "reviewer_id, review_comment, created_at, reviewed_at)",
             submission_inserts)
         print(f"[sql]   Submissions: {len(submission_inserts)} rows", file=sys.stderr)
-        if reclassified_per_rule:
-            per_rule = ", ".join(
-                f"{rule}:{count}"
-                for rule, count in sorted(
-                    reclassified_per_rule.items(),
-                    key=lambda kv: (-kv[1], kv[0]),
-                )
-            )
-            print(
-                f"[sql]   Reclassified Edit -> Disc: {reclassified_count} ({per_rule})",
-                file=sys.stderr,
-            )
-        else:
-            print(f"[sql]   Reclassified Edit -> Disc: 0", file=sys.stderr)
-        print(
-            f"[sql]   Dumper-credit pass: {dumper_flip_count} Edit -> Disc flips, "
-            f"{dumper_synth_count} synthetic Disc inserts",
-            file=sys.stderr,
-        )
-        print(
-            f"[sql]   Green-status fallback: {status5_flip_count} Edit -> Disc flips, "
-            f"{status5_synth_count} synthetic Disc inserts",
-            file=sys.stderr,
-        )
 
         # Reset sequences
         out.write("\n-- Reset sequences\n")
