@@ -429,8 +429,12 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     } else {
         None
     };
-    let questionable = data["questionable"].as_bool().unwrap_or(false);
-    let enabled = data["enabled"].as_bool().unwrap_or(true);
+    let status = match data["status"].as_str().unwrap_or("Unverified") {
+        "Disabled" => "Disabled",
+        "Questionable" => "Questionable",
+        "Verified" => "Verified",
+        _ => "Unverified",
+    };
 
     sqlx::query(
         "UPDATE discs SET title = $1,
@@ -446,8 +450,8 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
          pvd = $19, pic = $20, bca = $21, header = $22,
          protection = $23, sbi = $24, disc_id = $25, disc_key = $26,
          cue = $27,
-         questionable = $28, enabled = $29
-         WHERE id = $30"
+         status = $28::disc_status_enum
+         WHERE id = $29"
     )
     .bind(title)               // $1
     .bind(system_code)         // $2
@@ -476,9 +480,8 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     .bind(disc_id_text)        // $25
     .bind(&disc_key)           // $26
     .bind(cue)                 // $27
-    .bind(questionable)        // $28
-    .bind(enabled)             // $29
-    .bind(disc_id)             // $30
+    .bind(status)              // $28
+    .bind(disc_id)             // $29
     .execute(pool)
     .await?;
 
@@ -990,8 +993,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "disc_id": detail.disc.disc_id,
         "disc_key": detail.disc.disc_key.as_ref().map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()),
         "cuesheet": cue,
-        "questionable": detail.disc.questionable,
-        "enabled": detail.disc.enabled,
+        "status": detail.disc.status.to_string(),
         "regions": region_codes,
         "languages": lang_codes,
         "ring_codes": ring_codes,

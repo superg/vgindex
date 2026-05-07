@@ -321,22 +321,20 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
         <textarea name="dat" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ files_xml }}</textarea>
     </label>
 
-    {% if is_add_mode %}
-    <input type="hidden" name="enabled" value="true">
-    <input type="hidden" name="questionable" value="false">
-    {% else %}
-    <div class="grid">
-        <label{% if !self.highlight_class("enabled").is_empty() %} class="{{ self.highlight_class("enabled") }}"{% endif %}>
-            <input type="hidden" name="enabled" value="false">
-            <input type="checkbox" name="enabled" value="true" {% if enabled %}checked{% endif %}>
-            Enabled
-        </label>
-        <label{% if !self.highlight_class("questionable").is_empty() %} class="{{ self.highlight_class("questionable") }}"{% endif %}>
-            <input type="hidden" name="questionable" value="false">
-            <input type="checkbox" name="questionable" value="true" {% if questionable %}checked{% endif %}>
-            Questionable
-        </label>
+    {% if !is_add_mode && !is_review_mode && submit_button_text == "Save" %}
+    <div class="inline-field status-inline-row{% if !self.highlight_class("status").is_empty() %} {{ self.highlight_class("status") }}{% endif %}">
+        <span class="inline-field-label">Status</span>
+        <div class="inline-field-values">
+            <select name="status" class="status-select-compact">
+                <option value="Disabled" {% if status == "Disabled" %}selected{% endif %}>🔴 Disabled</option>
+                <option value="Questionable" {% if status == "Questionable" %}selected{% endif %}>🟡 Questionable</option>
+                <option value="Unverified" {% if status == "Unverified" %}selected{% endif %}>🔵 Unverified</option>
+                <option value="Verified" {% if status == "Verified" %}selected{% endif %}>🟢 Verified</option>
+            </select>
+        </div>
     </div>
+    {% else %}
+    <input type="hidden" name="status" value="{{ status }}">
     {% endif %}
 
     {% if is_add_mode %}

@@ -138,38 +138,31 @@ impl Category {
     ];
 }
 
-/// Computed disc verification status (not stored; derived from `questionable` flag + dumper count).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "disc_status_enum", rename_all = "PascalCase")]
 pub enum DiscStatus {
-    Verified,
-    Unverified,
+    Disabled,
     Questionable,
+    Unverified,
+    Verified,
 }
 
 impl DiscStatus {
     pub fn css_class(&self) -> &'static str {
         match self {
-            Self::Verified => "verified",
-            Self::Unverified => "unverified",
+            Self::Disabled => "bad",
             Self::Questionable => "questionable",
+            Self::Unverified => "unverified",
+            Self::Verified => "verified",
         }
     }
 
     pub fn emoji(&self) -> &'static str {
         match self {
-            Self::Verified => "🟢",
-            Self::Unverified => "🔵",
+            Self::Disabled => "🔴",
             Self::Questionable => "🟡",
-        }
-    }
-
-    pub fn compute(questionable: bool, dumper_count: i64) -> Self {
-        if questionable {
-            Self::Questionable
-        } else if dumper_count > 1 {
-            Self::Verified
-        } else {
-            Self::Unverified
+            Self::Unverified => "🔵",
+            Self::Verified => "🟢",
         }
     }
 }
@@ -381,8 +374,7 @@ pub struct Disc {
     pub pic: Option<Vec<u8>>,
     pub header: Option<Vec<u8>>,
     pub bca: Option<Vec<u8>>,
-    pub enabled: bool,
-    pub questionable: bool,
+    pub status: DiscStatus,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -456,8 +448,7 @@ pub struct DiscListRow {
     pub media_type: MediaType,
     pub version: Option<String>,
     pub edition: Vec<String>,
-    pub enabled: bool,
-    pub questionable: bool,
+    pub status: DiscStatus,
     pub dumper_count: i64,
     pub region_flags: Vec<FlagInfo>,
     pub language_flags: Vec<FlagInfo>,

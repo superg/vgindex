@@ -57,6 +57,8 @@ CREATE TABLE systems (
 );
 
 -- discs (main catalog)
+CREATE TYPE disc_status_enum AS ENUM ('Disabled', 'Questionable', 'Unverified', 'Verified');
+
 CREATE TABLE discs (
     id SERIAL PRIMARY KEY,
     system_code VARCHAR(16) NOT NULL REFERENCES systems(code),
@@ -88,12 +90,11 @@ CREATE TABLE discs (
     pic BYTEA,
     cue TEXT,
 
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    questionable BOOLEAN NOT NULL DEFAULT FALSE
+    status disc_status_enum NOT NULL DEFAULT 'Unverified'
 );
 CREATE INDEX idx_discs_system ON discs(system_code);
 CREATE INDEX idx_discs_title ON discs(title);
-CREATE INDEX idx_discs_enabled ON discs(enabled) WHERE NOT enabled;
+CREATE INDEX idx_discs_disabled ON discs(status) WHERE status = 'Disabled';
 
 -- immutable wrapper for array_to_string (needed for generated columns)
 CREATE FUNCTION arr_to_str(TEXT[], TEXT) RETURNS TEXT

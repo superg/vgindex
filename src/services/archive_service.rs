@@ -202,7 +202,7 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
          FROM discs d
          JOIN categories c ON c.id = d.category_id
          JOIN media_types mt ON mt.code = d.media_type_code
-         WHERE d.system_code = $1 AND d.enabled AND NOT d.questionable
+         WHERE d.system_code = $1 AND d.status NOT IN ('Disabled', 'Questionable')
          ORDER BY d.title",
     )
     .bind(&sys.code)
@@ -374,7 +374,7 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Arc
     let discs: Vec<CueDisc> = sqlx::query_as(
         "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.cue
          FROM discs d
-         WHERE d.system_code = $1 AND d.enabled AND NOT d.questionable
+         WHERE d.system_code = $1 AND d.status NOT IN ('Disabled', 'Questionable')
                AND d.cue IS NOT NULL AND d.cue != ''
          ORDER BY d.title",
     )
@@ -454,7 +454,7 @@ async fn generate_key_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveR
         "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.disc_key
          FROM discs d
          WHERE d.system_code = $1 AND d.disc_key IS NOT NULL
-               AND d.enabled AND NOT d.questionable
+               AND d.status NOT IN ('Disabled', 'Questionable')
          ORDER BY d.title",
     )
     .bind(&sys.code)
@@ -528,7 +528,7 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveR
         "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.sbi
          FROM discs d
          WHERE d.system_code = $1 AND d.sbi IS NOT NULL AND d.sbi != ''
-               AND d.enabled AND NOT d.questionable
+               AND d.status NOT IN ('Disabled', 'Questionable')
          ORDER BY d.title",
     )
     .bind(&sys.code)

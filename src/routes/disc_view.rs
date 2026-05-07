@@ -79,7 +79,6 @@ struct DiscViewTemplate {
     error_count: String,
     file_count: usize,
     status_class: String,
-    status_emoji: String,
     status_display: String,
     dumper_count: usize,
     created_at: String,
@@ -461,21 +460,8 @@ async fn disc_view(
             show_protection: detail.system.has_protection,
             error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
             file_count: detail.files.len(),
-            status_class: if detail.disc.enabled {
-                DiscStatus::compute(detail.disc.questionable, detail.disc_submission_count).css_class().to_string()
-            } else {
-                "bad".to_string()
-            },
-            status_emoji: if detail.disc.enabled {
-                DiscStatus::compute(detail.disc.questionable, detail.disc_submission_count).emoji().to_string()
-            } else {
-                "🔴".to_string()
-            },
-            status_display: if detail.disc.enabled {
-                DiscStatus::compute(detail.disc.questionable, detail.disc_submission_count).to_string()
-            } else {
-                "Disabled".to_string()
-            },
+            status_class: detail.disc.status.css_class().to_string(),
+            status_display: detail.disc.status.to_string(),
             created_at: detail.added_at
                 .filter(|d| *d != NO_ADDED_SENTINEL)
                 .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
