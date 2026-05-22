@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,11 +62,22 @@ def print_summary():
 
 
 def signal_handler(_sig, _frame):
-    global interrupted
-    if interrupted:
-        return
-    interrupted = True
-    print("\nInterrupted by user — finishing in-flight requests…")
+    print("\nInterrupted by user — exiting immediately.", flush=True)
+    os._exit(130)
+
+
+@contextmanager
+def _no_interrupt():
+    """Block SIGINT delivery for the duration of the with-block.
+
+    SIGINT pressed while inside stays pending in the kernel and fires the
+    moment the block exits — so file writes never see a partial flush.
+    """
+    old = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, old)
 
 
 # ---------------------------------------------------------------------------
@@ -516,8 +528,9 @@ def update_last_known_disc_id(config: ScraperConfig, new_last_known_disc_id: int
         parser[CONFIG_SECTION]["workers"] = str(config.workers)
     if "output_dir" not in parser[CONFIG_SECTION] and config.output_dir != DEFAULT_OUTPUT_DIR:
         parser[CONFIG_SECTION]["output_dir"] = config.output_dir
-    with open(config.config_path, "w", encoding="utf-8") as f:
-        parser.write(f)
+    with _no_interrupt():
+        with open(config.config_path, "w", encoding="utf-8") as f:
+            parser.write(f)
 
 
 def _output_relpath(disc_id: int) -> str:
@@ -856,6 +869,11 @@ def main():
         "--config",
         help="Path to scraper config file. Defaults to scraper.cfg next to this script.",
     )
+    parser.add_argument(
+        "--check-modified",
+        action="store_true",
+        help="Also run the modified-disc detection phase (delete local JSONs whose remote modified date changed, so backfill re-scrapes them). Off by default because the modified listing is unreliable.",
+    )
     args = parser.parse_args()
     config_path = Path(args.config).expanduser().resolve() if args.config else default_config_path()
 
@@ -872,11 +890,14 @@ def main():
     print(f"Delay: {config.delay_seconds}s, Workers: {config.workers}")
     print()
 
-    run_backfill_phase(session, config)
+    if args.check_modified:
+        run_modified_detection_phase(session, config)
+    else:
+        print("Skipping modified-disc detection (pass --check-modified to enable).\n")
+    if not interrupted:
+        run_backfill_phase(session, config)
     if not interrupted:
         run_discovery_phase(session, config)
-    if not interrupted:
-        run_modified_rescrape_phase(session, config)
 
     print_summary()
     if interrupted:
@@ -1001,7 +1022,7 @@ def iter_modified_disc_ids(session: requests.Session, delay: float):
                 return
             try:
                 # Listing pages are heavier and can take longer to generate server-side.
-                resp = _rate_limited_get(session, url, delay, timeout=(10, 90))
+                resp = _rate_limited_get(session, url, delay, timeout=(10, 300))
                 resp.raise_for_status()
                 break
             except requests.RequestException as exc:
@@ -1024,52 +1045,86 @@ def iter_modified_disc_ids(session: requests.Session, delay: float):
         url = next_url
 
 
-def run_modified_rescrape_phase(session: requests.Session, config: ScraperConfig) -> None:
-    print("Modified phase: scanning modified listing until stored modified date matches.")
-    checked = 0
+def _fetch_root_metadata_with_retry(
+    session: requests.Session, disc_id: int, delay: float, max_attempts: int = 5
+) -> tuple[dict | str | None, list[str]]:
+    """fetch_root_metadata with exponential backoff. Returns (None, warnings) on persistent failure."""
+    backoff_seconds = 1.0
+    last_warnings: list[str] = []
+    for attempt in range(1, max_attempts + 1):
+        if interrupted:
+            return None, last_warnings
+        result, warnings = fetch_root_metadata(session, disc_id, delay)
+        last_warnings = warnings
+        if result == "nonexistent" or isinstance(result, dict):
+            return result, warnings
+        if attempt == max_attempts:
+            return None, warnings
+        wait_for = min(backoff_seconds * (2 ** (attempt - 1)), 30.0)
+        deadline = time.monotonic() + wait_for
+        while time.monotonic() < deadline:
+            if interrupted:
+                return None, warnings
+            time.sleep(min(0.25, deadline - time.monotonic()))
+    return None, last_warnings
+
+
+def run_modified_detection_phase(session: requests.Session, config: ScraperConfig) -> None:
+    print("Modified detection phase: building list of modified disc IDs (no scraping yet)...")
+    to_delete: list[int] = []
+    cutoff_disc_id: int | None = None
+
     for disc_id in iter_modified_disc_ids(session, config.delay_seconds):
         if interrupted:
             return
         if _has_nonexistent_marker(config.output_dir, disc_id):
             continue
-        checked += 1
+        local_json = _load_local_disc_json(config.output_dir, disc_id)
+        if local_json is None:
+            # Missing/empty/corrupt — backfill or discovery will handle.
+            continue
 
-        root_metadata, root_warnings = fetch_root_metadata(session, disc_id, config.delay_seconds)
+        root_metadata, warnings = _fetch_root_metadata_with_retry(
+            session, disc_id, config.delay_seconds
+        )
+        if interrupted:
+            return
         if root_metadata == "nonexistent":
             continue
         if not isinstance(root_metadata, dict):
-            _save_result(
-                disc_id,
-                checked,
-                0,
-                None,
-                root_warnings,
-                config.output_dir,
-            )
+            print(f"Disc {disc_id}: root fetch failed after retries; queuing for re-scrape.")
+            for w in warnings:
+                print(f"  ^ {w}")
+            to_delete.append(disc_id)
             continue
 
-        local_json = _load_local_disc_json(config.output_dir, disc_id)
-        local_modified = str(local_json.get("modified", "")).strip() if local_json else ""
+        local_modified = str(local_json.get("modified", "")).strip()
         remote_modified = str(root_metadata.get("modified", "")).strip()
 
         if local_modified and remote_modified and local_modified == remote_modified:
-            print(f"Stop at disc {disc_id}: modified date unchanged ({remote_modified}).")
+            cutoff_disc_id = disc_id
+            print(f"Cutoff at disc {disc_id}: modified date unchanged ({remote_modified}).")
             break
 
-        result, warnings = scrape_disc(
-            session,
-            disc_id,
-            delay=config.delay_seconds,
-            root_metadata=root_metadata,
-        )
-        _save_result(
-            disc_id,
-            checked,
-            0,
-            result,
-            root_warnings + warnings,
-            config.output_dir,
-        )
+        to_delete.append(disc_id)
+
+    if interrupted:
+        return
+
+    if cutoff_disc_id is None and to_delete:
+        print("Reached end of modified listing without finding a cutoff.")
+    print(f"Detected {len(to_delete)} modified disc(s); deleting local JSONs so backfill repopulates them.")
+
+    for disc_id in to_delete:
+        if interrupted:
+            return
+        path = os.path.join(config.output_dir, _output_relpath(disc_id))
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            print(f"Failed to delete {path}: {exc}")
     print()
 
 
@@ -1093,8 +1148,9 @@ def _save_result(disc_id: int, progress: int, total: int,
             stats["failed"] += 1
     else:
         try:
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
+            with _no_interrupt():
+                with open(out_path, "w", encoding="utf-8") as f:
+                    json.dump(result, f, ensure_ascii=False, indent=2)
             title = result.get("d_title", "")
             status = f"OK{f' - {title}' if title else ''}"
             with stats_lock:

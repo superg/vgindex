@@ -202,6 +202,32 @@ fn normalize_csv_ids(value: &str) -> String {
     parse_csv_ids(value).join(", ")
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ApplyPolicy {
+    Additive,
+    Editable,
+}
+
+impl ApplyPolicy {
+    fn allows_removal(self) -> bool {
+        self == Self::Editable
+    }
+}
+
+fn apply_policy_for_submission(sub: &DiscSubmission) -> ApplyPolicy {
+    match sub.submission_type {
+        SubmissionType::Disc => ApplyPolicy::Additive,
+        SubmissionType::Edit => ApplyPolicy::Editable,
+    }
+}
+
+fn append_unique_case_insensitive(values: &mut Vec<String>, incoming: impl IntoIterator<Item = String>) {
+    for value in incoming {
+        if !values.iter().any(|existing| existing.eq_ignore_ascii_case(&value)) {
+            values.push(value);
+        }
+    }
+}
 
 fn apply_regions_languages_change(
     change_node: &serde_json::Value,
@@ -209,6 +235,33 @@ fn apply_regions_languages_change(
     let new_csv = history_new_value(change_node).and_then(|v| v.as_str()).unwrap_or("");
     let new_values = parse_csv_ids(new_csv);
     serde_json::json!(new_values)
+}
+
+fn apply_regions_languages_additive_change(
+    old_values: &[String],
+    change_node: &serde_json::Value,
+) -> serde_json::Value {
+    let new_csv = history_new_value(change_node).and_then(|v| v.as_str()).unwrap_or("");
+    let mut values = old_values.to_vec();
+    append_unique_case_insensitive(&mut values, parse_csv_ids(new_csv));
+    serde_json::json!(values)
+}
+
+fn append_string_list_history_values(
+    old_values: &[String],
+    changes: &serde_json::Value,
+) -> Vec<String> {
+    let mut out = old_values.to_vec();
+    if let Some(items) = changes.as_array() {
+        let incoming = items
+            .iter()
+            .filter_map(|item| item.get("new"))
+            .filter_map(|value| value.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        append_unique_case_insensitive(&mut out, incoming);
+    }
+    out
 }
 
 fn ring_set_scalar_field(
@@ -329,6 +382,7 @@ fn find_matching_ring_entry(
 fn apply_ring_codes_history(
     old_value: &serde_json::Value,
     change_node: &serde_json::Value,
+    allow_removal: bool,
 ) -> AppResult<serde_json::Value> {
     let mut rings = old_value.as_array().cloned().unwrap_or_default();
     let before_layers = ring_layers_max(&rings);
@@ -336,7 +390,6 @@ fn apply_ring_codes_history(
     let Some(changes) = change_node.as_array() else {
         return Ok(serde_json::json!(rings));
     };
-    let allow_removal = true;
     let mut removals: Vec<usize> = Vec::new();
     let mut additions: Vec<serde_json::Value> = Vec::new();
     let ring_index_by_id = |rings: &[serde_json::Value], id: i32| -> Option<usize> {
@@ -344,6 +397,11 @@ fn apply_ring_codes_history(
     };
 
     for change in changes {
+        let is_removed = change.get("removed").and_then(|v| v.as_bool()).unwrap_or(false);
+        if is_removed && !allow_removal {
+            continue;
+        }
+
         let id = change.get("id").and_then(|v| v.as_i64()).map(|v| v as i32);
         let resolved_idx = if let Some(id) = id {
             ring_index_by_id(&rings, id).ok_or_else(|| {
@@ -352,7 +410,7 @@ fn apply_ring_codes_history(
         } else {
             usize::MAX
         };
-        if change.get("removed").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if is_removed {
             if allow_removal {
                 if resolved_idx == usize::MAX {
                     return Err(AppError::BadRequest(
@@ -453,9 +511,10 @@ fn apply_ring_codes_history(
     Ok(serde_json::json!(rings))
 }
 
-pub fn resolve_submission_snapshot(
+fn resolve_submission_snapshot_with_policy(
     db_snapshot: &serde_json::Value,
     changes: &serde_json::Value,
+    policy: ApplyPolicy,
 ) -> AppResult<serde_json::Value> {
     let mut resolved = db_snapshot.clone();
     let Some(change_obj) = changes.as_object() else {
@@ -468,15 +527,22 @@ pub fn resolve_submission_snapshot(
     for (key, value) in change_obj {
         match key.as_str() {
             "regions" | "languages" => {
-                let updated = apply_regions_languages_change(value);
+                let updated = if policy == ApplyPolicy::Additive {
+                    let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
+                    apply_regions_languages_additive_change(&old, value)
+                } else {
+                    apply_regions_languages_change(value)
+                };
                 resolved_obj.insert(key.clone(), updated);
             }
             "serial" | "edition" | "barcode" => {
                 let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
-                let mut updated = apply_string_list_history(&old, value, true);
-                if matches!(key.as_str(), "serial" | "edition" | "barcode") {
-                    dedup_case_insensitive(&mut updated);
-                }
+                let mut updated = if policy == ApplyPolicy::Additive {
+                    append_string_list_history_values(&old, value)
+                } else {
+                    apply_string_list_history(&old, value, true)
+                };
+                dedup_case_insensitive(&mut updated);
                 resolved_obj.insert(key.clone(), serde_json::json!(updated));
             }
             "layerbreaks" => {
@@ -490,7 +556,7 @@ pub fn resolve_submission_snapshot(
             }
             "ring_codes" => {
                 let old = resolved_obj.get(key).cloned().unwrap_or_else(|| serde_json::json!([]));
-                let updated = apply_ring_codes_history(&old, value)?;
+                let updated = apply_ring_codes_history(&old, value, policy.allows_removal())?;
                 resolved_obj.insert(key.clone(), updated);
             }
             _ => {
@@ -503,6 +569,20 @@ pub fn resolve_submission_snapshot(
     }
 
     Ok(resolved)
+}
+
+pub fn resolve_submission_snapshot(
+    db_snapshot: &serde_json::Value,
+    changes: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    resolve_submission_snapshot_with_policy(db_snapshot, changes, ApplyPolicy::Editable)
+}
+
+pub fn resolve_submission_snapshot_for_submission(
+    db_snapshot: &serde_json::Value,
+    sub: &DiscSubmission,
+) -> AppResult<serde_json::Value> {
+    resolve_submission_snapshot_with_policy(db_snapshot, &sub.changes, apply_policy_for_submission(sub))
 }
 
 fn dedup_case_insensitive(values: &mut Vec<String>) {
@@ -522,13 +602,13 @@ async fn resolve_submission_data(
     sub: &DiscSubmission,
     changes: &serde_json::Value,
 ) -> AppResult<serde_json::Value> {
-    if let Some(disc_id) = sub.target_disc_id {
+    let db_snapshot = if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(pool, disc_id).await?;
-        let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
-        resolve_submission_snapshot(&db_snapshot, changes)
+        disc_service::build_snapshot_from_disc(&detail)
     } else {
-        resolve_submission_snapshot(&serde_json::json!({}), changes)
-    }
+        serde_json::json!({})
+    };
+    resolve_submission_snapshot_with_policy(&db_snapshot, changes, apply_policy_for_submission(sub))
 }
 
 /// Atomically reject a submission.  Returns `true` if the rejection was
@@ -893,6 +973,373 @@ mod tests {
         })
     }
 
+    fn submission(
+        submission_type: SubmissionType,
+        target_disc_id: Option<i32>,
+        changes: serde_json::Value,
+    ) -> DiscSubmission {
+        DiscSubmission {
+            id: 1,
+            submission_type,
+            submitter_id: 1,
+            submission_comment: None,
+            target_disc_id,
+            changes,
+            dump_log: None,
+            extra_upload_url: None,
+            status: SubmissionStatus::Pending,
+            reviewer_id: None,
+            review_comment: None,
+            created_at: chrono::Utc::now(),
+            reviewed_at: None,
+        }
+    }
+
+    #[test]
+    fn applies_new_disc_changes_to_empty_snapshot() {
+        let changes = serde_json::json!({
+            "title": { "new": "New Game" },
+            "regions": { "new": "AS,EU" },
+            "languages": { "new": "ja" },
+            "serial": [
+                { "new": "ABC-001" }
+            ],
+            "edition": [
+                { "new": "Limited" }
+            ],
+            "barcode": [
+                { "new": "1234567890" }
+            ],
+            "layerbreaks": [
+                { "index": 0, "new": "12345" }
+            ],
+            "ring_codes": [{
+                "offset_value": { "new": "0" },
+                "comment": { "new": "new pressing" },
+                "layers": [{
+                    "index": 0,
+                    "mastering_code": { "new": "MASTER-A" },
+                    "mastering_sid": { "new": "SID-A" },
+                    "toolstamps": { "new": "T1" }
+                }]
+            }]
+        });
+        let sub = submission(SubmissionType::Disc, None, changes);
+
+        let result = resolve_submission_snapshot_for_submission(&serde_json::json!({}), &sub).unwrap();
+
+        assert_eq!(result["title"], "New Game");
+        assert_eq!(result["regions"], serde_json::json!(["AS", "EU"]));
+        assert_eq!(result["languages"], serde_json::json!(["ja"]));
+        assert_eq!(result["serial"], serde_json::json!(["ABC-001"]));
+        assert_eq!(result["edition"], serde_json::json!(["Limited"]));
+        assert_eq!(result["barcode"], serde_json::json!(["1234567890"]));
+        assert_eq!(result["layerbreaks"], serde_json::json!([12345]));
+        assert_eq!(result["ring_codes"].as_array().unwrap().len(), 1);
+        assert_eq!(result["ring_codes"][0]["offset_value"], "0");
+        assert_eq!(result["ring_codes"][0]["comment"], "new pressing");
+        assert_eq!(result["ring_codes"][0]["layers"][0]["mastering_code"], "MASTER-A");
+        assert_eq!(result["ring_codes"][0]["layers"][0]["toolstamps"], "T1");
+    }
+
+    #[test]
+    fn applies_verification_changes_as_additive_update_to_existing_snapshot() {
+        let db = serde_json::json!({
+            "title": "Old Game",
+            "regions": ["EU"],
+            "languages": ["en"],
+            "serial": ["ABC-001"],
+            "edition": ["Original"],
+            "barcode": ["1234567890"],
+            "ring_codes": [{
+                "id": 1,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{
+                    "mastering_code": "MASTER-A",
+                    "mastering_sid": "SID-A",
+                    "toolstamps": "T1",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            }]
+        });
+        let changes = serde_json::json!({
+            "title": { "old": "Old Game", "new": "Updated Game" },
+            "regions": { "new": "AS" },
+            "languages": { "new": "ja" },
+            "serial": [
+                { "new": "abc-001" },
+                { "new": "DEF-002" },
+                { "index": 0, "old": "ABC-001", "new": null }
+            ],
+            "edition": [
+                { "new": "Limited" }
+            ],
+            "barcode": [
+                { "new": "1234567890" },
+                { "new": "0987654321" }
+            ],
+            "ring_codes": [
+                { "id": 99, "removed": true },
+                {
+                    "layers": [{
+                        "index": 0,
+                        "mastering_code": { "new": "MASTER-A" },
+                        "mastering_sid": { "new": "SID-A" },
+                        "toolstamps": { "new": "T2" }
+                    }]
+                }
+            ]
+        });
+        let sub = submission(SubmissionType::Disc, Some(1), changes);
+
+        let result = resolve_submission_snapshot_for_submission(&db, &sub).unwrap();
+
+        assert_eq!(result["title"], "Updated Game");
+        assert_eq!(result["regions"], serde_json::json!(["EU", "AS"]));
+        assert_eq!(result["languages"], serde_json::json!(["en", "ja"]));
+        assert_eq!(result["serial"], serde_json::json!(["ABC-001", "DEF-002"]));
+        assert_eq!(result["edition"], serde_json::json!(["Original", "Limited"]));
+        assert_eq!(result["barcode"], serde_json::json!(["1234567890", "0987654321"]));
+        assert_eq!(result["ring_codes"].as_array().unwrap().len(), 1);
+        assert_eq!(result["ring_codes"][0]["id"], 1);
+        assert_eq!(result["ring_codes"][0]["layers"][0]["toolstamps"], "T1, T2");
+    }
+
+    #[test]
+    fn applies_edit_changes_with_modification_addition_and_removal() {
+        let db = serde_json::json!({
+            "title": "Old Game",
+            "regions": ["EU"],
+            "languages": ["en"],
+            "serial": ["ABC-001", "OLD-002"],
+            "edition": ["Original"],
+            "barcode": ["1234567890"],
+            "layerbreaks": [10, 20],
+            "ring_codes": [
+                {
+                    "id": 1,
+                    "offset_value": "",
+                    "offset_extra_value": "",
+                    "sample_start": "",
+                    "comment": "old",
+                    "layers": [{
+                        "mastering_code": "MASTER-A",
+                        "mastering_sid": "SID-A",
+                        "toolstamps": "T1",
+                        "mould_sids": "",
+                        "additional_moulds": ""
+                    }]
+                },
+                {
+                    "id": 2,
+                    "offset_value": "",
+                    "offset_extra_value": "",
+                    "sample_start": "",
+                    "comment": "remove me",
+                    "layers": [{
+                        "mastering_code": "MASTER-B",
+                        "mastering_sid": "SID-B",
+                        "toolstamps": "T9",
+                        "mould_sids": "",
+                        "additional_moulds": ""
+                    }]
+                }
+            ]
+        });
+        let changes = serde_json::json!({
+            "title": { "old": "Old Game", "new": "Edited Game" },
+            "regions": { "old": "EU", "new": "AS" },
+            "languages": { "old": "en", "new": "" },
+            "serial": [
+                { "index": 0, "old": "ABC-001", "new": "XYZ-999" },
+                { "new": "NEW-003" },
+                { "index": 1, "old": "OLD-002", "new": null }
+            ],
+            "edition": [
+                { "index": 0, "old": "Original", "new": null },
+                { "new": "Greatest Hits" }
+            ],
+            "barcode": [
+                { "index": 0, "old": "1234567890", "new": "5555555555" }
+            ],
+            "layerbreaks": [
+                { "index": 0, "old": "10", "new": "15" },
+                { "new": "30" },
+                { "index": 1, "old": "20", "new": null }
+            ],
+            "ring_codes": [
+                {
+                    "id": 1,
+                    "comment": { "old": "old", "new": "updated" },
+                    "layers": [{
+                        "index": 0,
+                        "toolstamps": { "old": "T1", "new": "T1, T2" }
+                    }]
+                },
+                { "id": 2, "removed": true }
+            ]
+        });
+        let sub = submission(SubmissionType::Edit, Some(1), changes);
+
+        let result = resolve_submission_snapshot_for_submission(&db, &sub).unwrap();
+
+        assert_eq!(result["title"], "Edited Game");
+        assert_eq!(result["regions"], serde_json::json!(["AS"]));
+        assert_eq!(result["languages"], serde_json::json!([]));
+        assert_eq!(result["serial"], serde_json::json!(["XYZ-999", "NEW-003"]));
+        assert_eq!(result["edition"], serde_json::json!(["Greatest Hits"]));
+        assert_eq!(result["barcode"], serde_json::json!(["5555555555"]));
+        assert_eq!(result["layerbreaks"], serde_json::json!([15, 30]));
+        assert_eq!(result["ring_codes"].as_array().unwrap().len(), 1);
+        assert_eq!(result["ring_codes"][0]["id"], 1);
+        assert_eq!(result["ring_codes"][0]["comment"], "updated");
+        assert_eq!(result["ring_codes"][0]["layers"][0]["toolstamps"], "T1, T2");
+    }
+
+    #[test]
+    fn disc_policy_merges_additive_fields() {
+        let db = serde_json::json!({
+            "regions": ["EU"],
+            "languages": ["en"],
+            "serial": ["ABC"],
+            "edition": ["Original"],
+            "barcode": ["123"],
+        });
+        let changes = serde_json::json!({
+            "regions": { "new": "AS" },
+            "languages": { "new": "ja" },
+            "serial": [
+                { "new": "abc" },
+                { "new": "DEF" }
+            ],
+            "edition": [
+                { "new": "original" },
+                { "new": "Limited" }
+            ],
+            "barcode": [
+                { "new": "123" },
+                { "new": "456" }
+            ],
+        });
+
+        let result = resolve_submission_snapshot_with_policy(&db, &changes, ApplyPolicy::Additive).unwrap();
+
+        assert_eq!(result["regions"], serde_json::json!(["EU", "AS"]));
+        assert_eq!(result["languages"], serde_json::json!(["en", "ja"]));
+        assert_eq!(result["serial"], serde_json::json!(["ABC", "DEF"]));
+        assert_eq!(result["edition"], serde_json::json!(["Original", "Limited"]));
+        assert_eq!(result["barcode"], serde_json::json!(["123", "456"]));
+    }
+
+    #[test]
+    fn disc_policy_does_not_remove_additive_values() {
+        let db = serde_json::json!({
+            "regions": ["EU"],
+            "serial": ["ABC"],
+        });
+        let changes = serde_json::json!({
+            "regions": { "new": "" },
+            "serial": [
+                { "index": 0, "old": "ABC", "new": null }
+            ],
+        });
+
+        let result = resolve_submission_snapshot_with_policy(&db, &changes, ApplyPolicy::Additive).unwrap();
+
+        assert_eq!(result["regions"], serde_json::json!(["EU"]));
+        assert_eq!(result["serial"], serde_json::json!(["ABC"]));
+    }
+
+    #[test]
+    fn disc_policy_does_not_remove_ring_codes() {
+        let db = serde_json::json!({
+            "ring_codes": [{
+                "id": 1,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{
+                    "mastering_code": "A",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            }]
+        });
+        let changes = serde_json::json!({
+            "ring_codes": [
+                { "id": 99, "removed": true }
+            ],
+        });
+
+        let result = resolve_submission_snapshot_with_policy(&db, &changes, ApplyPolicy::Additive).unwrap();
+
+        assert_eq!(result["ring_codes"].as_array().unwrap().len(), 1);
+        assert_eq!(result["ring_codes"][0]["id"], 1);
+    }
+
+    #[test]
+    fn normal_resolve_keeps_existing_replacement_behavior() {
+        let db = serde_json::json!({
+            "regions": ["EU"],
+            "serial": ["ABC"],
+        });
+        let changes = serde_json::json!({
+            "regions": { "new": "AS" },
+            "serial": [
+                { "index": 0, "old": "ABC", "new": null }
+            ],
+        });
+
+        let result = resolve_submission_snapshot(&db, &changes).unwrap();
+
+        assert_eq!(result["regions"], serde_json::json!(["AS"]));
+        assert_eq!(result["serial"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn submission_policy_depends_on_type_not_target() {
+        let db = serde_json::json!({
+            "regions": ["EU"],
+        });
+        let changes = serde_json::json!({
+            "regions": { "new": "AS" },
+        });
+
+        let disc_submission = submission(SubmissionType::Disc, None, changes.clone());
+        let edit_submission = submission(SubmissionType::Edit, Some(1), changes);
+
+        let disc_result = resolve_submission_snapshot_for_submission(&db, &disc_submission).unwrap();
+        let edit_result = resolve_submission_snapshot_for_submission(&db, &edit_submission).unwrap();
+
+        assert_eq!(disc_result["regions"], serde_json::json!(["EU", "AS"]));
+        assert_eq!(edit_result["regions"], serde_json::json!(["AS"]));
+    }
+
+    #[test]
+    fn new_disc_resolve_still_uses_submitted_values() {
+        let changes = serde_json::json!({
+            "regions": { "new": "AS" },
+            "languages": { "new": "ja" },
+            "serial": [
+                { "new": "DEF" }
+            ],
+        });
+        let sub = submission(SubmissionType::Disc, None, changes);
+
+        let result = resolve_submission_snapshot_for_submission(&serde_json::json!({}), &sub).unwrap();
+
+        assert_eq!(result["regions"], serde_json::json!(["AS"]));
+        assert_eq!(result["languages"], serde_json::json!(["ja"]));
+        assert_eq!(result["serial"], serde_json::json!(["DEF"]));
+    }
+
     #[test]
     fn apply_ring_codes_history_uses_entry_id() {
         let old = serde_json::json!([
@@ -920,7 +1367,7 @@ mod tests {
             }
         ]);
 
-        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let result = apply_ring_codes_history(&old, &changes, true).unwrap();
         let entries = result.as_array().unwrap();
         assert_eq!(entries[0]["id"], 10);
         assert_eq!(entries[0]["layers"][0]["mastering_code"], "A");
@@ -937,7 +1384,7 @@ mod tests {
             }
         ]);
 
-        let err = apply_ring_codes_history(&old, &changes).unwrap_err();
+        let err = apply_ring_codes_history(&old, &changes, true).unwrap_err();
         match err {
             AppError::BadRequest(msg) => assert!(msg.contains("requires entry id")),
             other => panic!("unexpected error: {other:?}"),
@@ -971,7 +1418,7 @@ mod tests {
             }]
         }]);
 
-        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let result = apply_ring_codes_history(&old, &changes, true).unwrap();
         let entries = result.as_array().unwrap();
         assert_eq!(entries.len(), 1, "should merge, not add new entry");
         let layer = &entries[0]["layers"][0];
@@ -1005,7 +1452,7 @@ mod tests {
             }]
         }]);
 
-        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let result = apply_ring_codes_history(&old, &changes, true).unwrap();
         let entries = result.as_array().unwrap();
         assert_eq!(entries.len(), 2, "should add new entry when mastering_code differs");
     }
@@ -1036,7 +1483,7 @@ mod tests {
             }]
         }]);
 
-        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let result = apply_ring_codes_history(&old, &changes, true).unwrap();
         let entries = result.as_array().unwrap();
         assert_eq!(entries.len(), 1);
         let layer = &entries[0]["layers"][0];
@@ -1070,7 +1517,7 @@ mod tests {
             }]
         }]);
 
-        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let result = apply_ring_codes_history(&old, &changes, true).unwrap();
         let entries = result.as_array().unwrap();
         assert_eq!(entries.len(), 1, "empty offset on change side should match");
         assert_eq!(entries[0]["layers"][0]["toolstamps"], "T1, T2");
@@ -1102,7 +1549,7 @@ mod tests {
             }]
         }]);
 
-        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let result = apply_ring_codes_history(&old, &changes, true).unwrap();
         let entries = result.as_array().unwrap();
         assert_eq!(entries.len(), 2, "different non-empty offsets should not merge");
     }
