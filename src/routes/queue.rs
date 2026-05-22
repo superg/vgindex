@@ -364,15 +364,15 @@ async fn submission_detail(
     if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
         let current_db_snapshot = disc_service::build_snapshot_from_disc(&detail);
-        snapshot = queue_service::resolve_submission_snapshot(
+        snapshot = queue_service::resolve_submission_snapshot_for_submission(
             &current_db_snapshot,
-            &sub.changes,
+            &sub,
         )?;
         db_snapshot = Some(current_db_snapshot);
     } else {
-        snapshot = queue_service::resolve_submission_snapshot(
+        snapshot = queue_service::resolve_submission_snapshot_for_submission(
             &serde_json::json!({}),
-            &sub.changes,
+            &sub,
         )?;
     }
 
@@ -1105,19 +1105,22 @@ async fn review_submit(
         return Ok(Html(template.render().unwrap()).into_response());
     }
 
-    let (form_snapshot, is_sparse_changes) = if let Some(disc_id) = sub.target_disc_id {
-        let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
-        let sparse = build_sparse_edit_changes(&form.disc, &detail, &ref_data.all_media_types);
-        (sparse, true)
-    } else {
-        (build_new_disc_changes(&form.disc, &ref_data.all_media_types), true)
+    let form_snapshot = match sub.submission_type {
+        SubmissionType::Disc => build_new_disc_changes(&form.disc, &ref_data.all_media_types),
+        SubmissionType::Edit => {
+            let disc_id = sub.target_disc_id.ok_or_else(|| {
+                AppError::BadRequest("edit submission is missing a target disc".into())
+            })?;
+            let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
+            build_sparse_edit_changes(&form.disc, &detail, &ref_data.all_media_types)
+        }
     };
 
     let approved = queue_service::approve_submission(
         &state.pool,
         &sub,
         &form_snapshot,
-        is_sparse_changes,
+        true,
         user.id,
         review_comment.as_deref(),
         &state.archive_tx,
