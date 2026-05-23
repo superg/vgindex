@@ -7,7 +7,10 @@ use axum::{
     routing::{get, post},
     Form, Router,
 };
-use base64::{engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD}, Engine};
+use base64::{
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+    Engine,
+};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header as JwtHeader};
 use rand::RngCore;
@@ -177,10 +180,7 @@ async fn authorize(
         None => {
             let mut parts = vec![
                 format!("client_id={}", urlencoding::encode(&params.client_id)),
-                format!(
-                    "redirect_uri={}",
-                    urlencoding::encode(&params.redirect_uri)
-                ),
+                format!("redirect_uri={}", urlencoding::encode(&params.redirect_uri)),
                 format!(
                     "response_type={}",
                     urlencoding::encode(&params.response_type)
@@ -196,8 +196,7 @@ async fn authorize(
                 parts.push(format!("nonce={}", urlencoding::encode(n)));
             }
             let authorize_path = format!("/oauth/authorize?{}", parts.join("&"));
-            let login_url =
-                format!("/login?return_to={}", urlencoding::encode(&authorize_path));
+            let login_url = format!("/login?return_to={}", urlencoding::encode(&authorize_path));
             return Redirect::to(&login_url).into_response();
         }
     };
@@ -224,7 +223,11 @@ async fn authorize(
         return (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response();
     }
 
-    let sep = if params.redirect_uri.contains('?') { "&" } else { "?" };
+    let sep = if params.redirect_uri.contains('?') {
+        "&"
+    } else {
+        "?"
+    };
     let mut callback = format!(
         "{}{}code={}",
         params.redirect_uri,
@@ -251,19 +254,19 @@ async fn token(
             .into_response();
     }
 
-    let (client_id, client_secret) =
-        if let (Some(id), Some(secret)) = (params.client_id.as_ref(), params.client_secret.as_ref())
-        {
-            (id.clone(), secret.clone())
-        } else if let Some(basic) = extract_basic_auth(&headers) {
-            basic
-        } else {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "invalid_client"})),
-            )
-                .into_response();
-        };
+    let (client_id, client_secret) = if let (Some(id), Some(secret)) =
+        (params.client_id.as_ref(), params.client_secret.as_ref())
+    {
+        (id.clone(), secret.clone())
+    } else if let Some(basic) = extract_basic_auth(&headers) {
+        basic
+    } else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "invalid_client"})),
+        )
+            .into_response();
+    };
 
     let client_ok = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM oauth_clients WHERE client_id = $1 AND client_secret = $2)",

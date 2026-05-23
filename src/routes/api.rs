@@ -22,7 +22,7 @@ async fn online_users(State(state): State<AppState>) -> Json<OnlineInfo> {
          WHERE s.user_id IS NOT NULL
            AND s.expires_at > NOW()
            AND s.last_active_at > NOW() - ($1 * INTERVAL '1 minute')
-         ORDER BY u.username"
+         ORDER BY u.username",
     )
     .bind(ACTIVE_WINDOW_MINUTES)
     .fetch_all(&state.pool)
@@ -62,7 +62,9 @@ async fn fetch_online_counts(state: &AppState) -> (i64, i64) {
 /// News feed from phpBB. Tries to read from the phpBB database directly.
 /// Falls back to a static message if phpBB DB is not available.
 async fn news_feed(State(state): State<AppState>) -> Html<String> {
-    let phpbb_url = state.config.database_url
+    let phpbb_url = state
+        .config
+        .database_url
         .rsplitn(2, '/')
         .last()
         .unwrap_or(&state.config.database_url)
@@ -78,7 +80,7 @@ async fn news_feed(State(state): State<AppState>) -> Html<String> {
              JOIN phpbb_forums f ON f.forum_id = t.forum_id
              WHERE f.forum_name = 'News' OR f.forum_id = 1
              ORDER BY t.topic_time DESC
-             LIMIT 5"
+             LIMIT 5",
         )
         .fetch_all(&phpbb_pool)
         .await
@@ -122,4 +124,3 @@ struct NewsTopicRow {
     topic_time: i64,
     topic_views: i64,
 }
-

@@ -1,3 +1,4 @@
+use askama::Template;
 use axum::{
     extract::{Query, State},
     http::{header, HeaderMap},
@@ -5,7 +6,6 @@ use axum::{
     routing::{get, post},
     Form, Router,
 };
-use askama::Template;
 use serde::Deserialize;
 
 use crate::auth::middleware::CurrentUser;
@@ -62,10 +62,7 @@ pub struct RegisterForm {
     pub password_confirm: String,
 }
 
-async fn login_page(
-    user: CurrentUser,
-    Query(query): Query<LoginQuery>,
-) -> impl IntoResponse {
+async fn login_page(user: CurrentUser, Query(query): Query<LoginQuery>) -> impl IntoResponse {
     if user.is_logged_in() {
         return Redirect::to("/").into_response();
     }
@@ -96,14 +93,9 @@ async fn login_submit(
                 .get(header::USER_AGENT)
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string());
-            let sid = session::create_session(
-                &state.pool,
-                user.id,
-                ip.as_deref(),
-                ua.as_deref(),
-            )
-            .await
-            .unwrap();
+            let sid = session::create_session(&state.pool, user.id, ip.as_deref(), ua.as_deref())
+                .await
+                .unwrap();
 
             let redirect_target = form
                 .return_to
@@ -116,10 +108,9 @@ async fn login_submit(
                 14 * 86400
             );
             let mut response = Redirect::to(redirect_target).into_response();
-            response.headers_mut().insert(
-                header::SET_COOKIE,
-                cookie.parse().unwrap(),
-            );
+            response
+                .headers_mut()
+                .insert(header::SET_COOKIE, cookie.parse().unwrap());
             response
         }
         Err(AppError::BadRequest(msg)) => Html(

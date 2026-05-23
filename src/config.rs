@@ -62,8 +62,7 @@ impl Config {
         let forum_url = public_url("forum", &domain, https_port);
 
         Self {
-            oidc_issuer_url: env::var("OIDC_ISSUER_URL")
-                .unwrap_or_else(|_| base_url.clone()),
+            oidc_issuer_url: env::var("OIDC_ISSUER_URL").unwrap_or_else(|_| base_url.clone()),
             domain,
             https_port,
             base_url,

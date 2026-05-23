@@ -132,9 +132,17 @@ impl std::fmt::Display for Category {
 
 impl Category {
     pub const ALL: &[Category] = &[
-        Self::Games, Self::Demos, Self::Coverdiscs, Self::BonusDiscs,
-        Self::Applications, Self::Multimedia, Self::AddOns, Self::Educational,
-        Self::Preproduction, Self::Video, Self::Audio,
+        Self::Games,
+        Self::Demos,
+        Self::Coverdiscs,
+        Self::BonusDiscs,
+        Self::Applications,
+        Self::Multimedia,
+        Self::AddOns,
+        Self::Educational,
+        Self::Preproduction,
+        Self::Video,
+        Self::Audio,
     ];
 }
 
@@ -173,7 +181,9 @@ impl std::fmt::Display for DiscStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, sqlx::Type)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, sqlx::Type,
+)]
 #[sqlx(type_name = "user_role_enum")]
 pub enum UserRole {
     User,
@@ -623,7 +633,8 @@ pub fn build_rom_base_name(
         name.push_str(&format!(" ({})", region_names.join(", ")));
     }
     if language_codes.len() > 1 {
-        let capitalized: Vec<String> = language_codes.iter()
+        let capitalized: Vec<String> = language_codes
+            .iter()
             .map(|c| {
                 let mut chars = c.chars();
                 match chars.next() {
@@ -722,7 +733,8 @@ fn ensure_single_trailing_newline(mut s: String) -> String {
 pub fn simplify_cue(raw_cue: &str, extension: &str) -> String {
     let normalized = raw_cue.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = normalized.lines().collect();
-    let total_tracks = lines.iter()
+    let total_tracks = lines
+        .iter()
         .filter(|l| l.trim_start().starts_with("TRACK "))
         .count();
 
@@ -735,25 +747,19 @@ pub fn simplify_cue(raw_cue: &str, extension: &str) -> String {
             continue;
         }
         if trimmed.starts_with("FILE ") {
-            let track_num = lines[i + 1..].iter()
-                .find_map(|l| {
-                    let lt = l.trim_start();
-                    if lt.starts_with("TRACK ") {
-                        lt.split_whitespace().nth(1)
-                            .map(|n| n.trim_start_matches('0'))
-                            .map(|n| if n.is_empty() { "0" } else { n })
-                    } else {
-                        None
-                    }
-                });
-            let simple_name = build_simple_track_name(
-                track_num,
-                total_tracks,
-                extension,
-            );
-            let file_type = trimmed.rsplit_once(' ')
-                .map(|(_, t)| t)
-                .unwrap_or("BINARY");
+            let track_num = lines[i + 1..].iter().find_map(|l| {
+                let lt = l.trim_start();
+                if lt.starts_with("TRACK ") {
+                    lt.split_whitespace()
+                        .nth(1)
+                        .map(|n| n.trim_start_matches('0'))
+                        .map(|n| if n.is_empty() { "0" } else { n })
+                } else {
+                    None
+                }
+            });
+            let simple_name = build_simple_track_name(track_num, total_tracks, extension);
+            let file_type = trimmed.rsplit_once(' ').map(|(_, t)| t).unwrap_or("BINARY");
             result.push(format!("FILE \"{simple_name}\" {file_type}"));
         } else {
             result.push(lines[i].to_string());
@@ -765,30 +771,36 @@ pub fn simplify_cue(raw_cue: &str, extension: &str) -> String {
 
 pub fn simplify_files_xml(raw: &str, extension: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
-    let total_tracks = lines.iter()
+    let total_tracks = lines
+        .iter()
         .filter(|l| l.trim().starts_with("<rom "))
         .count();
 
-    lines.iter().map(|line| {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("<rom ") {
-            return (*line).to_string();
-        }
-        let name = extract_rom_name_attr(trimmed);
-        let track_num = name.as_deref().and_then(extract_track_from_filename);
-        let track_str = track_num.as_deref()
-            .map(|n| n.trim_start_matches('0'))
-            .map(|n| if n.is_empty() { "0" } else { n });
-        let simple_name = build_simple_track_name(track_str, total_tracks, extension);
-        match name {
-            Some(ref old_name) => trimmed.replacen(
-                &format!("name=\"{old_name}\""),
-                &format!("name=\"{simple_name}\""),
-                1,
-            ),
-            None => trimmed.to_string(),
-        }
-    }).collect::<Vec<_>>().join("\n")
+    lines
+        .iter()
+        .map(|line| {
+            let trimmed = line.trim();
+            if !trimmed.starts_with("<rom ") {
+                return (*line).to_string();
+            }
+            let name = extract_rom_name_attr(trimmed);
+            let track_num = name.as_deref().and_then(extract_track_from_filename);
+            let track_str = track_num
+                .as_deref()
+                .map(|n| n.trim_start_matches('0'))
+                .map(|n| if n.is_empty() { "0" } else { n });
+            let simple_name = build_simple_track_name(track_str, total_tracks, extension);
+            match name {
+                Some(ref old_name) => trimmed.replacen(
+                    &format!("name=\"{old_name}\""),
+                    &format!("name=\"{simple_name}\""),
+                    1,
+                ),
+                None => trimmed.to_string(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn extract_rom_name_attr(line: &str) -> Option<String> {
@@ -818,7 +830,8 @@ pub(crate) fn extract_track_from_filename(filename: &str) -> Option<String> {
 
 pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
     let lines: Vec<&str> = raw_cue.lines().collect();
-    let total_tracks = lines.iter()
+    let total_tracks = lines
+        .iter()
         .filter(|l| l.trim_start().starts_with("TRACK "))
         .count();
 
@@ -832,26 +845,19 @@ pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
         }
         if trimmed.starts_with("FILE ") {
             // Find the next TRACK line to get the track number
-            let track_num = lines[i + 1..].iter()
-                .find_map(|l| {
-                    let lt = l.trim_start();
-                    if lt.starts_with("TRACK ") {
-                        lt.split_whitespace().nth(1)
-                            .map(|n| n.trim_start_matches('0'))
-                            .map(|n| if n.is_empty() { "0" } else { n })
-                    } else {
-                        None
-                    }
-                });
-            let rom_name = build_rom_name(
-                base_name,
-                track_num,
-                total_tracks,
-                extension,
-            );
-            let file_type = trimmed.rsplit_once(' ')
-                .map(|(_, t)| t)
-                .unwrap_or("BINARY");
+            let track_num = lines[i + 1..].iter().find_map(|l| {
+                let lt = l.trim_start();
+                if lt.starts_with("TRACK ") {
+                    lt.split_whitespace()
+                        .nth(1)
+                        .map(|n| n.trim_start_matches('0'))
+                        .map(|n| if n.is_empty() { "0" } else { n })
+                } else {
+                    None
+                }
+            });
+            let rom_name = build_rom_name(base_name, track_num, total_tracks, extension);
+            let file_type = trimmed.rsplit_once(' ').map(|(_, t)| t).unwrap_or("BINARY");
             result.push(format!("FILE \"{rom_name}\" {file_type}"));
         } else {
             result.push(lines[i].to_string());
@@ -862,9 +868,7 @@ pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
 }
 
 pub fn parse_qdata_bytes(qdata: &str) -> Vec<u8> {
-    let cleaned: String = qdata.chars()
-        .filter(|c| c.is_ascii_hexdigit())
-        .collect();
+    let cleaned: String = qdata.chars().filter(|c| c.is_ascii_hexdigit()).collect();
     (0..cleaned.len() / 2)
         .filter_map(|i| u8::from_str_radix(&cleaned[i * 2..i * 2 + 2], 16).ok())
         .collect()
@@ -875,23 +879,32 @@ pub fn build_sbi_binary(sbi_text: &str) -> Vec<u8> {
     buf.extend_from_slice(b"SBI\0");
     for line in sbi_text.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         let msf_str = match line.strip_prefix("MSF: ") {
             Some(s) => s.split_whitespace().next().unwrap_or(""),
             None => continue,
         };
         let msf_parts: Vec<&str> = msf_str.split(':').collect();
-        if msf_parts.len() != 3 { continue; }
-        let msf_bytes: Vec<u8> = msf_parts.iter()
+        if msf_parts.len() != 3 {
+            continue;
+        }
+        let msf_bytes: Vec<u8> = msf_parts
+            .iter()
             .filter_map(|p| u8::from_str_radix(p, 16).ok())
             .collect();
-        if msf_bytes.len() != 3 { continue; }
+        if msf_bytes.len() != 3 {
+            continue;
+        }
         let qdata_str = match line.find("Q-Data: ") {
             Some(i) => &line[i + 8..],
             None => continue,
         };
         let qdata = parse_qdata_bytes(qdata_str);
-        if qdata.len() < 10 { continue; }
+        if qdata.len() < 10 {
+            continue;
+        }
         buf.extend_from_slice(&msf_bytes);
         buf.push(0x01);
         buf.extend_from_slice(&qdata[..10]);
@@ -984,12 +997,16 @@ FILE \"Track 2.bin\" BINARY\n\
     #[test]
     fn simplify_cue_ends_with_single_newline() {
         let no_trailing = "FILE \"Game.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00";
-        let many_trailing = "FILE \"Game.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n\n\n";
+        let many_trailing =
+            "FILE \"Game.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n\n\n";
 
         for input in [no_trailing, many_trailing] {
             let out = simplify_cue(input, "bin");
             assert!(out.ends_with('\n'), "missing trailing newline: {out:?}");
-            assert!(!out.ends_with("\n\n"), "more than one trailing newline: {out:?}");
+            assert!(
+                !out.ends_with("\n\n"),
+                "more than one trailing newline: {out:?}"
+            );
         }
     }
 
@@ -1017,7 +1034,10 @@ FILE \"Track 2.bin\" BINARY\n\
         assert_eq!(build_system_name("", "Audio CD"), "Audio CD");
         assert_eq!(build_system_name("Sony", ""), "Sony");
         assert_eq!(build_system_name("", ""), "");
-        assert_eq!(build_system_name("  Sony  ", "  PlayStation  "), "Sony PlayStation");
+        assert_eq!(
+            build_system_name("  Sony  ", "  PlayStation  "),
+            "Sony PlayStation"
+        );
     }
 
     #[test]
@@ -1045,10 +1065,7 @@ FILE \"Track 2.bin\" BINARY\n\
             "Foo - Bar",
             "': ' must be replaced with ' - ' before ':' is mapped to '-'"
         );
-        assert_eq!(
-            build_dat_system_name("", "", "Foo:Bar"),
-            "Foo-Bar"
-        );
+        assert_eq!(build_dat_system_name("", "", "Foo:Bar"), "Foo-Bar");
     }
 
     #[test]

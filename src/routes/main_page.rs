@@ -40,7 +40,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
          WHERE ds.target_disc_id IS NOT NULL
          GROUP BY d.id, d.title, s.code, s.short_name
          ORDER BY created_at DESC
-         LIMIT 40"
+         LIMIT 40",
     )
     .fetch_all(&state.pool)
     .await
@@ -51,7 +51,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
         let region_rows: Vec<HomeRegionRow> = sqlx::query_as(
             "SELECT r.flag_code AS code, r.name FROM disc_regions dr
              JOIN regions r ON r.code = dr.region_code
-             WHERE dr.disc_id = $1 ORDER BY r.sort_order"
+             WHERE dr.disc_id = $1 ORDER BY r.sort_order",
         )
         .bind(r.id)
         .fetch_all(&state.pool)
@@ -62,11 +62,17 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
             id: r.id,
             title: r.title,
             system: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
-            region_flags: region_rows.into_iter().map(|rr| HomeRegionFlag {
-                code: rr.code.to_lowercase(),
-                name: rr.name,
-            }).collect(),
-            created_at: r.created_at.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default(),
+            region_flags: region_rows
+                .into_iter()
+                .map(|rr| HomeRegionFlag {
+                    code: rr.code.to_lowercase(),
+                    name: rr.name,
+                })
+                .collect(),
+            created_at: r
+                .created_at
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_default(),
         });
     }
 

@@ -7,9 +7,9 @@ mod error;
 mod routes;
 mod services;
 
-use std::sync::Arc;
 use axum::{middleware, Router};
 use sqlx::PgPool;
+use std::sync::Arc;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
@@ -58,14 +58,16 @@ async fn main() {
     };
 
     tokio::spawn(services::archive_service::run_archive_worker(
-        archive_rx,
-        pool,
+        archive_rx, pool,
     ));
 
     let app = Router::new()
         .merge(routes::build_router())
         .nest_service("/static", ServeDir::new("static"))
-        .layer(middleware::from_fn_with_state(state.clone(), auth::middleware::guest_session_layer))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::middleware::guest_session_layer,
+        ))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

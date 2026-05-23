@@ -39,16 +39,12 @@ struct SystemDownload {
     has_sbi: bool,
 }
 
-async fn downloads_page(
-    State(state): State<AppState>,
-    user: CurrentUser,
-) -> Html<String> {
-    let media_types: Vec<MediaTypeCdRow> = sqlx::query_as(
-        "SELECT code, rom_extension FROM media_types",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
+    let media_types: Vec<MediaTypeCdRow> =
+        sqlx::query_as("SELECT code, rom_extension FROM media_types")
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
     let cd_media_codes: std::collections::HashSet<String> = media_types
         .into_iter()
         .filter(|mt| crate::db::models::is_cd_rom_extension(&mt.rom_extension))
@@ -122,30 +118,18 @@ async fn serve_archive(pool: &sqlx::PgPool, system: &str, archive_type: &str) ->
     }
 }
 
-async fn download_dat(
-    State(state): State<AppState>,
-    Path(system): Path<String>,
-) -> Response {
+async fn download_dat(State(state): State<AppState>, Path(system): Path<String>) -> Response {
     serve_archive(&state.pool, &system, "dat").await
 }
 
-async fn download_cue(
-    State(state): State<AppState>,
-    Path(system): Path<String>,
-) -> Response {
+async fn download_cue(State(state): State<AppState>, Path(system): Path<String>) -> Response {
     serve_archive(&state.pool, &system, "cue").await
 }
 
-async fn download_key(
-    State(state): State<AppState>,
-    Path(system): Path<String>,
-) -> Response {
+async fn download_key(State(state): State<AppState>, Path(system): Path<String>) -> Response {
     serve_archive(&state.pool, &system, "key").await
 }
 
-async fn download_sbi(
-    State(state): State<AppState>,
-    Path(system): Path<String>,
-) -> Response {
+async fn download_sbi(State(state): State<AppState>, Path(system): Path<String>) -> Response {
     serve_archive(&state.pool, &system, "sbi").await
 }

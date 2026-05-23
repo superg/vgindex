@@ -1,10 +1,15 @@
 use askama::Template;
-use axum::{extract::{Query, State}, response::{Html, IntoResponse, Redirect, Response}, routing::get, Router};
+use axum::{
+    extract::{Query, State},
+    response::{Html, IntoResponse, Redirect, Response},
+    routing::get,
+    Router,
+};
 use serde::Deserialize;
 
 use crate::auth::middleware::CurrentUser;
 use crate::config::SiteConfig;
-use crate::db::models::{DiscStatus, format_display_title};
+use crate::db::models::{format_display_title, DiscStatus};
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -42,8 +47,8 @@ pub struct DiscsQuery {
 }
 
 const LETTERS: &[&str] = &[
-    "A","B","C","D","E","F","G","H","I","J","K","L","M",
-    "N","O","P","Q","R","S","T","U","V","W","X","Y","Z",
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
+    "T", "U", "V", "W", "X", "Y", "Z",
 ];
 
 #[derive(Template)]
@@ -140,7 +145,9 @@ async fn discs_page(
     let filter_letter = query.letter.clone().unwrap_or_default();
     let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
     let filter_dumper_id = query.dumper;
-    let filter_dumper = filter_dumper_id.map(|id| id.to_string()).unwrap_or_default();
+    let filter_dumper = filter_dumper_id
+        .map(|id| id.to_string())
+        .unwrap_or_default();
 
     let filter_dumper_name = if let Some(dumper_id) = filter_dumper_id {
         sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE id = $1")
@@ -176,27 +183,33 @@ async fn discs_page(
             .await
             .unwrap_or_default();
 
-    let regions: Vec<RegionOption> = region_rows.into_iter().map(|r| RegionOption {
-        selected: r.code.trim() == filter_region,
-        code: r.code.trim().to_string(),
-        name: r.name,
-    }).collect();
+    let regions: Vec<RegionOption> = region_rows
+        .into_iter()
+        .map(|r| RegionOption {
+            selected: r.code.trim() == filter_region,
+            code: r.code.trim().to_string(),
+            name: r.name,
+        })
+        .collect();
 
     let dumper_rows: Vec<DumperRow> = sqlx::query_as(
         "SELECT u.id, u.username AS name
          FROM users u
          WHERE EXISTS (SELECT 1 FROM disc_dumpers dd WHERE dd.user_id = u.id)
-         ORDER BY LOWER(u.username)"
+         ORDER BY LOWER(u.username)",
     )
     .fetch_all(&state.pool)
     .await
     .unwrap_or_default();
 
-    let dumpers: Vec<DumperOption> = dumper_rows.into_iter().map(|d| DumperOption {
-        selected: filter_dumper_id == Some(d.id),
-        id: d.id,
-        name: d.name,
-    }).collect();
+    let dumpers: Vec<DumperOption> = dumper_rows
+        .into_iter()
+        .map(|d| DumperOption {
+            selected: filter_dumper_id == Some(d.id),
+            id: d.id,
+            name: d.name,
+        })
+        .collect();
 
     let mut where_clauses = vec!["1=1".to_string()];
     let mut bind_idx = 0u32;
@@ -213,7 +226,9 @@ async fn discs_page(
     }
     if filter_letter == "#" {
         where_clauses.push("d.title ~* '^[^a-zA-Z]'".to_string());
-    } else if filter_letter.len() == 1 && filter_letter.chars().next().unwrap().is_ascii_alphabetic() {
+    } else if filter_letter.len() == 1
+        && filter_letter.chars().next().unwrap().is_ascii_alphabetic()
+    {
         bind_idx += 1;
         where_clauses.push(format!("upper(left(d.title, 1)) = upper(${bind_idx})"));
     }
@@ -320,7 +335,10 @@ async fn discs_page(
         count_query = count_query.bind(filter_region.clone());
         select_query = select_query.bind(filter_region.clone());
     }
-    if filter_letter != "#" && filter_letter.len() == 1 && filter_letter.chars().next().unwrap().is_ascii_alphabetic() {
+    if filter_letter != "#"
+        && filter_letter.len() == 1
+        && filter_letter.chars().next().unwrap().is_ascii_alphabetic()
+    {
         count_query = count_query.bind(filter_letter.clone());
         select_query = select_query.bind(filter_letter.clone());
     }
@@ -377,8 +395,16 @@ async fn discs_page(
             id: r.id,
             title: format_display_title(
                 &r.title,
-                if r.has_disc_number { r.disc_number.as_deref() } else { None },
-                if r.has_disc_title { r.disc_title.as_deref() } else { None },
+                if r.has_disc_number {
+                    r.disc_number.as_deref()
+                } else {
+                    None
+                },
+                if r.has_disc_title {
+                    r.disc_title.as_deref()
+                } else {
+                    None
+                },
                 r.filename_suffix.as_deref(),
             ),
             title_foreign: if r.has_title_foreign {
@@ -386,7 +412,10 @@ async fn discs_page(
             } else {
                 String::new()
             },
-            system_display: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
+            system_display: crate::db::models::short_system_display(
+                &r.system_short_name,
+                &r.system_code,
+            ),
             system_code: r.system_code,
             dumped_by_me: r.dumped_by_me,
             version: r.version.unwrap_or_default(),
@@ -397,14 +426,20 @@ async fn discs_page(
             },
             status_class: status.css_class().to_string(),
             status_display: status.to_string(),
-            region_flags: region_rows.into_iter().map(|r| RegionFlag {
-                code: r.code.to_lowercase(),
-                name: r.name,
-            }).collect(),
-            language_flags: lang_rows.into_iter().map(|l| LangFlag {
-                code: l.code.to_lowercase(),
-                name: l.name,
-            }).collect(),
+            region_flags: region_rows
+                .into_iter()
+                .map(|r| RegionFlag {
+                    code: r.code.to_lowercase(),
+                    name: r.name,
+                })
+                .collect(),
+            language_flags: lang_rows
+                .into_iter()
+                .map(|l| LangFlag {
+                    code: l.code.to_lowercase(),
+                    name: l.name,
+                })
+                .collect(),
             serial: if r.has_serial {
                 r.serial.unwrap_or_default()
             } else {
@@ -415,7 +450,12 @@ async fn discs_page(
 
     let is_asc = sort_order_str != "desc";
     let next_order = |col: &str| -> String {
-        if sort_column == col && is_asc { "desc" } else { "asc" }.to_string()
+        if sort_column == col && is_asc {
+            "desc"
+        } else {
+            "asc"
+        }
+        .to_string()
     };
 
     Html(
@@ -425,7 +465,10 @@ async fn discs_page(
             systems,
             regions,
             dumpers,
-            letters: LETTERS.iter().map(|s| (s.to_string(), filter_letter == *s)).collect(),
+            letters: LETTERS
+                .iter()
+                .map(|s| (s.to_string(), filter_letter == *s))
+                .collect(),
             filter_system,
             filter_region,
             filter_status,

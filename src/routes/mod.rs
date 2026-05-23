@@ -8,8 +8,8 @@ pub mod downloads;
 pub mod main_page;
 pub mod queue;
 
-use axum::Router;
 use crate::AppState;
+use axum::Router;
 
 pub fn build_router() -> Router<AppState> {
     Router::new()

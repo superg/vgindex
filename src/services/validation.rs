@@ -79,8 +79,7 @@ pub fn validate_sbi(text: &str) -> Result<(), String> {
             continue;
         }
         let row = line_num + 1;
-        validate_sbi_line(line)
-            .map_err(|e| format!("line {}: {}", row, e))?;
+        validate_sbi_line(line).map_err(|e| format!("line {}: {}", row, e))?;
     }
     Ok(())
 }
@@ -176,7 +175,10 @@ pub fn validate_hex_dump(text: &str) -> Result<(), String> {
             .ok_or_else(|| format!("line {}: missing offset:colon prefix", row))?;
         let offset_part = line[..colon_pos].trim();
         if offset_part.is_empty() || !offset_part.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!("line {}: invalid hex offset '{}'", row, offset_part));
+            return Err(format!(
+                "line {}: invalid hex offset '{}'",
+                row, offset_part
+            ));
         }
         let after_colon = &line[colon_pos + 1..];
         let trimmed = after_colon.trim_start();
@@ -617,10 +619,7 @@ mod tests {
     #[test]
     fn test_sbi_valid() {
         assert!(validate_sbi("").is_ok());
-        assert!(validate_sbi(
-            "MSF: 02:03:04 Q-Data: 410102 03:04:05 00 06:07:08 ABCD"
-        )
-        .is_ok());
+        assert!(validate_sbi("MSF: 02:03:04 Q-Data: 410102 03:04:05 00 06:07:08 ABCD").is_ok());
         let multi = "MSF: 02:03:04 Q-Data: 410102 03:04:05 00 06:07:08 ABCD\n\
                       MSF: 10:20:30 Q-Data: FF0A0B 0C:0D:0E 00 0F:10:11 1234";
         assert!(validate_sbi(multi).is_ok());
@@ -893,16 +892,21 @@ FILE "Track 02.bin" BINARY
 
     #[test]
     fn test_ring_code_offsets() {
-        let good = r#"[{"offset_value":"123","offset_extra_value":"","sample_start":"-5","layers":[]}]"#;
+        let good =
+            r#"[{"offset_value":"123","offset_extra_value":"","sample_start":"-5","layers":[]}]"#;
         assert!(validate_ring_code_offsets(good).is_empty());
 
-        let bad = r#"[{"offset_value":"abc","offset_extra_value":"","sample_start":"","layers":[]}]"#;
+        let bad =
+            r#"[{"offset_value":"abc","offset_extra_value":"","sample_start":"","layers":[]}]"#;
         assert!(!validate_ring_code_offsets(bad).is_empty());
     }
 
     #[test]
     fn test_parse_sector_range_pairs() {
-        assert_eq!(parse_sector_range_pairs("0-100\n200-300"), vec![(0, 100), (200, 300)]);
+        assert_eq!(
+            parse_sector_range_pairs("0-100\n200-300"),
+            vec![(0, 100), (200, 300)]
+        );
         assert_eq!(parse_sector_range_pairs("-5-10"), vec![(-5, 10)]);
         assert_eq!(parse_sector_range_pairs(""), Vec::<(i32, i32)>::new());
     }
@@ -910,6 +914,9 @@ FILE "Track 02.bin" BINARY
     #[test]
     fn test_sector_ranges_1_2_3_is_invalid() {
         let result = validate_sector_ranges("1-2-3");
-        assert!(result.is_err(), "1-2-3 should fail: only one separator allowed");
+        assert!(
+            result.is_err(),
+            "1-2-3 should fail: only one separator allowed"
+        );
     }
 }

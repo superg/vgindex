@@ -16,12 +16,11 @@ use crate::services::{disc_service, queue_service};
 use crate::AppState;
 
 use super::disc_edit::{
-    self, build_category_options, build_check_options, build_flat_changes, build_new_disc_changes,
-    build_sparse_edit_changes,
-    build_lang_check_options, build_media_has_pic_json, build_media_is_cd_json, build_media_layers_json,
-    build_media_options, build_media_rom_extensions_json, build_system_options,
-    build_systems_json, fetch_ref_data, max_layers_for_media, validate_form,
-    DiscEditForm, DiscEditTemplate,
+    self, build_category_options, build_check_options, build_flat_changes,
+    build_lang_check_options, build_media_has_pic_json, build_media_is_cd_json,
+    build_media_layers_json, build_media_options, build_media_rom_extensions_json,
+    build_new_disc_changes, build_sparse_edit_changes, build_system_options, build_systems_json,
+    fetch_ref_data, max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate,
 };
 
 fn normalize_newlines(s: &str) -> String {
@@ -100,7 +99,10 @@ impl QueueTemplate {
         self.is_moderator
             || self.can_view_all_statuses
             || self.current_user_id == Some(entry.submitter_id)
-            || matches!(entry.status, SubmissionStatus::Approved | SubmissionStatus::Legacy)
+            || matches!(
+                entry.status,
+                SubmissionStatus::Approved | SubmissionStatus::Legacy
+            )
     }
 }
 
@@ -178,9 +180,21 @@ async fn queue_list(
         }
     };
 
-    let type_for_query = if filter_type.is_empty() { None } else { Some(filter_type.as_str()) };
-    let system_for_query = if filter_system.is_empty() { None } else { Some(filter_system.as_str()) };
-    let submitter_for_query = if filter_submitter.is_empty() { None } else { Some(filter_submitter.as_str()) };
+    let type_for_query = if filter_type.is_empty() {
+        None
+    } else {
+        Some(filter_type.as_str())
+    };
+    let system_for_query = if filter_system.is_empty() {
+        None
+    } else {
+        Some(filter_system.as_str())
+    };
+    let submitter_for_query = if filter_submitter.is_empty() {
+        None
+    } else {
+        Some(filter_submitter.as_str())
+    };
 
     let entries = queue_service::list_submissions(
         &state.pool,
@@ -199,7 +213,8 @@ async fn queue_list(
         &sort_order,
         page,
         PAGE_SIZE,
-    ).await?;
+    )
+    .await?;
 
     let total_count = queue_service::count_submissions(
         &state.pool,
@@ -214,7 +229,8 @@ async fn queue_list(
         type_for_query,
         system_for_query,
         submitter_for_query,
-    ).await?;
+    )
+    .await?;
 
     let total_pages = (total_count + PAGE_SIZE - 1) / PAGE_SIZE;
 
@@ -237,28 +253,39 @@ async fn queue_list(
 
     let submitters: Vec<SubmitterOption> = if is_mod && disc_id_filter.is_none() {
         #[derive(sqlx::FromRow)]
-        struct SubRow { id: i32, username: String }
+        struct SubRow {
+            id: i32,
+            username: String,
+        }
         let sub_rows: Vec<SubRow> = sqlx::query_as(
             "SELECT id, username FROM users \
              WHERE id IN (SELECT DISTINCT submitter_id FROM disc_submissions) \
-             ORDER BY LOWER(username)"
+             ORDER BY LOWER(username)",
         )
-            .fetch_all(&state.pool)
-            .await
-            .unwrap_or_default();
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
 
-        sub_rows.into_iter().map(|s| SubmitterOption {
-            selected: s.username == filter_submitter,
-            id: s.id,
-            username: s.username,
-        }).collect()
+        sub_rows
+            .into_iter()
+            .map(|s| SubmitterOption {
+                selected: s.username == filter_submitter,
+                id: s.id,
+                username: s.username,
+            })
+            .collect()
     } else {
         Vec::new()
     };
 
     let is_asc = sort_order != "desc";
     let next_order = |col: &str| -> String {
-        if sort_column == col && is_asc { "desc" } else { "asc" }.to_string()
+        if sort_column == col && is_asc {
+            "desc"
+        } else {
+            "asc"
+        }
+        .to_string()
     };
 
     Ok(Html(
@@ -274,7 +301,9 @@ async fn queue_list(
             entries,
             systems,
             submitters,
-            filter_disc_id: disc_id_filter.map(|disc_id| disc_id.to_string()).unwrap_or_default(),
+            filter_disc_id: disc_id_filter
+                .map(|disc_id| disc_id.to_string())
+                .unwrap_or_default(),
             filter_status,
             filter_type,
             filter_system,
@@ -312,7 +341,10 @@ async fn submission_detail(
     let is_mod = current.is_some_and(|u| u.role.can_moderate());
     let can_view_all_statuses = current.is_some_and(|u| u.role.can_edit_directly());
     let is_submitter = current.is_some_and(|u| u.id == sub.submitter_id);
-    let is_public_status = matches!(sub.status, SubmissionStatus::Approved | SubmissionStatus::Legacy);
+    let is_public_status = matches!(
+        sub.status,
+        SubmissionStatus::Approved | SubmissionStatus::Legacy
+    );
 
     if !(is_mod || can_view_all_statuses || is_submitter || is_public_status) {
         return Err(AppError::Forbidden);
@@ -352,8 +384,7 @@ async fn submission_detail(
         .ok_or(AppError::Unauthorized)?;
 
     let ref_data = fetch_ref_data(&state.pool).await?;
-    let (systems_media_json, systems_has_flags_json) =
-        build_systems_json(&ref_data.all_systems);
+    let (systems_media_json, systems_has_flags_json) = build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
@@ -364,10 +395,8 @@ async fn submission_detail(
     if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
         let current_db_snapshot = disc_service::build_snapshot_from_disc(&detail);
-        snapshot = queue_service::resolve_submission_snapshot_for_submission(
-            &current_db_snapshot,
-            &sub,
-        )?;
+        snapshot =
+            queue_service::resolve_submission_snapshot_for_submission(&current_db_snapshot, &sub)?;
         db_snapshot = Some(current_db_snapshot);
     } else {
         snapshot = queue_service::resolve_submission_snapshot_for_submission(
@@ -381,17 +410,31 @@ async fn submission_detail(
     let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
 
     let system = if !system_code.is_empty() {
-        disc_service::get_system(&state.pool, &system_code).await.ok()
+        disc_service::get_system(&state.pool, &system_code)
+            .await
+            .ok()
     } else {
         None
     };
     let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
 
     let mut template = build_review_template(
-        &reviewer_username, &sub, &submitter_name, &reviewer_name,
-        &snapshot, &ref_data, &systems_media_json, &systems_has_flags_json,
-        &media_layers_json, &media_rom_extensions_json, &media_is_cd_json, &media_has_pic_json,
-        &system_code, &media_type_code, max_layers, has_sys,
+        &reviewer_username,
+        &sub,
+        &submitter_name,
+        &reviewer_name,
+        &snapshot,
+        &ref_data,
+        &systems_media_json,
+        &systems_has_flags_json,
+        &media_layers_json,
+        &media_rom_extensions_json,
+        &media_is_cd_json,
+        &media_has_pic_json,
+        &system_code,
+        &media_type_code,
+        max_layers,
+        has_sys,
     );
 
     if let Some(db_snapshot) = db_snapshot {
@@ -421,11 +464,9 @@ fn build_review_template(
     has_sys: impl Fn(fn(&System) -> bool) -> bool,
 ) -> DiscEditTemplate {
     let json_str = |key: &str| snapshot[key].as_str().unwrap_or("").to_string();
-    let json_opt_str = |key: &str| {
-        match &snapshot[key] {
-            serde_json::Value::String(s) => s.clone(),
-            _ => String::new(),
-        }
+    let json_opt_str = |key: &str| match &snapshot[key] {
+        serde_json::Value::String(s) => s.clone(),
+        _ => String::new(),
     };
     let json_str_vec = |key: &str| -> Vec<String> {
         snapshot[key]
@@ -449,7 +490,12 @@ fn build_review_template(
 
     let layerbreaks: Vec<String> = snapshot["layerbreaks"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_i64()).map(|v| v.to_string()).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_i64())
+                .map(|v| v.to_string())
+                .collect()
+        })
         .unwrap_or_default();
 
     let error_count = match &snapshot["error_count"] {
@@ -462,7 +508,10 @@ fn build_review_template(
     let protection_key_disc_key = json_opt_str("disc_key");
     let protection_key_disc_id = json_opt_str("disc_id");
 
-    let status = snapshot["status"].as_str().unwrap_or("Unverified").to_string();
+    let status = snapshot["status"]
+        .as_str()
+        .unwrap_or("Unverified")
+        .to_string();
 
     let sector_ranges_text = snapshot["sector_ranges"]
         .as_array()
@@ -520,18 +569,30 @@ fn build_review_template(
         filename_suffix: json_opt_str("filename_suffix"),
 
         show_serial: has_sys(|s| s.has_serial),
-        serials: json_str_vec("serial").into_iter()
-            .map(|s| disc_edit::HighlightedValue { value: s, highlight: String::new() })
+        serials: json_str_vec("serial")
+            .into_iter()
+            .map(|s| disc_edit::HighlightedValue {
+                value: s,
+                highlight: String::new(),
+            })
             .collect(),
         show_version: has_sys(|s| s.has_version),
         version: json_opt_str("version"),
         show_edition: has_sys(|s| s.has_edition),
-        editions: json_str_vec("edition").into_iter()
-            .map(|s| disc_edit::HighlightedValue { value: s, highlight: String::new() })
+        editions: json_str_vec("edition")
+            .into_iter()
+            .map(|s| disc_edit::HighlightedValue {
+                value: s,
+                highlight: String::new(),
+            })
             .collect(),
         show_barcode: has_sys(|s| s.has_barcode),
-        barcodes: json_str_vec("barcode").into_iter()
-            .map(|s| disc_edit::HighlightedValue { value: s, highlight: String::new() })
+        barcodes: json_str_vec("barcode")
+            .into_iter()
+            .map(|s| disc_edit::HighlightedValue {
+                value: s,
+                highlight: String::new(),
+            })
             .collect(),
         removed_serials: vec![],
         removed_editions: vec![],
@@ -557,7 +618,9 @@ fn build_review_template(
         layerbreaks,
         show_pvd: has_sys(|s| s.has_pvd),
         pvd_hex: json_opt_str("pvd"),
-        show_pic: ref_data.all_media_types.iter()
+        show_pic: ref_data
+            .all_media_types
+            .iter()
             .find(|m| m.code == media_type_code)
             .map_or(false, |m| m.pic),
         media_has_pic_json: media_has_pic_json.to_string(),
@@ -691,11 +754,32 @@ fn compute_field_highlights(
     let mut changed_fields = Vec::new();
 
     let simple_fields = [
-        "system_code", "media_type", "category", "title", "title_foreign",
-        "disc_number", "disc_title", "filename_suffix", "version",
-        "error_count", "exe_date", "edc", "comments", "contents",
-        "protection", "sector_ranges", "sbi", "disc_id", "disc_key", "pvd", "header", "bca",
-        "pic", "cuesheet", "dat", "status",
+        "system_code",
+        "media_type",
+        "category",
+        "title",
+        "title_foreign",
+        "disc_number",
+        "disc_title",
+        "filename_suffix",
+        "version",
+        "error_count",
+        "exe_date",
+        "edc",
+        "comments",
+        "contents",
+        "protection",
+        "sector_ranges",
+        "sbi",
+        "disc_id",
+        "disc_key",
+        "pvd",
+        "header",
+        "bca",
+        "pic",
+        "cuesheet",
+        "dat",
+        "status",
     ];
 
     let is_empty_val = |v: &serde_json::Value| -> bool {
@@ -755,7 +839,11 @@ fn compute_field_highlights(
 
     let str_set = |v: &serde_json::Value| -> std::collections::HashSet<String> {
         v.as_array()
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default()
     };
 
@@ -808,10 +896,7 @@ fn compute_field_highlights(
     if !serial_highlights.is_empty() {
         changed_fields.push("serial:changed".to_string());
     }
-    let mut removed_serials: Vec<String> = db_serials
-        .difference(&ch_serials)
-        .cloned()
-        .collect();
+    let mut removed_serials: Vec<String> = db_serials.difference(&ch_serials).cloned().collect();
     removed_serials.sort_unstable_by_key(|s| s.to_lowercase());
 
     let mut edition_highlights = std::collections::HashMap::new();
@@ -830,10 +915,7 @@ fn compute_field_highlights(
     if !edition_highlights.is_empty() {
         changed_fields.push("edition:changed".to_string());
     }
-    let mut removed_editions: Vec<String> = db_editions
-        .difference(&ch_editions)
-        .cloned()
-        .collect();
+    let mut removed_editions: Vec<String> = db_editions.difference(&ch_editions).cloned().collect();
     removed_editions.sort_unstable_by_key(|s| s.to_lowercase());
 
     let mut barcode_highlights = std::collections::HashMap::new();
@@ -852,53 +934,51 @@ fn compute_field_highlights(
     if !barcode_highlights.is_empty() {
         changed_fields.push("barcode:changed".to_string());
     }
-    let mut removed_barcodes: Vec<String> = db_barcodes
-        .difference(&ch_barcodes)
-        .cloned()
-        .collect();
+    let mut removed_barcodes: Vec<String> = db_barcodes.difference(&ch_barcodes).cloned().collect();
     removed_barcodes.sort_unstable_by_key(|s| s.to_lowercase());
 
-    let classify_change = |old: &serde_json::Value, new: &serde_json::Value, csv_ids: bool| -> Option<&'static str> {
-        let is_empty = |v: &serde_json::Value| -> bool {
-            match v {
-                serde_json::Value::Null => true,
-                serde_json::Value::String(s) => s.trim().is_empty(),
-                serde_json::Value::Array(a) => a.is_empty(),
-                serde_json::Value::Object(o) => o.is_empty(),
-                serde_json::Value::Bool(_) | serde_json::Value::Number(_) => false,
-            }
-        };
-        if old == new {
-            return None;
-        }
-        let old_empty = is_empty(old);
-        let new_empty = is_empty(new);
-        if old_empty && !new_empty {
-            return Some("added");
-        }
-        if !old_empty && new_empty {
-            return Some("removed");
-        }
-        if csv_ids {
-            let parse = |v: &serde_json::Value| -> std::collections::HashSet<String> {
-                v.as_str()
-                    .unwrap_or("")
-                    .split(',')
-                    .map(|s| s.trim().to_lowercase())
-                    .filter(|s| !s.is_empty())
-                    .collect()
+    let classify_change =
+        |old: &serde_json::Value, new: &serde_json::Value, csv_ids: bool| -> Option<&'static str> {
+            let is_empty = |v: &serde_json::Value| -> bool {
+                match v {
+                    serde_json::Value::Null => true,
+                    serde_json::Value::String(s) => s.trim().is_empty(),
+                    serde_json::Value::Array(a) => a.is_empty(),
+                    serde_json::Value::Object(o) => o.is_empty(),
+                    serde_json::Value::Bool(_) | serde_json::Value::Number(_) => false,
+                }
             };
-            let old_set = parse(old);
-            let new_set = parse(new);
-            if old_set == new_set {
+            if old == new {
                 return None;
             }
-            // CSV ring fields (toolstamps/mould sids/additional moulds) are compared
-            // as unordered sets. We cannot reliably mark per-token add/remove in UI.
-            return Some("changed");
-        }
-        Some("changed")
-    };
+            let old_empty = is_empty(old);
+            let new_empty = is_empty(new);
+            if old_empty && !new_empty {
+                return Some("added");
+            }
+            if !old_empty && new_empty {
+                return Some("removed");
+            }
+            if csv_ids {
+                let parse = |v: &serde_json::Value| -> std::collections::HashSet<String> {
+                    v.as_str()
+                        .unwrap_or("")
+                        .split(',')
+                        .map(|s| s.trim().to_lowercase())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                };
+                let old_set = parse(old);
+                let new_set = parse(new);
+                if old_set == new_set {
+                    return None;
+                }
+                // CSV ring fields (toolstamps/mould sids/additional moulds) are compared
+                // as unordered sets. We cannot reliably mark per-token add/remove in UI.
+                return Some("changed");
+            }
+            Some("changed")
+        };
 
     let mut ring_highlights: Vec<serde_json::Value> = Vec::new();
     let db_rings = db_snapshot["ring_codes"].as_array();
@@ -914,7 +994,8 @@ fn compute_field_highlights(
             .unwrap_or(0);
         disc_service::sort_ring_codes_json(&mut db_arr, max_layers);
         disc_service::sort_ring_codes_json(&mut ch_arr_sorted, max_layers);
-        let mut db_by_id: std::collections::HashMap<i32, &serde_json::Value> = std::collections::HashMap::new();
+        let mut db_by_id: std::collections::HashMap<i32, &serde_json::Value> =
+            std::collections::HashMap::new();
         for entry in &db_arr {
             if let Some(id) = entry.get("id").and_then(|v| v.as_i64()).map(|v| v as i32) {
                 db_by_id.insert(id, entry);
@@ -935,7 +1016,9 @@ fn compute_field_highlights(
                     ("sample_start", false),
                     ("comment", false),
                 ] {
-                    if let Some(status) = classify_change(&db_entry[field], &ch_entry[field], csv_ids) {
+                    if let Some(status) =
+                        classify_change(&db_entry[field], &ch_entry[field], csv_ids)
+                    {
                         entry_highlight.insert(field.to_string(), serde_json::json!(status));
                     }
                 }
@@ -946,8 +1029,14 @@ fn compute_field_highlights(
                 let mut layer_highlights: Vec<serde_json::Value> = Vec::new();
                 let mut has_layer_highlights = false;
                 for li in 0..max_layers {
-                    let db_layer = db_layers.get(li).cloned().unwrap_or_else(|| serde_json::json!({}));
-                    let ch_layer = ch_layers.get(li).cloned().unwrap_or_else(|| serde_json::json!({}));
+                    let db_layer = db_layers
+                        .get(li)
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    let ch_layer = ch_layers
+                        .get(li)
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({}));
                     let mut layer_map = serde_json::Map::new();
 
                     for (field, csv_ids) in [
@@ -957,7 +1046,9 @@ fn compute_field_highlights(
                         ("mould_sids", true),
                         ("additional_moulds", true),
                     ] {
-                        if let Some(status) = classify_change(&db_layer[field], &ch_layer[field], csv_ids) {
+                        if let Some(status) =
+                            classify_change(&db_layer[field], &ch_layer[field], csv_ids)
+                        {
                             layer_map.insert(field.to_string(), serde_json::json!(status));
                         }
                     }
@@ -969,7 +1060,10 @@ fn compute_field_highlights(
                 }
 
                 if has_layer_highlights {
-                    entry_highlight.insert("layers".to_string(), serde_json::Value::Array(layer_highlights));
+                    entry_highlight.insert(
+                        "layers".to_string(),
+                        serde_json::Value::Array(layer_highlights),
+                    );
                 }
 
                 ring_highlights.push(serde_json::Value::Object(entry_highlight));
@@ -981,7 +1075,8 @@ fn compute_field_highlights(
         // Ring codes: only individual entry highlighting via ring_highlights_json,
         // no fieldset-level highlight.
     }
-    let ring_highlights_json = serde_json::to_string(&ring_highlights).unwrap_or_else(|_| "[]".to_string());
+    let ring_highlights_json =
+        serde_json::to_string(&ring_highlights).unwrap_or_else(|_| "[]".to_string());
 
     FieldHighlights {
         changed_fields,
@@ -1061,9 +1156,9 @@ async fn review_submit(
         .filter(|s| !s.is_empty());
 
     if form.action == "reject" {
-        let rejected = queue_service::reject_submission(
-            &state.pool, id, user.id, review_comment.as_deref(),
-        ).await?;
+        let rejected =
+            queue_service::reject_submission(&state.pool, id, user.id, review_comment.as_deref())
+                .await?;
 
         if !rejected {
             return Ok(Redirect::to(&format!("/queue/{id}/")).into_response());
@@ -1074,12 +1169,11 @@ async fn review_submit(
     let ref_data = fetch_ref_data(&state.pool).await?;
     let errors = validate_form(&form.disc, &ref_data.all_media_types);
     if !errors.is_empty() {
-        let submitter_name: String =
-            sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
-                .bind(sub.submitter_id)
-                .fetch_one(&state.pool)
-                .await
-                .unwrap_or_else(|_| format!("User #{}", sub.submitter_id));
+        let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+            .bind(sub.submitter_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or_else(|_| format!("User #{}", sub.submitter_id));
 
         let (systems_media_json, systems_has_flags_json) =
             build_systems_json(&ref_data.all_systems);
@@ -1091,36 +1185,50 @@ async fn review_submit(
         let system_code = form.disc.system_code.clone();
         let media_type_code = form.disc.media_type.clone();
         let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
-        let system = disc_service::get_system(&state.pool, &system_code).await.ok();
+        let system = disc_service::get_system(&state.pool, &system_code)
+            .await
+            .ok();
         let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
 
         let mut template = build_review_template(
-            &user.username, &sub, &submitter_name, "",
-            &snapshot, &ref_data, &systems_media_json, &systems_has_flags_json,
-            &media_layers_json, &media_rom_extensions_json, &media_is_cd_json, &media_has_pic_json,
-            &system_code, &media_type_code, max_layers, has_sys,
+            &user.username,
+            &sub,
+            &submitter_name,
+            "",
+            &snapshot,
+            &ref_data,
+            &systems_media_json,
+            &systems_has_flags_json,
+            &media_layers_json,
+            &media_rom_extensions_json,
+            &media_is_cd_json,
+            &media_has_pic_json,
+            &system_code,
+            &media_type_code,
+            max_layers,
+            has_sys,
         );
         template.validation_errors = errors;
 
         return Ok(Html(template.render().unwrap()).into_response());
     }
 
-    let form_snapshot = match sub.submission_type {
-        SubmissionType::Disc => build_new_disc_changes(&form.disc, &ref_data.all_media_types),
-        SubmissionType::Edit => {
-            let disc_id = sub.target_disc_id.ok_or_else(|| {
-                AppError::BadRequest("edit submission is missing a target disc".into())
-            })?;
-            let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
-            build_sparse_edit_changes(&form.disc, &detail, &ref_data.all_media_types)
+    let form_snapshot = if let Some(disc_id) = sub.target_disc_id {
+        let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
+        build_sparse_edit_changes(&form.disc, &detail, &ref_data.all_media_types)
+    } else {
+        if sub.submission_type != SubmissionType::Disc {
+            return Err(AppError::BadRequest(
+                "edit submission is missing a target disc".into(),
+            ));
         }
+        build_new_disc_changes(&form.disc, &ref_data.all_media_types)
     };
 
     let approved = queue_service::approve_submission(
         &state.pool,
         &sub,
         &form_snapshot,
-        true,
         user.id,
         review_comment.as_deref(),
         &state.archive_tx,
