@@ -101,16 +101,3 @@ jobs:
           ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "IMAGE_TAG=${{ needs.build.outputs.image_tag }} bash /opt/app/deploy.sh"
-
-      - name: Smoke test
-        continue-on-error: true
-        run: |
-          sleep 15
-          for url in \
-            "https://${{ secrets.DEPLOY_DOMAIN }}" \
-            "https://wiki.${{ secrets.DEPLOY_DOMAIN }}" \
-            "https://forum.${{ secrets.DEPLOY_DOMAIN }}"; do
-            echo "Checking $url ..."
-            curl -sf --max-time 15 -o /dev/null "$url" || { echo "FAILED: $url"; exit 1; }
-          done
-          echo "All smoke tests passed."

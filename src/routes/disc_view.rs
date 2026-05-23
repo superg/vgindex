@@ -28,7 +28,10 @@ fn ring_tab_replace(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;");
-    escaped.replace('\t', "<span class=\"ring-tab-marker\" title=\"Tab\"></span>")
+    escaped.replace(
+        '\t',
+        "<span class=\"ring-tab-marker\" title=\"Tab\"></span>",
+    )
 }
 
 pub fn routes() -> Router<AppState> {
@@ -166,7 +169,9 @@ impl RingColVis {
             toolstamps: rows.iter().any(|r| !r.toolstamps.is_empty()),
             offset: is_cd && rows.iter().any(|r| !r.offset.is_empty()),
             offset_extra: is_cd && has_offset_extra,
-            sample_data_start: is_cd && has_sample_start && rows.iter().any(|r| !r.sample_data_start.is_empty()),
+            sample_data_start: is_cd
+                && has_sample_start
+                && rows.iter().any(|r| !r.sample_data_start.is_empty()),
             comment: rows.iter().any(|r| !r.comment.is_empty()),
         }
     }
@@ -259,61 +264,86 @@ async fn disc_view(
 
     let ring_display_layers = detail.disc.media_type.max_layers().max(2) as usize;
 
-    let ring_rows: Vec<ViewRingRow> = sorted_entries.iter().enumerate().flat_map(|(i, e)| {
-        let offset = format_signed_offset(e.offset_value);
-        let offset_extra = format_signed_offset(e.offset_extra_value);
-        let sample_data_start = e.sample_data_start.map(|v| v.to_string()).unwrap_or_default();
-        let comment = e.comment.clone().unwrap_or_default();
-        let entry_num = i + 1;
-        let entry_even = entry_num % 2 == 0;
+    let ring_rows: Vec<ViewRingRow> = sorted_entries
+        .iter()
+        .enumerate()
+        .flat_map(|(i, e)| {
+            let offset = format_signed_offset(e.offset_value);
+            let offset_extra = format_signed_offset(e.offset_extra_value);
+            let sample_data_start = e
+                .sample_data_start
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+            let comment = e.comment.clone().unwrap_or_default();
+            let entry_num = i + 1;
+            let entry_even = entry_num % 2 == 0;
 
-        if e.layers.is_empty() {
-            let has_data = !offset.is_empty()
-                || !offset_extra.is_empty()
-                || !sample_data_start.is_empty()
-                || !comment.is_empty();
-            if has_data {
-                return vec![ViewRingRow {
-                    entry_num,
-                    layer: String::new(),
-                    mastering_code: String::new(),
-                    mastering_sid: String::new(),
-                    mould_sids: String::new(),
-                    additional_moulds: String::new(),
-                    toolstamps: String::new(),
-                    offset,
-                    offset_extra,
-                    sample_data_start,
-                    comment,
-                    first_in_entry: true,
-                    entry_even,
-                    entry_rowspan: 1,
-                }];
+            if e.layers.is_empty() {
+                let has_data = !offset.is_empty()
+                    || !offset_extra.is_empty()
+                    || !sample_data_start.is_empty()
+                    || !comment.is_empty();
+                if has_data {
+                    return vec![ViewRingRow {
+                        entry_num,
+                        layer: String::new(),
+                        mastering_code: String::new(),
+                        mastering_sid: String::new(),
+                        mould_sids: String::new(),
+                        additional_moulds: String::new(),
+                        toolstamps: String::new(),
+                        offset,
+                        offset_extra,
+                        sample_data_start,
+                        comment,
+                        first_in_entry: true,
+                        entry_even,
+                        entry_rowspan: 1,
+                    }];
+                }
+                return vec![];
             }
-            return vec![];
-        }
 
-        let display_count = ring_display_layers;
-        (0..display_count).map(move |li| {
-            let layer = e.layers.iter().find(|l| l.layer == li as i32);
-            ViewRingRow {
-                entry_num,
-                layer: format!("L{}", li),
-                mastering_code: ring_tab_replace(&layer.and_then(|l| l.mastering_code.clone()).unwrap_or_default()),
-                mastering_sid: ring_tab_replace(&layer.and_then(|l| l.mastering_sid.clone()).unwrap_or_default()),
-                mould_sids: ring_tab_replace(&layer.map(|l| l.mould_sids.clone()).unwrap_or_default()),
-                additional_moulds: ring_tab_replace(&layer.map(|l| l.additional_moulds.clone()).unwrap_or_default()),
-                toolstamps: ring_tab_replace(&layer.map(|l| l.toolstamps.clone()).unwrap_or_default()),
-                offset: offset.clone(),
-                offset_extra: offset_extra.clone(),
-                sample_data_start: sample_data_start.clone(),
-                comment: comment.clone(),
-                first_in_entry: li == 0,
-                entry_even,
-                entry_rowspan: if li == 0 { display_count } else { 0 },
-            }
-        }).collect()
-    }).collect();
+            let display_count = ring_display_layers;
+            (0..display_count)
+                .map(move |li| {
+                    let layer = e.layers.iter().find(|l| l.layer == li as i32);
+                    ViewRingRow {
+                        entry_num,
+                        layer: format!("L{}", li),
+                        mastering_code: ring_tab_replace(
+                            &layer
+                                .and_then(|l| l.mastering_code.clone())
+                                .unwrap_or_default(),
+                        ),
+                        mastering_sid: ring_tab_replace(
+                            &layer
+                                .and_then(|l| l.mastering_sid.clone())
+                                .unwrap_or_default(),
+                        ),
+                        mould_sids: ring_tab_replace(
+                            &layer.map(|l| l.mould_sids.clone()).unwrap_or_default(),
+                        ),
+                        additional_moulds: ring_tab_replace(
+                            &layer
+                                .map(|l| l.additional_moulds.clone())
+                                .unwrap_or_default(),
+                        ),
+                        toolstamps: ring_tab_replace(
+                            &layer.map(|l| l.toolstamps.clone()).unwrap_or_default(),
+                        ),
+                        offset: offset.clone(),
+                        offset_extra: offset_extra.clone(),
+                        sample_data_start: sample_data_start.clone(),
+                        comment: comment.clone(),
+                        first_in_entry: li == 0,
+                        entry_even,
+                        entry_rowspan: if li == 0 { display_count } else { 0 },
+                    }
+                })
+                .collect()
+        })
+        .collect();
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
     let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
@@ -322,43 +352,66 @@ async fn disc_view(
         &detail.disc.title,
         &region_names,
         &language_codes,
-        if detail.system.has_disc_number { detail.disc.disc_number.as_deref() } else { None },
-        if detail.system.has_disc_title { detail.disc.disc_title.as_deref() } else { None },
+        if detail.system.has_disc_number {
+            detail.disc.disc_number.as_deref()
+        } else {
+            None
+        },
+        if detail.system.has_disc_title {
+            detail.disc.disc_title.as_deref()
+        } else {
+            None
+        },
         detail.disc.filename_suffix.as_deref(),
     );
 
-    let total_tracks = detail.files.iter().filter(|f| f.track_number.is_some()).count();
-    let cue_track_meta = detail.disc.cue.as_deref()
+    let total_tracks = detail
+        .files
+        .iter()
+        .filter(|f| f.track_number.is_some())
+        .count();
+    let cue_track_meta = detail
+        .disc
+        .cue
+        .as_deref()
         .map(parse_cue_track_meta)
         .unwrap_or_default();
 
-    let mut files: Vec<ViewFile> = detail.files.iter().map(|f| {
-        let is_cue = f.track_number.is_none();
-        let track = f.track_number.as_deref();
-        let track_num = track.and_then(|t| t.parse::<u32>().ok()).unwrap_or(0);
-        let cue_meta = track
-            .and_then(|t| cue_track_meta.get(t));
-        let ext = if is_cue {
-            "cue"
-        } else {
-            cue_meta
-                .and_then(|m| m.extension.as_deref())
-                .unwrap_or(rom_extension)
-        };
-        ViewFile {
-            name: build_rom_name(&rom_base_name, track, total_tracks, ext),
-            file_suffix: if is_cue { ".cue".to_string() } else { format!(".{ext}") },
-            is_cue,
-            track_sort_num: track_num,
-            size: f.size,
-            crc32: f.crc32.clone(),
-            md5: f.md5.clone(),
-            sha1: f.sha1.clone(),
-        }
-    }).collect();
+    let mut files: Vec<ViewFile> = detail
+        .files
+        .iter()
+        .map(|f| {
+            let is_cue = f.track_number.is_none();
+            let track = f.track_number.as_deref();
+            let track_num = track.and_then(|t| t.parse::<u32>().ok()).unwrap_or(0);
+            let cue_meta = track.and_then(|t| cue_track_meta.get(t));
+            let ext = if is_cue {
+                "cue"
+            } else {
+                cue_meta
+                    .and_then(|m| m.extension.as_deref())
+                    .unwrap_or(rom_extension)
+            };
+            ViewFile {
+                name: build_rom_name(&rom_base_name, track, total_tracks, ext),
+                file_suffix: if is_cue {
+                    ".cue".to_string()
+                } else {
+                    format!(".{ext}")
+                },
+                is_cue,
+                track_sort_num: track_num,
+                size: f.size,
+                crc32: f.crc32.clone(),
+                md5: f.md5.clone(),
+                sha1: f.sha1.clone(),
+            }
+        })
+        .collect();
 
     files.sort_by(|a, b| {
-        a.track_sort_num.cmp(&b.track_sort_num)
+        a.track_sort_num
+            .cmp(&b.track_sort_num)
             .then_with(|| a.file_suffix.cmp(&b.file_suffix))
             .then_with(|| a.name.cmp(&b.name))
     });
@@ -375,15 +428,24 @@ async fn disc_view(
     };
     let track_col_vis = compute_track_col_vis(&track_rows);
 
-    let sbi_rows = detail.disc.sbi.as_deref()
+    let sbi_rows = detail
+        .disc
+        .sbi
+        .as_deref()
         .map(|text| parse_sbi_display(text))
         .unwrap_or_default();
 
-    let pvd_rows = detail.disc.pvd.as_ref()
+    let pvd_rows = detail
+        .disc
+        .pvd
+        .as_ref()
         .map(|data| parse_pvd_rows(data))
         .unwrap_or_default();
 
-    let pic_rows = detail.disc.pic.as_ref()
+    let pic_rows = detail
+        .disc
+        .pic
+        .as_ref()
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
 
@@ -391,20 +453,37 @@ async fn disc_view(
         .disc
         .disc_key
         .as_ref()
-        .map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>())
+        .map(|bytes| {
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        })
         .unwrap_or_default();
     let disc_id_text = detail.disc.disc_id.clone().unwrap_or_default();
 
-    let sector_ranges: Vec<ProtectionRangeRow> = detail.sector_ranges.iter()
+    let sector_ranges: Vec<ProtectionRangeRow> = detail
+        .sector_ranges
+        .iter()
         .enumerate()
-        .map(|(i, r)| ProtectionRangeRow { num: i + 1, start: r.range_start, end: r.range_end })
+        .map(|(i, r)| ProtectionRangeRow {
+            num: i + 1,
+            start: r.range_start,
+            end: r.range_end,
+        })
         .collect();
 
-    let header_rows = detail.disc.header.as_ref()
+    let header_rows = detail
+        .disc
+        .header
+        .as_ref()
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
 
-    let bca_rows = detail.disc.bca.as_ref()
+    let bca_rows = detail
+        .disc
+        .bca
+        .as_ref()
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
 
@@ -415,24 +494,40 @@ async fn disc_view(
             disc_id: id,
             title: format_display_title(
                 &detail.disc.title,
-                if detail.system.has_disc_number { detail.disc.disc_number.as_deref() } else { None },
-                if detail.system.has_disc_title { detail.disc.disc_title.as_deref() } else { None },
+                if detail.system.has_disc_number {
+                    detail.disc.disc_number.as_deref()
+                } else {
+                    None
+                },
+                if detail.system.has_disc_title {
+                    detail.disc.disc_title.as_deref()
+                } else {
+                    None
+                },
                 detail.disc.filename_suffix.as_deref(),
             ),
             system_name: detail.system.system_name(),
             system_code: detail.system.code.clone(),
             media_type: detail.disc.media_type.to_string(),
             category: detail.disc.category.to_string(),
-            regions: detail.regions.iter().map(|r| ViewFlag {
-                code: r.flag_code.trim().to_lowercase(),
-                region_code: r.code.trim().to_string(),
-                name: r.name.clone(),
-            }).collect(),
-            lang_flags: detail.languages.iter().map(|l| ViewFlag {
-                code: l.flag_code.trim().to_lowercase(),
-                region_code: String::new(),
-                name: l.name.clone(),
-            }).collect(),
+            regions: detail
+                .regions
+                .iter()
+                .map(|r| ViewFlag {
+                    code: r.flag_code.trim().to_lowercase(),
+                    region_code: r.code.trim().to_string(),
+                    name: r.name.clone(),
+                })
+                .collect(),
+            lang_flags: detail
+                .languages
+                .iter()
+                .map(|l| ViewFlag {
+                    code: l.flag_code.trim().to_lowercase(),
+                    region_code: String::new(),
+                    name: l.name.clone(),
+                })
+                .collect(),
             show_title_foreign: detail.system.has_title_foreign,
             title_foreign: detail.disc.title_foreign.clone().unwrap_or_default(),
             disc_title: detail.disc.disc_title.clone().unwrap_or_default(),
@@ -450,33 +545,55 @@ async fn disc_view(
             show_barcode: detail.system.has_barcode,
             barcode_count: detail.disc.barcode.len(),
             barcode: detail.disc.barcode.join("<br>"),
-            layerbreaks: detail.disc.layerbreaks.as_deref().unwrap_or_default()
-                .iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "),
+            layerbreaks: detail
+                .disc
+                .layerbreaks
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
             comments: format_comments(&detail.disc.comments.clone().unwrap_or_default()),
             contents: format_comments(&detail.disc.contents.clone().unwrap_or_default()),
             edc_display: if detail.disc.edc { "Yes" } else { "No" }.to_string(),
             show_edc: detail.system.has_edc,
             protection: detail.disc.protection.clone().unwrap_or_default(),
             show_protection: detail.system.has_protection,
-            error_count: detail.disc.error_count.map(|e| e.to_string()).unwrap_or_default(),
+            error_count: detail
+                .disc
+                .error_count
+                .map(|e| e.to_string())
+                .unwrap_or_default(),
             file_count: detail.files.len(),
             status_class: detail.disc.status.css_class().to_string(),
             status_display: detail.disc.status.to_string(),
-            created_at: detail.added_at
+            created_at: detail
+                .added_at
                 .filter(|d| *d != NO_ADDED_SENTINEL)
                 .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
                 .unwrap_or_default(),
-            updated_at: detail.modified_at.map(|d| d.format("%Y-%m-%d %H:%M").to_string()).unwrap_or_default(),
+            updated_at: detail
+                .modified_at
+                .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                .unwrap_or_default(),
             dumper_count: detail.dumpers.len(),
             dumpers_display: if detail.dumpers.is_empty() {
                 "Unknown".to_string()
             } else {
-                detail.dumpers.iter()
-                    .map(|d| format!(
-                        "<a href=\"/discs/?dumper={}\">{}</a>",
-                        d.user_id,
-                        d.username.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"),
-                    ))
+                detail
+                    .dumpers
+                    .iter()
+                    .map(|d| {
+                        format!(
+                            "<a href=\"/discs/?dumper={}\">{}</a>",
+                            d.user_id,
+                            d.username
+                                .replace('&', "&amp;")
+                                .replace('<', "&lt;")
+                                .replace('>', "&gt;"),
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join(", ")
             },
@@ -539,7 +656,9 @@ fn parse_cue_track_meta(cue: &str) -> std::collections::HashMap<String, CueTrack
 
         if let Some((track_num, mode)) = parse_cue_track_line_local(&upper) {
             let track_key = track_num.to_string();
-            let entry = tracks.entry(track_key.clone()).or_insert_with(CueTrackMeta::default);
+            let entry = tracks
+                .entry(track_key.clone())
+                .or_insert_with(CueTrackMeta::default);
             entry.track_type = mode.to_string();
             if entry.extension.is_none() {
                 entry.extension = current_file_ext.clone();
@@ -551,7 +670,9 @@ fn parse_cue_track_meta(cue: &str) -> std::collections::HashMap<String, CueTrack
         if let Some((idx_num, mm, ss, ff)) = parse_cue_index_line_local(&upper) {
             if idx_num == 1 {
                 if let Some(track_key) = current_track.as_ref() {
-                    let entry = tracks.entry(track_key.clone()).or_insert_with(CueTrackMeta::default);
+                    let entry = tracks
+                        .entry(track_key.clone())
+                        .or_insert_with(CueTrackMeta::default);
                     let frames = mm * 60 * 75 + ss * 75 + ff;
                     if frames > 0 {
                         entry.pregap_frames = Some(frames);
@@ -784,24 +905,18 @@ fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
 }
 
 fn compute_track_col_vis(rows: &[ViewTrackTableRow]) -> TrackColVis {
-    let non_session_rows: Vec<&ViewTrackTableRow> = rows.iter().filter(|r| !r.is_session_header).collect();
+    let non_session_rows: Vec<&ViewTrackTableRow> =
+        rows.iter().filter(|r| !r.is_session_header).collect();
     let track_num = non_session_rows.iter().any(|r| !r.track_num.is_empty());
     let type_display = non_session_rows.iter().any(|r| !r.type_display.is_empty());
     let flags = non_session_rows.iter().any(|r| !r.flags_display.is_empty());
     let pregap = non_session_rows.iter().any(|r| !r.pregap.is_empty());
     let length = non_session_rows.iter().any(|r| !r.length.is_empty());
     let sectors = non_session_rows.iter().any(|r| !r.sectors.is_empty());
-    let visible_count = [
-        track_num,
-        type_display,
-        flags,
-        pregap,
-        length,
-        sectors,
-    ]
-    .into_iter()
-    .filter(|v| *v)
-    .count();
+    let visible_count = [track_num, type_display, flags, pregap, length, sectors]
+        .into_iter()
+        .filter(|v| *v)
+        .count();
     TrackColVis {
         track_num,
         type_display,
@@ -890,9 +1005,18 @@ fn format_comments(raw: &str) -> String {
                     i += 1;
                 }
             }
-            b'>' => { result.push_str("&gt;"); i += 1; }
-            b'&' => { result.push_str("&amp;"); i += 1; }
-            b'"' => { result.push_str("&quot;"); i += 1; }
+            b'>' => {
+                result.push_str("&gt;");
+                i += 1;
+            }
+            b'&' => {
+                result.push_str("&amp;");
+                i += 1;
+            }
+            b'"' => {
+                result.push_str("&quot;");
+                i += 1;
+            }
             _ => {
                 let c = s[i..].chars().next().unwrap();
                 result.push(c);
@@ -906,20 +1030,39 @@ fn format_comments(raw: &str) -> String {
 
 fn allowed_html_tag(s: &str) -> Option<usize> {
     const SIMPLE_TAGS: &[&str] = &[
-        "<b>", "</b>", "<B>", "</B>",
-        "<u>", "</u>", "<U>", "</U>",
-        "<i>", "</i>",
-        "<s>", "</s>",
-        "<code>", "</code>",
-        "<tt>", "</tt>",
-        "<xmp>", "</xmp>",
-        "<li>", "</li>",
-        "<ul>", "</ul>",
-        "<center>", "</center>",
-        "<del>", "</del>",
-        "<sup>", "</sup>",
-        "<small>", "</small>",
-        "<br>", "<br />", "<BR>",
+        "<b>",
+        "</b>",
+        "<B>",
+        "</B>",
+        "<u>",
+        "</u>",
+        "<U>",
+        "</U>",
+        "<i>",
+        "</i>",
+        "<s>",
+        "</s>",
+        "<code>",
+        "</code>",
+        "<tt>",
+        "</tt>",
+        "<xmp>",
+        "</xmp>",
+        "<li>",
+        "</li>",
+        "<ul>",
+        "</ul>",
+        "<center>",
+        "</center>",
+        "<del>",
+        "</del>",
+        "<sup>",
+        "</sup>",
+        "<small>",
+        "</small>",
+        "<br>",
+        "<br />",
+        "<BR>",
         "</a>",
     ];
 
@@ -945,58 +1088,75 @@ fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
         return Vec::new();
     }
 
-    LABELS.iter().enumerate().map(|(i, label)| {
-        let start = PVD_DATE_OFFSET + i * PVD_DATE_SIZE;
-        let field = &data[start..start + PVD_DATE_SIZE];
+    LABELS
+        .iter()
+        .enumerate()
+        .map(|(i, label)| {
+            let start = PVD_DATE_OFFSET + i * PVD_DATE_SIZE;
+            let field = &data[start..start + PVD_DATE_SIZE];
 
-        let hex_contents = field.iter()
-            .map(|b| format!("{:02X}", b))
-            .collect::<Vec<_>>()
-            .join(" ");
+            let hex_contents = field
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join(" ");
 
-        let ascii: String = field[..16].iter()
-            .map(|&b| if b.is_ascii_digit() { b as char } else { '0' })
-            .collect();
+            let ascii: String = field[..16]
+                .iter()
+                .map(|&b| if b.is_ascii_digit() { b as char } else { '0' })
+                .collect();
 
-        let year = &ascii[0..4];
-        let month = &ascii[4..6];
-        let day = &ascii[6..8];
-        let hour = &ascii[8..10];
-        let minute = &ascii[10..12];
-        let second = &ascii[12..14];
-        let centiseconds = &ascii[14..16];
+            let year = &ascii[0..4];
+            let month = &ascii[4..6];
+            let day = &ascii[6..8];
+            let hour = &ascii[8..10];
+            let minute = &ascii[10..12];
+            let second = &ascii[12..14];
+            let centiseconds = &ascii[14..16];
 
-        let gmt_byte = field[16] as i8;
-        let gmt_minutes = gmt_byte as i32 * 15;
-        let gmt_sign = if gmt_minutes >= 0 { '+' } else { '-' };
-        let gmt_abs = gmt_minutes.unsigned_abs();
-        let gmt = format!("{}{:02}:{:02}", gmt_sign, gmt_abs / 60, gmt_abs % 60);
+            let gmt_byte = field[16] as i8;
+            let gmt_minutes = gmt_byte as i32 * 15;
+            let gmt_sign = if gmt_minutes >= 0 { '+' } else { '-' };
+            let gmt_abs = gmt_minutes.unsigned_abs();
+            let gmt = format!("{}{:02}:{:02}", gmt_sign, gmt_abs / 60, gmt_abs % 60);
 
-        PvdRow {
-            label,
-            hex_contents,
-            date: format!("{}-{}-{}", year, month, day),
-            time: format!("{}:{}:{}.{}", hour, minute, second, centiseconds),
-            gmt,
-        }
-    }).collect()
+            PvdRow {
+                label,
+                hex_contents,
+                date: format!("{}-{}-{}", year, month, day),
+                time: format!("{}:{}:{}.{}", hour, minute, second, centiseconds),
+                gmt,
+            }
+        })
+        .collect()
 }
 
 fn parse_header_rows(data: &[u8]) -> Vec<HeaderRow> {
-    data.chunks(16).enumerate().map(|(i, chunk)| {
-        let hex_contents = chunk.iter()
-            .map(|b| format!("{:02X}", b))
-            .collect::<Vec<_>>()
-            .join(" ");
-        let ascii: String = chunk.iter().map(|&b| {
-            if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' }
-        }).collect();
-        HeaderRow {
-            offset: format!("{:04X}", i * 16),
-            hex_contents,
-            ascii,
-        }
-    }).collect()
+    data.chunks(16)
+        .enumerate()
+        .map(|(i, chunk)| {
+            let hex_contents = chunk
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let ascii: String = chunk
+                .iter()
+                .map(|&b| {
+                    if b.is_ascii_graphic() || b == b' ' {
+                        b as char
+                    } else {
+                        '.'
+                    }
+                })
+                .collect();
+            HeaderRow {
+                offset: format!("{:04X}", i * 16),
+                hex_contents,
+                ascii,
+            }
+        })
+        .collect()
 }
 
 fn format_hex_dump(data: &[u8]) -> String {
@@ -1006,9 +1166,13 @@ fn format_hex_dump(data: &[u8]) -> String {
         out.push_str(&format!("{:04X} : ", offset));
         for (j, byte) in chunk.iter().enumerate() {
             out.push_str(&format!("{:02X} ", byte));
-            if j == 7 { out.push(' '); }
+            if j == 7 {
+                out.push(' ');
+            }
         }
-        for _ in chunk.len()..16 { out.push_str("   "); }
+        for _ in chunk.len()..16 {
+            out.push_str("   ");
+        }
         out.push_str("  ");
         for byte in chunk {
             if byte.is_ascii_graphic() || *byte == b' ' {
@@ -1026,14 +1190,15 @@ fn parse_sbi_display(text: &str) -> Vec<SbiRow> {
     let mut rows = Vec::new();
     for line in text.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
-        let msf = line.strip_prefix("MSF: ")
+        if line.is_empty() {
+            continue;
+        }
+        let msf = line
+            .strip_prefix("MSF: ")
             .and_then(|s| s.split_whitespace().next())
             .unwrap_or("")
             .to_string();
-        let qdata_str = line.find("Q-Data: ")
-            .map(|i| &line[i + 8..])
-            .unwrap_or("");
+        let qdata_str = line.find("Q-Data: ").map(|i| &line[i + 8..]).unwrap_or("");
         let qdata_bytes = parse_qdata_bytes(qdata_str);
         let sector = parse_msf_to_sector(&msf).unwrap_or(0);
         let contents = format_sbi_contents(sector, &qdata_bytes);
@@ -1042,7 +1207,12 @@ fn parse_sbi_display(text: &str) -> Vec<SbiRow> {
         } else {
             String::new()
         };
-        rows.push(SbiRow { sector, msf, contents, xor });
+        rows.push(SbiRow {
+            sector,
+            msf,
+            contents,
+            xor,
+        });
     }
     rows
 }
@@ -1081,7 +1251,9 @@ fn int_to_bcd_signed(i: i64) -> u8 {
 
 fn parse_msf_to_sector(msf: &str) -> Option<u32> {
     let parts: Vec<&str> = msf.split(':').collect();
-    if parts.len() != 3 { return None; }
+    if parts.len() != 3 {
+        return None;
+    }
     let m = u8::from_str_radix(parts[0], 16).ok()?;
     let s = u8::from_str_radix(parts[1], 16).ok()?;
     let f = u8::from_str_radix(parts[2], 16).ok()?;
@@ -1131,7 +1303,9 @@ async fn disc_cue_download(
 ) -> AppResult<impl IntoResponse> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
 
-    let cue = detail.disc.cue
+    let cue = detail
+        .disc
+        .cue
         .filter(|c| !c.is_empty())
         .ok_or(crate::error::AppError::NotFound)?;
 
@@ -1150,7 +1324,10 @@ async fn disc_cue_download(
 
     Ok((
         [
-            (http::header::CONTENT_TYPE, "application/x-cuesheet".to_string()),
+            (
+                http::header::CONTENT_TYPE,
+                "application/x-cuesheet".to_string(),
+            ),
             (http::header::CONTENT_DISPOSITION, disposition),
         ],
         cue,
@@ -1163,7 +1340,9 @@ async fn disc_sbi_download(
 ) -> AppResult<impl IntoResponse> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
 
-    let sbi_text = detail.disc.sbi
+    let sbi_text = detail
+        .disc
+        .sbi
         .filter(|s| !s.is_empty())
         .ok_or(crate::error::AppError::NotFound)?;
 
@@ -1184,7 +1363,10 @@ async fn disc_sbi_download(
 
     Ok((
         [
-            (http::header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (
+                http::header::CONTENT_TYPE,
+                "application/octet-stream".to_string(),
+            ),
             (http::header::CONTENT_DISPOSITION, disposition),
         ],
         buf,

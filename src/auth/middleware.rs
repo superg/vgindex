@@ -91,9 +91,7 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let current = CurrentUser::from_request_parts(parts, state)
-            .await
-            .unwrap();
+        let current = CurrentUser::from_request_parts(parts, state).await.unwrap();
         match current.0 {
             Some(user) => Ok(RequireAuth(user)),
             None => Err(AppError::Unauthorized),
@@ -150,10 +148,14 @@ pub async fn guest_session_layer(
     let is_static = request.uri().path().starts_with("/static/");
 
     let (ip, ua) = if !has_valid_session && !is_static {
-        let ip = request.headers().get("x-forwarded-for")
+        let ip = request
+            .headers()
+            .get("x-forwarded-for")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
-        let ua = request.headers().get(header::USER_AGENT)
+        let ua = request
+            .headers()
+            .get(header::USER_AGENT)
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
         (ip, ua)
@@ -164,13 +166,9 @@ pub async fn guest_session_layer(
     // Create a guest session before handling the request so this very request
     // can be counted in online stats.
     let created_guest_sid = if !has_valid_session && !is_static {
-        crate::auth::session::create_guest_session(
-            &state.pool,
-            ip.as_deref(),
-            ua.as_deref(),
-        )
-        .await
-        .ok()
+        crate::auth::session::create_guest_session(&state.pool, ip.as_deref(), ua.as_deref())
+            .await
+            .ok()
     } else {
         None
     };
@@ -178,17 +176,20 @@ pub async fn guest_session_layer(
     let mut response = next.run(request).await;
 
     if let Some(sid) = created_guest_sid {
-        let already_set = response.headers()
+        let already_set = response
+            .headers()
             .get_all(header::SET_COOKIE)
             .iter()
-            .any(|v| v.to_str().map(|s| s.starts_with("session_id=")).unwrap_or(false));
+            .any(|v| {
+                v.to_str()
+                    .map(|s| s.starts_with("session_id="))
+                    .unwrap_or(false)
+            });
 
         if already_set {
             let _ = crate::auth::session::delete_session(&state.pool, &sid).await;
         } else {
-            let cookie = format!(
-                "session_id={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400"
-            );
+            let cookie = format!("session_id={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400");
             if let Ok(val) = cookie.parse() {
                 response.headers_mut().append(header::SET_COOKIE, val);
             }

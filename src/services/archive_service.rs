@@ -1,5 +1,5 @@
-use std::io::Write;
 use sqlx::PgPool;
+use std::io::Write;
 use zip::write::{SimpleFileOptions, ZipWriter};
 
 use crate::db::models::*;
@@ -15,7 +15,12 @@ pub struct ArchiveResult {
 // ---------------------------------------------------------------------------
 
 fn archive_subdir(system: &str, archive_type: &str) -> String {
-    format!("{}/archives/{}-{}", crate::config::DATA_DIR, system, archive_type)
+    format!(
+        "{}/archives/{}-{}",
+        crate::config::DATA_DIR,
+        system,
+        archive_type
+    )
 }
 
 fn find_cached_archive(system: &str, archive_type: &str) -> Option<ArchiveResult> {
@@ -134,13 +139,12 @@ async fn system_has_cd_media(pool: &PgPool, media_type_codes: &[String]) -> bool
     if media_type_codes.is_empty() {
         return false;
     }
-    let extensions: Vec<String> = sqlx::query_scalar(
-        "SELECT rom_extension FROM media_types WHERE code = ANY($1)",
-    )
-    .bind(media_type_codes)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let extensions: Vec<String> =
+        sqlx::query_scalar("SELECT rom_extension FROM media_types WHERE code = ANY($1)")
+            .bind(media_type_codes)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
     extensions.iter().any(|ext| is_cd_rom_extension(ext))
 }
 
@@ -249,12 +253,10 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
 
     let mut games: Vec<GameEntry> = Vec::with_capacity(discs.len());
     for disc in &discs {
-        let files: Vec<File> = sqlx::query_as(
-            "SELECT * FROM files WHERE disc_id = $1",
-        )
-        .bind(disc.id)
-        .fetch_all(pool)
-        .await?;
+        let files: Vec<File> = sqlx::query_as("SELECT * FROM files WHERE disc_id = $1")
+            .bind(disc.id)
+            .fetch_all(pool)
+            .await?;
 
         let region_names = get_disc_region_names(pool, disc.id).await;
         let language_codes = get_disc_language_codes(pool, disc.id).await;
@@ -492,7 +494,12 @@ async fn generate_key_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveR
             .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    let zip_filename = format!("{} - Keys ({}) ({}).zip", sys.dat_system_name(), key_count, ts);
+    let zip_filename = format!(
+        "{} - Keys ({}) ({}).zip",
+        sys.dat_system_name(),
+        key_count,
+        ts
+    );
     Ok(ArchiveResult {
         data: buf,
         filename: zip_filename,
