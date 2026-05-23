@@ -14,6 +14,7 @@ const MEDIA_IS_CD = {{ media_is_cd_json|safe }};
 const MEDIA_HAS_PIC = {{ media_has_pic_json|safe }};
 const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{% endif %}{% endfor %}];
 const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
+const IS_ADD_MODE = {{ is_add_mode }};
 </script>
 <script src="/static/js/disc_edit.js" defer></script>
 {% endblock %}
@@ -135,7 +136,7 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
             <div class="flag-check-list">
             {% for r in regions %}
                 <label class="flag-check{% if !r.highlight.is_empty() %} item-{{ r.highlight }}{% endif %}">
-                    <input type="checkbox" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
+                    <input type="{% if is_add_mode %}radio{% else %}checkbox{% endif %}" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
                     <img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}">
                     <span>{{ r.name }}</span>
                 </label>
@@ -181,6 +182,17 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
     <div class="inline-field{% if !self.highlight_class("edition").is_empty() %} {{ self.highlight_class("edition") }}{% endif %}" data-field-flag="has_edition"{% if !show_edition %} style="display:none"{% endif %}>
         <span class="inline-field-label">Editions</span>
         <div id="edition-list" class="inline-field-values">
+            {% if is_add_mode %}
+            {% if editions.is_empty() %}
+            <input type="text" name="edition" value="">
+            {% else %}
+            {% for e in editions %}
+            {% if loop.first %}
+            <input type="text" name="edition" value="{{ e.value }}"{% if !e.highlight.is_empty() %} class="item-{{ e.highlight }}"{% endif %}>
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+            {% else %}
             {% for e in editions %}
             <input type="text" name="edition" value="{{ e.value }}"{% if !e.highlight.is_empty() %} class="item-{{ e.highlight }}"{% endif %}>
             {% endfor %}
@@ -193,13 +205,27 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
                 {% endfor %}
             </div>
             {% endif %}
+            {% endif %}
         </div>
+        {% if !is_add_mode %}
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('edition-list','edition')">+</button>
+        {% endif %}
     </div>
 
     <div class="inline-field{% if !self.highlight_class("barcode").is_empty() %} {{ self.highlight_class("barcode") }}{% endif %}" data-field-flag="has_barcode"{% if !show_barcode %} style="display:none"{% endif %}>
         <span class="inline-field-label">Barcodes</span>
         <div id="barcode-list" class="inline-field-values">
+            {% if is_add_mode %}
+            {% if barcodes.is_empty() %}
+            <input type="text" name="barcode" value="">
+            {% else %}
+            {% for b in barcodes %}
+            {% if loop.first %}
+            <input type="text" name="barcode" value="{{ b.value }}"{% if !b.highlight.is_empty() %} class="item-{{ b.highlight }}"{% endif %}>
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+            {% else %}
             {% for b in barcodes %}
             <input type="text" name="barcode" value="{{ b.value }}"{% if !b.highlight.is_empty() %} class="item-{{ b.highlight }}"{% endif %}>
             {% endfor %}
@@ -212,8 +238,11 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
                 {% endfor %}
             </div>
             {% endif %}
+            {% endif %}
         </div>
+        {% if !is_add_mode %}
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('barcode-list','barcode')">+</button>
+        {% endif %}
     </div>
 
     <div class="inline-field{% if !self.highlight_class("version").is_empty() %} {{ self.highlight_class("version") }}{% endif %}" data-field-flag="has_version"{% if !show_version %} style="display:none"{% endif %}>
@@ -272,7 +301,9 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
             <tbody id="ring-tbody"></tbody>
         </table>
         </div>
+        {% if !is_add_mode %}
         <button type="button" class="outline secondary array-add-btn" onclick="addRingEntry()">+</button>
+        {% endif %}
         <input type="hidden" name="ring_codes_json" id="ring-codes-json">
     </fieldset>
     </div>

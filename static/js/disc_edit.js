@@ -37,6 +37,10 @@ function addArrayEntry(containerId, name) {
 
 // Ring code editor — table-based, matching disc view layout
 var ringEntries = [];
+function isAddMode() {
+    return typeof IS_ADD_MODE !== 'undefined' && !!IS_ADD_MODE;
+}
+
 function ringStatusClass(status) {
     if (status === 'added') return 'item-added';
     if (status === 'removed') return 'item-removed';
@@ -97,6 +101,21 @@ function emptyEntry(ml) {
 
 function ensureEmptyRingEntry() {
     var ml = getRingLayers();
+    if (isAddMode()) {
+        if (ringEntries.length === 0) {
+            ringEntries.push(emptyEntry(ml));
+        } else if (ringEntries.length > 1) {
+            var firstNonEmpty = null;
+            for (var i = 0; i < ringEntries.length; i++) {
+                if (!isEntryEmpty(ringEntries[i])) {
+                    firstNonEmpty = ringEntries[i];
+                    break;
+                }
+            }
+            ringEntries = [firstNonEmpty || ringEntries[0]];
+        }
+        return;
+    }
     if (ringEntries.length === 0 || !isEntryEmpty(ringEntries[ringEntries.length - 1])) {
         ringEntries.push(emptyEntry(ml));
     }
@@ -205,6 +224,11 @@ function removeRingEntry(idx) {
 }
 
 function addRingEntry() {
+    if (isAddMode()) {
+        var firstInput = document.querySelector('#ring-tbody tr[data-entry="0"] input');
+        if (firstInput) firstInput.focus();
+        return;
+    }
     saveRingFromDom();
     var last = ringEntries[ringEntries.length - 1];
     if (last && isEntryEmpty(last)) {
