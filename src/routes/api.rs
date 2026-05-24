@@ -5,7 +5,7 @@ use crate::db::models::html_escape;
 use crate::AppState;
 
 // Online means sessions active in this window: registered users are deduped by
-// user_id, while guests are counted as anonymous browser cookie sessions.
+// user_id, while guests are deduped by anonymous session IP address.
 const ACTIVE_WINDOW_MINUTES: i32 = 2;
 
 pub fn routes() -> Router<AppState> {
@@ -50,7 +50,9 @@ async fn fetch_online_counts(state: &AppState) -> (i64, i64) {
     sqlx::query_as::<_, (i64, i64)>(
         "SELECT
              COUNT(DISTINCT user_id) FILTER (WHERE user_id IS NOT NULL) AS registered,
-             COUNT(*) FILTER (WHERE user_id IS NULL) AS guests
+             COUNT(DISTINCT ip_address) FILTER (
+                 WHERE user_id IS NULL AND ip_address IS NOT NULL
+             ) AS guests
          FROM sessions
          WHERE expires_at > NOW()
            AND last_active_at > NOW() - ($1 * INTERVAL '1 minute')",
