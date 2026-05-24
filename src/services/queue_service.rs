@@ -796,23 +796,32 @@ pub async fn list_submissions(
         conditions.push(format!("u.username = ${idx}"));
     }
 
+    let title_expr = "COALESCE(NULLIF(ds.changes->'title'->'add'->>'new', ''), \
+                      NULLIF(ds.changes->'title'->'modify'->>'new', ''), \
+                      NULLIF(d.title, ''), 'Untitled')";
     let sort_col = match sort_column {
-        "date"      => "ds.created_at",
-        "title"     => "LOWER(COALESCE(d.title, ds.changes->'title'->'add'->>'new', ds.changes->'title'->'modify'->>'new', 'Untitled'))",
+        "date"      => "ds.created_at".to_string(),
+        "title"     => format!("LOWER({title_expr})"),
+        "disc_id"   => "ds.target_disc_id".to_string(),
         "system"    => "LOWER(COALESCE(s.manufacturer, '')), COALESCE(s.manufacturer, ''), \
                         LOWER(COALESCE(s.name, COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', ''))), \
-                        COALESCE(s.name, COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', ''))",
-        "submitter" => "LOWER(u.username)",
-        "reviewer"  => "LOWER(COALESCE(ur.username, ''))",
-        "type"      => "ds.submission_type",
-        "status"    => "ds.status",
-        _           => "ds.created_at",
+                        COALESCE(s.name, COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', ''))".to_string(),
+        "submitter" => "LOWER(u.username)".to_string(),
+        "reviewer"  => "LOWER(COALESCE(ur.username, ''))".to_string(),
+        "type"      => "ds.submission_type".to_string(),
+        "status"    => "ds.status".to_string(),
+        _           => "ds.created_at".to_string(),
     };
     let sort_dir = if sort_order == "asc" { "ASC" } else { "DESC" };
+    let nulls_order = if sort_column == "disc_id" {
+        " NULLS LAST"
+    } else {
+        ""
+    };
 
     let sql = format!(
         "SELECT ds.id, ds.submission_type,
-                COALESCE(d.title, ds.changes->'title'->'add'->>'new', ds.changes->'title'->'modify'->>'new', 'Untitled') AS title,
+                {title_expr} AS title,
                 COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', '') AS system_code,
                 COALESCE(s.short_name, '') AS system_short_name,
                 u.username AS submitter,
@@ -829,7 +838,7 @@ pub async fn list_submissions(
          LEFT JOIN systems s
              ON s.code = COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new')
          WHERE {}
-         ORDER BY {sort_col} {sort_dir}
+         ORDER BY {sort_col} {sort_dir}{nulls_order}
          LIMIT {page_size} OFFSET {offset}",
         conditions.join(" AND ")
     );

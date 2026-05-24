@@ -69,7 +69,11 @@ function getMaxLayers() {
 }
 
 function getRingLayers() {
-    return Math.max(getMaxLayers(), 2);
+    return getMaxLayers() + 1;
+}
+
+function ringLayerLabel(layerIndex, layerCount) {
+    return layerIndex === layerCount - 1 ? 'LS' : 'L' + layerIndex;
 }
 
 function systemHasFlag(flag) {
@@ -149,6 +153,7 @@ function renderRingEntries() {
     var showOffset = mediaIsCd();
     var showSampleStart = showOffset && systemHasFlag('has_sample_start');
     var showOffsetExtra = showOffset && systemHasOffsetExtra();
+    var showRemoveButton = !isAddMode();
 
     // Build header
     var hdr = '<tr><th>#</th>';
@@ -157,7 +162,9 @@ function renderRingEntries() {
     if (showOffset) hdr += '<th>Offset</th>';
     if (showOffsetExtra) hdr += '<th>Extra Offset</th>';
     if (showSampleStart) hdr += '<th>Sample Start</th>';
-    hdr += '<th>Comment</th><th></th></tr>';
+    hdr += '<th>Comment</th>';
+    if (showRemoveButton) hdr += '<th></th>';
+    hdr += '</tr>';
     thead.innerHTML = hdr;
 
     // Build rows
@@ -193,7 +200,7 @@ function renderRingEntries() {
             if (li === 0) {
                 cells += '<td class="entry-num"' + (ml > 1 ? ' rowspan="' + ml + '"' : '') + '>' + (ei + 1) + '</td>';
             }
-            if (ml > 1) cells += '<td><strong>L' + li + '</strong></td>';
+            if (ml > 1) cells += '<td><strong>' + ringLayerLabel(li, ml) + '</strong></td>';
             cells += '<td><input type="text" class="' + ringInputClass('ring-mc', layerHighlight && layerHighlight.mastering_code) + '" value="' + esc(l.mastering_code || '') + '"></td>';
             cells += '<td><input type="text" class="' + ringInputClass('ring-ms', layerHighlight && layerHighlight.mastering_sid) + '" value="' + esc(l.mastering_sid || '') + '"></td>';
             cells += '<td><input type="text" class="' + ringInputClass('ring-tools', layerHighlight && layerHighlight.toolstamps) + '" value="' + esc(l.toolstamps || '') + '"></td>';
@@ -206,7 +213,7 @@ function renderRingEntries() {
                 if (showOffsetExtra) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset-extra', entryHighlight && entryHighlight.offset_extra_value) + '" value="' + esc(entry.offset_extra_value || '') + '"></td>';
                 if (showSampleStart) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-sample-start', entryHighlight && entryHighlight.sample_start) + '" value="' + esc(entry.sample_start || '') + '"></td>';
                 cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-comment', entryHighlight && entryHighlight.comment) + '" value="' + esc(entry.comment || '') + '"></td>';
-                cells += '<td' + rs + '><button type="button" class="outline secondary remove-entry" onclick="removeRingEntry(' + ei + ')">&times;</button></td>';
+                if (showRemoveButton) cells += '<td' + rs + '><button type="button" class="outline secondary remove-entry" onclick="removeRingEntry(' + ei + ')">&times;</button></td>';
             }
 
             tr.innerHTML = cells;

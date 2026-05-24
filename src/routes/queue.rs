@@ -91,6 +91,7 @@ struct QueueTemplate {
     next_submitter_order: String,
     next_reviewer_order: String,
     next_type_order: String,
+    next_disc_id_order: String,
     next_status_order: String,
 }
 impl SiteConfig for QueueTemplate {}
@@ -103,6 +104,38 @@ impl QueueTemplate {
                 entry.status,
                 SubmissionStatus::Approved | SubmissionStatus::Legacy
             )
+    }
+
+    fn type_icon_label(&self, entry: &SubmissionListRow) -> &'static str {
+        match entry.submission_type {
+            SubmissionType::Disc if entry.target_disc_id.is_some() => "Verification",
+            SubmissionType::Disc => "New Disc",
+            SubmissionType::Edit => "Edit",
+        }
+    }
+
+    fn type_icon_class(&self, entry: &SubmissionListRow) -> &'static str {
+        match (
+            entry.submission_type,
+            entry.status,
+            entry.target_disc_id.is_some(),
+        ) {
+            (SubmissionType::Disc, SubmissionStatus::Pending, true) => {
+                "submission-type-icon submission-type-icon-disc submission-type-icon-verification"
+            }
+            (SubmissionType::Disc, SubmissionStatus::Pending, false) => {
+                "submission-type-icon submission-type-icon-disc submission-type-icon-new-disc"
+            }
+            (SubmissionType::Disc, _, _) => {
+                "submission-type-icon submission-type-icon-disc submission-type-icon-processed"
+            }
+            (SubmissionType::Edit, SubmissionStatus::Pending, _) => {
+                "submission-type-icon submission-type-icon-edit submission-type-icon-edit-pending"
+            }
+            (SubmissionType::Edit, _, _) => {
+                "submission-type-icon submission-type-icon-edit submission-type-icon-processed"
+            }
+        }
     }
 }
 
@@ -321,6 +354,7 @@ async fn queue_list(
             next_submitter_order: next_order("submitter"),
             next_reviewer_order: next_order("reviewer"),
             next_type_order: next_order("type"),
+            next_disc_id_order: next_order("disc_id"),
             next_status_order: next_order("status"),
         }
         .render()
@@ -503,7 +537,11 @@ fn build_review_template(
         _ => String::new(),
     };
 
-    let edc_value = snapshot["edc"].as_bool().unwrap_or(false);
+    let edc_value = if snapshot["edc"].as_bool().unwrap_or(false) {
+        "true".to_string()
+    } else {
+        "false".to_string()
+    };
 
     let protection_key_disc_key = json_opt_str("disc_key");
     let protection_key_disc_id = json_opt_str("disc_id");
@@ -654,6 +692,9 @@ fn build_review_template(
 
         submit_button_text: String::new(),
         validation_errors: vec![],
+        validation_result: String::new(),
+        validation_result_disc_id: 0,
+        validation_result_disc_title: String::new(),
 
         is_review_mode: true,
         changed_fields: vec![],
@@ -668,6 +709,7 @@ fn build_review_template(
         reviewer_id: sub.reviewer_id.unwrap_or(0),
         reviewer_name: reviewer_name.to_string(),
         review_comment_display: sub.review_comment.clone().unwrap_or_default(),
+        review_comment_input: String::new(),
         created_at_display: sub.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
         reviewed_at_display: sub
             .reviewed_at
@@ -1165,9 +1207,12 @@ async fn review_submit(
         }
         return Ok(Redirect::to("/queue/").into_response());
     }
+    if form.action != "approve" {
+        return Err(AppError::BadRequest("unknown review action".into()));
+    }
 
     let ref_data = fetch_ref_data(&state.pool).await?;
-    let errors = validate_form(&form.disc, &ref_data.all_media_types);
+    let errors = validate_form(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
     if !errors.is_empty() {
         let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
             .bind(sub.submitter_id)
@@ -1209,6 +1254,7 @@ async fn review_submit(
             has_sys,
         );
         template.validation_errors = errors;
+        template.review_comment_input = review_comment.clone().unwrap_or_default();
 
         return Ok(Html(template.render().unwrap()).into_response());
     }

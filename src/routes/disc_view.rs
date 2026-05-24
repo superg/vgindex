@@ -153,6 +153,14 @@ struct RingColVis {
     comment: bool,
 }
 
+fn ring_layer_label(layer_index: usize, layer_count: usize) -> String {
+    if layer_index + 1 == layer_count {
+        "LS".to_string()
+    } else {
+        format!("L{}", layer_index)
+    }
+}
+
 impl RingColVis {
     fn from_rows(
         rows: &[ViewRingRow],
@@ -256,13 +264,10 @@ async fn disc_view(
 
     let can_edit = user.user().map_or(false, |u| u.role.can_submit());
 
-    let mut sorted_entries = detail.ring_entries.clone();
-    disc_service::sort_ring_entry_views(
-        &mut sorted_entries,
-        detail.disc.media_type.max_layers() as usize,
-    );
+    let ring_display_layers = detail.disc.media_type.max_layers() as usize + 1;
 
-    let ring_display_layers = detail.disc.media_type.max_layers().max(2) as usize;
+    let mut sorted_entries = detail.ring_entries.clone();
+    disc_service::sort_ring_entry_views(&mut sorted_entries, ring_display_layers);
 
     let ring_rows: Vec<ViewRingRow> = sorted_entries
         .iter()
@@ -310,7 +315,7 @@ async fn disc_view(
                     let layer = e.layers.iter().find(|l| l.layer == li as i32);
                     ViewRingRow {
                         entry_num,
-                        layer: format!("L{}", li),
+                        layer: ring_layer_label(li, display_count),
                         mastering_code: ring_tab_replace(
                             &layer
                                 .and_then(|l| l.mastering_code.clone())
@@ -1371,4 +1376,17 @@ async fn disc_sbi_download(
         ],
         buf,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ring_layer_label_marks_final_layer_as_label_side() {
+        assert_eq!(ring_layer_label(0, 2), "L0");
+        assert_eq!(ring_layer_label(1, 2), "LS");
+        assert_eq!(ring_layer_label(2, 4), "L2");
+        assert_eq!(ring_layer_label(3, 4), "LS");
+    }
 }
