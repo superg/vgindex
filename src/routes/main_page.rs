@@ -33,13 +33,13 @@ struct HomeRegionFlag {
 async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
     let rows: Vec<RecentDiscRow> = sqlx::query_as(
         "SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
-                MAX(ds.created_at) AS created_at
-         FROM disc_submissions ds
-         JOIN discs d ON d.id = ds.target_disc_id AND d.status != 'Disabled'
+                (SELECT MIN(ds.created_at)
+                 FROM disc_submissions ds
+                 WHERE ds.target_disc_id = d.id) AS created_at
+         FROM discs d
          JOIN systems s ON s.code = d.system_code
-         WHERE ds.target_disc_id IS NOT NULL
-         GROUP BY d.id, d.title, s.code, s.short_name
-         ORDER BY created_at DESC
+         WHERE d.status != 'Disabled'
+         ORDER BY d.id DESC
          LIMIT 40",
     )
     .fetch_all(&state.pool)

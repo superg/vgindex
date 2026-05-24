@@ -4,6 +4,8 @@ use crate::auth::middleware::CurrentUser;
 use crate::db::models::html_escape;
 use crate::AppState;
 
+// Online means sessions active in this window: registered users are deduped by
+// user_id, while guests are counted as anonymous browser cookie sessions.
 const ACTIVE_WINDOW_MINUTES: i32 = 2;
 
 pub fn routes() -> Router<AppState> {

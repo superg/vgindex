@@ -5,6 +5,7 @@ use axum::{
     response::Response,
 };
 
+use crate::auth::session;
 use crate::db::models::UserRole;
 use crate::error::AppError;
 use crate::AppState;
@@ -44,11 +45,9 @@ where
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let app_state = AppState::from_ref(state);
 
-        let session_id = extract_session_cookie(&parts.headers);
+        let session_id = session::extract_session_cookie(&parts.headers);
         if let Some(sid) = session_id {
-            if let Ok(Some(session)) =
-                crate::auth::session::validate_session(&app_state.pool, &sid).await
-            {
+            if let Ok(Some(session)) = session::validate_session(&app_state.pool, &sid).await {
                 if let Some(user_id) = session.user_id {
                     if let Ok(user) = sqlx::query_as::<_, UserRow>(
                         "SELECT id, username, role FROM users WHERE id = $1 AND is_active = true",
@@ -135,9 +134,9 @@ pub async fn guest_session_layer(
     request: Request,
     next: Next,
 ) -> Response {
-    let session_id = extract_session_cookie(request.headers());
+    let session_id = session::extract_session_cookie(request.headers());
     let has_valid_session = if let Some(ref sid) = session_id {
-        crate::auth::session::validate_session(&state.pool, sid)
+        session::validate_session(&state.pool, sid)
             .await
             .ok()
             .flatten()
@@ -166,7 +165,7 @@ pub async fn guest_session_layer(
     // Create a guest session before handling the request so this very request
     // can be counted in online stats.
     let created_guest_sid = if !has_valid_session && !is_static {
-        crate::auth::session::create_guest_session(&state.pool, ip.as_deref(), ua.as_deref())
+        session::create_guest_session(&state.pool, ip.as_deref(), ua.as_deref())
             .await
             .ok()
     } else {
@@ -176,20 +175,24 @@ pub async fn guest_session_layer(
     let mut response = next.run(request).await;
 
     if let Some(sid) = created_guest_sid {
+        let session_cookie_prefix = format!("{}=", session::SESSION_COOKIE_NAME);
         let already_set = response
             .headers()
             .get_all(header::SET_COOKIE)
             .iter()
             .any(|v| {
                 v.to_str()
-                    .map(|s| s.starts_with("session_id="))
+                    .map(|s| s.starts_with(&session_cookie_prefix))
                     .unwrap_or(false)
             });
 
         if already_set {
-            let _ = crate::auth::session::delete_session(&state.pool, &sid).await;
+            let _ = session::delete_session(&state.pool, &sid).await;
         } else {
-            let cookie = format!("session_id={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400");
+            let cookie = format!(
+                "{}={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400",
+                session::SESSION_COOKIE_NAME
+            );
             if let Ok(val) = cookie.parse() {
                 response.headers_mut().append(header::SET_COOKIE, val);
             }
@@ -197,15 +200,4 @@ pub async fn guest_session_layer(
     }
 
     response
-}
-
-fn extract_session_cookie(headers: &axum::http::HeaderMap) -> Option<String> {
-    let cookie_header = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    for part in cookie_header.split(';') {
-        let part = part.trim();
-        if let Some(value) = part.strip_prefix("session_id=") {
-            return Some(value.to_string());
-        }
-    }
-    None
 }

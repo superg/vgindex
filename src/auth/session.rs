@@ -1,10 +1,26 @@
+use axum::http::{header, HeaderMap};
 use chrono::{Duration, Utc};
 use rand::RngCore;
 use sqlx::PgPool;
 
 use crate::db::models::Session;
 
+pub const SESSION_COOKIE_NAME: &str = "session_id";
 const SESSION_DURATION_DAYS: i64 = 14;
+
+pub fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
+    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
+    for part in cookie_header.split(';') {
+        let part = part.trim();
+        if let Some(value) = part
+            .strip_prefix(SESSION_COOKIE_NAME)
+            .and_then(|rest| rest.strip_prefix('='))
+        {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
 
 pub fn generate_session_id() -> String {
     let mut bytes = [0u8; 48];
@@ -91,4 +107,35 @@ pub async fn cleanup_expired(pool: &PgPool) -> Result<u64, sqlx::Error> {
         .execute(pool)
         .await?;
     Ok(result.rows_affected())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers_with_cookie(cookie: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::COOKIE, cookie.parse().unwrap());
+        headers
+    }
+
+    #[test]
+    fn extract_session_cookie_returns_none_without_cookie_header() {
+        assert_eq!(extract_session_cookie(&HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn extract_session_cookie_finds_session_among_multiple_cookies() {
+        let headers = headers_with_cookie("theme=dark; session_id=abc123; locale=en");
+        assert_eq!(extract_session_cookie(&headers), Some("abc123".to_string()));
+    }
+
+    #[test]
+    fn extract_session_cookie_handles_whitespace_around_parts() {
+        let headers = headers_with_cookie(" theme=dark ;   session_id=guest-session  ; locale=en ");
+        assert_eq!(
+            extract_session_cookie(&headers),
+            Some("guest-session".to_string())
+        );
+    }
 }

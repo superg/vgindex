@@ -57,6 +57,8 @@ async fn main() {
         archive_tx,
     };
 
+    tokio::spawn(run_session_cleanup(pool.clone()));
+
     tokio::spawn(services::archive_service::run_archive_worker(
         archive_rx, pool,
     ));
@@ -75,4 +77,20 @@ async fn main() {
     tracing::info!("Listening on {addr}");
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+async fn run_session_cleanup(pool: PgPool) {
+    loop {
+        match auth::session::cleanup_expired(&pool).await {
+            Ok(deleted) if deleted > 0 => {
+                tracing::debug!("Cleaned up {deleted} expired sessions");
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!("Failed to clean up expired sessions: {e}");
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(60 * 60)).await;
+    }
 }

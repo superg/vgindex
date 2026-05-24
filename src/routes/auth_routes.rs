@@ -93,6 +93,11 @@ async fn login_submit(
                 .get(header::USER_AGENT)
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string());
+            if let Some(existing_sid) = session::extract_session_cookie(&headers) {
+                if let Err(e) = session::delete_session(&state.pool, &existing_sid).await {
+                    tracing::warn!("Failed to replace previous session during login: {e}");
+                }
+            }
             let sid = session::create_session(&state.pool, user.id, ip.as_deref(), ua.as_deref())
                 .await
                 .unwrap();
@@ -104,7 +109,8 @@ async fn login_submit(
                 .unwrap_or("/");
 
             let cookie = format!(
-                "session_id={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+                "{}={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+                session::SESSION_COOKIE_NAME,
                 14 * 86400
             );
             let mut response = Redirect::to(redirect_target).into_response();
@@ -193,18 +199,14 @@ async fn register_submit(
 }
 
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if let Some(cookie_header) = headers.get(header::COOKIE) {
-        if let Ok(cookie_str) = cookie_header.to_str() {
-            for part in cookie_str.split(';') {
-                let part = part.trim();
-                if let Some(sid) = part.strip_prefix("session_id=") {
-                    session::delete_session(&state.pool, sid).await.ok();
-                }
-            }
-        }
+    if let Some(sid) = session::extract_session_cookie(&headers) {
+        session::delete_session(&state.pool, &sid).await.ok();
     }
 
-    let cookie = "session_id=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
+    let cookie = format!(
+        "{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+        session::SESSION_COOKIE_NAME
+    );
     let mut response = Redirect::to("/").into_response();
     response
         .headers_mut()
