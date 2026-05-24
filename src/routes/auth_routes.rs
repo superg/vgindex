@@ -85,10 +85,7 @@ async fn login_submit(
 ) -> Response {
     match user_service::authenticate(&state.pool, &form.username, &form.password).await {
         Ok(user) => {
-            let ip = headers
-                .get("x-forwarded-for")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
+            let ip = session::extract_client_ip(&headers);
             let ua = headers
                 .get(header::USER_AGENT)
                 .and_then(|v| v.to_str().ok())

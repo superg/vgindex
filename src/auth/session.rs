@@ -22,6 +22,23 @@ pub fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
     None
 }
 
+pub fn extract_client_ip(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        })
+        .map(ToOwned::to_owned)
+}
+
 pub fn generate_session_id() -> String {
     let mut bytes = [0u8; 48];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -137,5 +154,26 @@ mod tests {
             extract_session_cookie(&headers),
             Some("guest-session".to_string())
         );
+    }
+
+    #[test]
+    fn extract_client_ip_uses_first_forwarded_for_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.1, 10.0.0.1".parse().unwrap());
+
+        assert_eq!(extract_client_ip(&headers), Some("203.0.113.1".to_string()));
+    }
+
+    #[test]
+    fn extract_client_ip_falls_back_to_real_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-real-ip", "203.0.113.2".parse().unwrap());
+
+        assert_eq!(extract_client_ip(&headers), Some("203.0.113.2".to_string()));
+    }
+
+    #[test]
+    fn extract_client_ip_returns_none_without_ip_headers() {
+        assert_eq!(extract_client_ip(&HeaderMap::new()), None);
     }
 }

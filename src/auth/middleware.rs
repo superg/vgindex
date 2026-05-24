@@ -147,11 +147,7 @@ pub async fn guest_session_layer(
     let is_static = request.uri().path().starts_with("/static/");
 
     let (ip, ua) = if !has_valid_session && !is_static {
-        let ip = request
-            .headers()
-            .get("x-forwarded-for")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.split(',').next().unwrap_or(s).trim().to_string());
+        let ip = session::extract_client_ip(request.headers());
         let ua = request
             .headers()
             .get(header::USER_AGENT)
@@ -162,8 +158,8 @@ pub async fn guest_session_layer(
         (None, None)
     };
 
-    // Create a guest session before handling the request so this very request
-    // can be counted in online stats.
+    // Create a guest session before handling the request so its IP can
+    // participate in online stats.
     let created_guest_sid = if !has_valid_session && !is_static {
         session::create_guest_session(&state.pool, ip.as_deref(), ua.as_deref())
             .await
