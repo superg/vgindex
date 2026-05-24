@@ -28,12 +28,25 @@
                     <input type="text" name="q" placeholder="Search discs..." aria-label="Search">
                 </form>
                 <ul class="site-nav-auth">
-                    {% match current_user %}
-                    {% when Some with (user) %}
-                    <li><form method="post" action="/logout" style="margin:0"><button type="submit" style="margin:0">Logout</button></form></li>
-                    {% when None %}
-                    <li><a href="/login" role="button">Login</a></li>
-                    {% endmatch %}
+                    <li class="has-submenu user-menu">
+                        <button class="user-menu-button submenu-label" type="button" aria-label="User menu" aria-haspopup="true">👤</button>
+                        <ul class="submenu user-submenu">
+                            {% match current_user %}
+                            {% when Some with (user) %}
+                            <li><a href="/disc/submit/">Add Disc</a></li>
+                            <li><a href="/discs/?dumper={{ self.url_encode(user) }}">My Discs</a></li>
+                            <li><a href="/queue/?submitter={{ self.url_encode(user) }}">My Submissions</a></li>
+                            <li><span class="submenu-disabled">Settings</span></li>
+                            <li>
+                                <form class="submenu-form" method="post" action="/logout">
+                                    <button class="submenu-button" type="submit">Logout</button>
+                                </form>
+                            </li>
+                            {% when None %}
+                            <li><a href="/login">Login</a></li>
+                            {% endmatch %}
+                        </ul>
+                    </li>
                     <li><button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode"><span class="dark-mode-toggle-thumb"></span></button></li>
                 </ul>
             </div>
@@ -42,14 +55,7 @@
                 <li><a href="/discs/">Discs</a></li>
                 <li><a href="/downloads/">Downloads</a></li>
                 {% if current_user.is_some() %}
-                <li class="has-submenu">
-                    <span class="submenu-label">Submissions</span>
-                    <ul class="submenu">
-                        <li><a href="/disc/submit/">Add Disc</a></li>
-                        <li class="submenu-sep">|</li>
-                        <li><a href="/queue/">Queue</a></li>
-                    </ul>
-                </li>
+                <li><a href="/queue/">Queue</a></li>
                 {% endif %}
                 <li><a href="{{ self.forum_url() }}">Forum</a></li>
                 <li><a href="{{ self.wiki_url() }}">Wiki</a></li>

@@ -592,7 +592,7 @@ async fn disc_view(
                     .map(|d| {
                         format!(
                             "<a href=\"/discs/?dumper={}\">{}</a>",
-                            d.user_id,
+                            urlencoding::encode(&d.username),
                             d.username
                                 .replace('&', "&amp;")
                                 .replace('<', "&lt;")

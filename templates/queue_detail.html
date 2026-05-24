@@ -6,7 +6,7 @@
 <div class="submission-info">
     <table class="table-compact table-fit-section">
         <tr><td><strong>Submission Type</strong></td><td>{{ submission_type_display }}</td></tr>
-        <tr><td><strong>Submitter</strong></td><td><a href="/discs/?dumper={{ submitter_id }}">{{ submitter_name }}</a></td></tr>
+        <tr><td><strong>Submitter</strong></td><td><a href="/discs/?dumper={{ self.url_encode(submitter_name) }}">{{ submitter_name }}</a></td></tr>
         {% if target_disc_id > 0 %}
         <tr><td><strong>Disc ID</strong></td><td><a href="/disc/{{ target_disc_id }}/">{{ target_disc_id }}</a></td></tr>
         {% endif %}
@@ -15,7 +15,7 @@
         {% endif %}
         <tr><td><strong>Status</strong></td><td>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</td></tr>
         {% if !reviewer_name.is_empty() %}
-        <tr><td><strong>Reviewer</strong></td><td><a href="/discs/?dumper={{ reviewer_id }}">{{ reviewer_name }}</a></td></tr>
+        <tr><td><strong>Reviewer</strong></td><td><a href="/discs/?dumper={{ self.url_encode(reviewer_name) }}">{{ reviewer_name }}</a></td></tr>
         {% endif %}
         <tr><td><strong>Created</strong></td><td>{{ created_at_display }}</td></tr>
         {% if !reviewed_at_display.is_empty() %}

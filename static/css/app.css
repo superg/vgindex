@@ -861,8 +861,10 @@ header .site-nav-top {
     align-items: center;
     gap: 1rem;
 }
-.site-nav-auth [role="button"],
-.site-nav-auth button[type="submit"] {
+.site-nav-auth > li > [role="button"],
+.site-nav-auth > li > button[type="submit"],
+.site-nav-auth > li > form > button[type="submit"],
+.user-menu-button {
     height: var(--nav-bar-height);
     box-sizing: border-box;
     display: inline-flex;
@@ -871,6 +873,24 @@ header .site-nav-top {
     margin: 0;
     font-size: 0.8rem;
     line-height: 1;
+}
+.user-menu-button {
+    width: var(--nav-bar-height);
+    justify-content: center;
+    padding: 0 !important;
+    font-size: 1.45rem;
+    line-height: 1;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    appearance: none;
+}
+.user-menu-button:is(:hover, :focus) {
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
 }
 
 /* Row 2: nav links */
@@ -939,6 +959,10 @@ header .site-nav-links > li {
     z-index: 100;
     min-width: 10rem;
 }
+.user-menu .submenu {
+    left: auto;
+    right: 0;
+}
 .has-submenu:hover .submenu,
 .has-submenu:focus-within .submenu {
     display: block;
@@ -952,15 +976,45 @@ header .site-nav-links > li {
     padding: 0 0.15rem !important;
     user-select: none;
 }
-.submenu li a {
-    display: block;
-    padding: 0.35rem 1rem;
+.submenu li a,
+.submenu li .submenu-disabled,
+.submenu li .submenu-button {
+    display: flex !important;
+    align-items: center;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 1.8rem;
+    margin: 0 !important;
+    padding: 0.35rem 1rem !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font: inherit;
+    line-height: 1.2;
+    text-align: left;
     white-space: nowrap;
     text-decoration: none;
 }
-.submenu li a:hover {
+.submenu li a:hover,
+.submenu li .submenu-button:hover {
     background: none;
     font-weight: bold;
+}
+.submenu li .submenu-disabled {
+    color: var(--pico-muted-color);
+    cursor: default;
+}
+.submenu-form {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+.submenu li .submenu-button {
+    appearance: none;
+    color: var(--pico-primary);
+    cursor: pointer;
 }
 
 /* Search box */
