@@ -56,7 +56,6 @@ struct SystemOption {
 }
 
 struct SubmitterOption {
-    id: i32,
     username: String,
     selected: bool,
 }
@@ -68,7 +67,6 @@ struct QueueTemplate {
     current_user_id: Option<i32>,
     page_title: String,
     is_public_history: bool,
-    is_moderator: bool,
     can_view_all_statuses: bool,
     entries: Vec<SubmissionListRow>,
     systems: Vec<SystemOption>,
@@ -78,6 +76,7 @@ struct QueueTemplate {
     filter_type: String,
     filter_system: String,
     filter_submitter: String,
+    filter_submitter_url: String,
     total_count: i64,
     page: i64,
     total_pages: i64,
@@ -97,9 +96,7 @@ struct QueueTemplate {
 impl SiteConfig for QueueTemplate {}
 impl QueueTemplate {
     fn can_open_entry(&self, entry: &SubmissionListRow) -> bool {
-        self.is_moderator
-            || self.can_view_all_statuses
-            || self.current_user_id == Some(entry.submitter_id)
+        self.current_user_id.is_some()
             || matches!(
                 entry.status,
                 SubmissionStatus::Approved | SubmissionStatus::Legacy
@@ -155,62 +152,51 @@ async fn queue_list(
 ) -> AppResult<Html<String>> {
     let current = user.user();
     let is_logged_in = current.is_some();
-    let is_mod = current.is_some_and(|u| u.role.can_moderate());
-    let can_view_all_statuses = current.is_some_and(|u| u.role.can_edit_directly());
     let disc_id_filter = query.disc_id;
-    let is_public_history = disc_id_filter.is_some() && !is_logged_in;
+    let is_disc_history = disc_id_filter.is_some();
+    let is_public_history = is_disc_history;
+    let can_view_all_statuses = is_logged_in && !is_disc_history;
 
     if disc_id_filter.is_none() && !is_logged_in {
         return Err(AppError::Unauthorized);
     }
 
     let page = query.page.unwrap_or(1).max(1);
-    let requested_status = query.status.clone().unwrap_or_else(|| {
-        if disc_id_filter.is_some() {
-            if can_view_all_statuses {
-                "All Statuses".to_string()
-            } else {
-                "All Visible".to_string()
-            }
-        } else if can_view_all_statuses {
-            "Pending".to_string()
-        } else {
-            "All Visible".to_string()
-        }
-    });
-    let filter_status = if can_view_all_statuses {
-        if requested_status.is_empty() {
-            "Pending".to_string()
-        } else {
-            requested_status
-        }
+    let requested_status = query
+        .status
+        .clone()
+        .unwrap_or_else(|| "Pending".to_string());
+    let filter_status = if is_disc_history {
+        "All Visible".to_string()
     } else {
         match requested_status.as_str() {
-            "Approved" | "Legacy" => requested_status,
-            _ => "All Visible".to_string(),
+            "All Statuses" | "Pending" | "Approved" | "Rejected" | "Legacy" => requested_status,
+            _ => "Pending".to_string(),
         }
     };
-    let filter_type = query.sub_type.clone().unwrap_or_default();
-    let filter_system = query.system.clone().unwrap_or_default();
-    let filter_submitter = if is_mod && disc_id_filter.is_none() {
+    let filter_type = if is_disc_history {
+        String::new()
+    } else {
+        query.sub_type.clone().unwrap_or_default()
+    };
+    let filter_system = if is_disc_history {
+        String::new()
+    } else {
+        query.system.clone().unwrap_or_default()
+    };
+    let filter_submitter = if is_logged_in && !is_disc_history {
         query.submitter.clone().unwrap_or_default()
     } else {
         String::new()
     };
+    let filter_submitter_url = urlencoding::encode(&filter_submitter).into_owned();
     let sort_column = query.sort.clone().unwrap_or_else(|| "date".to_string());
     let sort_order = query.order.clone().unwrap_or_else(|| "desc".to_string());
 
-    let status_for_query = if can_view_all_statuses {
-        if filter_status == "All Statuses" {
-            None
-        } else {
-            Some(filter_status.as_str())
-        }
+    let status_for_query = if is_disc_history || filter_status == "All Statuses" {
+        None
     } else {
-        match filter_status.as_str() {
-            "Approved" | "Legacy" => Some(filter_status.as_str()),
-            _ => None,
-        }
+        Some(filter_status.as_str())
     };
 
     let type_for_query = if filter_type.is_empty() {
@@ -231,13 +217,9 @@ async fn queue_list(
 
     let entries = queue_service::list_submissions(
         &state.pool,
-        if disc_id_filter.is_some() || is_mod {
-            None
-        } else {
-            current.map(|u| u.id)
-        },
+        None,
         disc_id_filter,
-        !can_view_all_statuses,
+        is_disc_history,
         status_for_query,
         type_for_query,
         system_for_query,
@@ -251,13 +233,9 @@ async fn queue_list(
 
     let total_count = queue_service::count_submissions(
         &state.pool,
-        if disc_id_filter.is_some() || is_mod {
-            None
-        } else {
-            current.map(|u| u.id)
-        },
+        None,
         disc_id_filter,
-        !can_view_all_statuses,
+        is_disc_history,
         status_for_query,
         type_for_query,
         system_for_query,
@@ -284,14 +262,13 @@ async fn queue_list(
         })
         .collect();
 
-    let submitters: Vec<SubmitterOption> = if is_mod && disc_id_filter.is_none() {
+    let submitters: Vec<SubmitterOption> = if is_logged_in && !is_disc_history {
         #[derive(sqlx::FromRow)]
         struct SubRow {
-            id: i32,
             username: String,
         }
         let sub_rows: Vec<SubRow> = sqlx::query_as(
-            "SELECT id, username FROM users \
+            "SELECT username FROM users \
              WHERE id IN (SELECT DISTINCT submitter_id FROM disc_submissions) \
              ORDER BY LOWER(username)",
         )
@@ -303,7 +280,6 @@ async fn queue_list(
             .into_iter()
             .map(|s| SubmitterOption {
                 selected: s.username == filter_submitter,
-                id: s.id,
                 username: s.username,
             })
             .collect()
@@ -329,7 +305,6 @@ async fn queue_list(
                 .map(|disc_id| format!("History: Disc #{disc_id}"))
                 .unwrap_or_else(|| "Queue".to_string()),
             is_public_history,
-            is_moderator: is_mod,
             can_view_all_statuses,
             entries,
             systems,
@@ -341,6 +316,7 @@ async fn queue_list(
             filter_type,
             filter_system,
             filter_submitter,
+            filter_submitter_url,
             total_count,
             page,
             total_pages,
@@ -373,14 +349,12 @@ async fn submission_detail(
 
     let current = user.user();
     let is_mod = current.is_some_and(|u| u.role.can_moderate());
-    let can_view_all_statuses = current.is_some_and(|u| u.role.can_edit_directly());
-    let is_submitter = current.is_some_and(|u| u.id == sub.submitter_id);
     let is_public_status = matches!(
         sub.status,
         SubmissionStatus::Approved | SubmissionStatus::Legacy
     );
 
-    if !(is_mod || can_view_all_statuses || is_submitter || is_public_status) {
+    if !(current.is_some() || is_public_status) {
         return Err(AppError::Forbidden);
     }
 

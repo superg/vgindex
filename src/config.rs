@@ -23,6 +23,9 @@ pub trait SiteConfig {
     fn forum_url(&self) -> &str {
         FORUM_URL.get().map(|s| s.as_str()).unwrap_or("#")
     }
+    fn url_encode(&self, value: &str) -> String {
+        urlencoding::encode(value).into_owned()
+    }
 }
 
 #[derive(Clone, Debug)]

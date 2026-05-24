@@ -793,7 +793,7 @@ pub async fn list_submissions(
     }
     if submitter_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("u.username = ${idx}"));
+        conditions.push(format!("LOWER(u.username) = LOWER(${idx})"));
     }
 
     let title_expr = "COALESCE(NULLIF(ds.changes->'title'->'add'->>'new', ''), \
@@ -912,7 +912,7 @@ pub async fn count_submissions(
     }
     if submitter_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("u.username = ${idx}"));
+        conditions.push(format!("LOWER(u.username) = LOWER(${idx})"));
     }
 
     let sql = format!(

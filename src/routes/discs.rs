@@ -42,8 +42,7 @@ pub struct DiscsQuery {
     pub order: Option<String>,
     #[serde(default, deserialize_with = "empty_string_as_none")]
     pub page: Option<i64>,
-    #[serde(default, deserialize_with = "empty_string_as_none")]
-    pub dumper: Option<i32>,
+    pub dumper: Option<String>,
 }
 
 const LETTERS: &[&str] = &[
@@ -66,6 +65,7 @@ struct DiscsTemplate {
     filter_letter: String,
     filter_q: String,
     filter_dumper: String,
+    filter_dumper_url: String,
     filter_dumper_name: String,
     total_count: i64,
     page: i64,
@@ -124,7 +124,6 @@ struct RegionOption {
 }
 
 struct DumperOption {
-    id: i32,
     name: String,
     selected: bool,
 }
@@ -144,21 +143,30 @@ async fn discs_page(
     let filter_status = query.status.clone().unwrap_or_default();
     let filter_letter = query.letter.clone().unwrap_or_default();
     let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
-    let filter_dumper_id = query.dumper;
-    let filter_dumper = filter_dumper_id
-        .map(|id| id.to_string())
-        .unwrap_or_default();
-
-    let filter_dumper_name = if let Some(dumper_id) = filter_dumper_id {
-        sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE id = $1")
-            .bind(dumper_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None)
-            .unwrap_or_default()
+    let requested_dumper = query.dumper.clone().unwrap_or_default().trim().to_string();
+    let filter_dumper_lookup = if requested_dumper.is_empty() {
+        None
+    } else {
+        sqlx::query_as::<_, DumperRow>(
+            "SELECT id, username AS name FROM users WHERE LOWER(username) = LOWER($1)",
+        )
+        .bind(&requested_dumper)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None)
+    };
+    let filter_dumper_id = filter_dumper_lookup.as_ref().map(|d| d.id);
+    let filter_dumper = filter_dumper_lookup
+        .as_ref()
+        .map(|d| d.name.clone())
+        .unwrap_or(requested_dumper);
+    let filter_dumper_url = urlencoding::encode(&filter_dumper).into_owned();
+    let filter_dumper_name = if !filter_dumper.is_empty() {
+        filter_dumper.clone()
     } else {
         String::new()
     };
+    let filter_dumper_unknown = !filter_dumper.is_empty() && filter_dumper_id.is_none();
 
     let sys_rows: Vec<SystemDropdownRow> = sqlx::query_as(
         "SELECT code, manufacturer, name FROM systems
@@ -206,7 +214,6 @@ async fn discs_page(
         .into_iter()
         .map(|d| DumperOption {
             selected: filter_dumper_id == Some(d.id),
-            id: d.id,
             name: d.name,
         })
         .collect();
@@ -265,7 +272,9 @@ async fn discs_page(
              ))"#
         ));
     }
-    if filter_dumper_id.is_some() {
+    if filter_dumper_unknown {
+        where_clauses.push("FALSE".to_string());
+    } else if filter_dumper_id.is_some() {
         bind_idx += 1;
         where_clauses.push(format!(
             "EXISTS (SELECT 1 FROM disc_dumpers dd2 WHERE dd2.disc_id = d.id AND dd2.user_id = ${bind_idx})"
@@ -475,6 +484,7 @@ async fn discs_page(
             filter_letter,
             filter_q,
             filter_dumper,
+            filter_dumper_url,
             filter_dumper_name,
             total_count,
             page,

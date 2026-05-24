@@ -51,6 +51,10 @@ pub fn routes() -> Router<AppState> {
         .route("/disc/submit/", get(add_page).post(add_submit))
 }
 
+fn user_queue_url(username: &str) -> String {
+    format!("/queue/?submitter={}", urlencoding::encode(username))
+}
+
 #[derive(Template)]
 #[template(path = "disc_edit.html")]
 pub(crate) struct DiscEditTemplate {
@@ -1397,7 +1401,7 @@ async fn edit_submit(
         ))?;
         Ok(Redirect::to(&format!("/disc/{disc_id}/")).into_response())
     } else {
-        Ok(Redirect::to("/queue/").into_response())
+        Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
     }
 }
 
@@ -1617,7 +1621,7 @@ async fn add_submit(
         ))?;
         Ok(Redirect::to(&format!("/disc/{disc_id}/")).into_response())
     } else {
-        Ok(Redirect::to("/queue/").into_response())
+        Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
     }
 }
 
