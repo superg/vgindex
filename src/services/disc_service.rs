@@ -807,6 +807,123 @@ mod tests {
     }
 
     #[test]
+    fn build_snapshot_from_disc_includes_label_side_layer() {
+        let media_type: MediaType = MediaTypeRow {
+            code: "dvd9".to_string(),
+            name: "DVD-9".to_string(),
+            layer_count: 2,
+            pic: false,
+            rom_extension: "iso".to_string(),
+        }
+        .into();
+        let detail = DiscDetail {
+            disc: Disc {
+                id: 1,
+                system_code: "SYS".to_string(),
+                media_type,
+                title: "Game".to_string(),
+                title_foreign: None,
+                disc_title: None,
+                disc_number: None,
+                serial: vec![],
+                category: Category::Games,
+                version: None,
+                edition: vec![],
+                barcode: vec![],
+                comments: None,
+                contents: None,
+                filename_suffix: None,
+                error_count: None,
+                exe_date: None,
+                edc: false,
+                layerbreaks: None,
+                protection: None,
+                sbi: None,
+                disc_id: None,
+                disc_key: None,
+                cue: None,
+                pvd: None,
+                pic: None,
+                header: None,
+                bca: None,
+                status: DiscStatus::Verified,
+            },
+            system: System {
+                code: "SYS".to_string(),
+                system_type: "Console".to_string(),
+                manufacturer: "Maker".to_string(),
+                name: "System".to_string(),
+                short_name: "SYS".to_string(),
+                media_types: vec!["dvd9".to_string()],
+                has_exe_date: false,
+                has_sbi: false,
+                has_pvd: false,
+                has_edc: false,
+                has_disc_id: false,
+                has_key: false,
+                has_title_foreign: false,
+                has_disc_title: false,
+                has_disc_number: false,
+                has_serial: false,
+                has_barcode: false,
+                has_version: false,
+                has_edition: false,
+                has_protection: false,
+                has_sector_ranges: false,
+                has_header: false,
+                has_bca: false,
+                has_sample_start: false,
+                has_offset_extra: false,
+            },
+            regions: vec![],
+            languages: vec![],
+            ring_entries: vec![RingEntryView {
+                id: 1,
+                offset_value: None,
+                offset_extra_value: None,
+                sample_data_start: None,
+                comment: None,
+                layers: vec![
+                    DiscRingCodeLayer {
+                        id: 1,
+                        entry_id: 1,
+                        layer: 0,
+                        mastering_code: Some("L0-MC".to_string()),
+                        mastering_sid: None,
+                        mould_sids: String::new(),
+                        toolstamps: String::new(),
+                        additional_moulds: String::new(),
+                    },
+                    DiscRingCodeLayer {
+                        id: 2,
+                        entry_id: 1,
+                        layer: 2,
+                        mastering_code: Some("LS-MC".to_string()),
+                        mastering_sid: None,
+                        mould_sids: String::new(),
+                        toolstamps: String::new(),
+                        additional_moulds: String::new(),
+                    },
+                ],
+            }],
+            files: vec![],
+            dumpers: vec![],
+            disc_submission_count: 0,
+            sector_ranges: vec![],
+            added_at: None,
+            modified_at: None,
+        };
+
+        let snapshot = build_snapshot_from_disc(&detail);
+        let layers = snapshot["ring_codes"][0]["layers"].as_array().unwrap();
+
+        assert_eq!(layers.len(), 3);
+        assert_eq!(layers[0]["mastering_code"], "L0-MC");
+        assert_eq!(layers[1]["mastering_code"], "");
+        assert_eq!(layers[2]["mastering_code"], "LS-MC");
+    }
+
+    #[test]
     fn newline_helpers_normalize_lf_and_crlf() {
         let mixed = "A\r\nB\rC\nD";
         assert_eq!(to_lf_newlines(mixed), "A\nB\nC\nD");
@@ -981,7 +1098,7 @@ fn format_pvd_hex_snapshot(data: &[u8]) -> String {
 /// Convert a DiscDetail into the flat JSON snapshot format that `update_disc` expects.
 pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
     let rom_extension = detail.disc.media_type.rom_extension();
-    let max_layers = detail.disc.media_type.max_layers();
+    let max_layers = detail.disc.media_type.max_layers() + 1;
     let mut sorted_ring_entries = detail.ring_entries.clone();
     sort_ring_entry_views(&mut sorted_ring_entries, max_layers as usize);
 

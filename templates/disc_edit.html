@@ -20,6 +20,11 @@ const IS_ADD_MODE = {{ is_add_mode }};
 {% endblock %}
 
 {% block content %}
+{% if !validation_result.is_empty() %}
+<div class="validation-result {% if validation_result_disc_id > 0 %}validation-result-verification{% else %}validation-result-new{% endif %}" role="status">
+    {{ validation_result }}{% if validation_result_disc_id > 0 %} <a href="/disc/{{ validation_result_disc_id }}/" target="_blank" rel="noopener noreferrer">{{ validation_result_disc_title }}</a>{% endif %}
+</div>
+{% endif %}
 {% if !validation_errors.is_empty() %}
 <div class="validation-errors" role="alert">
     <strong>Please fix the following errors:</strong>
@@ -82,11 +87,11 @@ const IS_ADD_MODE = {{ is_add_mode }};
 {% endif %}
 {% endif %}
 
-<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review/{% else if is_add_mode %}/disc/submit/{% else %}/disc/{{ disc_id }}/edit/{% endif %}" id="disc-edit-form" class="disc-edit">
+<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review/{% else if is_add_mode %}/disc/submit/{% else %}/disc/{{ disc_id }}/edit/{% endif %}" id="disc-edit-form" class="disc-edit" novalidate>
 
     <div class="grid">
         <label{% if !self.highlight_class("system_code").is_empty() %} class="{{ self.highlight_class("system_code") }}"{% endif %}>System:
-            <select name="system_code" id="system-select" required>
+            <select name="system_code" id="system-select">
                 {% for sys in systems %}
                 <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
                 {% endfor %}
@@ -110,7 +115,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
 
     <div class="grid">
         <label{% if !self.highlight_class("title").is_empty() %} class="{{ self.highlight_class("title") }}"{% endif %}>Title:
-            <input type="text" name="title" value="{{ title }}" required>
+            <input type="text" name="title" value="{{ title }}">
         </label>
         <label data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}{% if !self.highlight_class("title_foreign").is_empty() %} class="{{ self.highlight_class("title_foreign") }}"{% endif %}>Foreign Title:
             <input type="text" name="title_foreign" value="{{ title_foreign }}">
@@ -268,8 +273,9 @@ const IS_ADD_MODE = {{ is_add_mode }};
 
     <div class="inline-field{% if !self.highlight_class("edc").is_empty() %} {{ self.highlight_class("edc") }}{% endif %}" data-field-flag="has_edc"{% if !show_edc %} style="display:none"{% endif %}>
         <span class="inline-field-label">EDC</span>
-        <div class="inline-field-values">
-            <label><input type="checkbox" name="edc" value="true" {% if edc_value %}checked{% endif %}> Enabled</label>
+        <div class="inline-field-values inline-radios">
+            <label><input type="radio" name="edc" value="true" {% if edc_value == "true" %}checked{% endif %}> Yes</label>
+            <label><input type="radio" name="edc" value="false" {% if edc_value == "false" %}checked{% endif %}> No</label>
         </div>
     </div>
 
@@ -370,7 +376,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
 
     {% if is_add_mode %}
     <label>Dump Log
-        <textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80"{% if dump_log_required %} required{% endif %}>{{ dump_log }}</textarea>
+        <textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80">{{ dump_log }}</textarea>
     </label>
 
     <label>Extra Upload URL
@@ -380,18 +386,25 @@ const IS_ADD_MODE = {{ is_add_mode }};
 
 {% if is_review_mode %}
     <label>Review Comment
-        <textarea name="review_comment" rows="2" class="auto-expand" placeholder="Optional comment about this review"></textarea>
+        <textarea name="review_comment" rows="2" class="auto-expand" placeholder="Optional comment about this review">{{ review_comment_input }}</textarea>
     </label>
-    <div class="review-actions">
+    <div class="form-actions review-actions">
         <button type="submit" name="action" value="approve" class="btn-approve">Approve</button>
         <button type="submit" name="action" value="reject" class="btn-reject">Reject</button>
     </div>
     {% else %}
     <label>Submission Comment
-        <textarea name="submission_comment" rows="2" class="auto-expand" placeholder="Optional comment about this submission"></textarea>
+        <textarea name="submission_comment" rows="2" class="auto-expand" placeholder="Optional comment about this submission">{{ submission_comment }}</textarea>
     </label>
 
-    <button type="submit">{{ submit_button_text }}</button>
+    {% if is_add_mode %}
+    <div class="form-actions">
+        <button type="submit" name="action" value="validate" class="secondary">Validate</button>
+        <button type="submit" name="action" value="save">{{ submit_button_text }}</button>
+    </div>
+    {% else %}
+    <button type="submit" name="action" value="save">{{ submit_button_text }}</button>
+    {% endif %}
     {% endif %}
 </form>
 {% endblock %}

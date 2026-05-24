@@ -105,7 +105,7 @@ pub(crate) struct DiscEditTemplate {
     pub show_exe_date: bool,
     pub exe_date: String,
     pub show_edc: bool,
-    pub edc_value: bool,
+    pub edc_value: String,
 
     pub layerbreaks: Vec<String>,
     pub show_pvd: bool,
@@ -142,6 +142,9 @@ pub(crate) struct DiscEditTemplate {
 
     pub submit_button_text: String,
     pub validation_errors: Vec<String>,
+    pub validation_result: String,
+    pub validation_result_disc_id: i32,
+    pub validation_result_disc_title: String,
 
     pub is_review_mode: bool,
     pub changed_fields: Vec<String>,
@@ -156,6 +159,7 @@ pub(crate) struct DiscEditTemplate {
     pub reviewer_id: i32,
     pub reviewer_name: String,
     pub review_comment_display: String,
+    pub review_comment_input: String,
     pub created_at_display: String,
     pub reviewed_at_display: String,
     pub changes_json: String,
@@ -422,7 +426,7 @@ pub(crate) fn max_layers_for_media(all_media_types: &[EditMediaTypeRow], code: &
 }
 
 pub(crate) fn ring_layers(media_layers: u32) -> u32 {
-    media_layers.max(2)
+    media_layers + 1
 }
 
 async fn edit_page(
@@ -606,7 +610,7 @@ async fn edit_page(
             show_exe_date: detail.system.has_exe_date,
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
             show_edc: detail.system.has_edc,
-            edc_value: detail.disc.edc,
+            edc_value: bool_edc_value(detail.disc.edc),
 
             layerbreaks: detail
                 .disc
@@ -690,6 +694,9 @@ async fn edit_page(
                 "Submit".into()
             },
             validation_errors: vec![],
+            validation_result: String::new(),
+            validation_result_disc_id: 0,
+            validation_result_disc_title: String::new(),
 
             is_review_mode: false,
             changed_fields: vec![],
@@ -704,6 +711,7 @@ async fn edit_page(
             reviewer_id: 0,
             reviewer_name: String::new(),
             review_comment_display: String::new(),
+            review_comment_input: String::new(),
             created_at_display: String::new(),
             reviewed_at_display: String::new(),
             changes_json: String::new(),
@@ -763,9 +771,35 @@ pub struct DiscEditForm {
     pub extra_upload_url: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct DiscEditPostForm {
+    #[serde(default)]
+    pub action: String,
+    #[serde(flatten)]
+    pub disc: DiscEditForm,
+}
+
+#[derive(Default)]
+pub(crate) struct ValidationResultMessage {
+    pub text: String,
+    pub disc_id: i32,
+    pub disc_title: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct ValidationResultDiscTitleRow {
+    title: String,
+    disc_number: Option<String>,
+    disc_title: Option<String>,
+    filename_suffix: Option<String>,
+    has_disc_number: bool,
+    has_disc_title: bool,
+}
+
 pub(crate) fn validate_form(
     form: &DiscEditForm,
     all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
 ) -> Vec<String> {
     let mut errors = Vec::new();
 
@@ -872,6 +906,14 @@ pub(crate) fn validate_form(
         }
     }
 
+    let system_has_edc = all_systems
+        .iter()
+        .find(|s| s.code == form.system_code)
+        .map_or(false, |s| s.has_edc);
+    if system_has_edc && form_edc_selection(form).is_none() {
+        errors.push("EDC: select Yes or No".into());
+    }
+
     let is_cd_media = all_media_types
         .iter()
         .find(|m| m.code == form.media_type)
@@ -916,6 +958,7 @@ async fn render_form_with_errors(
     username: &str,
     form: &DiscEditForm,
     errors: Vec<String>,
+    validation_result: ValidationResultMessage,
     is_add_mode: bool,
     can_edit_directly: bool,
 ) -> AppResult<Response> {
@@ -1024,7 +1067,7 @@ async fn render_form_with_errors(
         show_exe_date: has_sys(|s| s.has_exe_date),
         exe_date: form.exe_date.clone().unwrap_or_default(),
         show_edc: has_sys(|s| s.has_edc),
-        edc_value: form_edc_bool(form),
+        edc_value: form_edc_value(form),
 
         layerbreaks: form.layerbreak.clone(),
         show_pvd: has_sys(|s| s.has_pvd),
@@ -1065,6 +1108,9 @@ async fn render_form_with_errors(
             "Submit".into()
         },
         validation_errors: errors,
+        validation_result: validation_result.text,
+        validation_result_disc_id: validation_result.disc_id,
+        validation_result_disc_title: validation_result.disc_title,
 
         is_review_mode: false,
         changed_fields: vec![],
@@ -1072,20 +1118,103 @@ async fn render_form_with_errors(
         submission_type_display: String::new(),
         submitter_id: 0,
         submitter_name: String::new(),
-        submission_comment: String::new(),
+        submission_comment: form.submission_comment.clone().unwrap_or_default(),
         dump_log_display: String::new(),
         extra_upload_url_display: String::new(),
         submission_status: String::new(),
         reviewer_id: 0,
         reviewer_name: String::new(),
         review_comment_display: String::new(),
+        review_comment_input: String::new(),
         created_at_display: String::new(),
         reviewed_at_display: String::new(),
         changes_json: String::new(),
     };
 
+    let status = if template.validation_errors.is_empty() {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    };
     let html = template.render().unwrap();
-    Ok((StatusCode::BAD_REQUEST, Html(html)).into_response())
+    Ok((status, Html(html)).into_response())
+}
+
+fn valid_dat_for_matching(form: &DiscEditForm) -> Option<&str> {
+    let text = form.files_xml.as_deref()?.trim();
+    if text.is_empty() || !text.lines().any(|l| l.trim().starts_with("<rom ")) {
+        return None;
+    }
+    validation::validate_dat(text).ok()?;
+    Some(text)
+}
+
+async fn build_add_validation_result(
+    pool: &sqlx::PgPool,
+    form: &DiscEditForm,
+) -> AppResult<ValidationResultMessage> {
+    let Some(files_xml) = valid_dat_for_matching(form) else {
+        return Ok(ValidationResultMessage::default());
+    };
+
+    let target_disc_id = queue_service::find_matching_disc(pool, files_xml).await;
+    let Some(disc_id) = target_disc_id else {
+        return Ok(add_validation_result_for_match(None));
+    };
+
+    let disc_title = fetch_validation_result_disc_title(pool, disc_id)
+        .await?
+        .unwrap_or_else(|| format!("disc #{disc_id}"));
+    Ok(add_validation_result_for_match(Some((disc_id, disc_title))))
+}
+
+async fn fetch_validation_result_disc_title(
+    pool: &sqlx::PgPool,
+    disc_id: i32,
+) -> AppResult<Option<String>> {
+    let Some(row) = sqlx::query_as::<_, ValidationResultDiscTitleRow>(
+        "SELECT d.title, d.disc_number, d.disc_title, d.filename_suffix,
+                s.has_disc_number, s.has_disc_title
+         FROM discs d
+         JOIN systems s ON s.code = d.system_code
+         WHERE d.id = $1",
+    )
+    .bind(disc_id)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(format_display_title(
+        &row.title,
+        if row.has_disc_number {
+            row.disc_number.as_deref()
+        } else {
+            None
+        },
+        if row.has_disc_title {
+            row.disc_title.as_deref()
+        } else {
+            None
+        },
+        row.filename_suffix.as_deref(),
+    )))
+}
+
+fn add_validation_result_for_match(target_disc: Option<(i32, String)>) -> ValidationResultMessage {
+    match target_disc {
+        Some((disc_id, disc_title)) => ValidationResultMessage {
+            text: "This is a verification submission for".to_string(),
+            disc_id,
+            disc_title,
+        },
+        None => ValidationResultMessage {
+            text: "This is a new disc submission.".to_string(),
+            disc_id: 0,
+            disc_title: String::new(),
+        },
+    }
 }
 
 pub(crate) fn norm_opt_str(s: Option<&str>) -> Option<String> {
@@ -1124,8 +1253,32 @@ fn norm_str_vec_keep_order_with_internal_blanks(v: Vec<String>) -> Vec<String> {
     out
 }
 
+fn form_edc_selection(form: &DiscEditForm) -> Option<bool> {
+    form.edc.iter().find_map(|v| match v.trim() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    })
+}
+
+fn form_edc_value(form: &DiscEditForm) -> String {
+    match form_edc_selection(form) {
+        Some(true) => "true".to_string(),
+        Some(false) => "false".to_string(),
+        None => String::new(),
+    }
+}
+
+fn bool_edc_value(value: bool) -> String {
+    if value {
+        "true".to_string()
+    } else {
+        "false".to_string()
+    }
+}
+
 fn form_edc_bool(form: &DiscEditForm) -> bool {
-    form.edc.iter().any(|v| v == "true")
+    form_edc_selection(form).unwrap_or(false)
 }
 
 fn normalized_disc_status(raw: &str) -> String {
@@ -1188,10 +1341,11 @@ async fn edit_submit(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
     Path(id): Path<i32>,
-    Form(form): Form<DiscEditForm>,
+    Form(post): Form<DiscEditPostForm>,
 ) -> AppResult<Response> {
+    let form = post.disc;
     let ref_data = fetch_ref_data(&state.pool).await?;
-    let errors = validate_form(&form, &ref_data.all_media_types);
+    let errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
     if !errors.is_empty() {
         return render_form_with_errors(
             &state.pool,
@@ -1199,6 +1353,7 @@ async fn edit_submit(
             &user.username,
             &form,
             errors,
+            ValidationResultMessage::default(),
             false,
             user.role.can_edit_directly(),
         )
@@ -1315,7 +1470,7 @@ async fn add_page(
             show_exe_date: has_sys(|s| s.has_exe_date),
             exe_date: String::new(),
             show_edc: has_sys(|s| s.has_edc),
-            edc_value: false,
+            edc_value: String::new(),
 
             layerbreaks: vec![],
             show_pvd: has_sys(|s| s.has_pvd),
@@ -1356,6 +1511,9 @@ async fn add_page(
                 "Submit".into()
             },
             validation_errors: vec![],
+            validation_result: String::new(),
+            validation_result_disc_id: 0,
+            validation_result_disc_title: String::new(),
 
             is_review_mode: false,
             changed_fields: vec![],
@@ -1370,6 +1528,7 @@ async fn add_page(
             reviewer_id: 0,
             reviewer_name: String::new(),
             review_comment_display: String::new(),
+            review_comment_input: String::new(),
             created_at_display: String::new(),
             reviewed_at_display: String::new(),
             changes_json: String::new(),
@@ -1382,10 +1541,11 @@ async fn add_page(
 async fn add_submit(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
-    Form(form): Form<DiscEditForm>,
+    Form(post): Form<DiscEditPostForm>,
 ) -> AppResult<Response> {
+    let form = post.disc;
     let ref_data = fetch_ref_data(&state.pool).await?;
-    let mut errors = validate_form(&form, &ref_data.all_media_types);
+    let mut errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
 
     let dump_log_text = form
         .dump_log
@@ -1396,13 +1556,20 @@ async fn add_submit(
         errors.push("Dump Log: cannot be empty".into());
     }
 
-    if !errors.is_empty() {
+    let validation_result = if post.action == "validate" || !errors.is_empty() {
+        build_add_validation_result(&state.pool, &form).await?
+    } else {
+        ValidationResultMessage::default()
+    };
+
+    if post.action == "validate" || !errors.is_empty() {
         return render_form_with_errors(
             &state.pool,
             0,
             &user.username,
             &form,
             errors,
+            validation_result,
             true,
             user.role.can_edit_directly(),
         )
@@ -2147,7 +2314,7 @@ mod operation_delta_tests {
             edc: if detail.disc.edc {
                 vec!["true".to_string()]
             } else {
-                vec![]
+                vec!["false".to_string()]
             },
             layerbreak: detail
                 .disc
@@ -2240,6 +2407,114 @@ mod operation_delta_tests {
             dump_log: None,
             extra_upload_url: None,
         }
+    }
+
+    fn systems_with_edc(has_edc: bool) -> Vec<System> {
+        let mut system = test_system();
+        system.has_edc = has_edc;
+        vec![system]
+    }
+
+    #[test]
+    fn ring_layers_adds_label_side_layer() {
+        assert_eq!(ring_layers(1), 2);
+        assert_eq!(ring_layers(2), 3);
+        assert_eq!(ring_layers(3), 4);
+    }
+
+    #[test]
+    fn build_ring_codes_json_includes_label_side_slot() {
+        let detail = base_detail();
+
+        let ring_codes = build_ring_codes_json_from_detail(&detail);
+        let first_entry = &ring_codes.as_array().unwrap()[0];
+        let layers = first_entry["layers"].as_array().unwrap();
+
+        assert_eq!(layers.len(), 3);
+        assert_eq!(layers[0]["mastering_code"], "MASTER-A");
+        assert_eq!(layers[2]["mastering_code"], "");
+    }
+
+    #[test]
+    fn validate_form_reports_missing_required_fields_in_red_box_errors() {
+        let mut form = new_disc_form();
+        form.system_code = String::new();
+        form.title = String::new();
+        form.regions = vec![];
+
+        let errors = validate_form(&form, &media_rows(), &systems_with_edc(true));
+
+        assert!(errors.contains(&"System: must be selected".to_string()));
+        assert!(errors.contains(&"Title: cannot be empty".to_string()));
+        assert!(errors.contains(&"Regions: at least one region must be selected".to_string()));
+    }
+
+    #[test]
+    fn validate_form_requires_edc_choice_for_edc_systems() {
+        let mut form = new_disc_form();
+        form.edc = vec![];
+
+        let errors = validate_form(&form, &media_rows(), &systems_with_edc(true));
+
+        assert!(errors.contains(&"EDC: select Yes or No".to_string()));
+    }
+
+    #[test]
+    fn validate_form_accepts_yes_or_no_edc_choices() {
+        let mut form = new_disc_form();
+
+        form.edc = vec!["true".to_string()];
+        assert!(
+            !validate_form(&form, &media_rows(), &systems_with_edc(true))
+                .contains(&"EDC: select Yes or No".to_string())
+        );
+
+        form.edc = vec!["false".to_string()];
+        assert!(
+            !validate_form(&form, &media_rows(), &systems_with_edc(true))
+                .contains(&"EDC: select Yes or No".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_form_does_not_require_edc_for_non_edc_systems() {
+        let mut form = new_disc_form();
+        form.edc = vec![];
+
+        let errors = validate_form(&form, &media_rows(), &systems_with_edc(false));
+
+        assert!(!errors.contains(&"EDC: select Yes or No".to_string()));
+    }
+
+    #[test]
+    fn add_validation_result_message_reflects_match_state() {
+        let matched = add_validation_result_for_match(Some((
+            123,
+            "Game Title (Disc 2) (Bonus Disc)".to_string(),
+        )));
+        assert_eq!(matched.text, "This is a verification submission for");
+        assert_eq!(matched.disc_id, 123);
+        assert_eq!(matched.disc_title, "Game Title (Disc 2) (Bonus Disc)");
+
+        let unmatched = add_validation_result_for_match(None);
+        assert_eq!(unmatched.text, "This is a new disc submission.");
+        assert_eq!(unmatched.disc_id, 0);
+        assert_eq!(unmatched.disc_title, "");
+    }
+
+    #[test]
+    fn add_validation_result_skips_invalid_or_missing_dat() {
+        let mut form = new_disc_form();
+        form.files_xml = None;
+        assert!(valid_dat_for_matching(&form).is_none());
+
+        form.files_xml = Some("not dat".to_string());
+        assert!(valid_dat_for_matching(&form).is_none());
+
+        form.files_xml = Some(
+            r#"<rom name="New Game.iso" size="1" crc="11111111" md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" />"#.to_string(),
+        );
+        assert!(valid_dat_for_matching(&form).is_some());
     }
 
     #[test]
