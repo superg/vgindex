@@ -12,7 +12,12 @@ function addInlineEntry(containerId, name) {
     if (last) {
         input.style.width = last.style.width;
     }
-    container.appendChild(input);
+    var annotation = container.querySelector('.review-field-annotation');
+    if (annotation) {
+        container.insertBefore(input, annotation);
+    } else {
+        container.appendChild(input);
+    }
     input.focus();
 }
 
@@ -359,13 +364,13 @@ function applyCueRules() {
     var isBin = !!MEDIA_IS_CD[mediaSel.value];
     var wasHidden = cueField.style.display === 'none';
     cueField.style.display = isBin ? '' : 'none';
-    var ta = cueField.querySelector('textarea');
-    if (ta) {
-        ta.disabled = !isBin;
+    var textareas = cueField.querySelectorAll('textarea');
+    textareas.forEach(function (ta) {
+        ta.disabled = !isBin && !ta.readOnly;
         if (isBin && wasHidden) {
             autoExpand(ta);
         }
-    }
+    });
 }
 
 function refreshMediaDependentUi() {
