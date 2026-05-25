@@ -719,24 +719,6 @@ details + p small {
     white-space: normal;
     max-width: 10rem;
 }
-.td-collapse {
-    display: inline;
-}
-.td-collapse summary {
-    cursor: pointer;
-    color: var(--pico-primary);
-    font-size: inherit;
-    display: inline;
-}
-.td-collapse[open] {
-    display: block;
-}
-.td-collapse[open] summary {
-    display: list-item;
-}
-.td-collapse[open] summary {
-    margin-bottom: 0.2rem;
-}
 
 /* Foreign title — sits directly under main h2, same size as section headings */
 .disc-view h2.foreign-title {
