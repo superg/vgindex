@@ -760,6 +760,16 @@ details + p small {
     width: auto;
     white-space: nowrap;
 }
+.disc-view .files-table tbody tr.files-synthetic-row td {
+    background-color: #edf1f5 !important;
+    border-top: 1px dashed #c4ccd6 !important;
+    color: #5c6673;
+}
+[data-theme="dark"] .disc-view .files-table tbody tr.files-synthetic-row td {
+    background-color: #202734 !important;
+    border-top-color: #4a5568 !important;
+    color: #bac3d0;
+}
 /* Keep ring rows aligned when # column is row-spanned */
 .disc-view .table-scroll-compact > table.ring-table {
     table-layout: fixed;
