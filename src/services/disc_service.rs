@@ -1,8 +1,22 @@
 use sqlx::PgPool;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
+
+const EDITION_USAGE_COUNTS_SQL: &str = "\
+SELECT d.system_code,
+       btrim(e.edition) AS edition,
+       COUNT(DISTINCT d.id)::BIGINT AS edition_count
+FROM discs d
+CROSS JOIN LATERAL unnest(d.edition) AS e(edition)
+WHERE d.status <> 'Disabled'
+  AND btrim(e.edition) <> ''
+GROUP BY d.system_code, btrim(e.edition)";
 
 fn to_lf_newlines(s: &str) -> String {
     s.replace("\r\n", "\n").replace('\r', "\n")
@@ -93,6 +107,128 @@ fn parse_hex_text_bytes(val: Option<&str>) -> AppResult<Option<Vec<u8>>> {
         bytes.push(byte);
     }
     Ok(Some(bytes))
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub(crate) struct EditionUsageCount {
+    pub system_code: String,
+    pub edition: String,
+    pub edition_count: i64,
+}
+
+#[derive(Clone)]
+pub struct EditionSuggestionsCache {
+    inner: Arc<RwLock<CachedEditionSuggestions>>,
+    ttl: Duration,
+}
+
+#[derive(Default)]
+struct CachedEditionSuggestions {
+    loaded_at: Option<Instant>,
+    suggestions: BTreeMap<String, Vec<String>>,
+}
+
+impl EditionSuggestionsCache {
+    pub fn new(ttl: Duration) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(CachedEditionSuggestions::default())),
+            ttl,
+        }
+    }
+
+    pub async fn get(&self, pool: &PgPool) -> AppResult<BTreeMap<String, Vec<String>>> {
+        let now = Instant::now();
+        {
+            let cached = self.inner.read().await;
+            if cached.is_fresh(now, self.ttl) {
+                return Ok(cached.suggestions.clone());
+            }
+        }
+
+        let stale = {
+            let cached = self.inner.read().await;
+            if cached.loaded_at.is_some() {
+                Some(cached.suggestions.clone())
+            } else {
+                None
+            }
+        };
+
+        let suggestions = match fetch_edition_suggestion_map(pool).await {
+            Ok(suggestions) => suggestions,
+            Err(err) => {
+                if let Some(stale) = stale {
+                    tracing::warn!(
+                        "Failed to refresh edition suggestions; using stale cache: {err}"
+                    );
+                    return Ok(stale);
+                }
+                return Err(err);
+            }
+        };
+
+        let mut cached = self.inner.write().await;
+        cached.loaded_at = Some(Instant::now());
+        cached.suggestions = suggestions.clone();
+        Ok(suggestions)
+    }
+}
+
+impl CachedEditionSuggestions {
+    fn is_fresh(&self, now: Instant, ttl: Duration) -> bool {
+        self.loaded_at
+            .map(|loaded_at| now.duration_since(loaded_at) < ttl)
+            .unwrap_or(false)
+    }
+}
+
+pub(crate) async fn fetch_edition_suggestion_map(
+    pool: &PgPool,
+) -> AppResult<BTreeMap<String, Vec<String>>> {
+    let usage_counts: Vec<EditionUsageCount> = sqlx::query_as(EDITION_USAGE_COUNTS_SQL)
+        .fetch_all(pool)
+        .await?;
+
+    Ok(build_edition_suggestion_map(&usage_counts))
+}
+
+pub(crate) fn build_edition_suggestion_map(
+    usage_counts: &[EditionUsageCount],
+) -> BTreeMap<String, Vec<String>> {
+    let mut grouped: BTreeMap<&str, Vec<&EditionUsageCount>> = BTreeMap::new();
+
+    for usage in usage_counts {
+        let edition = usage.edition.trim();
+        if edition.is_empty() || usage.edition_count <= 0 {
+            continue;
+        }
+        grouped
+            .entry(usage.system_code.as_str())
+            .or_default()
+            .push(usage);
+    }
+
+    grouped
+        .into_iter()
+        .filter_map(|(system_code, mut usages)| {
+            usages.sort_by(|a, b| {
+                (!a.edition.trim().eq_ignore_ascii_case("Original"))
+                    .cmp(&!b.edition.trim().eq_ignore_ascii_case("Original"))
+                    .then_with(|| a.edition.to_lowercase().cmp(&b.edition.to_lowercase()))
+                    .then_with(|| a.edition.cmp(&b.edition))
+            });
+            let suggestions: Vec<String> = usages
+                .into_iter()
+                .map(|usage| usage.edition.trim().to_string())
+                .collect();
+
+            if suggestions.is_empty() {
+                None
+            } else {
+                Some((system_code.to_string(), suggestions))
+            }
+        })
+        .collect()
 }
 
 fn parse_comma_separated(s: &str) -> Vec<String> {
@@ -780,6 +916,14 @@ pub async fn create_disc_from_submission(
 mod tests {
     use super::*;
 
+    fn usage(system_code: &str, edition: &str, edition_count: i64) -> EditionUsageCount {
+        EditionUsageCount {
+            system_code: system_code.to_string(),
+            edition: edition.to_string(),
+            edition_count,
+        }
+    }
+
     #[test]
     fn sort_ring_codes_json_uses_id_as_last_tiebreaker() {
         let mut entries = vec![
@@ -939,6 +1083,46 @@ mod tests {
 
         assert!(crlf.contains("\r\n"));
         assert_eq!(lf_size + 1, crlf_size);
+    }
+
+    #[test]
+    fn edition_suggestion_query_excludes_disabled_discs() {
+        assert!(EDITION_USAGE_COUNTS_SQL.contains("d.status <> 'Disabled'"));
+    }
+
+    #[test]
+    fn edition_suggestions_trim_blank_and_sort_original_first_then_alphabetic() {
+        let suggestions = build_edition_suggestion_map(&[
+            usage("SYS", "Beta", 900),
+            usage("SYS", "  Original  ", 1),
+            usage("SYS", "alpha", 500),
+            usage("SYS", "Rare", 4),
+            usage("SYS", "   ", 100),
+        ]);
+
+        assert_eq!(
+            suggestions["SYS"],
+            vec![
+                "Original".to_string(),
+                "alpha".to_string(),
+                "Beta".to_string(),
+                "Rare".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn edition_suggestions_keep_full_alphabetic_list_for_selector() {
+        let usages: Vec<EditionUsageCount> = (0..25)
+            .rev()
+            .map(|idx| usage("SYS", &format!("Edition {idx:02}"), 25 - idx))
+            .collect();
+
+        let suggestions = build_edition_suggestion_map(&usages);
+
+        assert_eq!(suggestions["SYS"].len(), 25);
+        assert_eq!(suggestions["SYS"].first().unwrap(), "Edition 00");
+        assert_eq!(suggestions["SYS"].last().unwrap(), "Edition 24");
     }
 }
 

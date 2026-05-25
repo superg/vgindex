@@ -10,6 +10,7 @@ mod services;
 use axum::{middleware, Router};
 use sqlx::PgPool;
 use std::sync::Arc;
+use std::time::Duration;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
@@ -21,6 +22,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub oidc: auth::oidc::OidcProvider,
     pub archive_tx: tokio::sync::mpsc::UnboundedSender<String>,
+    pub edition_suggestions: services::disc_service::EditionSuggestionsCache,
 }
 
 #[tokio::main]
@@ -55,6 +57,9 @@ async fn main() {
         config: Arc::new(config.clone()),
         oidc,
         archive_tx,
+        edition_suggestions: services::disc_service::EditionSuggestionsCache::new(
+            Duration::from_secs(60 * 60 * 24),
+        ),
     };
 
     tokio::spawn(run_session_cleanup(pool.clone()));

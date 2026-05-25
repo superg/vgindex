@@ -1,7 +1,10 @@
 // Inline repeatable field (serial, edition, barcode)
 function addInlineEntry(containerId, name) {
     var container = document.getElementById(containerId);
-    var last = container.querySelector('input:last-of-type');
+    var inputs = Array.prototype.filter.call(container.querySelectorAll('input'), function (input) {
+        return input.name === name;
+    });
+    var last = inputs.length ? inputs[inputs.length - 1] : null;
     if (last && last.value.trim() === '') {
         last.focus();
         return;
@@ -18,7 +21,94 @@ function addInlineEntry(containerId, name) {
     } else {
         container.appendChild(input);
     }
+    if (name === 'edition') {
+        attachEditionSelector(input);
+    } else if (isIndependentlySizedInlineField(name)) {
+        attachIndependentInlineResize(input);
+    }
     input.focus();
+}
+
+function attachEditionSelector(input) {
+    if (!input) return;
+    input.removeAttribute('list');
+    input.setAttribute('autocomplete', 'off');
+    var group = ensureEditionSelectorGroup(input);
+    if (input.dataset && input.dataset.editionSelector === 'true') return;
+    if (input.dataset) input.dataset.editionSelector = 'true';
+
+    var select = group.querySelector('select.edition-suggestion-select');
+    if (!select || !select.classList || !select.classList.contains('edition-suggestion-select')) {
+        select = document.createElement('select');
+        select.className = 'edition-suggestion-select';
+        select.setAttribute('aria-label', 'Choose edition');
+        select.tabIndex = 0;
+        group.appendChild(select);
+    }
+
+    populateEditionSelect(select);
+    select.addEventListener('change', function () {
+        if (!select.value) return;
+        input.value = select.value;
+        select.value = '';
+        fitInlineGroupForInput(input);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+    });
+    attachIndependentInlineResize(input);
+}
+
+function ensureEditionSelectorGroup(input) {
+    var parent = input.parentNode;
+    if (parent && parent.classList && parent.classList.contains('edition-value-picker')) {
+        return parent;
+    }
+
+    var group = document.createElement('span');
+    group.className = 'edition-value-picker';
+    parent.insertBefore(group, input);
+    group.appendChild(input);
+    return group;
+}
+
+function currentSystemEditionSuggestions() {
+    var sysSel = document.getElementById('system-select');
+    if (!sysSel || typeof EDITION_SUGGESTIONS === 'undefined') return [];
+    return EDITION_SUGGESTIONS[sysSel.value] || [];
+}
+
+function populateEditionSelect(select) {
+    if (!select) return;
+
+    select.innerHTML = '';
+
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '';
+    select.appendChild(blank);
+
+    var suggestions = currentSystemEditionSuggestions();
+    for (var i = 0; i < suggestions.length; i++) {
+        var edition = suggestions[i];
+        var option = document.createElement('option');
+        option.value = edition;
+        option.textContent = edition;
+        select.appendChild(option);
+    }
+
+    select.value = '';
+}
+
+function initEditionSelectors() {
+    document.querySelectorAll('input[name="edition"]').forEach(function (input) {
+        attachEditionSelector(input);
+    });
+}
+
+function refreshEditionSelectors() {
+    document.querySelectorAll('.edition-suggestion-select').forEach(function (select) {
+        populateEditionSelect(select);
+    });
 }
 
 // Vertical repeatable array field (layerbreaks)
@@ -445,6 +535,11 @@ function getInputFont(input) {
 
 var MIN_INPUT_WIDTH = 40;
 var INPUT_PADDING = 24;
+var INDEPENDENT_INLINE_FIELDS = {
+    'serial': true,
+    'edition': true,
+    'barcode': true
+};
 
 var DEFAULT_WIDTHS = {
     'serial': 12,
@@ -464,10 +559,54 @@ function defaultWidthPx(name, font) {
     return measureText('M'.repeat(chars), font) + INPUT_PADDING;
 }
 
-// Size all inputs in an inline-field-values container to the max content width
+function isIndependentlySizedInlineField(name) {
+    return !!INDEPENDENT_INLINE_FIELDS[name];
+}
+
+function contentWidthPx(input) {
+    var font = getInputFont(input);
+    var w = measureText(input.value, font) + INPUT_PADDING;
+    if (w > MIN_INPUT_WIDTH) return w;
+    return defaultWidthPx(input.name, font);
+}
+
+function fitInlineInput(input) {
+    if (!input) return;
+    input.style.width = contentWidthPx(input) + 'px';
+}
+
+function attachIndependentInlineResize(input) {
+    if (!input || !isIndependentlySizedInlineField(input.name)) return;
+    if (input.dataset && input.dataset.inlineResize === 'true') return;
+    if (input.dataset) input.dataset.inlineResize = 'true';
+    input.addEventListener('input', function () {
+        fitInlineInput(input);
+    });
+    input.addEventListener('change', function () {
+        fitInlineInput(input);
+    });
+}
+
+function initIndependentInlineResizing() {
+    document.querySelectorAll('.inline-field-values input').forEach(function (input) {
+        attachIndependentInlineResize(input);
+    });
+}
+
+function fitIndependentInlineInputs(container) {
+    container.querySelectorAll('input').forEach(function (input) {
+        if (isIndependentlySizedInlineField(input.name)) fitInlineInput(input);
+    });
+}
+
+// Size most inline groups to their widest value; some repeatable fields size independently.
 function fitInlineGroup(container) {
     var inputs = container.querySelectorAll('input[type="text"], input[type="number"]');
     if (inputs.length === 0) return;
+    if (isIndependentlySizedInlineField(inputs[0].name)) {
+        fitIndependentInlineInputs(container);
+        return;
+    }
     var font = getInputFont(inputs[0]);
     var maxW = MIN_INPUT_WIDTH;
     inputs.forEach(function (inp) {
@@ -481,6 +620,16 @@ function fitInlineGroup(container) {
     inputs.forEach(function (inp) {
         inp.style.width = maxW + 'px';
     });
+}
+
+function fitInlineGroupForInput(input) {
+    if (!input) return;
+    if (isIndependentlySizedInlineField(input.name)) {
+        fitInlineInput(input);
+        return;
+    }
+    var container = input.closest ? input.closest('.inline-field-values') : null;
+    if (container) fitInlineGroup(container);
 }
 
 function fitAllInlineGroups() {
@@ -570,6 +719,8 @@ document.addEventListener('DOMContentLoaded', function () {
     initRingEditor();
     renderLayerbreaks();
     initAutoExpand();
+    initEditionSelectors();
+    initIndependentInlineResizing();
     fitAllInlineGroups();
     fitRingColumns();
 
@@ -578,6 +729,7 @@ document.addEventListener('DOMContentLoaded', function () {
         sysSel.addEventListener('change', function () {
             filterMediaTypes();
             applySystemFieldVisibility();
+            refreshEditionSelectors();
             refreshMediaDependentUi();
         });
     }

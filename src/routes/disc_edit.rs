@@ -74,6 +74,7 @@ pub(crate) struct DiscEditTemplate {
     pub media_layers_json: String,
     pub systems_media_json: String,
     pub systems_has_flags_json: String,
+    pub edition_suggestions_json: String,
     pub media_rom_extensions_json: String,
     pub media_is_cd_json: String,
 
@@ -346,6 +347,11 @@ pub(crate) fn build_systems_json(all_systems: &[System]) -> (String, String) {
     (systems_media_json, systems_has_flags_json)
 }
 
+pub(crate) async fn build_edition_suggestions_json(state: &AppState) -> AppResult<String> {
+    let suggestions = state.edition_suggestions.get(&state.pool).await?;
+    Ok(serde_json::to_string(&suggestions).unwrap_or_else(|_| "{}".into()))
+}
+
 pub(crate) fn build_media_rom_extensions_json(all_media_types: &[EditMediaTypeRow]) -> String {
     let mut map = serde_json::Map::new();
     for m in all_media_types {
@@ -498,6 +504,7 @@ async fn edit_page(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let max_layers = detail.disc.media_type.max_layers();
     let ring_layer_count = ring_layers(max_layers);
 
@@ -589,6 +596,7 @@ async fn edit_page(
             media_layers_json,
             systems_media_json,
             systems_has_flags_json,
+            edition_suggestions_json,
             media_rom_extensions_json,
             media_is_cd_json,
 
@@ -996,7 +1004,7 @@ pub(crate) fn validate_form(
 }
 
 async fn render_form_with_errors(
-    pool: &sqlx::PgPool,
+    state: &AppState,
     id: i32,
     username: &str,
     form: &DiscEditForm,
@@ -1005,6 +1013,7 @@ async fn render_form_with_errors(
     is_add_mode: bool,
     can_edit_directly: bool,
 ) -> AppResult<Response> {
+    let pool = &state.pool;
     let ref_data = fetch_ref_data(pool).await?;
     let system = disc_service::get_system(pool, &form.system_code).await.ok();
 
@@ -1013,6 +1022,7 @@ async fn render_form_with_errors(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let max_layers = max_layers_for_media(&ref_data.all_media_types, &form.media_type);
 
     let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
@@ -1048,6 +1058,7 @@ async fn render_form_with_errors(
         media_layers_json,
         systems_media_json,
         systems_has_flags_json,
+        edition_suggestions_json,
         media_rom_extensions_json,
         media_is_cd_json,
 
@@ -1389,7 +1400,7 @@ async fn edit_submit(
     let errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
     if !errors.is_empty() {
         return render_form_with_errors(
-            &state.pool,
+            &state,
             id,
             &user.username,
             &form,
@@ -1453,6 +1464,7 @@ async fn add_page(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
 
     let default_system = ref_data.all_systems.iter().find(|s| s.code == "PC");
     let has_sys = |f: fn(&System) -> bool| default_system.map_or(true, f);
@@ -1476,6 +1488,7 @@ async fn add_page(
             media_layers_json,
             systems_media_json,
             systems_has_flags_json,
+            edition_suggestions_json,
             media_rom_extensions_json,
             media_is_cd_json,
 
@@ -1603,7 +1616,7 @@ async fn add_submit(
 
     if post.action == "validate" || !errors.is_empty() {
         return render_form_with_errors(
-            &state.pool,
+            &state,
             0,
             &user.username,
             &form,
@@ -2740,6 +2753,55 @@ mod operation_delta_tests {
             changes["barcode"],
             serde_json::json!({ "remove": ["111111111111"] })
         );
+    }
+
+    #[test]
+    fn edition_inputs_remain_text_fields_with_native_selector() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let script = include_str!("../../static/js/disc_edit.js");
+
+        assert!(template.contains("const EDITION_SUGGESTIONS ="));
+        assert!(!template.contains("<datalist"));
+        assert!(!template.contains("list=\"edition-suggestions\""));
+        assert!(template.contains(r#"name="edition" autocomplete="off""#));
+        assert!(script.contains("function attachEditionSelector(input)"));
+        assert!(script.contains("input.removeAttribute('list')"));
+        assert!(script.contains("input.setAttribute('autocomplete', 'off')"));
+        assert!(script.contains("function ensureEditionSelectorGroup(input)"));
+        assert!(script.contains("group.className = 'edition-value-picker'"));
+        assert!(script.contains("select.className = 'edition-suggestion-select'"));
+        assert!(script.contains("function populateEditionSelect(select)"));
+        assert!(script.contains("function refreshEditionSelectors()"));
+        assert!(script.contains("input.value = select.value"));
+        assert!(script.contains("select.value = ''"));
+        assert!(!script.contains("select.name"));
+        assert!(!script.contains("select.setAttribute('name'"));
+        assert!(script.contains("var INDEPENDENT_INLINE_FIELDS"));
+        assert!(script.contains("'serial': true"));
+        assert!(script.contains("'edition': true"));
+        assert!(script.contains("'barcode': true"));
+        assert!(script.contains("function attachIndependentInlineResize(input)"));
+        assert!(script.contains("function fitInlineInput(input)"));
+        assert!(script.contains("isIndependentlySizedInlineField(input.name)"));
+        assert!(!script.contains("function updateEditionDatalist"));
+        assert!(!script.contains("prepareEditionPicker"));
+        assert!(script.contains("function fitInlineGroupForInput(input)"));
+    }
+
+    #[test]
+    fn dump_log_uses_submission_comment_textarea_style() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let css = include_str!("../../static/css/app.css");
+
+        assert!(template.contains(
+            r#"<textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">"#
+        ));
+        assert!(template
+            .contains(r#"<textarea name="submission_comment" rows="2" class="auto-expand""#));
+        assert!(!template.contains(
+            r#"<textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80">"#
+        ));
+        assert!(css.contains("textarea.full-width-textarea {\n    width: 100%;\n}"));
     }
 
     #[test]

@@ -400,6 +400,7 @@ async fn submission_detail(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let edition_suggestions_json = disc_edit::build_edition_suggestions_json(&state).await?;
 
     let snapshot: serde_json::Value;
     let mut db_snapshot: Option<serde_json::Value> = None;
@@ -438,6 +439,7 @@ async fn submission_detail(
         &ref_data,
         &systems_media_json,
         &systems_has_flags_json,
+        &edition_suggestions_json,
         &media_layers_json,
         &media_rom_extensions_json,
         &media_is_cd_json,
@@ -466,6 +468,7 @@ fn build_review_template(
     ref_data: &disc_edit::EditRefData,
     systems_media_json: &str,
     systems_has_flags_json: &str,
+    edition_suggestions_json: &str,
     media_layers_json: &str,
     media_rom_extensions_json: &str,
     media_is_cd_json: &str,
@@ -572,6 +575,7 @@ fn build_review_template(
         media_layers_json: media_layers_json.to_string(),
         systems_media_json: systems_media_json.to_string(),
         systems_has_flags_json: systems_has_flags_json.to_string(),
+        edition_suggestions_json: edition_suggestions_json.to_string(),
         media_rom_extensions_json: media_rom_extensions_json.to_string(),
         media_is_cd_json: media_is_cd_json.to_string(),
 
@@ -1585,6 +1589,7 @@ async fn review_submit(
         let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
         let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
         let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+        let edition_suggestions_json = disc_edit::build_edition_suggestions_json(&state).await?;
         let snapshot = build_flat_changes(&form.disc, &ref_data.all_media_types);
         let system_code = form.disc.system_code.clone();
         let media_type_code = form.disc.media_type.clone();
@@ -1603,6 +1608,7 @@ async fn review_submit(
             &ref_data,
             &systems_media_json,
             &systems_has_flags_json,
+            &edition_suggestions_json,
             &media_layers_json,
             &media_rom_extensions_json,
             &media_is_cd_json,
@@ -1871,6 +1877,7 @@ mod tests {
             "",
             snapshot,
             &ref_data,
+            "{}",
             "{}",
             "{}",
             "{}",
