@@ -9,6 +9,7 @@ const MAX_LAYERS = {{ max_layers }};
 const MEDIA_LAYERS = {{ media_layers_json|safe }};
 const SYSTEMS_MEDIA = {{ systems_media_json|safe }};
 const SYSTEMS_HAS_FLAGS = {{ systems_has_flags_json|safe }};
+const EDITION_SUGGESTIONS = {{ edition_suggestions_json|safe }};
 const MEDIA_ROM_EXTENSIONS = {{ media_rom_extensions_json|safe }};
 const MEDIA_IS_CD = {{ media_is_cd_json|safe }};
 const MEDIA_HAS_PIC = {{ media_has_pic_json|safe }};
@@ -275,19 +276,19 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <div id="edition-list" class="inline-field-values">
             {% if is_add_mode %}
             {% if editions.is_empty() %}
-            <input type="text" name="edition" value="">
+            <input type="text" name="edition" autocomplete="off" value="">
             {% else %}
             {% for e in editions %}
             {% if loop.first %}
-            <input type="text" name="edition" value="{{ e.value }}"{% if !e.highlight.is_empty() %} class="item-{{ e.highlight }}"{% endif %}>
+            <input type="text" name="edition" autocomplete="off" value="{{ e.value }}"{% if !e.highlight.is_empty() %} class="item-{{ e.highlight }}"{% endif %}>
             {% endif %}
             {% endfor %}
             {% endif %}
             {% else %}
             {% for e in editions %}
-            <input type="text" name="edition" value="{{ e.value }}"{% if !e.highlight.is_empty() %} class="item-{{ e.highlight }}"{% endif %}>
+            <input type="text" name="edition" autocomplete="off" value="{{ e.value }}"{% if !e.highlight.is_empty() %} class="item-{{ e.highlight }}"{% endif %}>
             {% endfor %}
-            <input type="text" name="edition" value="">
+            <input type="text" name="edition" autocomplete="off" value="">
             {% if self.has_annotations_for("edition") %}
             <div class="review-field-annotation review-field-annotation-combined">
                 {% for ann in self.annotations_for("edition") %}
@@ -586,7 +587,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
 
     {% if is_add_mode %}
     <label>Dump Log
-        <textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80">{{ dump_log }}</textarea>
+        <textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">{{ dump_log }}</textarea>
     </label>
 
     <label>Extra Upload URL

@@ -1324,6 +1324,7 @@ pre code {
 .inline-field-values {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.25rem;
     flex: 1;
 }
@@ -1357,8 +1358,45 @@ pre code {
     padding: 0 0.3rem;
     border-radius: 2px;
 }
-.inline-field-values input {
+.inline-field-values .edition-value-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.06rem;
+    flex: 0 0 auto;
+    order: 0;
+}
+.disc-edit .inline-field-values input[type="text"],
+.disc-edit .inline-field-values input[type="number"] {
+    height: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
+    box-sizing: border-box;
     margin-bottom: 0;
+    line-height: var(--pico-line-height);
+    align-self: center;
+    flex: 0 0 auto;
+    order: 0;
+}
+.disc-edit .inline-field-values select.edition-suggestion-select {
+    display: block;
+    width: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
+    min-width: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
+    height: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
+    min-height: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    margin-bottom: 0;
+    padding: 0 !important;
+    line-height: var(--pico-line-height);
+    vertical-align: middle;
+    background-color: var(--pico-form-element-background-color);
+    background-image: var(--pico-icon-chevron);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 0.7rem auto;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    cursor: pointer;
+    align-self: center;
     flex: 0 0 auto;
     order: 0;
 }
@@ -1460,6 +1498,9 @@ textarea.fit-width {
 }
 textarea.fixed-80 {
     width: 80ch;
+}
+textarea.full-width-textarea {
+    width: 100%;
 }
 
 .multiline-review-field {
