@@ -1317,23 +1317,46 @@ pre code {
     gap: 0.25rem;
     flex: 1;
 }
-.inline-field-removed {
-    flex-basis: 100%;
+.review-field-annotation {
+    flex: 0 0 100%;
+    width: 100%;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 0.25rem;
+    overflow-x: auto;
+    white-space: nowrap;
 }
-.inline-field-removed-label {
+.inline-field-values > .review-field-annotation {
+    order: 10;
+    margin-top: 0.05rem;
+}
+.review-field-annotation-combined {
+    flex-basis: auto;
+    width: auto;
+}
+.inline-field-values > .review-field-annotation-combined {
+    flex-basis: 100%;
+    width: 100%;
+}
+.review-field-annotation-label {
     font-size: 0.72rem;
     opacity: 0.85;
 }
-.inline-field-removed-item {
+.review-field-annotation-item {
     padding: 0 0.3rem;
     border-radius: 2px;
 }
 .inline-field-values input {
     margin-bottom: 0;
+    flex: 0 0 auto;
+    order: 0;
+}
+.inline-field-values-stacked {
+    align-items: flex-start;
+    flex-direction: column;
+}
+.inline-field-values-stacked > .inline-field-values {
     flex: 0 0 auto;
 }
 .inline-field .array-add-btn {
@@ -1420,13 +1443,33 @@ pre code {
 /* Auto-expanding textareas */
 textarea.auto-expand {
     overflow: hidden;
-    resize: vertical;
+    resize: none;
 }
 textarea.fit-width {
     width: auto;
 }
 textarea.fixed-80 {
     width: 80ch;
+}
+
+.multiline-review-field {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.75rem;
+    align-items: flex-start;
+    overflow-x: auto;
+}
+.multiline-review-field > label {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    width: auto;
+}
+.multiline-review-field > label > textarea {
+    flex: 0 0 auto;
+}
+.review-old-textarea textarea {
+    opacity: 0.95;
 }
 
 /* Validation message boxes */

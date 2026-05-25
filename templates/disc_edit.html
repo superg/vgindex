@@ -96,6 +96,14 @@ const IS_ADD_MODE = {{ is_add_mode }};
                 <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
                 {% endfor %}
             </select>
+            {% for ann in self.annotations_for("system_code") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </label>
         <label{% if !self.highlight_class("media_type").is_empty() %} class="{{ self.highlight_class("media_type") }}"{% endif %}>Media:
             <select name="media_type" id="media-select">
@@ -103,6 +111,14 @@ const IS_ADD_MODE = {{ is_add_mode }};
                 <option value="{{ mt.code }}" {% if mt.selected %}selected{% endif %}>{{ mt.name }}</option>
                 {% endfor %}
             </select>
+            {% for ann in self.annotations_for("media_type") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </label>
         <label{% if !self.highlight_class("category").is_empty() %} class="{{ self.highlight_class("category") }}"{% endif %}>Category:
             <select name="category">
@@ -110,27 +126,75 @@ const IS_ADD_MODE = {{ is_add_mode }};
                 <option value="{{ cat.value }}" {% if cat.selected %}selected{% endif %}>{{ cat.name }}</option>
                 {% endfor %}
             </select>
+            {% for ann in self.annotations_for("category") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </label>
     </div>
 
     <div class="grid">
         <label{% if !self.highlight_class("title").is_empty() %} class="{{ self.highlight_class("title") }}"{% endif %}>Title:
             <input type="text" name="title" value="{{ title }}">
+            {% for ann in self.annotations_for("title") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </label>
         <label data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}{% if !self.highlight_class("title_foreign").is_empty() %} class="{{ self.highlight_class("title_foreign") }}"{% endif %}>Foreign Title:
             <input type="text" name="title_foreign" value="{{ title_foreign }}">
+            {% for ann in self.annotations_for("title_foreign") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </label>
     </div>
 
     <div class="grid">
         <label data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}{% if !self.highlight_class("disc_number").is_empty() %} class="{{ self.highlight_class("disc_number") }}"{% endif %}>Disc Number:
             <input type="text" name="disc_number" value="{{ disc_number }}">
+            {% for ann in self.annotations_for("disc_number") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </label>
         <label data-field-flag="has_disc_title"{% if !show_disc_title %} style="display:none"{% endif %}{% if !self.highlight_class("disc_title").is_empty() %} class="{{ self.highlight_class("disc_title") }}"{% endif %}>Disc Title:
             <input type="text" name="disc_title" value="{{ disc_title }}">
+            {% for ann in self.annotations_for("disc_title") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </label>
         <label{% if !self.highlight_class("filename_suffix").is_empty() %} class="{{ self.highlight_class("filename_suffix") }}"{% endif %}>Filename Suffix:
             <input type="text" name="filename_suffix" value="{{ filename_suffix }}">
+            {% for ann in self.annotations_for("filename_suffix") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </label>
     </div>
 
@@ -147,6 +211,16 @@ const IS_ADD_MODE = {{ is_add_mode }};
                 </label>
             {% endfor %}
             </div>
+            {% if self.has_annotations_for("regions") %}
+            <div class="review-field-annotation review-field-annotation-combined">
+                {% for ann in self.annotations_for("regions") %}
+                <span class="review-field-annotation-label">{% if !loop.first %}, {% endif %}{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+                {% endfor %}
+            </div>
+            {% endif %}
         </fieldset>
         </div>
         <div{% if !self.highlight_class("languages").is_empty() %} class="{{ self.highlight_class("languages") }}"{% endif %}>
@@ -161,6 +235,16 @@ const IS_ADD_MODE = {{ is_add_mode }};
                 </label>
             {% endfor %}
             </div>
+            {% if self.has_annotations_for("languages") %}
+            <div class="review-field-annotation review-field-annotation-combined">
+                {% for ann in self.annotations_for("languages") %}
+                <span class="review-field-annotation-label">{% if !loop.first %}, {% endif %}{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+                {% endfor %}
+            </div>
+            {% endif %}
         </fieldset>
         </div>
     </div>
@@ -172,11 +256,13 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <input type="text" name="serial" value="{{ s.value }}"{% if !s.highlight.is_empty() %} class="item-{{ s.highlight }}"{% endif %}>
             {% endfor %}
             <input type="text" name="serial" value="">
-            {% if is_review_mode && !removed_serials.is_empty() %}
-            <div class="inline-field-removed">
-                <span class="inline-field-removed-label">Removed:</span>
-                {% for s in removed_serials %}
-                <span class="inline-field-removed-item item-removed">{{ s }}</span>
+            {% if self.has_annotations_for("serial") %}
+            <div class="review-field-annotation review-field-annotation-combined">
+                {% for ann in self.annotations_for("serial") %}
+                <span class="review-field-annotation-label">{% if !loop.first %}, {% endif %}{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
                 {% endfor %}
             </div>
             {% endif %}
@@ -202,11 +288,13 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <input type="text" name="edition" value="{{ e.value }}"{% if !e.highlight.is_empty() %} class="item-{{ e.highlight }}"{% endif %}>
             {% endfor %}
             <input type="text" name="edition" value="">
-            {% if is_review_mode && !removed_editions.is_empty() %}
-            <div class="inline-field-removed">
-                <span class="inline-field-removed-label">Removed:</span>
-                {% for e in removed_editions %}
-                <span class="inline-field-removed-item item-removed">{{ e }}</span>
+            {% if self.has_annotations_for("edition") %}
+            <div class="review-field-annotation review-field-annotation-combined">
+                {% for ann in self.annotations_for("edition") %}
+                <span class="review-field-annotation-label">{% if !loop.first %}, {% endif %}{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
                 {% endfor %}
             </div>
             {% endif %}
@@ -235,11 +323,13 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <input type="text" name="barcode" value="{{ b.value }}"{% if !b.highlight.is_empty() %} class="item-{{ b.highlight }}"{% endif %}>
             {% endfor %}
             <input type="text" name="barcode" value="">
-            {% if is_review_mode && !removed_barcodes.is_empty() %}
-            <div class="inline-field-removed">
-                <span class="inline-field-removed-label">Removed:</span>
-                {% for b in removed_barcodes %}
-                <span class="inline-field-removed-item item-removed">{{ b }}</span>
+            {% if self.has_annotations_for("barcode") %}
+            <div class="review-field-annotation review-field-annotation-combined">
+                {% for ann in self.annotations_for("barcode") %}
+                <span class="review-field-annotation-label">{% if !loop.first %}, {% endif %}{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
                 {% endfor %}
             </div>
             {% endif %}
@@ -254,6 +344,14 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <span class="inline-field-label">Version</span>
         <div class="inline-field-values">
             <input type="text" name="version" value="{{ version }}">
+            {% for ann in self.annotations_for("version") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </div>
     </div>
 
@@ -261,6 +359,14 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <span class="inline-field-label">Error Count</span>
         <div class="inline-field-values">
             <input type="number" name="error_count" value="{{ error_count }}">
+            {% for ann in self.annotations_for("error_count") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </div>
     </div>
 
@@ -268,6 +374,14 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <span class="inline-field-label">EXE Date</span>
         <div class="inline-field-values">
             <input type="text" name="exe_date" value="{{ exe_date }}" placeholder="YYYY-MM-DD">
+            {% for ann in self.annotations_for("exe_date") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </div>
     </div>
 
@@ -281,13 +395,31 @@ const IS_ADD_MODE = {{ is_add_mode }};
 
     <div class="inline-field{% if !self.highlight_class("layerbreaks").is_empty() %} {{ self.highlight_class("layerbreaks") }}{% endif %}" id="layerbreak-row" style="display:none">
         <span class="inline-field-label">Layerbreaks</span>
-        <div id="layerbreak-list" class="inline-field-values"></div>
+        <div class="inline-field-values inline-field-values-stacked">
+            <div id="layerbreak-list" class="inline-field-values"></div>
+            {% for ann in self.annotations_for("layerbreaks") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
     </div>
 
     <div class="inline-field{% if !self.highlight_class("disc_id").is_empty() %} {{ self.highlight_class("disc_id") }}{% endif %}" data-field-flag="has_disc_id"{% if !show_disc_id %} style="display:none"{% endif %}>
         <span class="inline-field-label">Disc ID</span>
         <div class="inline-field-values">
             <input type="text" name="protection_key_disc_id" value="{{ protection_key_disc_id }}">
+            {% for ann in self.annotations_for("disc_id") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </div>
     </div>
 
@@ -295,6 +427,14 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <span class="inline-field-label">Disc Key</span>
         <div class="inline-field-values">
             <input type="text" name="protection_key_disc_key" value="{{ protection_key_disc_key }}">
+            {% for ann in self.annotations_for("disc_key") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
         </div>
     </div>
 
@@ -318,45 +458,115 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <textarea name="comments" rows="5" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
     </label>
 
-    <label{% if !self.highlight_class("contents").is_empty() %} class="{{ self.highlight_class("contents") }}"{% endif %}>Contents
-        <textarea name="contents" rows="5" class="hex-dump-input auto-expand fixed-80">{{ contents }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("contents").is_empty() %} {{ self.highlight_class("contents") }}{% endif %}">
+        <label>Contents
+            <textarea name="contents" rows="5" class="hex-dump-input auto-expand fixed-80">{{ contents }}</textarea>
+        </label>
+        {% if self.has_old_multiline("contents") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="5" class="hex-dump-input auto-expand fixed-80" readonly>{{ self.old_multiline("contents") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
-    <label data-field-flag="has_protection"{% if !show_protection %} style="display:none"{% endif %}{% if !self.highlight_class("protection").is_empty() %} class="{{ self.highlight_class("protection") }}"{% endif %}>Protection
-        <textarea name="protection" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("protection").is_empty() %} {{ self.highlight_class("protection") }}{% endif %}" data-field-flag="has_protection"{% if !show_protection %} style="display:none"{% endif %}>
+        <label>Protection
+            <textarea name="protection" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection }}</textarea>
+        </label>
+        {% if self.has_old_multiline("protection") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("protection") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
-    <label data-field-flag="has_sector_ranges"{% if !show_sector_ranges %} style="display:none"{% endif %}{% if !self.highlight_class("sector_ranges").is_empty() %} class="{{ self.highlight_class("sector_ranges") }}"{% endif %}>Sector Ranges
-        <textarea name="sector_ranges" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sector_ranges_text }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("sector_ranges").is_empty() %} {{ self.highlight_class("sector_ranges") }}{% endif %}" data-field-flag="has_sector_ranges"{% if !show_sector_ranges %} style="display:none"{% endif %}>
+        <label>Sector Ranges
+            <textarea name="sector_ranges" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sector_ranges_text }}</textarea>
+        </label>
+        {% if self.has_old_multiline("sector_ranges") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("sector_ranges") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
-    <label data-field-flag="has_sbi"{% if !show_sbi %} style="display:none"{% endif %}{% if !self.highlight_class("sbi").is_empty() %} class="{{ self.highlight_class("sbi") }}"{% endif %}>SBI
-        <textarea name="sbi" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sbi }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("sbi").is_empty() %} {{ self.highlight_class("sbi") }}{% endif %}" data-field-flag="has_sbi"{% if !show_sbi %} style="display:none"{% endif %}>
+        <label>SBI
+            <textarea name="sbi" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sbi }}</textarea>
+        </label>
+        {% if self.has_old_multiline("sbi") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("sbi") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
-    <label data-field-flag="has_pvd"{% if !show_pvd %} style="display:none"{% endif %}{% if !self.highlight_class("pvd").is_empty() %} class="{{ self.highlight_class("pvd") }}"{% endif %}>PVD
-        <textarea name="pvd" rows="6" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pvd_hex }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("pvd").is_empty() %} {{ self.highlight_class("pvd") }}{% endif %}" data-field-flag="has_pvd"{% if !show_pvd %} style="display:none"{% endif %}>
+        <label>PVD
+            <textarea name="pvd" rows="6" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pvd_hex }}</textarea>
+        </label>
+        {% if self.has_old_multiline("pvd") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="6" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("pvd") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
-    <label data-field-flag="has_header"{% if !show_header %} style="display:none"{% endif %}{% if !self.highlight_class("header").is_empty() %} class="{{ self.highlight_class("header") }}"{% endif %}>Header
-        <textarea name="header" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ header_hex }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("header").is_empty() %} {{ self.highlight_class("header") }}{% endif %}" data-field-flag="has_header"{% if !show_header %} style="display:none"{% endif %}>
+        <label>Header
+            <textarea name="header" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ header_hex }}</textarea>
+        </label>
+        {% if self.has_old_multiline("header") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("header") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
-    <label data-field-flag="has_bca"{% if !show_bca %} style="display:none"{% endif %}{% if !self.highlight_class("bca").is_empty() %} class="{{ self.highlight_class("bca") }}"{% endif %}>BCA
-        <textarea name="bca" rows="4" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ bca_hex }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("bca").is_empty() %} {{ self.highlight_class("bca") }}{% endif %}" data-field-flag="has_bca"{% if !show_bca %} style="display:none"{% endif %}>
+        <label>BCA
+            <textarea name="bca" rows="4" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ bca_hex }}</textarea>
+        </label>
+        {% if self.has_old_multiline("bca") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="4" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("bca") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
-    <label data-media-flag="has_pic"{% if !show_pic %} style="display:none"{% endif %}{% if !self.highlight_class("pic").is_empty() %} class="{{ self.highlight_class("pic") }}"{% endif %}>PIC
-        <textarea name="pic" rows="9" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("pic").is_empty() %} {{ self.highlight_class("pic") }}{% endif %}" data-media-flag="has_pic"{% if !show_pic %} style="display:none"{% endif %}>
+        <label>PIC
+            <textarea name="pic" rows="9" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>
+        </label>
+        {% if self.has_old_multiline("pic") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="9" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("pic") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
-    <label id="cue-field"{% if !self.highlight_class("cue").is_empty() %} class="{{ self.highlight_class("cue") }}"{% endif %}>Cuesheet
-        <textarea name="cuesheet" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80">{{ cue }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("cue").is_empty() %} {{ self.highlight_class("cue") }}{% endif %}" id="cue-field">
+        <label>Cuesheet
+            <textarea name="cuesheet" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80">{{ cue }}</textarea>
+        </label>
+        {% if self.has_old_multiline("cue") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" readonly>{{ self.old_multiline("cue") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
-    <label{% if !self.highlight_class("files_xml").is_empty() %} class="{{ self.highlight_class("files_xml") }}"{% endif %}>Dat
-        <textarea name="dat" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ files_xml }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("files_xml").is_empty() %} {{ self.highlight_class("files_xml") }}{% endif %}">
+        <label>Dat
+            <textarea name="dat" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ files_xml }}</textarea>
+        </label>
+        {% if self.has_old_multiline("files_xml") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" readonly>{{ self.old_multiline("files_xml") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
     {% if !is_add_mode && !is_review_mode && submit_button_text == "Save" %}
     <div class="inline-field status-inline-row{% if !self.highlight_class("status").is_empty() %} {{ self.highlight_class("status") }}{% endif %}">

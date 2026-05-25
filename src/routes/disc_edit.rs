@@ -94,9 +94,6 @@ pub(crate) struct DiscEditTemplate {
     pub editions: Vec<HighlightedValue>,
     pub show_barcode: bool,
     pub barcodes: Vec<HighlightedValue>,
-    pub removed_serials: Vec<String>,
-    pub removed_editions: Vec<String>,
-    pub removed_barcodes: Vec<String>,
 
     pub ring_codes_json: String,
     pub ring_highlights_json: String,
@@ -152,6 +149,8 @@ pub(crate) struct DiscEditTemplate {
 
     pub is_review_mode: bool,
     pub changed_fields: Vec<String>,
+    pub review_annotations: Vec<ReviewAnnotation>,
+    pub review_old_multiline: Vec<ReviewOldMultiline>,
     pub submission_id: i32,
     pub submission_type_display: String,
     pub submitter_id: i32,
@@ -184,6 +183,34 @@ impl DiscEditTemplate {
         }
         ""
     }
+
+    pub fn annotations_for(&self, field: &str) -> Vec<ReviewAnnotation> {
+        self.review_annotations
+            .iter()
+            .filter(|annotation| annotation.field == field)
+            .cloned()
+            .collect()
+    }
+
+    pub fn has_annotations_for(&self, field: &str) -> bool {
+        self.review_annotations
+            .iter()
+            .any(|annotation| annotation.field == field)
+    }
+
+    pub fn has_old_multiline(&self, field: &str) -> bool {
+        self.review_old_multiline
+            .iter()
+            .any(|old_text| old_text.field == field)
+    }
+
+    pub fn old_multiline(&self, field: &str) -> String {
+        self.review_old_multiline
+            .iter()
+            .find(|old_text| old_text.field == field)
+            .map(|old_text| old_text.value.clone())
+            .unwrap_or_default()
+    }
 }
 
 pub(crate) struct SystemOption {
@@ -215,6 +242,20 @@ pub(crate) struct CheckOption {
 pub(crate) struct HighlightedValue {
     pub value: String,
     pub highlight: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReviewAnnotation {
+    pub field: String,
+    pub label: String,
+    pub kind: String,
+    pub values: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReviewOldMultiline {
+    pub field: String,
+    pub value: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -595,10 +636,6 @@ async fn edit_page(
                     highlight: String::new(),
                 })
                 .collect(),
-            removed_serials: vec![],
-            removed_editions: vec![],
-            removed_barcodes: vec![],
-
             ring_codes_json,
             ring_highlights_json: "[]".to_string(),
 
@@ -704,6 +741,8 @@ async fn edit_page(
 
             is_review_mode: false,
             changed_fields: vec![],
+            review_annotations: vec![],
+            review_old_multiline: vec![],
             submission_id: 0,
             submission_type_display: String::new(),
             submitter_id: 0,
@@ -1056,10 +1095,6 @@ async fn render_form_with_errors(
                 highlight: String::new(),
             })
             .collect(),
-        removed_serials: vec![],
-        removed_editions: vec![],
-        removed_barcodes: vec![],
-
         ring_codes_json: form.ring_codes_json.clone().unwrap_or_else(|| "[]".into()),
         ring_highlights_json: "[]".to_string(),
 
@@ -1118,6 +1153,8 @@ async fn render_form_with_errors(
 
         is_review_mode: false,
         changed_fields: vec![],
+        review_annotations: vec![],
+        review_old_multiline: vec![],
         submission_id: 0,
         submission_type_display: String::new(),
         submitter_id: 0,
@@ -1459,10 +1496,6 @@ async fn add_page(
             editions: vec![],
             show_barcode: has_sys(|s| s.has_barcode),
             barcodes: vec![],
-            removed_serials: vec![],
-            removed_editions: vec![],
-            removed_barcodes: vec![],
-
             ring_codes_json: "[]".to_string(),
             ring_highlights_json: "[]".to_string(),
 
@@ -1521,6 +1554,8 @@ async fn add_page(
 
             is_review_mode: false,
             changed_fields: vec![],
+            review_annotations: vec![],
+            review_old_multiline: vec![],
             submission_id: 0,
             submission_type_display: String::new(),
             submitter_id: 0,

@@ -21,6 +21,7 @@ use super::disc_edit::{
     build_media_layers_json, build_media_options, build_media_rom_extensions_json,
     build_new_disc_changes, build_sparse_edit_changes, build_system_options, build_systems_json,
     fetch_ref_data, max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate,
+    ReviewAnnotation, ReviewOldMultiline,
 };
 
 fn normalize_newlines(s: &str) -> String {
@@ -144,6 +145,8 @@ struct SysRow {
 }
 
 const PAGE_SIZE: i64 = 50;
+pub(crate) const COMMENTS_REVIEW_DELIMITER: &str =
+    "--- REVIEW NEW COMMENTS BELOW - REMOVE THIS LINE BEFORE APPROVING ---";
 
 async fn queue_list(
     State(state): State<AppState>,
@@ -446,6 +449,7 @@ async fn submission_detail(
     );
 
     if let Some(db_snapshot) = db_snapshot {
+        apply_review_diff_context(&mut template, &snapshot, &db_snapshot, &ref_data, true);
         let highlights = compute_field_highlights(&snapshot, &db_snapshot);
         apply_highlights(&mut template, highlights);
     }
@@ -606,10 +610,6 @@ fn build_review_template(
                 highlight: String::new(),
             })
             .collect(),
-        removed_serials: vec![],
-        removed_editions: vec![],
-        removed_barcodes: vec![],
-
         ring_codes_json,
         ring_highlights_json: "[]".to_string(),
 
@@ -672,6 +672,8 @@ fn build_review_template(
 
         is_review_mode: true,
         changed_fields: vec![],
+        review_annotations: vec![],
+        review_old_multiline: vec![],
         submission_id: sub.id,
         submission_type_display: sub.submission_type.to_string(),
         submitter_id: sub.submitter_id,
@@ -690,6 +692,404 @@ fn build_review_template(
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
         changes_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
+    }
+}
+
+#[derive(Default)]
+struct ReviewDiffContext {
+    annotations: Vec<ReviewAnnotation>,
+    old_multiline: Vec<ReviewOldMultiline>,
+}
+
+fn template_field_name(field: &str) -> String {
+    match field {
+        "cuesheet" => "cue".to_string(),
+        "dat" => "files_xml".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn is_empty_review_value(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => true,
+        serde_json::Value::String(s) => s.trim().is_empty(),
+        serde_json::Value::Array(a) => a.is_empty(),
+        serde_json::Value::Object(o) => o.is_empty(),
+        serde_json::Value::Bool(_) | serde_json::Value::Number(_) => false,
+    }
+}
+
+fn review_values_equal(old: &serde_json::Value, new: &serde_json::Value) -> bool {
+    if old == new {
+        return true;
+    }
+    match (old, new) {
+        (serde_json::Value::String(a), serde_json::Value::String(b)) => {
+            a.trim().replace("\r\n", "\n") == b.trim().replace("\r\n", "\n")
+        }
+        _ => false,
+    }
+}
+
+fn review_value_changed(old: &serde_json::Value, new: &serde_json::Value) -> bool {
+    if is_empty_review_value(old) && is_empty_review_value(new) {
+        return false;
+    }
+    !review_values_equal(old, new)
+}
+
+fn review_display_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(review_display_value)
+            .filter(|s| !s.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join(", "),
+        serde_json::Value::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+    }
+}
+
+fn review_annotation_value(value: &serde_json::Value) -> String {
+    let display = review_display_value(value);
+    if display.trim().is_empty() {
+        "(empty)".to_string()
+    } else {
+        display
+    }
+}
+
+fn add_annotation(
+    context: &mut ReviewDiffContext,
+    field: &str,
+    label: &str,
+    kind: &str,
+    values: Vec<String>,
+) {
+    if values.is_empty() {
+        return;
+    }
+    context.annotations.push(ReviewAnnotation {
+        field: field.to_string(),
+        label: label.to_string(),
+        kind: kind.to_string(),
+        values,
+    });
+}
+
+fn add_single_annotation(
+    context: &mut ReviewDiffContext,
+    field: &str,
+    label: &str,
+    kind: &str,
+    value: String,
+) {
+    add_annotation(context, field, label, kind, vec![value]);
+}
+
+fn array_strings(value: &serde_json::Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn set_added_removed(old_values: &[String], new_values: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut added: Vec<String> = new_values
+        .iter()
+        .filter(|value| !old_values.iter().any(|old| old == *value))
+        .cloned()
+        .collect();
+    let mut removed: Vec<String> = old_values
+        .iter()
+        .filter(|value| !new_values.iter().any(|new| new == *value))
+        .cloned()
+        .collect();
+    added.sort_unstable_by_key(|s| s.to_lowercase());
+    removed.sort_unstable_by_key(|s| s.to_lowercase());
+    (added, removed)
+}
+
+fn display_region(ref_data: &disc_edit::EditRefData, code: &str) -> String {
+    ref_data
+        .all_regions
+        .iter()
+        .find(|region| region.code.trim() == code.trim())
+        .map(|region| region.name.clone())
+        .unwrap_or_else(|| code.to_string())
+}
+
+fn display_language(ref_data: &disc_edit::EditRefData, code: &str) -> String {
+    ref_data
+        .all_languages
+        .iter()
+        .find(|language| language.code.trim() == code.trim())
+        .map(|language| language.name.clone())
+        .unwrap_or_else(|| code.to_string())
+}
+
+fn display_system(ref_data: &disc_edit::EditRefData, code: &str) -> String {
+    ref_data
+        .all_systems
+        .iter()
+        .find(|system| system.code == code)
+        .map(|system| system.system_name())
+        .unwrap_or_else(|| code.to_string())
+}
+
+fn display_media(ref_data: &disc_edit::EditRefData, code: &str) -> String {
+    ref_data
+        .all_media_types
+        .iter()
+        .find(|media| media.code == code)
+        .map(|media| media.name.clone())
+        .unwrap_or_else(|| code.to_string())
+}
+
+fn sector_ranges_display(value: &serde_json::Value) -> String {
+    value
+        .as_array()
+        .map(|ranges| {
+            ranges
+                .iter()
+                .map(|range| {
+                    format!(
+                        "{}-{}",
+                        range["start"].as_i64().unwrap_or(0),
+                        range["end"].as_i64().unwrap_or(0)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default()
+}
+
+fn multiline_display_value(field: &str, value: &serde_json::Value) -> String {
+    if field == "sector_ranges" {
+        sector_ranges_display(value)
+    } else {
+        review_display_value(value)
+    }
+}
+
+fn compose_review_comments(old: &serde_json::Value, submitted: &serde_json::Value) -> String {
+    let old_text = review_display_value(old);
+    let submitted_text = review_display_value(submitted);
+    let mut sections = Vec::new();
+    if !old_text.trim().is_empty() {
+        sections.push(old_text);
+    }
+    sections.push(COMMENTS_REVIEW_DELIMITER.to_string());
+    if !submitted_text.trim().is_empty() {
+        sections.push(submitted_text);
+    }
+    sections.join("\n\n")
+}
+
+fn comments_text_contains_review_delimiter(comments: Option<&str>) -> bool {
+    comments
+        .map(|comments| comments.contains(COMMENTS_REVIEW_DELIMITER))
+        .unwrap_or(false)
+}
+
+fn build_review_diff_context(
+    submitted_snapshot: &serde_json::Value,
+    db_snapshot: &serde_json::Value,
+    ref_data: &disc_edit::EditRefData,
+) -> ReviewDiffContext {
+    let mut context = ReviewDiffContext::default();
+
+    for field in ["system_code", "media_type", "category"] {
+        let old = &db_snapshot[field];
+        let new = &submitted_snapshot[field];
+        if !review_value_changed(old, new) {
+            continue;
+        }
+        let old_display = match field {
+            "system_code" => old
+                .as_str()
+                .map(|code| display_system(ref_data, code))
+                .unwrap_or_default(),
+            "media_type" => old
+                .as_str()
+                .map(|code| display_media(ref_data, code))
+                .unwrap_or_default(),
+            _ => review_display_value(old),
+        };
+        add_single_annotation(
+            &mut context,
+            field,
+            "Changed from",
+            "removed",
+            if old_display.trim().is_empty() {
+                "(empty)".to_string()
+            } else {
+                old_display
+            },
+        );
+    }
+
+    for field in [
+        "title",
+        "title_foreign",
+        "disc_number",
+        "disc_title",
+        "filename_suffix",
+    ] {
+        let old = &db_snapshot[field];
+        let new = &submitted_snapshot[field];
+        if review_value_changed(old, new) {
+            add_single_annotation(
+                &mut context,
+                field,
+                "Changed to",
+                "added",
+                review_annotation_value(new),
+            );
+        }
+    }
+
+    for field in ["version", "error_count", "exe_date", "disc_id", "disc_key"] {
+        let old = &db_snapshot[field];
+        let new = &submitted_snapshot[field];
+        if review_value_changed(old, new) {
+            add_single_annotation(
+                &mut context,
+                field,
+                "Changed from",
+                "removed",
+                review_annotation_value(old),
+            );
+        }
+    }
+
+    {
+        let old = &db_snapshot["layerbreaks"];
+        let new = &submitted_snapshot["layerbreaks"];
+        if review_value_changed(old, new) {
+            add_single_annotation(
+                &mut context,
+                "layerbreaks",
+                "Changed from",
+                "removed",
+                review_annotation_value(old),
+            );
+        }
+    }
+
+    for (field, display) in [
+        (
+            "regions",
+            display_region as fn(&disc_edit::EditRefData, &str) -> String,
+        ),
+        (
+            "languages",
+            display_language as fn(&disc_edit::EditRefData, &str) -> String,
+        ),
+    ] {
+        let old = array_strings(&db_snapshot[field]);
+        let new = array_strings(&submitted_snapshot[field]);
+        let (added, removed) = set_added_removed(&old, &new);
+        add_annotation(
+            &mut context,
+            field,
+            "Removed",
+            "removed",
+            removed
+                .iter()
+                .map(|value| display(ref_data, value))
+                .collect(),
+        );
+        add_annotation(
+            &mut context,
+            field,
+            "Added",
+            "added",
+            added.iter().map(|value| display(ref_data, value)).collect(),
+        );
+    }
+
+    for field in ["serial", "edition", "barcode"] {
+        let old = array_strings(&db_snapshot[field]);
+        let new = array_strings(&submitted_snapshot[field]);
+        let (added, removed) = set_added_removed(&old, &new);
+        add_annotation(&mut context, field, "Removed", "removed", removed);
+        add_annotation(&mut context, field, "Added", "added", added);
+    }
+
+    for field in [
+        "contents",
+        "protection",
+        "sector_ranges",
+        "sbi",
+        "pvd",
+        "header",
+        "bca",
+        "pic",
+        "cuesheet",
+        "dat",
+    ] {
+        let old = &db_snapshot[field];
+        let new = &submitted_snapshot[field];
+        if review_value_changed(old, new) {
+            context.old_multiline.push(ReviewOldMultiline {
+                field: template_field_name(field),
+                value: multiline_display_value(field, old),
+            });
+        }
+    }
+
+    context
+}
+
+fn apply_review_diff_context(
+    template: &mut DiscEditTemplate,
+    submitted_snapshot: &serde_json::Value,
+    db_snapshot: &serde_json::Value,
+    ref_data: &disc_edit::EditRefData,
+    apply_initial_values: bool,
+) {
+    let context = build_review_diff_context(submitted_snapshot, db_snapshot, ref_data);
+    template.review_annotations = context.annotations;
+    template.review_old_multiline = context.old_multiline;
+
+    if !apply_initial_values {
+        return;
+    }
+
+    for field in [
+        "title",
+        "title_foreign",
+        "disc_number",
+        "disc_title",
+        "filename_suffix",
+    ] {
+        if !review_value_changed(&db_snapshot[field], &submitted_snapshot[field]) {
+            continue;
+        }
+        let old_value = review_display_value(&db_snapshot[field]);
+        match field {
+            "title" => template.title = old_value,
+            "title_foreign" => template.title_foreign = old_value,
+            "disc_number" => template.disc_number = old_value,
+            "disc_title" => template.disc_title = old_value,
+            "filename_suffix" => template.filename_suffix = old_value,
+            _ => {}
+        }
+    }
+
+    if review_value_changed(&db_snapshot["comments"], &submitted_snapshot["comments"]) {
+        template.comments =
+            compose_review_comments(&db_snapshot["comments"], &submitted_snapshot["comments"]);
     }
 }
 
@@ -757,9 +1157,6 @@ struct FieldHighlights {
     serial_highlights: std::collections::HashMap<String, String>,
     edition_highlights: std::collections::HashMap<String, String>,
     barcode_highlights: std::collections::HashMap<String, String>,
-    removed_serials: Vec<String>,
-    removed_editions: Vec<String>,
-    removed_barcodes: Vec<String>,
     ring_highlights_json: String,
 }
 
@@ -830,11 +1227,11 @@ fn compute_field_highlights(
         if db_empty && ch_empty {
             continue;
         } else if db_empty && !ch_empty {
-            changed_fields.push(format!("{}:added", field));
+            changed_fields.push(format!("{}:added", template_field_name(field)));
         } else if !db_empty && ch_empty {
-            changed_fields.push(format!("{}:removed", field));
+            changed_fields.push(format!("{}:removed", template_field_name(field)));
         } else if !vals_equal(db_val, ch_val) {
-            changed_fields.push(format!("{}:changed", field));
+            changed_fields.push(format!("{}:changed", template_field_name(field)));
         }
     }
 
@@ -912,9 +1309,6 @@ fn compute_field_highlights(
     if !serial_highlights.is_empty() {
         changed_fields.push("serial:changed".to_string());
     }
-    let mut removed_serials: Vec<String> = db_serials.difference(&ch_serials).cloned().collect();
-    removed_serials.sort_unstable_by_key(|s| s.to_lowercase());
-
     let mut edition_highlights = std::collections::HashMap::new();
     let db_editions = str_set(&db_snapshot["edition"]);
     let ch_editions = str_set(&changes["edition"]);
@@ -931,9 +1325,6 @@ fn compute_field_highlights(
     if !edition_highlights.is_empty() {
         changed_fields.push("edition:changed".to_string());
     }
-    let mut removed_editions: Vec<String> = db_editions.difference(&ch_editions).cloned().collect();
-    removed_editions.sort_unstable_by_key(|s| s.to_lowercase());
-
     let mut barcode_highlights = std::collections::HashMap::new();
     let db_barcodes = str_set(&db_snapshot["barcode"]);
     let ch_barcodes = str_set(&changes["barcode"]);
@@ -950,9 +1341,6 @@ fn compute_field_highlights(
     if !barcode_highlights.is_empty() {
         changed_fields.push("barcode:changed".to_string());
     }
-    let mut removed_barcodes: Vec<String> = db_barcodes.difference(&ch_barcodes).cloned().collect();
-    removed_barcodes.sort_unstable_by_key(|s| s.to_lowercase());
-
     let classify_change =
         |old: &serde_json::Value, new: &serde_json::Value, csv_ids: bool| -> Option<&'static str> {
             let is_empty = |v: &serde_json::Value| -> bool {
@@ -1101,9 +1489,6 @@ fn compute_field_highlights(
         serial_highlights,
         edition_highlights,
         barcode_highlights,
-        removed_serials,
-        removed_editions,
-        removed_barcodes,
         ring_highlights_json,
     }
 }
@@ -1111,9 +1496,6 @@ fn compute_field_highlights(
 fn apply_highlights(template: &mut DiscEditTemplate, highlights: FieldHighlights) {
     template.changed_fields = highlights.changed_fields;
     template.ring_highlights_json = highlights.ring_highlights_json;
-    template.removed_serials = highlights.removed_serials;
-    template.removed_editions = highlights.removed_editions;
-    template.removed_barcodes = highlights.removed_barcodes;
 
     for opt in &mut template.regions {
         if let Some(hl) = highlights.region_highlights.get(&opt.value) {
@@ -1186,7 +1568,10 @@ async fn review_submit(
     }
 
     let ref_data = fetch_ref_data(&state.pool).await?;
-    let errors = validate_form(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
+    let mut errors = validate_form(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
+    if comments_text_contains_review_delimiter(form.disc.comments.as_deref()) {
+        errors.push("Comments: remove the review delimiter before approval".to_string());
+    }
     if !errors.is_empty() {
         let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
             .bind(sub.submitter_id)
@@ -1230,6 +1615,22 @@ async fn review_submit(
         template.validation_errors = errors;
         template.review_comment_input = review_comment.clone().unwrap_or_default();
 
+        if let Some(disc_id) = sub.target_disc_id {
+            let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
+            let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
+            let submitted_snapshot =
+                queue_service::resolve_submission_snapshot_for_submission(&db_snapshot, &sub)?;
+            apply_review_diff_context(
+                &mut template,
+                &submitted_snapshot,
+                &db_snapshot,
+                &ref_data,
+                false,
+            );
+            let highlights = compute_field_highlights(&submitted_snapshot, &db_snapshot);
+            apply_highlights(&mut template, highlights);
+        }
+
         return Ok(Html(template.render().unwrap()).into_response());
     }
 
@@ -1258,6 +1659,369 @@ async fn review_submit(
     match approved {
         Some(_) => Ok(Redirect::to("/queue/").into_response()),
         None => Ok(Redirect::to(&format!("/queue/{id}/")).into_response()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_system(code: &str, name: &str) -> System {
+        System {
+            code: code.to_string(),
+            system_type: "Console".to_string(),
+            manufacturer: "Test".to_string(),
+            name: name.to_string(),
+            short_name: code.to_string(),
+            media_types: vec!["DVD".to_string(), "BD".to_string()],
+            has_exe_date: true,
+            has_sbi: true,
+            has_pvd: true,
+            has_edc: true,
+            has_disc_id: true,
+            has_key: true,
+            has_title_foreign: true,
+            has_disc_title: true,
+            has_disc_number: true,
+            has_serial: true,
+            has_barcode: true,
+            has_version: true,
+            has_edition: true,
+            has_protection: true,
+            has_sector_ranges: true,
+            has_header: true,
+            has_bca: true,
+            has_sample_start: true,
+            has_offset_extra: true,
+        }
+    }
+
+    fn ref_data() -> disc_edit::EditRefData {
+        disc_edit::EditRefData {
+            all_systems: vec![
+                test_system("OLD", "Old System"),
+                test_system("NEW", "New System"),
+            ],
+            all_media_types: vec![
+                disc_edit::EditMediaTypeRow {
+                    code: "DVD".to_string(),
+                    name: "DVD-ROM".to_string(),
+                    layer_count: 2,
+                    pic: false,
+                    rom_extension: "iso".to_string(),
+                },
+                disc_edit::EditMediaTypeRow {
+                    code: "BD".to_string(),
+                    name: "Blu-ray".to_string(),
+                    layer_count: 2,
+                    pic: false,
+                    rom_extension: "iso".to_string(),
+                },
+            ],
+            all_categories: vec![disc_edit::CategoryRow {
+                id: 1,
+                name: "Games".to_string(),
+            }],
+            all_regions: vec![
+                Region {
+                    code: "EU".to_string(),
+                    name: "Europe".to_string(),
+                    flag_code: "eu".to_string(),
+                    sort_order: 0,
+                },
+                Region {
+                    code: "JP".to_string(),
+                    name: "Japan".to_string(),
+                    flag_code: "jp".to_string(),
+                    sort_order: 1,
+                },
+                Region {
+                    code: "US".to_string(),
+                    name: "USA".to_string(),
+                    flag_code: "us".to_string(),
+                    sort_order: 2,
+                },
+            ],
+            all_languages: vec![
+                Language {
+                    code: "en".to_string(),
+                    name: "English".to_string(),
+                    flag_code: "gb".to_string(),
+                    sort_order: 0,
+                },
+                Language {
+                    code: "ja".to_string(),
+                    name: "Japanese".to_string(),
+                    flag_code: "jp".to_string(),
+                    sort_order: 1,
+                },
+            ],
+        }
+    }
+
+    fn old_snapshot() -> serde_json::Value {
+        serde_json::json!({
+            "system_code": "OLD",
+            "media_type": "DVD",
+            "title": "Old Game",
+            "category": "Games",
+            "title_foreign": "Old Foreign",
+            "disc_number": "1",
+            "disc_title": "Old Disc",
+            "filename_suffix": "Old Suffix",
+            "serial": ["OLD-001", "KEEP-002"],
+            "version": "1.0",
+            "edition": ["Original"],
+            "barcode": ["111111111111"],
+            "comments": "old comment",
+            "contents": "old contents",
+            "error_count": 1,
+            "exe_date": "2020-01-01",
+            "edc": true,
+            "layerbreaks": [10, 20],
+            "pvd": "old pvd",
+            "pic": "old pic",
+            "bca": "old bca",
+            "header": "old header",
+            "protection": "old protection",
+            "sbi": "old sbi",
+            "disc_id": "old-disc-id",
+            "disc_key": "1234",
+            "cuesheet": "old cue",
+            "status": "Unverified",
+            "regions": ["EU", "US"],
+            "languages": ["en"],
+            "ring_codes": [],
+            "sector_ranges": [{"start": 100, "end": 200}],
+            "dat": "<rom name=\"old.iso\" size=\"1\" crc=\"11111111\" md5=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" sha1=\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" />"
+        })
+    }
+
+    fn submitted_snapshot() -> serde_json::Value {
+        serde_json::json!({
+            "system_code": "NEW",
+            "media_type": "BD",
+            "title": "New Game",
+            "category": "Demos",
+            "title_foreign": "New Foreign",
+            "disc_number": "2",
+            "disc_title": "New Disc",
+            "filename_suffix": "New Suffix",
+            "serial": ["KEEP-002", "NEW-003"],
+            "version": "2.0",
+            "edition": ["Original", "Rerelease"],
+            "barcode": ["222222222222"],
+            "comments": "new comment",
+            "contents": "new contents",
+            "error_count": 2,
+            "exe_date": "2024-01-01",
+            "edc": false,
+            "layerbreaks": [10, 30],
+            "pvd": "new pvd",
+            "pic": "new pic",
+            "bca": "new bca",
+            "header": "new header",
+            "protection": "new protection",
+            "sbi": "new sbi",
+            "disc_id": "new-disc-id",
+            "disc_key": "abcd",
+            "cuesheet": "new cue",
+            "status": "Unverified",
+            "regions": ["JP", "US"],
+            "languages": ["en", "ja"],
+            "ring_codes": [],
+            "sector_ranges": [{"start": 150, "end": 250}],
+            "dat": "<rom name=\"new.iso\" size=\"2\" crc=\"22222222\" md5=\"cccccccccccccccccccccccccccccccc\" sha1=\"dddddddddddddddddddddddddddddddddddddddd\" />"
+        })
+    }
+
+    fn test_submission() -> DiscSubmission {
+        DiscSubmission {
+            id: 42,
+            submission_type: SubmissionType::Edit,
+            submitter_id: 7,
+            submission_comment: None,
+            target_disc_id: Some(1),
+            changes: serde_json::json!({}),
+            dump_log: None,
+            extra_upload_url: None,
+            status: SubmissionStatus::Pending,
+            reviewer_id: None,
+            review_comment: None,
+            created_at: chrono::Utc::now(),
+            reviewed_at: None,
+        }
+    }
+
+    fn annotation_values(template: &DiscEditTemplate, field: &str, label: &str) -> Vec<String> {
+        template
+            .review_annotations
+            .iter()
+            .find(|annotation| annotation.field == field && annotation.label == label)
+            .map(|annotation| annotation.values.clone())
+            .unwrap_or_default()
+    }
+
+    fn build_template(snapshot: &serde_json::Value) -> DiscEditTemplate {
+        let ref_data = ref_data();
+        build_review_template(
+            "moderator",
+            &test_submission(),
+            "submitter",
+            "",
+            snapshot,
+            &ref_data,
+            "{}",
+            "{}",
+            "{}",
+            "{}",
+            "{}",
+            "{}",
+            snapshot["system_code"].as_str().unwrap_or(""),
+            snapshot["media_type"].as_str().unwrap_or(""),
+            2,
+            |_flag: fn(&System) -> bool| true,
+        )
+    }
+
+    #[test]
+    fn review_initial_values_prefer_old_title_fields_and_annotate_submitted_values() {
+        let db = old_snapshot();
+        let submitted = submitted_snapshot();
+        let ref_data = ref_data();
+        let mut template = build_template(&submitted);
+
+        apply_review_diff_context(&mut template, &submitted, &db, &ref_data, true);
+
+        assert_eq!(template.title, "Old Game");
+        assert_eq!(template.title_foreign, "Old Foreign");
+        assert_eq!(template.disc_number, "1");
+        assert_eq!(template.disc_title, "Old Disc");
+        assert_eq!(template.filename_suffix, "Old Suffix");
+        assert_eq!(
+            annotation_values(&template, "title", "Changed to"),
+            vec!["New Game".to_string()]
+        );
+        assert_eq!(
+            annotation_values(&template, "system_code", "Changed from"),
+            vec!["Test Old System".to_string()]
+        );
+        assert_eq!(
+            annotation_values(&template, "media_type", "Changed from"),
+            vec!["DVD-ROM".to_string()]
+        );
+    }
+
+    #[test]
+    fn review_annotations_include_added_removed_sets_and_old_multiline_sidecars() {
+        let db = old_snapshot();
+        let submitted = submitted_snapshot();
+        let ref_data = ref_data();
+        let mut template = build_template(&submitted);
+
+        apply_review_diff_context(&mut template, &submitted, &db, &ref_data, true);
+
+        assert_eq!(
+            annotation_values(&template, "regions", "Removed"),
+            vec!["Europe".to_string()]
+        );
+        assert_eq!(
+            annotation_values(&template, "regions", "Added"),
+            vec!["Japan".to_string()]
+        );
+        assert_eq!(
+            annotation_values(&template, "serial", "Removed"),
+            vec!["OLD-001".to_string()]
+        );
+        assert_eq!(
+            annotation_values(&template, "serial", "Added"),
+            vec!["NEW-003".to_string()]
+        );
+        assert!(template
+            .review_old_multiline
+            .iter()
+            .any(|old| old.field == "contents" && old.value == "old contents"));
+        assert!(template
+            .review_old_multiline
+            .iter()
+            .any(|old| old.field == "cue" && old.value == "old cue"));
+        assert!(template
+            .review_old_multiline
+            .iter()
+            .any(|old| { old.field == "files_xml" && old.value.contains("old.iso") }));
+        assert!(!template
+            .review_old_multiline
+            .iter()
+            .any(|old| old.field == "comments"));
+    }
+
+    #[test]
+    fn review_comments_are_additive_only_on_initial_display() {
+        let db = old_snapshot();
+        let submitted = submitted_snapshot();
+        let ref_data = ref_data();
+        let mut template = build_template(&submitted);
+
+        apply_review_diff_context(&mut template, &submitted, &db, &ref_data, true);
+
+        assert_eq!(
+            template.comments,
+            format!("old comment\n\n{COMMENTS_REVIEW_DELIMITER}\n\nnew comment")
+        );
+
+        let mut posted = submitted.clone();
+        posted["title"] = serde_json::json!("Moderator Title");
+        posted["comments"] = serde_json::json!("moderator edited comments");
+        let mut posted_template = build_template(&posted);
+        apply_review_diff_context(&mut posted_template, &submitted, &db, &ref_data, false);
+
+        assert_eq!(posted_template.title, "Moderator Title");
+        assert_eq!(posted_template.comments, "moderator edited comments");
+    }
+
+    #[test]
+    fn comments_delimiter_validation_detects_unreviewed_comments() {
+        assert!(comments_text_contains_review_delimiter(Some(&format!(
+            "old\n\n{COMMENTS_REVIEW_DELIMITER}\n\nnew"
+        ))));
+        assert!(!comments_text_contains_review_delimiter(Some("old\n\nnew")));
+        assert!(!comments_text_contains_review_delimiter(None));
+    }
+
+    #[test]
+    fn review_textarea_assets_disable_manual_resize_and_autosize_sidecars() {
+        let css = include_str!("../../static/css/app.css");
+        assert!(css.contains("textarea.auto-expand {\n    overflow: hidden;\n    resize: none;\n}"));
+        assert!(css.contains(".review-field-annotation {\n    flex: 0 0 100%;\n    width: 100%;\n    display: flex;\n    flex-wrap: nowrap;\n    align-items: center;\n    gap: 0.25rem;\n    overflow-x: auto;\n    white-space: nowrap;\n}"));
+        assert!(
+            css.contains(".multiline-review-field {\n    display: flex;\n    flex-wrap: nowrap;")
+        );
+        assert!(css.contains(".inline-field-values > .review-field-annotation"));
+        assert!(css.contains(
+            ".inline-field-values > .review-field-annotation-combined {\n    flex-basis: 100%;\n    width: 100%;\n}"
+        ));
+
+        let template = include_str!("../../templates/disc_edit.html");
+        assert!(template.contains("review-field-annotation-combined"));
+        assert!(template.contains("{% if !loop.first %}, {% endif %}{{ ann.label }}:"));
+        assert!(!template.contains("review-field-annotation-separator"));
+        assert!(template.contains("self.has_annotations_for(\"regions\")"));
+        assert!(template.contains("self.has_annotations_for(\"languages\")"));
+        assert!(template.contains("self.has_annotations_for(\"serial\")"));
+        assert!(template.contains("self.has_annotations_for(\"edition\")"));
+        assert!(template.contains("self.has_annotations_for(\"barcode\")"));
+        assert!(template.contains("class=\"review-old-textarea\""));
+        assert!(template.contains(
+            "<textarea rows=\"5\" class=\"hex-dump-input auto-expand fixed-80\" readonly>{{ self.old_multiline(\"contents\") }}</textarea>"
+        ));
+        assert!(css.contains(
+            ".review-field-annotation-combined {\n    flex-basis: auto;\n    width: auto;\n}"
+        ));
+
+        let js = include_str!("../../static/js/disc_edit.js");
+        assert!(js.contains("container.insertBefore(input, annotation);"));
+        assert!(js.contains("cueField.querySelectorAll('textarea')"));
+        assert!(js.contains("autoExpand(ta);"));
     }
 }
 
