@@ -189,11 +189,71 @@ struct ViewFile {
     name: String,
     file_suffix: String,
     is_cue: bool,
+    is_synthetic: bool,
     track_sort_num: u32,
     size: i64,
     crc32: String,
     md5: String,
     sha1: String,
+}
+
+fn cue_name_to_img_name(cue_name: &str) -> String {
+    if cue_name.len() >= 4 && cue_name[cue_name.len() - 4..].eq_ignore_ascii_case(".cue") {
+        format!("{}.img", &cue_name[..cue_name.len() - 4])
+    } else {
+        format!("{cue_name}.img")
+    }
+}
+
+fn is_numbered_bin_track_file(file: &ViewFile) -> bool {
+    !file.is_cue && file.track_sort_num > 0 && file.file_suffix.eq_ignore_ascii_case(".bin")
+}
+
+fn combined_bin_track_crc32(files: &[ViewFile]) -> Option<(i64, String)> {
+    let mut track_files: Vec<&ViewFile> = files
+        .iter()
+        .filter(|file| is_numbered_bin_track_file(file))
+        .collect();
+    track_files.sort_by(|a, b| {
+        a.track_sort_num
+            .cmp(&b.track_sort_num)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    let mut total_size = 0i64;
+    let mut combined = crc32fast::Hasher::new();
+    for file in track_files {
+        let crc = u32::from_str_radix(&file.crc32, 16).ok()?;
+        let size = u64::try_from(file.size).ok()?;
+        total_size = total_size.checked_add(file.size)?;
+        let track = crc32fast::Hasher::new_with_initial_len(crc, size);
+        combined.combine(&track);
+    }
+
+    Some((total_size, format!("{:08x}", combined.finalize())))
+}
+
+fn synthetic_img_file(files: &[ViewFile]) -> Option<ViewFile> {
+    let cue_file = files.iter().find(|file| file.is_cue)?;
+    let (size, crc32) = combined_bin_track_crc32(files)?;
+
+    Some(ViewFile {
+        name: cue_name_to_img_name(&cue_file.name),
+        file_suffix: ".img".to_string(),
+        is_cue: false,
+        is_synthetic: true,
+        track_sort_num: u32::MAX,
+        size,
+        crc32,
+        md5: String::new(),
+        sha1: String::new(),
+    })
+}
+
+fn append_synthetic_img_file(files: &mut Vec<ViewFile>) {
+    if let Some(file) = synthetic_img_file(files) {
+        files.push(file);
+    }
 }
 
 #[derive(Default)]
@@ -405,6 +465,7 @@ async fn disc_view(
                     format!(".{ext}")
                 },
                 is_cue,
+                is_synthetic: false,
                 track_sort_num: track_num,
                 size: f.size,
                 crc32: f.crc32.clone(),
@@ -420,6 +481,7 @@ async fn disc_view(
             .then_with(|| a.file_suffix.cmp(&b.file_suffix))
             .then_with(|| a.name.cmp(&b.name))
     });
+    append_synthetic_img_file(&mut files);
 
     let track_rows = if detail.disc.media_type.is_cd() {
         detail
@@ -1382,11 +1444,90 @@ async fn disc_sbi_download(
 mod tests {
     use super::*;
 
+    fn view_file(
+        name: &str,
+        file_suffix: &str,
+        is_cue: bool,
+        track_sort_num: u32,
+        data: &[u8],
+    ) -> ViewFile {
+        ViewFile {
+            name: name.to_string(),
+            file_suffix: file_suffix.to_string(),
+            is_cue,
+            is_synthetic: false,
+            track_sort_num,
+            size: data.len() as i64,
+            crc32: format!("{:08x}", crc32fast::hash(data)),
+            md5: "md5".to_string(),
+            sha1: "sha1".to_string(),
+        }
+    }
+
     #[test]
     fn ring_layer_label_marks_final_layer_as_label_side() {
         assert_eq!(ring_layer_label(0, 2), "L0");
         assert_eq!(ring_layer_label(1, 2), "LS");
         assert_eq!(ring_layer_label(2, 4), "L2");
         assert_eq!(ring_layer_label(3, 4), "LS");
+    }
+
+    #[test]
+    fn combined_bin_track_crc32_matches_hashing_concatenated_bytes() {
+        let track1 = b"first track bytes";
+        let track2 = b"second track bytes";
+        let track3 = b"third track bytes";
+        let files = vec![
+            view_file("Game (Track 3).bin", ".bin", false, 3, track3),
+            view_file("Game (Track 1).bin", ".bin", false, 1, track1),
+            view_file("Game (Track 2).bin", ".bin", false, 2, track2),
+        ];
+
+        let (size, crc32) = combined_bin_track_crc32(&files).unwrap();
+        let expected_bytes = [track1.as_slice(), track2.as_slice(), track3.as_slice()].concat();
+
+        assert_eq!(size, expected_bytes.len() as i64);
+        assert_eq!(crc32, format!("{:08x}", crc32fast::hash(&expected_bytes)));
+    }
+
+    #[test]
+    fn synthetic_img_file_is_appended_after_all_files_when_cue_exists() {
+        let track0 = b"whole disc row excluded";
+        let track1 = b"track one";
+        let track2 = b"track two";
+        let wav_track = b"wav track excluded";
+        let mut files = vec![
+            view_file("Game (Track 0).bin", ".bin", false, 0, track0),
+            view_file("Game.cue", ".cue", true, 0, b"cue"),
+            view_file("Game (Track 1).bin", ".bin", false, 1, track1),
+            view_file("Game (Track 2).bin", ".bin", false, 2, track2),
+            view_file("Game (Track 3).wav", ".wav", false, 3, wav_track),
+        ];
+
+        append_synthetic_img_file(&mut files);
+
+        let img = files.last().unwrap();
+        let expected_bytes = [track1.as_slice(), track2.as_slice()].concat();
+        assert_eq!(img.name, "Game.img");
+        assert_eq!(img.file_suffix, ".img");
+        assert!(!img.is_cue);
+        assert!(img.is_synthetic);
+        assert_eq!(img.size, expected_bytes.len() as i64);
+        assert_eq!(
+            img.crc32,
+            format!("{:08x}", crc32fast::hash(&expected_bytes))
+        );
+        assert!(img.md5.is_empty());
+        assert!(img.sha1.is_empty());
+    }
+
+    #[test]
+    fn synthetic_img_file_is_not_added_without_cue() {
+        let mut files = vec![view_file("Game.bin", ".bin", false, 1, b"track")];
+
+        append_synthetic_img_file(&mut files);
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "Game.bin");
     }
 }

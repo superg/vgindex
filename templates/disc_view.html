@@ -181,7 +181,7 @@
         </thead>
         <tbody>
             {% for file in files %}
-            <tr>
+            <tr{% if file.is_synthetic %} class="files-synthetic-row" title="Synthetic merged image; not included in DAT files"{% endif %}>
                 <td style="text-align: left;" title="{{ file.name }}"><code>{% if file.is_cue %}<a href="/disc/{{ disc_id }}/cue">{{ file.name }}</a>{% else %}{{ file.name }}{% endif %}</code></td>
                 <td class="col-num"><code>{{ file.size }}</code></td>
                 <td><code>{{ file.crc32 }}</code></td>
