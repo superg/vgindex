@@ -6,6 +6,7 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release && r
 
 COPY src ./src
 COPY templates ./templates
+COPY static ./static
 COPY migrations ./migrations
 ENV SQLX_OFFLINE=true
 RUN find src -name "*.rs" -exec touch {} + && cargo build --release && cargo test

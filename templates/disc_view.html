@@ -35,13 +35,13 @@
             </td></tr>
             {% endif %}
             {% if show_serial && !serial.is_empty() %}
-            <tr><td><strong>{% if serial_count == 1 %}Serial{% else %}Serials{% endif %}</strong></td><td>{% if serial_count > 6 %}<details class="td-collapse"><summary>{{ serial_count }} serials</summary>{{ serial|safe }}</details>{% else %}{{ serial|safe }}{% endif %}</td></tr>
+            <tr><td><strong>{% if serial_count == 1 %}Serial{% else %}Serials{% endif %}</strong></td><td>{{ serial|safe }}</td></tr>
             {% endif %}
             {% if show_edition && !edition.is_empty() %}
-            <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td>{% if edition_count > 6 %}<details class="td-collapse"><summary>{{ edition_count }} editions</summary>{{ edition|safe }}</details>{% else %}{{ edition|safe }}{% endif %}</td></tr>
+            <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td>{{ edition|safe }}</td></tr>
             {% endif %}
             {% if show_barcode && !barcode.is_empty() %}
-            <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{% if barcode_count > 6 %}<details class="td-collapse"><summary>{{ barcode_count }} barcodes</summary>{{ barcode|safe }}</details>{% else %}{{ barcode|safe }}{% endif %}</td></tr>
+            <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{{ barcode|safe }}</td></tr>
             {% endif %}
             {% if show_version && !version.is_empty() %}
             <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>

@@ -1473,6 +1473,21 @@ mod tests {
     }
 
     #[test]
+    fn disc_identifiers_are_not_collapsed_in_disc_section() {
+        let template = include_str!("../../templates/disc_view.html");
+        let css = include_str!("../../static/css/app.css");
+
+        assert!(template.contains("<td>{{ serial|safe }}</td>"));
+        assert!(template.contains("<td>{{ edition|safe }}</td>"));
+        assert!(template.contains("<td>{{ barcode|safe }}</td>"));
+        assert!(!template.contains("serial_count > 6"));
+        assert!(!template.contains("edition_count > 6"));
+        assert!(!template.contains("barcode_count > 6"));
+        assert!(!template.contains("td-collapse"));
+        assert!(!css.contains(".td-collapse"));
+    }
+
+    #[test]
     fn combined_bin_track_crc32_matches_hashing_concatenated_bytes() {
         let track1 = b"first track bytes";
         let track2 = b"second track bytes";
