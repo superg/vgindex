@@ -2772,7 +2772,8 @@ mod operation_delta_tests {
         assert!(script.contains("select.className = 'edition-suggestion-select'"));
         assert!(script.contains("function populateEditionSelect(select)"));
         assert!(script.contains("function refreshEditionSelectors()"));
-        assert!(script.contains("input.value = select.value"));
+        assert!(script.contains("var selectedEdition = select.value"));
+        assert!(script.contains("input.value = selectedEdition"));
         assert!(script.contains("select.value = ''"));
         assert!(!script.contains("select.name"));
         assert!(!script.contains("select.setAttribute('name'"));
@@ -2782,6 +2783,8 @@ mod operation_delta_tests {
         assert!(script.contains("'barcode': true"));
         assert!(script.contains("function attachIndependentInlineResize(input)"));
         assert!(script.contains("function fitInlineInput(input)"));
+        assert!(script.contains("function fitInlineInputSoon(input)"));
+        assert!(script.contains("window.requestAnimationFrame"));
         assert!(script.contains("isIndependentlySizedInlineField(input.name)"));
         assert!(!script.contains("function updateEditionDatalist"));
         assert!(!script.contains("prepareEditionPicker"));

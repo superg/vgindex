@@ -48,11 +48,12 @@ function attachEditionSelector(input) {
 
     populateEditionSelect(select);
     select.addEventListener('change', function () {
-        if (!select.value) return;
-        input.value = select.value;
+        var selectedEdition = select.value;
+        if (!selectedEdition) return;
+        input.value = selectedEdition;
         select.value = '';
-        fitInlineGroupForInput(input);
         input.dispatchEvent(new Event('input', { bubbles: true }));
+        fitInlineInputSoon(input);
         input.focus();
     });
     attachIndependentInlineResize(input);
@@ -573,6 +574,15 @@ function contentWidthPx(input) {
 function fitInlineInput(input) {
     if (!input) return;
     input.style.width = contentWidthPx(input) + 'px';
+}
+
+function fitInlineInputSoon(input) {
+    fitInlineInput(input);
+    if (window.requestAnimationFrame) {
+        window.requestAnimationFrame(function () {
+            fitInlineInput(input);
+        });
+    }
 }
 
 function attachIndependentInlineResize(input) {

@@ -1,0 +1,8 @@
+[scraper]
+base_url = http://forum.redump.org
+# Paste the Cookie request header from a logged-in forum.redump.org browser session.
+cookie = <forum Cookie header>
+missing_stop_after = 300
+delay_seconds = 0.1
+workers = 4
+output_dir = data/redump/forum
