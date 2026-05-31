@@ -60,7 +60,7 @@ async fn main() {
             Duration::from_secs(60 * 60 * 24),
         ),
         news_cache: services::news_service::NewsCache::new(Duration::from_secs(
-            config.news_feed_ttl_seconds,
+            services::news_service::NEWS_FEED_TTL_SECONDS,
         )),
     };
 

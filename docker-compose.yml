@@ -25,7 +25,7 @@ services:
       - APP_UPSTREAM_PORT=${APP_UPSTREAM_PORT:-${APP_PORT:-3000}}
       - CADDY_HTTP_PORT=${CADDY_HTTP_PORT:-18000}
       - CADDY_HTTPS_PORT=${CADDY_HTTPS_PORT:-18443}
-      - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
+      - CADDY_ACME_EMAIL=${CADDY_ACME_EMAIL:-email admin@example.com}
 
     depends_on:
       - mediawiki
@@ -51,7 +51,6 @@ services:
       - APP_OIDC_CLIENT_ID=${APP_OIDC_CLIENT_ID:-vgindex-app}
       - APP_OIDC_CLIENT_SECRET=${APP_OIDC_CLIENT_SECRET:-changeme-app-oidc}
       - NEWS_FEED_URL=${NEWS_FEED_URL:-${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}/feed.php?mode=news}
-      - NEWS_FEED_TTL_SECONDS=${NEWS_FEED_TTL_SECONDS:-300}
     volumes:
       - archive_cache:/app/data
     depends_on:

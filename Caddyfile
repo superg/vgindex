@@ -1,5 +1,5 @@
 {
-    email {$ACME_EMAIL}
+    {$CADDY_ACME_EMAIL}
     http_port {$CADDY_HTTP_PORT}
     https_port {$CADDY_HTTPS_PORT}
 }
