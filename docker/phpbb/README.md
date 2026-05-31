@@ -35,15 +35,8 @@ With defaults, phpBB is exposed directly at:
 http://localhost:18080/
 ```
 
-To serve through Caddy instead, set:
-
-```env
-PHPBB_SERVER_NAME=forum.localhost
-PHPBB_SERVER_PORT=8443
-PHPBB_SERVER_PROTOCOL=https://
-```
-
-Then start Caddy and use `https://forum.localhost:8443/`.
+The canonical local site is served through Caddy at
+`http://forum.vgindex.test:$LOCAL_SITE_PORT/`.
 
 ## Configuration
 
@@ -53,12 +46,11 @@ Main variables:
 - `PHPBB_DB_USER` / `PHPBB_DB_PASSWORD`
 - `PHPBB_TABLE_PREFIX` (default: `phpbb_`)
 - `PHPBB_ADMIN_USER` / `PHPBB_ADMIN_PASSWORD` / `PHPBB_ADMIN_EMAIL`
-- `PHPBB_HTTP_PORT` (host port for direct phpBB access, default `18080`)
-- `PHPBB_SERVER_NAME` / `PHPBB_SERVER_PORT` / `PHPBB_SERVER_PROTOCOL`
+- `PHPBB_PUBLIC_URL` (canonical forum URL)
+- `PHPBB_DIRECT_PORT` (loopback-only direct phpBB access, default `18080`)
 - `PHPBB_COOKIE_DOMAIN`
-- `PHPBB_OIDC_ISSUER_URL` (default: `http://phpbb/app.php/oidc`)
-- `PHPBB_OIDC_AUTHORIZE_URL` (optional browser-facing authorize endpoint)
-- `APP_PUBLIC_URL` (optional Rust app public URL used for the callback)
+- `OIDC_PROVIDER_URL` (normally `${PHPBB_PUBLIC_URL}/app.php/oidc`)
+- `APP_PUBLIC_URL` / `MEDIAWIKI_PUBLIC_URL` for seeded redirect URIs
 - `APP_OIDC_CLIENT_ID` / `APP_OIDC_CLIENT_SECRET`
 - `MEDIAWIKI_OIDC_CLIENT_ID` / `MEDIAWIKI_OIDC_CLIENT_SECRET`
 
@@ -88,17 +80,15 @@ The phpBB extension is served under `/app.php/oidc`:
 - `/app.php/oidc/userinfo`
 - `/app.php/oidc/jwks`
 
-Local development defaults use `http://phpbb/app.php/oidc` as the internal
-issuer so MediaWiki can reach phpBB over the Docker network. The discovery
-document can advertise a separate browser-facing authorize URL via
-`PHPBB_OIDC_AUTHORIZE_URL`; otherwise it is derived from phpBB's configured
-public server URL. For production, set the issuer/provider URL to the public
-HTTPS forum origin, for example `https://forum.vgindex.org/app.php/oidc`.
+Local development and production use one canonical provider URL,
+`OIDC_PROVIDER_URL`, which normally points at the public forum URL plus
+`/app.php/oidc`. For production, set `PHPBB_PUBLIC_URL` to the public HTTPS
+forum origin, for example `https://forum.vgindex.org`.
 
 Only seeded first-party clients are supported in v1. Client secrets,
 authorization codes, and opaque access tokens are stored hashed in phpBB-owned
-tables. The Rust app callback is seeded from `APP_PUBLIC_URL` when set, otherwise
-as `https://www.$DOMAIN[:HTTPS_PORT]/auth/oidc/callback`. The RSA signing key lives at
+tables. The Rust app callback is seeded from `APP_PUBLIC_URL`, and the
+MediaWiki callback is seeded from `MEDIAWIKI_PUBLIC_URL`. The RSA signing key lives at
 `/var/www/html/store/vgindex_oidc_private_key.pem`, which is persisted by the
 `phpbb_store` volume.
 
@@ -144,5 +134,6 @@ test-user seeding is skipped.
 
 ## News Category
 
-Create or import a forum called `News` for homepage news widgets that query
-phpBB topics directly from PostgreSQL.
+Create or import `Redump Forum / News` for homepage news. The importer marks
+that forum as phpBB's built-in news feed source, so the app can read
+`/feed.php?mode=news` over HTTP without direct phpBB database access.

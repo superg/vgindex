@@ -33,3 +33,4 @@ crc = "3.4.0"
 jsonwebtoken = "8"
 urlencoding = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+roxmltree = "0.20"

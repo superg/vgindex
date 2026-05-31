@@ -251,7 +251,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
     </div>
 
     <div class="inline-field{% if !self.highlight_class("serial").is_empty() %} {{ self.highlight_class("serial") }}{% endif %}" data-field-flag="has_serial"{% if !show_serial %} style="display:none"{% endif %}>
-        <span class="inline-field-label">Serials</span>
+        <span class="inline-field-label">Disc Serials</span>
         <div id="serial-list" class="inline-field-values">
             {% for s in serials %}
             <input type="text" name="serial" value="{{ s.value }}"{% if !s.highlight.is_empty() %} class="item-{{ s.highlight }}"{% endif %}>

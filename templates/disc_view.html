@@ -35,7 +35,7 @@
             </td></tr>
             {% endif %}
             {% if show_serial && !serial.is_empty() %}
-            <tr><td><strong>{% if serial_count == 1 %}Serial{% else %}Serials{% endif %}</strong></td><td>{{ serial|safe }}</td></tr>
+            <tr><td><strong>{% if serial_count == 1 %}Disc Serial{% else %}Disc Serials{% endif %}</strong></td><td>{{ serial|safe }}</td></tr>
             {% endif %}
             {% if show_edition && !edition.is_empty() %}
             <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td>{{ edition|safe }}</td></tr>

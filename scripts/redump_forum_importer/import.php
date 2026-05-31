@@ -1542,6 +1542,17 @@ function forum_order(string $category, string $forum_name): int
     return $order[$category][$forum_name] ?? 100;
 }
 
+function is_redump_news_forum(array $forum): bool
+{
+    return (string) ($forum['category_name'] ?? '') === 'Redump Forum'
+        && (string) ($forum['forum_name'] ?? '') === 'News';
+}
+
+function feed_news_forum_options(array $forum): int
+{
+    return is_redump_news_forum($forum) ? (1 << FORUM_OPTION_FEED_NEWS) : 0;
+}
+
 function category_permission_profile(array $forums): string
 {
     $profile = 'staff';
@@ -1634,6 +1645,7 @@ function import_forums(array $forums): array
                 'forum_type' => FORUM_POST,
                 'forum_status' => ITEM_UNLOCKED,
                 'forum_flags' => FORUM_FLAG_POST_REVIEW,
+                'forum_options' => feed_news_forum_options($forum),
                 'display_on_index' => 1,
                 'enable_indexing' => 1,
                 'enable_icons' => 1,
@@ -2583,6 +2595,8 @@ function finalize_import(): void
     recompute_users();
     echo "  Recomputing board counters...\n";
     recompute_config();
+    echo "  Configuring News forum feed...\n";
+    configure_news_feed();
     echo "  Rebuilding search index...\n";
     rebuild_search_index();
     echo "  Repairing database sequences...\n";
@@ -2776,6 +2790,78 @@ function set_config_value(string $name, string $value): void
         ]);
     }
     $config[$name] = $value;
+}
+
+function configure_news_feed(): void
+{
+    global $cache, $config, $db;
+
+    set_config_value('feed_enable', '1');
+    set_config_value('feed_limit_topic', (string) max(5, (int) ($config['feed_limit_topic'] ?? 0)));
+
+    $forum_ids = find_news_feed_forum_ids();
+    if (empty($forum_ids))
+    {
+        echo "    No Redump Forum / News forum found; leaving news feed forum selection unchanged.\n";
+        return;
+    }
+
+    $forums_table = table_name('FORUMS_TABLE', 'forums');
+    $option_bit = 1 << FORUM_OPTION_FEED_NEWS;
+    $db->sql_query(
+        'UPDATE ' . $forums_table . '
+         SET forum_options = forum_options - ' . $option_bit . '
+         WHERE ' . $db->sql_bit_and('forum_options', FORUM_OPTION_FEED_NEWS, '<> 0')
+    );
+    $db->sql_query(
+        'UPDATE ' . $forums_table . '
+         SET forum_options = forum_options + ' . $option_bit . '
+         WHERE ' . $db->sql_in_set('forum_id', $forum_ids)
+    );
+
+    if (isset($cache))
+    {
+        $cache->destroy('_feed_news_forum_ids');
+        $cache->destroy('sql', $forums_table);
+    }
+
+    echo '    News feed forum IDs: ' . implode(', ', $forum_ids) . "\n";
+}
+
+function find_news_feed_forum_ids(): array
+{
+    global $db;
+
+    $forums_table = table_name('FORUMS_TABLE', 'forums');
+    $redump_forum = $db->sql_escape('Redump Forum');
+    $news_forum = $db->sql_escape('News');
+    $rows = sql_fetch_all(
+        'SELECT child.forum_id
+         FROM ' . $forums_table . ' child
+         JOIN ' . $forums_table . ' parent ON parent.forum_id = child.parent_id
+         WHERE child.forum_name = \'' . $news_forum . '\'
+           AND parent.forum_name = \'' . $redump_forum . '\'
+           AND child.forum_type = ' . FORUM_POST . '
+         ORDER BY child.forum_id'
+    );
+
+    if (empty($rows))
+    {
+        $rows = sql_fetch_all(
+            'SELECT forum_id
+             FROM ' . $forums_table . '
+             WHERE forum_name = \'' . $news_forum . '\'
+               AND forum_type = ' . FORUM_POST . '
+             ORDER BY forum_id'
+        );
+        if (count($rows) > 1)
+        {
+            echo "    Multiple News forums found outside Redump Forum; not changing news feed forum selection.\n";
+            return [];
+        }
+    }
+
+    return array_map(static fn(array $row): int => (int) $row['forum_id'], $rows);
 }
 
 function rebuild_search_index(): void

@@ -3,6 +3,7 @@ use axum::{extract::State, response::Html, routing::get, Router};
 
 use crate::auth::middleware::CurrentUser;
 use crate::config::SiteConfig;
+use crate::services::news_service::NewsItem;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -13,6 +14,7 @@ pub fn routes() -> Router<AppState> {
 #[template(path = "main.html")]
 struct MainTemplate {
     current_user: Option<String>,
+    news_items: Vec<NewsItem>,
     recent_discs: Vec<RecentDisc>,
 }
 impl SiteConfig for MainTemplate {}
@@ -31,6 +33,15 @@ struct HomeRegionFlag {
 }
 
 async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
+    let news_items = state
+        .news_cache
+        .get(&state.http, &state.config.news_feed_url)
+        .await
+        .unwrap_or_else(|err| {
+            tracing::warn!("Failed to load homepage news: {err}");
+            Vec::new()
+        });
+
     let rows: Vec<RecentDiscRow> = sqlx::query_as(
         "SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
                 (SELECT MIN(ds.created_at)
@@ -40,7 +51,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
          JOIN systems s ON s.code = d.system_code
          WHERE d.status != 'Disabled'
          ORDER BY d.id DESC
-         LIMIT 40",
+         LIMIT 20",
     )
     .fetch_all(&state.pool)
     .await
@@ -79,6 +90,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
     Html(
         MainTemplate {
             current_user: user.user().map(|u| u.username.clone()),
+            news_items,
             recent_discs,
         }
         .render()
