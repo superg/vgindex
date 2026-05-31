@@ -48,19 +48,18 @@ where
         let session_id = session::extract_session_cookie(&parts.headers);
         if let Some(sid) = session_id {
             if let Ok(Some(session)) = session::validate_session(&app_state.pool, &sid).await {
-                if let Some(user_id) = session.user_id {
-                    if let Ok(user) = sqlx::query_as::<_, UserRow>(
-                        "SELECT id, username, role FROM users WHERE id = $1 AND is_active = true",
-                    )
-                    .bind(user_id)
-                    .fetch_optional(&app_state.pool)
-                    .await
+                if let (Some(user_id), Some(role)) = (session.user_id, session.role) {
+                    if let Ok(user) =
+                        sqlx::query_as::<_, UserRow>("SELECT id, username FROM users WHERE id = $1")
+                            .bind(user_id)
+                            .fetch_optional(&app_state.pool)
+                            .await
                     {
                         if let Some(u) = user {
                             return Ok(CurrentUser(Some(AuthenticatedUser {
                                 id: u.id,
                                 username: u.username,
-                                role: u.role,
+                                role,
                             })));
                         }
                     }
@@ -76,7 +75,6 @@ where
 struct UserRow {
     id: i32,
     username: String,
-    role: UserRole,
 }
 
 /// Extractor that requires authentication -- rejects with 401 if not logged in.

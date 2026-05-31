@@ -175,26 +175,14 @@ CREATE TYPE submission_status_enum AS ENUM ('Pending', 'Approved', 'Rejected', '
 -- users
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    username VARCHAR(64) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    role user_role_enum NOT NULL DEFAULT 'User',
-    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
-    email_verify_token VARCHAR(128),
-    email_verify_expires_at TIMESTAMPTZ,
-    password_reset_token VARCHAR(128),
-    password_reset_expires_at TIMESTAMPTZ,
-    failed_login_attempts INT NOT NULL DEFAULT 0,
-    locked_until TIMESTAMPTZ,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_login_at TIMESTAMPTZ
+    username VARCHAR(64) UNIQUE NOT NULL
 );
 
 -- sessions
 CREATE TABLE sessions (
     id VARCHAR(128) PRIMARY KEY,
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    role user_role_enum,
     ip_address VARCHAR(45),
     user_agent TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -203,6 +191,17 @@ CREATE TABLE sessions (
 );
 CREATE INDEX idx_sessions_user ON sessions(user_id);
 CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+
+-- transient OIDC login state
+CREATE TABLE oidc_login_states (
+    state_hash VARCHAR(128) PRIMARY KEY,
+    nonce VARCHAR(128) NOT NULL,
+    pkce_verifier VARCHAR(128) NOT NULL,
+    return_to TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX idx_oidc_login_states_expires ON oidc_login_states(expires_at);
 
 -- dumper credits
 CREATE TABLE disc_dumpers (
@@ -232,13 +231,3 @@ CREATE INDEX idx_submissions_submitter ON disc_submissions(submitter_id);
 CREATE INDEX idx_submissions_status ON disc_submissions(status);
 CREATE INDEX idx_submissions_created ON disc_submissions(created_at DESC);
 CREATE INDEX idx_submissions_target_disc ON disc_submissions(target_disc_id);
-
--- OIDC clients (for phpBB and MediaWiki)
-CREATE TABLE oauth_clients (
-    id SERIAL PRIMARY KEY,
-    client_id VARCHAR(128) UNIQUE NOT NULL,
-    client_secret VARCHAR(255) NOT NULL,
-    redirect_uri TEXT NOT NULL,
-    name VARCHAR(128) NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
