@@ -36,11 +36,10 @@ RUN set -eux; \
     rm -rf /tmp/phpbb.zip /tmp/phpBB3; \
     chown -R www-data:www-data /var/www/html
 
-COPY docker/phpbb/oauthlib/VgindexOidc.php /var/www/html/vendor/carlos-mg89/oauth/src/OAuth/OAuth2/Service/VgindexOidc.php
-COPY docker/phpbb/ext/vgindex/oidc /var/www/html/ext/vgindex/oidc
+COPY scripts/redump_forum_importer/import.php /usr/local/bin/redump-forum-import
 
 COPY docker/phpbb/entrypoint.sh /usr/local/bin/phpbb-entrypoint.sh
-RUN chmod +x /usr/local/bin/phpbb-entrypoint.sh
+RUN chmod +x /usr/local/bin/phpbb-entrypoint.sh /usr/local/bin/redump-forum-import
 
 WORKDIR /var/www/html
 
