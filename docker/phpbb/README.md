@@ -109,9 +109,6 @@ The importer looks for optional local test users at
 `data/redump/users/test_users.json` on the host. If the file does not exist,
 test-user seeding is skipped.
 
-The file is intentionally ignored by git. See
-`scripts/redump_forum_importer/test_users.json.example` for the format.
-
 ## News Category
 
 Create or import a forum called `News` for homepage news widgets that query
