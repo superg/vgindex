@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 const NEWS_ITEM_LIMIT: usize = 5;
+pub const NEWS_FEED_TTL_SECONDS: u64 = 300;
 const FEED_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]

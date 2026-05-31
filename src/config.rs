@@ -36,7 +36,6 @@ pub struct Config {
     pub wiki_url: String,
     pub forum_url: String,
     pub news_feed_url: String,
-    pub news_feed_ttl_seconds: u64,
     pub port: u16,
     pub oidc_provider_url: String,
     pub oidc_client_id: String,
@@ -87,10 +86,6 @@ impl Config {
             env_nonempty("NEWS_FEED_URL")
                 .unwrap_or_else(|| format!("{}/feed.php?mode=news", forum_url)),
         );
-        let news_feed_ttl_seconds = env_nonempty("NEWS_FEED_TTL_SECONDS")
-            .unwrap_or_else(|| "300".into())
-            .parse()
-            .expect("NEWS_FEED_TTL_SECONDS must be a valid number");
         let site_name = env_nonempty("SITE_NAME").unwrap_or_else(|| host_from_url(&base_url));
 
         Self {
@@ -99,7 +94,6 @@ impl Config {
             wiki_url,
             forum_url,
             news_feed_url,
-            news_feed_ttl_seconds,
             oidc_provider_url,
             oidc_client_id: env::var("APP_OIDC_CLIENT_ID").unwrap_or_else(|_| "vgindex-app".into()),
             oidc_client_secret: env::var("APP_OIDC_CLIENT_SECRET")
