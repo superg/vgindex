@@ -5,7 +5,7 @@ required_vars=(
     MEDIAWIKI_DB_HOST MEDIAWIKI_DB_PORT MEDIAWIKI_DB_NAME
     MEDIAWIKI_DB_USER MEDIAWIKI_DB_PASSWORD
     MEDIAWIKI_ADMIN_USER MEDIAWIKI_ADMIN_PASSWORD
-    SITE_DOMAIN HTTPS_PORT
+    MEDIAWIKI_PUBLIC_URL
     MEDIAWIKI_OIDC_CLIENT_ID MEDIAWIKI_OIDC_CLIENT_SECRET
 )
 missing=()
@@ -19,12 +19,12 @@ if [ ${#missing[@]} -gt 0 ]; then
     exit 1
 fi
 
-if [ "$HTTPS_PORT" = "443" ]; then
-    MEDIAWIKI_SERVER="https://wiki.${SITE_DOMAIN}"
+MEDIAWIKI_SERVER="${MEDIAWIKI_PUBLIC_URL%/}"
+if [ -z "${MEDIAWIKI_SITE_NAME:-}" ]; then
+    WIKI_SITE_NAME="$(php -r '$host = parse_url($argv[1], PHP_URL_HOST); echo ($host ?: "Wiki") . " Wiki";' "$MEDIAWIKI_SERVER")"
 else
-    MEDIAWIKI_SERVER="https://wiki.${SITE_DOMAIN}:${HTTPS_PORT}"
+    WIKI_SITE_NAME="$MEDIAWIKI_SITE_NAME"
 fi
-WIKI_SITE_NAME="${SITE_DOMAIN} Wiki"
 
 wait_for_db() {
     echo "MediaWiki entrypoint: waiting for PostgreSQL at ${MEDIAWIKI_DB_HOST}:${MEDIAWIKI_DB_PORT}..."

@@ -3,21 +3,31 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "${HTTPS_PORT:-8443}:443"
-      - "${HTTP_PORT:-8080}:80"
+      - "${CADDY_HTTP_PORT:-18000}:${CADDY_HTTP_PORT:-18000}"
+      - "${CADDY_HTTPS_PORT:-18443}:${CADDY_HTTPS_PORT:-18443}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      default:
+        aliases:
+          - www.${SITE_HOST:-vgindex.test}
+          - forum.${SITE_HOST:-vgindex.test}
+          - wiki.${SITE_HOST:-vgindex.test}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      - DOMAIN=${DOMAIN:-localhost}
-      - APP_HOST=${APP_HOST:-app}
-      - APP_PORT=${APP_PORT:-3000}
-      - HTTPS_PORT=${HTTPS_PORT:-8443}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - APP_UPSTREAM_HOST=${APP_UPSTREAM_HOST:-app}
+      - APP_UPSTREAM_PORT=${APP_UPSTREAM_PORT:-${APP_PORT:-3000}}
+      - CADDY_HTTP_PORT=${CADDY_HTTP_PORT:-18000}
+      - CADDY_HTTPS_PORT=${CADDY_HTTPS_PORT:-18443}
       - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
 
     depends_on:
-      - app
       - mediawiki
       - phpbb
 
@@ -25,18 +35,23 @@ services:
     build: .
     image: ${APP_IMAGE:-app}:${IMAGE_TAG:-dev}
     restart: unless-stopped
+    ports:
+      - "${DIRECT_BIND_ADDR:-127.0.0.1}:${APP_DIRECT_PORT:-13000}:${APP_PORT:-3000}"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-myapp}
       - POSTGRES_HOST=postgres
-      - DOMAIN=${DOMAIN:-localhost}
-      - HTTPS_PORT=${HTTPS_PORT:-8443}
+      - POSTGRES_PORT=5432
       - APP_PORT=${APP_PORT:-3000}
-      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-}
-      - APP_OIDC_PROVIDER_URL=${APP_OIDC_PROVIDER_URL:-http://phpbb/app.php/oidc}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
       - APP_OIDC_CLIENT_ID=${APP_OIDC_CLIENT_ID:-vgindex-app}
       - APP_OIDC_CLIENT_SECRET=${APP_OIDC_CLIENT_SECRET:-changeme-app-oidc}
+      - NEWS_FEED_URL=${NEWS_FEED_URL:-${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}/feed.php?mode=news}
+      - NEWS_FEED_TTL_SECONDS=${NEWS_FEED_TTL_SECONDS:-300}
     volumes:
       - archive_cache:/app/data
     depends_on:
@@ -47,7 +62,7 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "${DIRECT_BIND_ADDR:-127.0.0.1}:${POSTGRES_DIRECT_PORT:-15432}:5432"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
@@ -68,7 +83,7 @@ services:
     image: ${PHPBB_IMAGE:-phpbb}:${IMAGE_TAG:-dev}
     restart: unless-stopped
     ports:
-      - "${PHPBB_HTTP_PORT:-18080}:80"
+      - "${DIRECT_BIND_ADDR:-127.0.0.1}:${PHPBB_DIRECT_PORT:-18080}:80"
     environment:
       - PHPBB_DB_HOST=postgres
       - PHPBB_DB_PORT=5432
@@ -79,26 +94,22 @@ services:
       - PHPBB_ADMIN_USER=${PHPBB_ADMIN_USER:-admin}
       - PHPBB_ADMIN_PASSWORD=${PHPBB_ADMIN_PASSWORD:-changeme-phpbb}
       - PHPBB_ADMIN_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@example.com}
-      - PHPBB_BOARD_NAME=${DOMAIN:-localhost} Forum
-      - PHPBB_BOARD_DESCRIPTION=Disc Preservation Community
-      - DOMAIN=${DOMAIN:-localhost}
-      - HTTPS_PORT=${HTTPS_PORT:-8443}
-      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-}
-      - PHPBB_SERVER_NAME=${PHPBB_SERVER_NAME:-localhost}
-      - PHPBB_SERVER_PORT=${PHPBB_SERVER_PORT:-18080}
-      - PHPBB_SERVER_PROTOCOL=${PHPBB_SERVER_PROTOCOL:-http://}
+      - PHPBB_BOARD_NAME=${PHPBB_BOARD_NAME:-VGIndex Forum}
+      - PHPBB_BOARD_DESCRIPTION=${PHPBB_BOARD_DESCRIPTION:-Disc Preservation Community}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
       - PHPBB_COOKIE_DOMAIN=${PHPBB_COOKIE_DOMAIN:-}
       - PHPBB_EMAIL_ENABLE=${PHPBB_EMAIL_ENABLE:-false}
-      - PHPBB_BOARD_EMAIL=${PHPBB_BOARD_EMAIL:-admin@example.com}
-      - PHPBB_CONTACT_EMAIL=${PHPBB_CONTACT_EMAIL:-admin@example.com}
+      - PHPBB_BOARD_EMAIL=${PHPBB_BOARD_EMAIL:-${PHPBB_ADMIN_EMAIL:-admin@example.com}}
+      - PHPBB_CONTACT_EMAIL=${PHPBB_CONTACT_EMAIL:-${PHPBB_ADMIN_EMAIL:-admin@example.com}}
       - PHPBB_SMTP_HOST=${PHPBB_SMTP_HOST:-}
       - PHPBB_SMTP_PORT=${PHPBB_SMTP_PORT:-25}
       - PHPBB_SMTP_USER=${PHPBB_SMTP_USER:-}
       - PHPBB_SMTP_PASSWORD=${PHPBB_SMTP_PASSWORD:-}
       - PHPBB_SMTP_AUTH_METHOD=${PHPBB_SMTP_AUTH_METHOD:-}
       - PHPBB_SMTP_SECURE=${PHPBB_SMTP_SECURE:-}
-      - PHPBB_OIDC_ISSUER_URL=${PHPBB_OIDC_ISSUER_URL:-http://phpbb/app.php/oidc}
-      - PHPBB_OIDC_AUTHORIZE_URL=${PHPBB_OIDC_AUTHORIZE_URL:-}
       - APP_OIDC_CLIENT_ID=${APP_OIDC_CLIENT_ID:-vgindex-app}
       - APP_OIDC_CLIENT_SECRET=${APP_OIDC_CLIENT_SECRET:-changeme-app-oidc}
       - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
@@ -118,6 +129,8 @@ services:
       dockerfile: docker/mediawiki/Dockerfile
     image: ${MEDIAWIKI_IMAGE:-mediawiki}:${IMAGE_TAG:-dev}
     restart: unless-stopped
+    ports:
+      - "${DIRECT_BIND_ADDR:-127.0.0.1}:${MEDIAWIKI_DIRECT_PORT:-18081}:80"
     environment:
       - MEDIAWIKI_DB_HOST=postgres
       - MEDIAWIKI_DB_PORT=5432
@@ -128,11 +141,11 @@ services:
       - MEDIAWIKI_DB_TYPE=postgres
       - MEDIAWIKI_SECRET_KEY=${MEDIAWIKI_SECRET_KEY:-00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff}
       - MEDIAWIKI_UPGRADE_KEY=${MEDIAWIKI_UPGRADE_KEY:-0011223344556677}
-      - SITE_DOMAIN=${DOMAIN:-localhost}
-      - HTTPS_PORT=${HTTPS_PORT:-8443}
+      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - MEDIAWIKI_SITE_NAME=${MEDIAWIKI_SITE_NAME:-}
       - MEDIAWIKI_ADMIN_USER=${MEDIAWIKI_ADMIN_USER:-admin}
       - MEDIAWIKI_ADMIN_PASSWORD=${MEDIAWIKI_ADMIN_PASSWORD:-changeme-mediawiki}
-      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-http://phpbb/app.php/oidc}
+      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
       - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
       - MEDIAWIKI_OIDC_CLIENT_SECRET=${MEDIAWIKI_OIDC_CLIENT_SECRET:-changeme-mediawiki-oidc}
       - MEDIAWIKI_OIDC_VERIFY_TLS=${MEDIAWIKI_OIDC_VERIFY_TLS:-true}

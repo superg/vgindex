@@ -88,4 +88,17 @@ unlink($test_users_file);
 assert_same('local-only', $test_users['phpbb_user']['password'], 'test user password loaded externally');
 assert_same('user', $test_users['phpbb_user']['role'], 'test user role loaded externally');
 
+assert_same(true, is_redump_news_forum([
+    'category_name' => 'Redump Forum',
+    'forum_name' => 'News',
+]), 'Redump Forum / News is a news feed source');
+assert_same(1 << FORUM_OPTION_FEED_NEWS, feed_news_forum_options([
+    'category_name' => 'Redump Forum',
+    'forum_name' => 'News',
+]), 'Redump Forum / News receives phpBB news feed option');
+assert_same(0, feed_news_forum_options([
+    'category_name' => 'Redump Forum',
+    'forum_name' => 'General discussion',
+]), 'non-News forum does not receive phpBB news feed option');
+
 echo "Importer formatter tests passed.\n";

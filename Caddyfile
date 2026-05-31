@@ -1,36 +1,17 @@
 {
     email {$ACME_EMAIL}
-    auto_https disable_redirects
+    http_port {$CADDY_HTTP_PORT}
+    https_port {$CADDY_HTTPS_PORT}
 }
 
-http://www.{$DOMAIN} {
-    redir https://www.{$DOMAIN}:{$HTTPS_PORT}{uri} permanent
+{$APP_PUBLIC_URL} {
+    reverse_proxy {$APP_UPSTREAM_HOST}:{$APP_UPSTREAM_PORT}
 }
 
-https://www.{$DOMAIN} {
-    reverse_proxy {$APP_HOST}:{$APP_PORT}
-}
-
-http://wiki.{$DOMAIN} {
-    redir https://wiki.{$DOMAIN}:{$HTTPS_PORT}{uri} permanent
-}
-
-https://wiki.{$DOMAIN} {
-    reverse_proxy mediawiki:80
-}
-
-http://forum.{$DOMAIN} {
-    redir https://forum.{$DOMAIN}:{$HTTPS_PORT}{uri} permanent
-}
-
-https://forum.{$DOMAIN} {
+{$PHPBB_PUBLIC_URL} {
     reverse_proxy phpbb:80
 }
 
-http://{$DOMAIN} {
-    redir https://{$DOMAIN}:{$HTTPS_PORT}{uri} permanent
-}
-
-https://{$DOMAIN} {
-    reverse_proxy {$APP_HOST}:{$APP_PORT}
+{$MEDIAWIKI_PUBLIC_URL} {
+    reverse_proxy mediawiki:80
 }

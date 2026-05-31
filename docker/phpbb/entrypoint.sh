@@ -19,12 +19,10 @@ if [ ${#missing[@]} -gt 0 ]; then
     exit 1
 fi
 
-: "${DOMAIN:=localhost}"
-: "${HTTPS_PORT:=8443}"
-: "${APP_PUBLIC_URL:=}"
-: "${PHPBB_SERVER_NAME:=forum.${DOMAIN}}"
-: "${PHPBB_SERVER_PORT:=${HTTPS_PORT}}"
-: "${PHPBB_SERVER_PROTOCOL:=https://}"
+: "${APP_PUBLIC_URL:=http://www.vgindex.test:18000}"
+: "${PHPBB_PUBLIC_URL:=http://forum.vgindex.test:18000}"
+: "${MEDIAWIKI_PUBLIC_URL:=http://wiki.vgindex.test:18000}"
+: "${OIDC_PROVIDER_URL:=${PHPBB_PUBLIC_URL%/}/app.php/oidc}"
 : "${PHPBB_COOKIE_DOMAIN:=}"
 : "${PHPBB_EMAIL_ENABLE:=false}"
 : "${PHPBB_BOARD_EMAIL:=${PHPBB_ADMIN_EMAIL}}"
@@ -35,8 +33,6 @@ fi
 : "${PHPBB_SMTP_PASSWORD:=}"
 : "${PHPBB_SMTP_AUTH_METHOD:=}"
 : "${PHPBB_SMTP_SECURE:=}"
-: "${PHPBB_OIDC_ISSUER_URL:=http://phpbb/app.php/oidc}"
-: "${PHPBB_OIDC_AUTHORIZE_URL:=}"
 
 escape_php_single() {
     printf "%s" "$1" | sed "s/'/'\\\\''/g"
@@ -61,6 +57,30 @@ bool_word() {
     fi
 }
 
+url_part() {
+    local url part
+    url="$1"
+    part="$2"
+    php -r '$p = parse_url($argv[1]); if ($p === false || !isset($p[$argv[2]]) || $p[$argv[2]] === "") { exit(1); } echo $p[$argv[2]];' "$url" "$part"
+}
+
+url_scheme_protocol() {
+    printf "%s://" "$(url_part "$1" scheme)"
+}
+
+url_port_or_default() {
+    php -r '$p = parse_url($argv[1]); if ($p === false || !isset($p["scheme"])) { exit(1); } if (isset($p["port"])) { echo $p["port"]; } else { echo strtolower($p["scheme"]) === "https" ? "443" : "80"; }' "$1"
+}
+
+APP_PUBLIC_URL="${APP_PUBLIC_URL%/}"
+PHPBB_PUBLIC_URL="${PHPBB_PUBLIC_URL%/}"
+MEDIAWIKI_PUBLIC_URL="${MEDIAWIKI_PUBLIC_URL%/}"
+OIDC_PROVIDER_URL="${OIDC_PROVIDER_URL%/}"
+
+phpbb_public_protocol="$(url_scheme_protocol "$PHPBB_PUBLIC_URL")"
+phpbb_public_host="$(url_part "$PHPBB_PUBLIC_URL" host)"
+phpbb_public_port="$(url_port_or_default "$PHPBB_PUBLIC_URL")"
+
 smtp_host_for_phpbb() {
     if [ -z "$PHPBB_SMTP_HOST" ]; then
         return
@@ -80,58 +100,16 @@ smtp_host_for_phpbb() {
     esac
 }
 
-url_with_optional_port() {
-    local protocol host port path default_port port_suffix
-    protocol="$1"
-    host="$2"
-    port="$3"
-    path="$4"
-    default_port=""
-    case "$protocol" in
-        http://) default_port="80" ;;
-        https://) default_port="443" ;;
-    esac
-
-    port_suffix=""
-    if [ -n "$port" ] && [ "$port" != "$default_port" ]; then
-        port_suffix=":${port}"
-    fi
-
-    printf "%s%s%s%s" "$protocol" "$host" "$port_suffix" "$path"
-}
-
 phpbb_oidc_authorize_url() {
-    if [ -n "$PHPBB_OIDC_AUTHORIZE_URL" ]; then
-        printf "%s" "$PHPBB_OIDC_AUTHORIZE_URL"
-        return
-    fi
-
-    url_with_optional_port \
-        "$PHPBB_SERVER_PROTOCOL" \
-        "$PHPBB_SERVER_NAME" \
-        "$PHPBB_SERVER_PORT" \
-        "/app.php/oidc/authorize"
+    printf "%s/authorize" "$OIDC_PROVIDER_URL"
 }
 
 wiki_redirect_uri() {
-    if [ "$HTTPS_PORT" = "443" ]; then
-        printf "https://wiki.%s/Special:PluggableAuthLogin" "$DOMAIN"
-    else
-        printf "https://wiki.%s:%s/Special:PluggableAuthLogin" "$DOMAIN" "$HTTPS_PORT"
-    fi
+    printf "%s/Special:PluggableAuthLogin" "$MEDIAWIKI_PUBLIC_URL"
 }
 
 app_redirect_uri() {
-    if [ -n "$APP_PUBLIC_URL" ]; then
-        printf "%s/auth/oidc/callback" "${APP_PUBLIC_URL%/}"
-        return
-    fi
-
-    if [ "$HTTPS_PORT" = "443" ]; then
-        printf "https://www.%s/auth/oidc/callback" "$DOMAIN"
-    else
-        printf "https://www.%s:%s/auth/oidc/callback" "$DOMAIN" "$HTTPS_PORT"
-    fi
+    printf "%s/auth/oidc/callback" "$APP_PUBLIC_URL"
 }
 
 wait_for_db() {
@@ -207,14 +185,14 @@ sync_server_config() {
 
     local cookie_secure
     cookie_secure=1
-    if [ "$PHPBB_SERVER_PROTOCOL" != "https://" ]; then
+    if [ "$phpbb_public_protocol" != "https://" ]; then
         cookie_secure=0
     fi
 
-    php bin/phpbbcli.php config:set server_protocol "$PHPBB_SERVER_PROTOCOL" >/dev/null
+    php bin/phpbbcli.php config:set server_protocol "$phpbb_public_protocol" >/dev/null
     php bin/phpbbcli.php config:set force_server_vars 1 >/dev/null
-    php bin/phpbbcli.php config:set server_name "$PHPBB_SERVER_NAME" >/dev/null
-    php bin/phpbbcli.php config:set server_port "$PHPBB_SERVER_PORT" >/dev/null
+    php bin/phpbbcli.php config:set server_name "$phpbb_public_host" >/dev/null
+    php bin/phpbbcli.php config:set server_port "$phpbb_public_port" >/dev/null
     php bin/phpbbcli.php config:set cookie_secure "$cookie_secure" >/dev/null
     php bin/phpbbcli.php config:set cookie_domain "$PHPBB_COOKIE_DOMAIN" >/dev/null
 }
@@ -249,6 +227,26 @@ sync_email_config() {
     php bin/phpbbcli.php config:set smtp_auth_method "$PHPBB_SMTP_AUTH_METHOD" >/dev/null
     php bin/phpbbcli.php config:set smtp_username "$PHPBB_SMTP_USER" >/dev/null
     php bin/phpbbcli.php config:set smtp_password "$PHPBB_SMTP_PASSWORD" >/dev/null
+}
+
+sync_feed_config() {
+    echo "phpBB entrypoint: syncing feed settings..."
+    cd /var/www/html
+
+    local config_table
+    config_table="${PHPBB_TABLE_PREFIX}config"
+
+    php bin/phpbbcli.php config:set feed_enable 1 >/dev/null
+    PGPASSWORD="$PHPBB_DB_PASSWORD" psql \
+        -h "$PHPBB_DB_HOST" \
+        -p "$PHPBB_DB_PORT" \
+        -U "$PHPBB_DB_USER" \
+        -d "$PHPBB_DB_NAME" \
+        -v ON_ERROR_STOP=1 \
+        -c "UPDATE ${config_table}
+            SET config_value = GREATEST(COALESCE(NULLIF(config_value, '')::int, 0), 5)::text
+            WHERE config_name = 'feed_limit_topic';" \
+        >/dev/null
 }
 
 disable_legacy_oidc_extension() {
@@ -295,7 +293,7 @@ sync_oidc_provider_config() {
     echo "phpBB entrypoint: syncing OIDC provider settings..."
     cd /var/www/html
 
-    php bin/phpbbcli.php config:set vgindex_oidc_issuer_url "$PHPBB_OIDC_ISSUER_URL" >/dev/null
+    php bin/phpbbcli.php config:set vgindex_oidc_issuer_url "$OIDC_PROVIDER_URL" >/dev/null
     php bin/phpbbcli.php config:set vgindex_oidc_authorize_url "$(phpbb_oidc_authorize_url)" >/dev/null
 }
 
@@ -379,7 +377,7 @@ seed_app_oidc_client() {
 write_install_config() {
     local cookie_secure
     cookie_secure=true
-    if [ "$PHPBB_SERVER_PROTOCOL" != "https://" ]; then
+    if [ "$phpbb_public_protocol" != "https://" ]; then
         cookie_secure=false
     fi
 
@@ -424,10 +422,10 @@ installer:
 
   server:
     cookie_secure: ${cookie_secure}
-    server_protocol: "${PHPBB_SERVER_PROTOCOL}"
+    server_protocol: "${phpbb_public_protocol}"
     force_server_vars: true
-    server_name: "${PHPBB_SERVER_NAME}"
-    server_port: ${PHPBB_SERVER_PORT}
+    server_name: "${phpbb_public_host}"
+    server_port: ${phpbb_public_port}
     script_path: /
 
   extensions: []
@@ -463,6 +461,7 @@ disable_legacy_oidc_extension
 sync_server_config
 sync_auth_config
 sync_email_config
+sync_feed_config
 enable_oidc_provider
 sync_oidc_provider_config
 ensure_oidc_signing_key

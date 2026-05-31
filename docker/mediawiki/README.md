@@ -3,7 +3,7 @@
 This stack uses a custom MediaWiki image that explicitly enables PostgreSQL
 PHP extensions (`pgsql`, `pdo_pgsql`) for reliable DB connectivity.
 
-MediaWiki runs on its own subdomain (`wiki.$DOMAIN`), not under a path.
+MediaWiki runs on its own public URL (`MEDIAWIKI_PUBLIC_URL`), not under a path.
 
 ## How it works
 
@@ -26,16 +26,16 @@ docker compose up -d postgres phpbb mediawiki caddy
 ```
 
 No manual install steps needed. With default config, the wiki is at
-`https://wiki.localhost:8443/`.
+`http://wiki.vgindex.test:$LOCAL_SITE_PORT/`.
 
 ## Configuration
 
-All settings derived from the top-level `DOMAIN` and `HTTPS_PORT` env vars.
-Additional overrides in `docker-compose.yml`:
+Main settings:
 
 - `MEDIAWIKI_ADMIN_USER` (default: `admin`) - local wiki admin username
 - `MEDIAWIKI_ADMIN_PASSWORD` (default: `changeme-mediawiki`) - local wiki admin password
-- `OIDC_PROVIDER_URL` (default: `http://phpbb/app.php/oidc`) - phpBB OIDC issuer URL
+- `MEDIAWIKI_PUBLIC_URL` - canonical wiki URL
+- `OIDC_PROVIDER_URL` - phpBB OIDC provider URL
 - `MEDIAWIKI_OIDC_CLIENT_ID` / `MEDIAWIKI_OIDC_CLIENT_SECRET`
 - `MEDIAWIKI_OIDC_VERIFY_TLS` (default: `true`) - set `false` only for local
   HTTPS issuer testing with self-signed certificates
@@ -51,6 +51,6 @@ ensuring Dockerfile changes (e.g. new extensions) always take effect.
 
 - Container is running: `docker compose ps mediawiki`
 - DB reachable: `docker compose exec mediawiki php -m | grep pgsql`
-- Route works through Caddy: open `https://wiki.$DOMAIN:$HTTPS_PORT/`
+- Route works through Caddy: open `$MEDIAWIKI_PUBLIC_URL`
 - Discovery works from MediaWiki:
   `docker compose exec mediawiki php -r 'echo file_get_contents(getenv("OIDC_PROVIDER_URL") . "/.well-known/openid-configuration");'`

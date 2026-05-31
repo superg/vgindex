@@ -1,6 +1,6 @@
 <?php
 # MediaWiki LocalSettings
-# Site name and server URL are derived from SITE_DOMAIN and HTTPS_PORT env vars.
+# Site name and server URL are derived from MEDIAWIKI_PUBLIC_URL.
 
 function requireEnv(string $name): string {
     $val = getenv($name);
@@ -69,13 +69,13 @@ function vgiOidcSafeUsernameBase(string $username): string {
     return $title !== null ? $title->getText() : 'User';
 }
 
-$siteDomain = requireEnv('SITE_DOMAIN');
-$httpsPort = requireEnv('HTTPS_PORT');
-$portSuffix = ($httpsPort === '443') ? '' : ":$httpsPort";
+$mediawikiPublicUrl = rtrim(requireEnv('MEDIAWIKI_PUBLIC_URL'), '/');
+$mediawikiHost = parse_url($mediawikiPublicUrl, PHP_URL_HOST) ?: 'wiki';
+$mediawikiSiteName = getenv('MEDIAWIKI_SITE_NAME');
 
-$wgSitename = "$siteDomain Wiki";
-$wgMetaNamespace = str_replace('.', '_', $siteDomain);
-$wgServer = "https://wiki.{$siteDomain}{$portSuffix}";
+$wgSitename = ($mediawikiSiteName === false || $mediawikiSiteName === '') ? "$mediawikiHost Wiki" : $mediawikiSiteName;
+$wgMetaNamespace = str_replace('.', '_', $mediawikiHost);
+$wgServer = $mediawikiPublicUrl;
 $wgScriptPath = "";
 $wgArticlePath = "/$1";
 

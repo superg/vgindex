@@ -23,6 +23,7 @@ pub struct AppState {
     pub http: reqwest::Client,
     pub archive_tx: tokio::sync::mpsc::UnboundedSender<String>,
     pub edition_suggestions: services::disc_service::EditionSuggestionsCache,
+    pub news_cache: services::news_service::NewsCache,
 }
 
 #[tokio::main]
@@ -58,6 +59,9 @@ async fn main() {
         edition_suggestions: services::disc_service::EditionSuggestionsCache::new(
             Duration::from_secs(60 * 60 * 24),
         ),
+        news_cache: services::news_service::NewsCache::new(Duration::from_secs(
+            config.news_feed_ttl_seconds,
+        )),
     };
 
     tokio::spawn(run_session_cleanup(pool.clone()));
