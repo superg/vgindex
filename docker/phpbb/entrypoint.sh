@@ -5,8 +5,6 @@ required_vars=(
     PHPBB_DB_HOST PHPBB_DB_PORT PHPBB_DB_NAME PHPBB_DB_USER PHPBB_DB_PASSWORD
     PHPBB_TABLE_PREFIX PHPBB_ADMIN_USER PHPBB_ADMIN_PASSWORD PHPBB_ADMIN_EMAIL
     PHPBB_BOARD_NAME PHPBB_BOARD_DESCRIPTION
-    PHPBB_OIDC_CLIENT_ID PHPBB_OIDC_CLIENT_SECRET
-    POSTGRES_DB OIDC_ISSUER_URL DOMAIN HTTPS_PORT
 )
 missing=()
 for var in "${required_vars[@]}"; do
@@ -19,12 +17,58 @@ if [ ${#missing[@]} -gt 0 ]; then
     exit 1
 fi
 
+: "${DOMAIN:=localhost}"
+: "${HTTPS_PORT:=8443}"
 : "${PHPBB_SERVER_NAME:=forum.${DOMAIN}}"
 : "${PHPBB_SERVER_PORT:=${HTTPS_PORT}}"
 : "${PHPBB_SERVER_PROTOCOL:=https://}"
+: "${PHPBB_COOKIE_DOMAIN:=}"
+: "${PHPBB_EMAIL_ENABLE:=false}"
+: "${PHPBB_BOARD_EMAIL:=${PHPBB_ADMIN_EMAIL}}"
+: "${PHPBB_CONTACT_EMAIL:=${PHPBB_ADMIN_EMAIL}}"
+: "${PHPBB_SMTP_HOST:=}"
+: "${PHPBB_SMTP_PORT:=25}"
+: "${PHPBB_SMTP_USER:=}"
+: "${PHPBB_SMTP_PASSWORD:=}"
+: "${PHPBB_SMTP_AUTH_METHOD:=}"
+: "${PHPBB_SMTP_SECURE:=}"
 
 escape_php_single() {
     printf "%s" "$1" | sed "s/'/'\\\\''/g"
+}
+
+bool_01() {
+    case "$(printf "%s" "$1" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on|enabled) printf "1" ;;
+        *) printf "0" ;;
+    esac
+}
+
+bool_word() {
+    if [ "$(bool_01 "$1")" = "1" ]; then
+        printf "true"
+    else
+        printf "false"
+    fi
+}
+
+smtp_host_for_phpbb() {
+    if [ -z "$PHPBB_SMTP_HOST" ]; then
+        return
+    fi
+
+    local smtp_secure
+    smtp_secure="$(printf "%s" "$PHPBB_SMTP_SECURE" | tr '[:upper:]' '[:lower:]')"
+
+    case "$PHPBB_SMTP_HOST" in
+        *://*) printf "%s" "$PHPBB_SMTP_HOST" ;;
+        *)
+            case "$smtp_secure" in
+                ssl|tls) printf "%s://%s" "$smtp_secure" "$PHPBB_SMTP_HOST" ;;
+                *) printf "%s" "$PHPBB_SMTP_HOST" ;;
+            esac
+            ;;
+    esac
 }
 
 wait_for_db() {
@@ -94,51 +138,70 @@ db_initialized() {
         -tAc "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${config_table}' LIMIT 1" 2>/dev/null | grep -q 1
 }
 
-forum_public_base() {
-    if [ "$PHPBB_SERVER_PORT" = "443" ]; then
-        printf "%s%s" "$PHPBB_SERVER_PROTOCOL" "$PHPBB_SERVER_NAME"
-    else
-        printf "%s%s:%s" "$PHPBB_SERVER_PROTOCOL" "$PHPBB_SERVER_NAME" "$PHPBB_SERVER_PORT"
-    fi
-}
-
-configure_oidc_sso() {
-    echo "phpBB entrypoint: configuring OIDC SSO..."
+sync_server_config() {
+    echo "phpBB entrypoint: syncing public server URL..."
     cd /var/www/html
 
-    php bin/phpbbcli.php extension:enable vgindex/oidc --safe-mode >/dev/null 2>&1 || true
-    php bin/phpbbcli.php config:set auth_oauth_vgindex_key "$PHPBB_OIDC_CLIENT_ID" >/dev/null
-    php bin/phpbbcli.php config:set auth_oauth_vgindex_secret "$PHPBB_OIDC_CLIENT_SECRET" >/dev/null
-    php bin/phpbbcli.php config:set auth_method oauth >/dev/null
-    # Disable local self-registration permanently; users must come from app SSO.
+    local cookie_secure
+    cookie_secure=1
+    if [ "$PHPBB_SERVER_PROTOCOL" != "https://" ]; then
+        cookie_secure=0
+    fi
+
+    php bin/phpbbcli.php config:set server_protocol "$PHPBB_SERVER_PROTOCOL" >/dev/null
+    php bin/phpbbcli.php config:set force_server_vars 1 >/dev/null
+    php bin/phpbbcli.php config:set server_name "$PHPBB_SERVER_NAME" >/dev/null
+    php bin/phpbbcli.php config:set server_port "$PHPBB_SERVER_PORT" >/dev/null
+    php bin/phpbbcli.php config:set cookie_secure "$cookie_secure" >/dev/null
+    php bin/phpbbcli.php config:set cookie_domain "$PHPBB_COOKIE_DOMAIN" >/dev/null
+}
+
+sync_auth_config() {
+    echo "phpBB entrypoint: syncing native auth settings..."
+    cd /var/www/html
+
+    php bin/phpbbcli.php config:set auth_method db >/dev/null
+    # Keep public self-registration disabled; imported users recover access through password reset.
     php bin/phpbbcli.php config:set require_activation 3 >/dev/null
+    php bin/phpbbcli.php config:set allow_password_reset 1 >/dev/null
+}
 
-    local redirect_uri client_id_sql client_secret_sql redirect_uri_sql
-    redirect_uri="$(forum_public_base)/ucp.php?mode=login&login=external&oauth_service=vgindex"
-    client_id_sql="$(printf "%s" "$PHPBB_OIDC_CLIENT_ID" | sed "s/'/''/g")"
-    client_secret_sql="$(printf "%s" "$PHPBB_OIDC_CLIENT_SECRET" | sed "s/'/''/g")"
-    redirect_uri_sql="$(printf "%s" "$redirect_uri" | sed "s/'/''/g")"
+sync_email_config() {
+    echo "phpBB entrypoint: syncing email settings..."
+    cd /var/www/html
 
-    local attempt
-    for attempt in $(seq 1 20); do
-        if PGPASSWORD="$PHPBB_DB_PASSWORD" psql \
-            -h "$PHPBB_DB_HOST" \
-            -p "$PHPBB_DB_PORT" \
-            -U "$PHPBB_DB_USER" \
-            -d "$POSTGRES_DB" \
-            -v ON_ERROR_STOP=1 \
-            -c "INSERT INTO oauth_clients (client_id, client_secret, redirect_uri, name) VALUES ('$client_id_sql', '$client_secret_sql', '$redirect_uri_sql', 'phpBB Forum')
-                ON CONFLICT (client_id) DO UPDATE SET
-                  client_secret = EXCLUDED.client_secret,
-                  redirect_uri = EXCLUDED.redirect_uri,
-                  name = EXCLUDED.name;" >/dev/null 2>&1; then
-            echo "phpBB entrypoint: OIDC client synced in app DB."
-            return 0
-        fi
-        sleep 2
-    done
+    local smtp_delivery smtp_host
+    smtp_delivery=0
+    smtp_host="$(smtp_host_for_phpbb)"
+    if [ -n "$smtp_host" ]; then
+        smtp_delivery=1
+    fi
 
-    echo "phpBB entrypoint: warning - could not upsert oauth client in app DB (${POSTGRES_DB}) after retries."
+    php bin/phpbbcli.php config:set email_enable "$(bool_01 "$PHPBB_EMAIL_ENABLE")" >/dev/null
+    php bin/phpbbcli.php config:set board_email "$PHPBB_BOARD_EMAIL" >/dev/null
+    php bin/phpbbcli.php config:set board_contact "$PHPBB_CONTACT_EMAIL" >/dev/null
+    php bin/phpbbcli.php config:set smtp_delivery "$smtp_delivery" >/dev/null
+    php bin/phpbbcli.php config:set smtp_host "$smtp_host" >/dev/null
+    php bin/phpbbcli.php config:set smtp_port "$PHPBB_SMTP_PORT" >/dev/null
+    php bin/phpbbcli.php config:set smtp_auth_method "$PHPBB_SMTP_AUTH_METHOD" >/dev/null
+    php bin/phpbbcli.php config:set smtp_username "$PHPBB_SMTP_USER" >/dev/null
+    php bin/phpbbcli.php config:set smtp_password "$PHPBB_SMTP_PASSWORD" >/dev/null
+}
+
+disable_legacy_oidc_extension() {
+    local config_table ext_table
+    config_table="${PHPBB_TABLE_PREFIX}config"
+    ext_table="${PHPBB_TABLE_PREFIX}ext"
+
+    PGPASSWORD="$PHPBB_DB_PASSWORD" psql \
+        -h "$PHPBB_DB_HOST" \
+        -p "$PHPBB_DB_PORT" \
+        -U "$PHPBB_DB_USER" \
+        -d "$PHPBB_DB_NAME" \
+        -v ON_ERROR_STOP=1 \
+        -c "UPDATE ${ext_table} SET ext_active = 0 WHERE ext_name = 'vgindex/oidc';" \
+        -c "DELETE FROM ${config_table} WHERE config_name LIKE 'auth_oauth_vgindex_%';" \
+        >/dev/null 2>&1 || true
 }
 
 write_install_config() {
@@ -146,6 +209,14 @@ write_install_config() {
     cookie_secure=true
     if [ "$PHPBB_SERVER_PROTOCOL" != "https://" ]; then
         cookie_secure=false
+    fi
+
+    local email_enabled smtp_delivery smtp_host
+    email_enabled="$(bool_word "$PHPBB_EMAIL_ENABLE")"
+    smtp_delivery=false
+    smtp_host="$(smtp_host_for_phpbb)"
+    if [ -n "$smtp_host" ]; then
+        smtp_delivery=true
     fi
 
     mkdir -p /var/www/html/install
@@ -171,7 +242,13 @@ installer:
     table_prefix: "${PHPBB_TABLE_PREFIX}"
 
   email:
-    enabled: false
+    enabled: ${email_enabled}
+    smtp_delivery: ${smtp_delivery}
+    smtp_host: "${smtp_host}"
+    smtp_port: "${PHPBB_SMTP_PORT}"
+    smtp_auth: "${PHPBB_SMTP_AUTH_METHOD}"
+    smtp_user: "${PHPBB_SMTP_USER}"
+    smtp_pass: "${PHPBB_SMTP_PASSWORD}"
 
   server:
     cookie_secure: ${cookie_secure}
@@ -210,7 +287,10 @@ fi
 rm -rf /var/www/html/install
 
 write_config_php
-configure_oidc_sso
+disable_legacy_oidc_extension
+sync_server_config
+sync_auth_config
+sync_email_config
 
 chown -R www-data:www-data /var/www/html/cache
 

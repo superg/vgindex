@@ -8,6 +8,7 @@ same directory as this script.
 Usage:
     python scraper.py
     python scraper.py --config /path/to/scraper.cfg
+    python scraper.py --metadata-only
 """
 
 import argparse
@@ -40,6 +41,8 @@ FORUM_ID_RE = re.compile(r"/forum/(\d+)(?:/|$)|[?&]id=(\d+)(?:&|$)")
 POST_ID_RE = re.compile(r"^p(\d+)$")
 ITEMS_TOTAL_RE = re.compile(r"\bof\s+([\d,]+)")
 ITEMS_SHORT_TOTAL_RE = re.compile(r"^[^:]+:\s*([\d,]+)$")
+COUNT_RE = re.compile(r"([\d,]+)")
+TOPIC_INDEX_SAVE_EVERY_PAGES = 25
 
 GENERIC_ATTACHMENT_TEXT = {
     "",
@@ -71,6 +74,7 @@ class ScraperConfig:
     config_path: Path
     base_url: str
     cookie: str
+    max_known_topic_id: int
     missing_stop_after: int
     delay_seconds: float
     workers: int
@@ -95,6 +99,7 @@ class TopicSummary:
     source_url: str
     flags: dict[str, bool]
     moved_to_topic_id: int | None = None
+    view_count: int | None = None
 
 
 class ScrapeError(Exception):
@@ -152,6 +157,14 @@ def load_config(config_path: Path) -> ScraperConfig:
     if not cookie:
         raise ValueError("Config key cookie is required")
 
+    max_known_topic_id_raw = section.get("max_known_topic_id", "0")
+    try:
+        max_known_topic_id = int(max_known_topic_id_raw)
+    except ValueError as exc:
+        raise ValueError("Config key max_known_topic_id must be an integer") from exc
+    if max_known_topic_id < 0:
+        raise ValueError("Config key max_known_topic_id must be >= 0")
+
     missing_stop_after_raw = section.get("missing_stop_after", "200")
     try:
         missing_stop_after = int(missing_stop_after_raw)
@@ -182,11 +195,22 @@ def load_config(config_path: Path) -> ScraperConfig:
         config_path=config_path,
         base_url=base_url,
         cookie=cookie,
+        max_known_topic_id=max_known_topic_id,
         missing_stop_after=missing_stop_after,
         delay_seconds=delay_seconds,
         workers=workers,
         output_dir=output_dir,
     )
+
+
+def update_max_known_topic_id(config: ScraperConfig, new_max_known_topic_id: int) -> None:
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read(config.config_path)
+    section = parser[CONFIG_SECTION] if parser.has_section(CONFIG_SECTION) else parser["DEFAULT"]
+    section["max_known_topic_id"] = str(new_max_known_topic_id)
+    with _no_interrupt():
+        with open(config.config_path, "w", encoding="utf-8") as f:
+            parser.write(f)
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +337,13 @@ def clean_text(tag: Tag | None) -> str:
     return tag.get_text(" ", strip=True) if tag else ""
 
 
+def parse_count_text(value: str) -> int | None:
+    m = COUNT_RE.search(value)
+    if not m:
+        return None
+    return int(m.group(1).replace(",", ""))
+
+
 def safe_filename(name: str) -> str:
     name = name.strip().replace("\\", "_").replace("/", "_")
     name = re.sub(r"[\x00-\x1f\x7f]+", "", name)
@@ -323,6 +354,10 @@ def safe_filename(name: str) -> str:
 
 def local_topic_path(output_dir: str, topic_id: int) -> str:
     return os.path.join(output_dir, "topics", f"{topic_id:06d}.json")
+
+
+def topic_index_path(output_dir: str) -> str:
+    return os.path.join(output_dir, "topic_index.json")
 
 
 def direct_topic_url(base_url: str, topic_id: int) -> str:
@@ -453,9 +488,35 @@ def parse_forum_page(html: str, page_url: str, forum: ForumInfo) -> tuple[list[T
             source_url=source_url,
             flags=flags,
             moved_to_topic_id=moved_to_topic_id,
+            view_count=parse_topic_views(item),
         ))
 
     return topics, parse_next_url(soup, page_url)
+
+
+def parse_topic_views(item: Tag) -> int | None:
+    for selector in (
+        ".item-info .info-views strong",
+        ".item-info .info-views",
+        "li.info-views strong",
+        "li.info-views",
+    ):
+        node = item.select_one(selector)
+        if not node:
+            continue
+        count = parse_count_text(node.get_text(" ", strip=True))
+        if count is not None:
+            return count
+
+    for li in item.select(".item-info li"):
+        classes = " ".join(li.get("class", [])).lower()
+        if "view" not in classes:
+            continue
+        count = parse_count_text(li.get_text(" ", strip=True))
+        if count is not None:
+            return count
+
+    return None
 
 
 def parse_next_url(soup: BeautifulSoup, page_url: str) -> str | None:
@@ -824,6 +885,7 @@ def write_topic_json(topic: dict, config: ScraperConfig) -> None:
     out_path = local_topic_path(config.output_dir, int(topic["topic_id"]))
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     tmp_path = f"{out_path}.tmp"
+    topic = topic_json_record(topic)
     with _no_interrupt():
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(topic, f, ensure_ascii=False, indent=2)
@@ -831,9 +893,108 @@ def write_topic_json(topic: dict, config: ScraperConfig) -> None:
         os.replace(tmp_path, out_path)
 
 
+def load_topic_index(output_dir: str) -> dict[int, dict]:
+    path = topic_index_path(output_dir)
+    if not os.path.exists(path):
+        return {}
+
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    records = data.get("topics", data)
+    if not isinstance(records, dict):
+        return {}
+
+    result: dict[int, dict] = {}
+    for key, value in records.items():
+        if not isinstance(value, dict):
+            continue
+        try:
+            topic_id = int(key)
+        except ValueError:
+            continue
+        result[topic_id] = value
+    return result
+
+
+def write_topic_index(topic_index: dict[int, dict], output_dir: str) -> None:
+    os.makedirs(output_dir, exist_ok=True)
+    path = topic_index_path(output_dir)
+    tmp_path = f"{path}.tmp"
+    data = {
+        "topics": {str(topic_id): topic_index[topic_id] for topic_id in sorted(topic_index)},
+    }
+    with _no_interrupt():
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp_path, path)
+
+
+def max_topic_index_id(topic_index: dict[int, dict]) -> int:
+    return max(topic_index.keys(), default=0)
+
+
+def known_topic_high_water(config: ScraperConfig, highest_disk_topic_id: int) -> int:
+    return max(config.max_known_topic_id, highest_disk_topic_id)
+
+
+def topic_json_record(topic: dict) -> dict:
+    record = dict(topic)
+    for key in ("view_count", "views", "topic_views"):
+        record.pop(key, None)
+    return record
+
+
 # ---------------------------------------------------------------------------
 # Crawling
 # ---------------------------------------------------------------------------
+
+
+def collect_forum_topic_metadata(
+    session: requests.Session,
+    config: ScraperConfig,
+    forums: list[ForumInfo],
+) -> dict[int, dict]:
+    topic_index = load_topic_index(config.output_dir)
+    pages_since_save = 0
+
+    print(f"Forum metadata phase: starting with {len(topic_index)} indexed topic(s)")
+    for forum in forums:
+        url = forum.source_url
+        seen_pages = set()
+        page = 1
+
+        while url and not interrupted:
+            if url in seen_pages:
+                break
+            seen_pages.add(url)
+
+            try:
+                html = fetch_html(session, url, config.delay_seconds)
+            except ScrapeError as exc:
+                with stats_lock:
+                    stats["forum_pages_failed"] += 1
+                print(f"  [!] Forum {forum.forum_id} metadata page {page}: {exc}")
+                break
+
+            page_topics, next_url = parse_forum_page(html, url, forum)
+            for topic in page_topics:
+                topic_index[topic.topic_id] = topic_summary_record(topic)
+
+            print(f"  Forum {forum.forum_id} metadata page {page}: {len(page_topics)} topic(s)")
+            pages_since_save += 1
+            if pages_since_save >= TOPIC_INDEX_SAVE_EVERY_PAGES:
+                write_topic_index(topic_index, config.output_dir)
+                pages_since_save = 0
+
+            url = next_url
+            page += 1
+
+    write_topic_index(topic_index, config.output_dir)
+    print(f"Forum metadata phase: indexed {len(topic_index)} topic(s)")
+    print()
+    return topic_index
 
 
 def crawl_forum(
@@ -985,6 +1146,15 @@ def base_topic_record(summary: TopicSummary) -> dict:
         "flags": {k: v for k, v in summary.flags.items() if v},
         "source_url": summary.source_url,
     }
+
+
+def topic_summary_record(summary: TopicSummary) -> dict:
+    record = base_topic_record(summary)
+    if summary.view_count is not None:
+        record["view_count"] = summary.view_count
+    if summary.moved_to_topic_id is not None:
+        record["moved_to_topic_id"] = summary.moved_to_topic_id
+    return record
 
 
 def dedupe_attachments(attachments: list[dict]) -> list[dict]:
@@ -1194,11 +1364,12 @@ def run_discovery_phase(
     config: ScraperConfig,
     forums_by_id: dict[int, ForumInfo],
     start_topic_id: int,
-) -> None:
+) -> int:
     print(f"Discovery phase: probing from topic ID {start_topic_id}...")
     topic_id = start_topic_id
     discovered = 0
     consecutive_missing = 0
+    max_confirmed_topic_id = start_topic_id - 1
     pending_missing: list[int] = []
 
     while not interrupted and consecutive_missing < config.missing_stop_after:
@@ -1209,6 +1380,7 @@ def run_discovery_phase(
             pending_missing = []
             consecutive_missing = 0
             print(f"Topic {topic_id}: already completed")
+            max_confirmed_topic_id = max(max_confirmed_topic_id, topic_id)
             topic_id += 1
             continue
 
@@ -1226,6 +1398,7 @@ def run_discovery_phase(
             pending_missing = []
             consecutive_missing = 0
             discovered += 1
+            max_confirmed_topic_id = max(max_confirmed_topic_id, topic_id)
         elif result_type == "missing":
             if not has_missing_marker:
                 pending_missing.append(topic_id)
@@ -1241,6 +1414,7 @@ def run_discovery_phase(
     if discovered == 0:
         print("No new topics discovered")
     print()
+    return max_confirmed_topic_id
 
 
 def print_topic_result(progress: int, total: int, topic_id: int, status: str, warnings: list[str]) -> None:
@@ -1271,6 +1445,11 @@ def main() -> None:
         "--config",
         help="Path to scraper config file. Defaults to scraper.cfg next to this script.",
     )
+    parser.add_argument(
+        "--metadata-only",
+        action="store_true",
+        help="Only refresh topic_index.json from forum topic lists; do not scrape topic JSONs or attachments.",
+    )
     args = parser.parse_args()
     config_path = Path(args.config).expanduser().resolve() if args.config else default_config_path()
 
@@ -1282,13 +1461,14 @@ def main() -> None:
     os.makedirs(os.path.join(config.output_dir, "topics"), exist_ok=True)
     os.makedirs(os.path.join(config.output_dir, "attachments"), exist_ok=True)
 
-    high_water_topic_id = highest_completed_topic_id(config.output_dir)
+    highest_disk_topic_id = highest_completed_topic_id(config.output_dir)
     session = create_session(config.cookie)
 
     print(f"Config: {config.config_path}")
     print(f"Base URL: {config.base_url}")
     print(f"Output: {os.path.abspath(config.output_dir)}")
-    print(f"Highest completed topic ID on disk: {high_water_topic_id}")
+    print(f"Max known topic ID in config: {config.max_known_topic_id}")
+    print(f"Highest completed topic ID on disk: {highest_disk_topic_id}")
     print(f"Missing stop after: {config.missing_stop_after}")
     print(f"Delay: {config.delay_seconds}s, Workers: {config.workers}")
     print()
@@ -1302,10 +1482,41 @@ def main() -> None:
         print(f"Visible forums: {len(forums)}")
         print()
 
+        if args.metadata_only:
+            topic_index = collect_forum_topic_metadata(session, config, forums)
+            high_water_topic_id = max(
+                config.max_known_topic_id,
+                highest_disk_topic_id,
+                max_topic_index_id(topic_index),
+            )
+            if high_water_topic_id > config.max_known_topic_id:
+                update_max_known_topic_id(config, high_water_topic_id)
+                print(f"Updated max_known_topic_id in config to {high_water_topic_id}")
+                print()
+
+            print("Metadata-only mode complete; topic scraping was skipped.")
+            print_summary()
+            if interrupted or stats["forum_pages_failed"] > 0:
+                sys.exit(1)
+            return
+
+        high_water_topic_id = known_topic_high_water(config, highest_disk_topic_id)
+        if high_water_topic_id > config.max_known_topic_id:
+            update_max_known_topic_id(config, high_water_topic_id)
+            print(f"Updated max_known_topic_id in config to {high_water_topic_id}")
+            print()
+
         if not interrupted:
             run_backfill_phase(config, forums_by_id, high_water_topic_id)
         if not interrupted:
-            run_discovery_phase(config, forums_by_id, high_water_topic_id + 1)
+            discovered_high_water_topic_id = run_discovery_phase(
+                config,
+                forums_by_id,
+                high_water_topic_id + 1,
+            )
+            if discovered_high_water_topic_id > high_water_topic_id:
+                update_max_known_topic_id(config, discovered_high_water_topic_id)
+                print(f"Updated max_known_topic_id in config to {discovered_high_water_topic_id}")
 
     except Interrupted:
         pass

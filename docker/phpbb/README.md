@@ -1,30 +1,45 @@
 # phpBB + PostgreSQL
 
-This stack uses a repo-managed phpBB image (not Bitnami) and keeps phpBB on
-PostgreSQL.
+This stack uses a repo-managed phpBB image and PostgreSQL. phpBB uses native
+database authentication; VGIndex OIDC is not installed in the phpBB image for
+this phase.
 
 ## How it works
 
 The container entrypoint automates first boot:
 
-1. Waits for PostgreSQL to become ready.
-2. Checks for phpBB table `${PHPBB_TABLE_PREFIX}config`.
-3. If missing, runs `php bin/phpbbcli.php install --no-interaction`.
-4. Writes `config.php` from environment variables.
-5. Enables `vgindex/oidc` extension and configures phpBB OAuth auth method.
-6. Upserts phpBB OAuth client in app DB (`oauth_clients`) with current callback URL.
+1. Waits for PostgreSQL.
+2. Installs phpBB if `${PHPBB_TABLE_PREFIX}config` does not exist.
+3. Writes `config.php` from environment variables.
+4. Forces `auth_method = db`.
+5. Syncs public URL and email/SMTP settings.
+6. Disables any legacy `vgindex/oidc` phpBB extension rows if they exist.
 7. Starts Apache.
 
-Subsequent restarts skip install and regenerate `config.php` to stay resilient
-after container recreation.
+Subsequent restarts skip install and regenerate runtime config so container
+recreation stays predictable.
 
 ## Usage
 
 ```bash
-docker compose up -d postgres app phpbb caddy
+docker compose up -d postgres app phpbb
 ```
 
-With default config, forum is available at `https://forum.localhost:8443/`.
+With defaults, phpBB is exposed directly at:
+
+```text
+http://localhost:18080/
+```
+
+To serve through Caddy instead, set:
+
+```env
+PHPBB_SERVER_NAME=forum.localhost
+PHPBB_SERVER_PORT=8443
+PHPBB_SERVER_PROTOCOL=https://
+```
+
+Then start Caddy and use `https://forum.localhost:8443/`.
 
 ## Configuration
 
@@ -34,12 +49,27 @@ Main variables:
 - `PHPBB_DB_USER` / `PHPBB_DB_PASSWORD`
 - `PHPBB_TABLE_PREFIX` (default: `phpbb_`)
 - `PHPBB_ADMIN_USER` / `PHPBB_ADMIN_PASSWORD` / `PHPBB_ADMIN_EMAIL`
-- `PHPBB_OIDC_CLIENT_ID` / `PHPBB_OIDC_CLIENT_SECRET`
-- `OIDC_ISSUER_URL` (internal OIDC URL, default `http://app:3000`)
-- `APP_DB_NAME` (app DB where `oauth_clients` lives, default `vgindex`)
-- `DOMAIN` + `HTTPS_PORT` (used to derive forum server URL)
+- `PHPBB_HTTP_PORT` (host port for direct phpBB access, default `18080`)
+- `PHPBB_SERVER_NAME` / `PHPBB_SERVER_PORT` / `PHPBB_SERVER_PROTOCOL`
+- `PHPBB_COOKIE_DOMAIN`
 
-## Persisted data
+Email/password reset variables:
+
+- `PHPBB_EMAIL_ENABLE` (default: `false`)
+- `PHPBB_BOARD_EMAIL`
+- `PHPBB_CONTACT_EMAIL`
+- `PHPBB_SMTP_HOST`
+- `PHPBB_SMTP_PORT`
+- `PHPBB_SMTP_USER`
+- `PHPBB_SMTP_PASSWORD`
+- `PHPBB_SMTP_AUTH_METHOD`
+- `PHPBB_SMTP_SECURE` (`ssl` or `tls` when the host does not already include a
+  scheme)
+
+Public self-registration is disabled, but active imported users can recover
+access through phpBB password reset once email is configured.
+
+## Persisted Data
 
 Only phpBB mutable data is persisted:
 
@@ -47,48 +77,42 @@ Only phpBB mutable data is persisted:
 - `/var/www/html/store`
 - `/var/www/html/images/avatars/upload`
 
-Application code stays in the image so version bumps are predictable.
+Application code stays in the image.
 
-## Upgrade flow
+## Redump Forum Import
 
-1. Update `PHPBB_VERSION` build argument in `docker/phpbb/Dockerfile`.
-2. Rebuild and restart phpBB:
-   - `docker compose build phpbb`
-   - `docker compose up -d phpbb`
-3. If phpBB requires schema updates, run the built-in updater from phpBB admin.
+The image includes `redump-forum-import` for the scraped Redump archive. Compose
+mounts `./data/redump` read-only at `/import/redump`, so a preflight can be run
+with:
 
-## OAuth2/OIDC integration
+```bash
+docker compose exec --user www-data phpbb redump-forum-import \
+  --forum-data /import/redump/forum \
+  --users-dir /import/redump/users \
+  --source-timezone UTC \
+  --target-domain localhost \
+  --dry-run
+```
 
-The image ships an in-repo extension (`vgindex/oidc`) and configures SSO
-automatically on startup:
+Remove `--dry-run` to import into a fresh/disposable phpBB board. The importer
+refuses to run if real forum content already exists beyond phpBB installer
+sample data.
 
-- enables extension `vgindex/oidc`
-- sets `auth_method` to `oauth` (OIDC-first login flow)
-- disables local self-registration (`require_activation = 3`)
-- writes OAuth key/secret from env vars
-- syncs callback URL to `https://forum.<domain>:<port>/ucp.php?mode=login`
+Use `--target-domain vgindex.org` for deployment imports. Imported Redump-family
+links outside the old forum are rewritten to HTTPS under that target domain,
+including wiki subdomains. Old forum post/topic links that can be mapped to
+imported phpBB IDs are stored as root-relative phpBB links, so they follow
+whatever host you use to browse the board.
 
-No ACP-side provider setup is required for baseline SSO.
+The importer looks for optional local test users at
+`/import/redump/users/test_users.json`, which maps to
+`data/redump/users/test_users.json` on the host. If the file does not exist,
+test-user seeding is skipped.
 
-### Auto-provisioning
+The file is intentionally ignored by git. See
+`scripts/redump_forum_importer/test_users.json.example` for the format.
 
-First-time SSO users are automatically created in phpBB — no manual "link or
-create account" screen is shown. The extension listens on
-`core.oauth_login_after_check_if_provider_id_has_match` and, when no linked
-account exists:
+## News Category
 
-1. Fetches `preferred_username` and `email` from the OIDC userinfo response.
-2. Creates a normal phpBB user in the `REGISTERED` group.
-3. Inserts the OAuth account link so subsequent logins are direct.
-
-**Username collision policy**: if `preferred_username` is already taken, a
-numeric suffix is appended (`name2`, `name3`, …). As a final fallback, a
-6-character hex hash of the OIDC `sub` is used.
-
-The user's phpBB password is set to a random value — login is only possible
-via the OIDC provider.
-
-## News category
-
-Create a forum called `News` (or keep forum ID `1`) for homepage news widgets that
-query phpBB topics directly from PostgreSQL.
+Create or import a forum called `News` for homepage news widgets that query
+phpBB topics directly from PostgreSQL.

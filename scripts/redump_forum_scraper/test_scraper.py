@@ -40,7 +40,10 @@ class ParserTests(unittest.TestCase):
                 <a href="/topic/100/example/">Example</a>
               </h3>
             </div>
-            <ul class="item-info"><li class="info-replies"><strong>4</strong></li></ul>
+            <ul class="item-info">
+              <li class="info-replies"><strong>4</strong></li>
+              <li class="info-views"><strong>1,234</strong></li>
+            </ul>
           </div>
           <div id="topic101" class="main-item even moved">
             <div class="item-subject">
@@ -55,8 +58,12 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(topics[0].flags["sticky"])
         self.assertTrue(topics[0].flags["closed"])
         self.assertFalse(topics[0].flags["moved"])
+        self.assertEqual(topics[0].view_count, 1234)
         self.assertEqual(topics[1].moved_to_topic_id, 200)
         record = scraper.base_topic_record(topics[0])
+        self.assertNotIn("view_count", record)
+        metadata_record = scraper.topic_summary_record(topics[0])
+        self.assertEqual(metadata_record["view_count"], 1234)
         self.assertNotIn("reply_count", record)
         self.assertNotIn("post_count", record)
 
@@ -168,7 +175,6 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(scraper.ScrapeError):
             scraper.validate_auth('<p id="welcome"><span>Not logged in.</span></p>')
 
-
 class ConfigTests(unittest.TestCase):
     def test_load_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -177,6 +183,7 @@ class ConfigTests(unittest.TestCase):
                 "[scraper]\n"
                 "base_url = http://forum.redump.org\n"
                 "cookie = PHPSESSID=abc\n"
+                "max_known_topic_id = 123\n"
                 "missing_stop_after = 25\n"
                 "delay_seconds = 0.2\n"
                 "workers = 2\n"
@@ -185,6 +192,7 @@ class ConfigTests(unittest.TestCase):
             )
             config = scraper.load_config(path)
             self.assertEqual(config.cookie, "PHPSESSID=abc")
+            self.assertEqual(config.max_known_topic_id, 123)
             self.assertEqual(config.missing_stop_after, 25)
             self.assertEqual(config.delay_seconds, 0.2)
             self.assertEqual(config.workers, 2)
@@ -210,6 +218,39 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 scraper.load_config(path)
 
+    def test_invalid_max_known_topic_id_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scraper.cfg"
+            path.write_text("[scraper]\ncookie = PHPSESSID=abc\nmax_known_topic_id = -1\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                scraper.load_config(path)
+
+    def test_update_max_known_topic_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scraper.cfg"
+            path.write_text(
+                "[scraper]\n"
+                "cookie = PHPSESSID=abc\n"
+                "max_known_topic_id = 10\n",
+                encoding="utf-8",
+            )
+            config = scraper.load_config(path)
+            scraper.update_max_known_topic_id(config, 42)
+            updated = scraper.load_config(path)
+
+            self.assertEqual(updated.max_known_topic_id, 42)
+
+    def test_update_max_known_topic_id_preserves_default_section_configs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scraper.cfg"
+            path.write_text("[DEFAULT]\ncookie = PHPSESSID=abc\n", encoding="utf-8")
+            config = scraper.load_config(path)
+            scraper.update_max_known_topic_id(config, 42)
+            updated = scraper.load_config(path)
+
+            self.assertEqual(updated.cookie, "PHPSESSID=abc")
+            self.assertEqual(updated.max_known_topic_id, 42)
+
 
 class CrawlingTests(unittest.TestCase):
     def make_config(self, tmp):
@@ -217,6 +258,7 @@ class CrawlingTests(unittest.TestCase):
             config_path=Path(tmp) / "scraper.cfg",
             base_url="http://forum.redump.org",
             cookie="PHPSESSID=abc",
+            max_known_topic_id=0,
             missing_stop_after=5,
             delay_seconds=0,
             workers=1,
@@ -228,6 +270,7 @@ class CrawlingTests(unittest.TestCase):
             config_path=Path(tmp) / "scraper.cfg",
             base_url="http://forum.redump.org",
             cookie="PHPSESSID=abc",
+            max_known_topic_id=0,
             missing_stop_after=missing_stop_after,
             delay_seconds=0,
             workers=1,
@@ -244,6 +287,18 @@ class CrawlingTests(unittest.TestCase):
             (topics_dir / "notes.json").write_text("{}", encoding="utf-8")
 
             self.assertEqual(scraper.highest_completed_topic_id(tmp), 7)
+
+    def test_known_topic_high_water_uses_config_and_disk_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = self.make_config(tmp)
+            object.__setattr__(config, "max_known_topic_id", 10)
+
+            high_water = scraper.known_topic_high_water(
+                config,
+                highest_disk_topic_id=12,
+            )
+
+            self.assertEqual(high_water, 12)
 
     def test_process_topic_id_can_skip_missing_marker_for_discovery(self):
         original = scraper.scrape_topic_id
@@ -269,6 +324,26 @@ class CrawlingTests(unittest.TestCase):
                 self.assertFalse(Path(scraper.local_topic_path(tmp, 11)).exists())
         finally:
             scraper.scrape_topic_id = original
+
+    def test_write_topic_json_strips_view_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = self.make_config(tmp)
+            scraper.write_topic_json(
+                {
+                    "topic_id": 12,
+                    "subject": "Example",
+                    "view_count": 50,
+                    "views": 51,
+                    "topic_views": 52,
+                },
+                config,
+            )
+            written = Path(scraper.local_topic_path(tmp, 12)).read_text(encoding="utf-8")
+
+            self.assertIn('"subject": "Example"', written)
+            self.assertNotIn("view_count", written)
+            self.assertNotIn("topic_views", written)
+            self.assertNotIn('"views"', written)
 
     def test_process_topic_id_marks_historical_missing_by_default(self):
         original = scraper.scrape_topic_id
@@ -310,12 +385,13 @@ class CrawlingTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 config = self.make_config_with_missing_stop_after(tmp, 3)
                 with contextlib.redirect_stdout(io.StringIO()):
-                    scraper.run_discovery_phase(config, {}, 1)
+                    max_confirmed_topic_id = scraper.run_discovery_phase(config, {}, 1)
 
                 self.assertTrue(Path(scraper.local_topic_path(tmp, 1)).exists())
                 self.assertFalse(Path(scraper.local_topic_path(tmp, 3)).exists())
                 self.assertFalse(Path(scraper.local_topic_path(tmp, 4)).exists())
                 self.assertFalse(Path(scraper.local_topic_path(tmp, 5)).exists())
+                self.assertEqual(max_confirmed_topic_id, 2)
         finally:
             scraper.process_topic_id = original
 
@@ -344,10 +420,11 @@ class CrawlingTests(unittest.TestCase):
                 scraper.write_missing_topic_marker(tmp, 1)
 
                 with contextlib.redirect_stdout(io.StringIO()):
-                    scraper.run_discovery_phase(config, {}, 1)
+                    max_confirmed_topic_id = scraper.run_discovery_phase(config, {}, 1)
 
                 self.assertEqual(calls[0], (1, False, True))
                 self.assertGreater(Path(scraper.local_topic_path(tmp, 1)).stat().st_size, 0)
+                self.assertEqual(max_confirmed_topic_id, 1)
         finally:
             scraper.process_topic_id = original
 
