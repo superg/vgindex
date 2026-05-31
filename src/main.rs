@@ -20,7 +20,7 @@ use crate::config::Config;
 pub struct AppState {
     pub pool: PgPool,
     pub config: Arc<Config>,
-    pub oidc: auth::oidc::OidcProvider,
+    pub http: reqwest::Client,
     pub archive_tx: tokio::sync::mpsc::UnboundedSender<String>,
     pub edition_suggestions: services::disc_service::EditionSuggestionsCache,
 }
@@ -48,14 +48,12 @@ async fn main() {
 
     std::fs::create_dir_all(config::DATA_DIR).ok();
 
-    let oidc = auth::oidc::OidcProvider::new();
-
     let (archive_tx, archive_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     let state = AppState {
         pool: pool.clone(),
         config: Arc::new(config.clone()),
-        oidc,
+        http: reqwest::Client::new(),
         archive_tx,
         edition_suggestions: services::disc_service::EditionSuggestionsCache::new(
             Duration::from_secs(60 * 60 * 24),
@@ -93,6 +91,15 @@ async fn run_session_cleanup(pool: PgPool) {
             Ok(_) => {}
             Err(e) => {
                 tracing::warn!("Failed to clean up expired sessions: {e}");
+            }
+        }
+        match auth::oidc::cleanup_expired_login_states(&pool).await {
+            Ok(deleted) if deleted > 0 => {
+                tracing::debug!("Cleaned up {deleted} expired OIDC login states");
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!("Failed to clean up expired OIDC login states: {e}");
             }
         }
 

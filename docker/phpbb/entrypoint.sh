@@ -5,6 +5,7 @@ required_vars=(
     PHPBB_DB_HOST PHPBB_DB_PORT PHPBB_DB_NAME PHPBB_DB_USER PHPBB_DB_PASSWORD
     PHPBB_TABLE_PREFIX PHPBB_ADMIN_USER PHPBB_ADMIN_PASSWORD PHPBB_ADMIN_EMAIL
     PHPBB_BOARD_NAME PHPBB_BOARD_DESCRIPTION
+    APP_OIDC_CLIENT_ID APP_OIDC_CLIENT_SECRET
     MEDIAWIKI_OIDC_CLIENT_ID MEDIAWIKI_OIDC_CLIENT_SECRET
 )
 missing=()
@@ -20,6 +21,7 @@ fi
 
 : "${DOMAIN:=localhost}"
 : "${HTTPS_PORT:=8443}"
+: "${APP_PUBLIC_URL:=}"
 : "${PHPBB_SERVER_NAME:=forum.${DOMAIN}}"
 : "${PHPBB_SERVER_PORT:=${HTTPS_PORT}}"
 : "${PHPBB_SERVER_PROTOCOL:=https://}"
@@ -116,6 +118,19 @@ wiki_redirect_uri() {
         printf "https://wiki.%s/Special:PluggableAuthLogin" "$DOMAIN"
     else
         printf "https://wiki.%s:%s/Special:PluggableAuthLogin" "$DOMAIN" "$HTTPS_PORT"
+    fi
+}
+
+app_redirect_uri() {
+    if [ -n "$APP_PUBLIC_URL" ]; then
+        printf "%s/auth/oidc/callback" "${APP_PUBLIC_URL%/}"
+        return
+    fi
+
+    if [ "$HTTPS_PORT" = "443" ]; then
+        printf "https://www.%s/auth/oidc/callback" "$DOMAIN"
+    else
+        printf "https://www.%s:%s/auth/oidc/callback" "$DOMAIN" "$HTTPS_PORT"
     fi
 }
 
@@ -329,6 +344,38 @@ seed_mediawiki_oidc_client() {
         >/dev/null
 }
 
+seed_app_oidc_client() {
+    echo "phpBB entrypoint: seeding app OIDC client..."
+
+    local clients_table redirect_uri redirect_uris_json secret_hash now
+    local client_id_sql secret_hash_sql redirect_uris_sql
+    clients_table="${PHPBB_TABLE_PREFIX}vgindex_oidc_clients"
+    redirect_uri="$(app_redirect_uri)"
+    redirect_uris_json="$(php -r 'echo json_encode([$argv[1]], JSON_UNESCAPED_SLASHES);' "$redirect_uri")"
+    secret_hash="$(php -r 'echo password_hash($argv[1], PASSWORD_DEFAULT);' "$APP_OIDC_CLIENT_SECRET")"
+    now="$(date +%s)"
+
+    client_id_sql="$(escape_sql_single "$APP_OIDC_CLIENT_ID")"
+    secret_hash_sql="$(escape_sql_single "$secret_hash")"
+    redirect_uris_sql="$(escape_sql_single "$redirect_uris_json")"
+
+    PGPASSWORD="$PHPBB_DB_PASSWORD" psql \
+        -h "$PHPBB_DB_HOST" \
+        -p "$PHPBB_DB_PORT" \
+        -U "$PHPBB_DB_USER" \
+        -d "$PHPBB_DB_NAME" \
+        -v ON_ERROR_STOP=1 \
+        -c "INSERT INTO ${clients_table} (client_id, client_secret_hash, redirect_uris, active, first_party, created_at, updated_at)
+            VALUES ('${client_id_sql}', '${secret_hash_sql}', '${redirect_uris_sql}', 1, 1, ${now}, ${now})
+            ON CONFLICT (client_id) DO UPDATE SET
+              client_secret_hash = EXCLUDED.client_secret_hash,
+              redirect_uris = EXCLUDED.redirect_uris,
+              active = 1,
+              first_party = 1,
+              updated_at = ${now};" \
+        >/dev/null
+}
+
 write_install_config() {
     local cookie_secure
     cookie_secure=true
@@ -420,6 +467,7 @@ enable_oidc_provider
 sync_oidc_provider_config
 ensure_oidc_signing_key
 seed_mediawiki_oidc_client
+seed_app_oidc_client
 
 chown -R www-data:www-data /var/www/html/cache
 

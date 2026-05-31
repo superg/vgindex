@@ -33,7 +33,10 @@ services:
       - DOMAIN=${DOMAIN:-localhost}
       - HTTPS_PORT=${HTTPS_PORT:-8443}
       - APP_PORT=${APP_PORT:-3000}
-      - OIDC_ISSUER_URL=http://${APP_HOST:-app}:${APP_PORT:-3000}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-}
+      - APP_OIDC_PROVIDER_URL=${APP_OIDC_PROVIDER_URL:-http://phpbb/app.php/oidc}
+      - APP_OIDC_CLIENT_ID=${APP_OIDC_CLIENT_ID:-vgindex-app}
+      - APP_OIDC_CLIENT_SECRET=${APP_OIDC_CLIENT_SECRET:-changeme-app-oidc}
     volumes:
       - archive_cache:/app/data
     depends_on:
@@ -80,6 +83,7 @@ services:
       - PHPBB_BOARD_DESCRIPTION=Disc Preservation Community
       - DOMAIN=${DOMAIN:-localhost}
       - HTTPS_PORT=${HTTPS_PORT:-8443}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-}
       - PHPBB_SERVER_NAME=${PHPBB_SERVER_NAME:-localhost}
       - PHPBB_SERVER_PORT=${PHPBB_SERVER_PORT:-18080}
       - PHPBB_SERVER_PROTOCOL=${PHPBB_SERVER_PROTOCOL:-http://}
@@ -95,6 +99,8 @@ services:
       - PHPBB_SMTP_SECURE=${PHPBB_SMTP_SECURE:-}
       - PHPBB_OIDC_ISSUER_URL=${PHPBB_OIDC_ISSUER_URL:-http://phpbb/app.php/oidc}
       - PHPBB_OIDC_AUTHORIZE_URL=${PHPBB_OIDC_AUTHORIZE_URL:-}
+      - APP_OIDC_CLIENT_ID=${APP_OIDC_CLIENT_ID:-vgindex-app}
+      - APP_OIDC_CLIENT_SECRET=${APP_OIDC_CLIENT_SECRET:-changeme-app-oidc}
       - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
       - MEDIAWIKI_OIDC_CLIENT_SECRET=${MEDIAWIKI_OIDC_CLIENT_SECRET:-changeme-mediawiki-oidc}
     volumes:

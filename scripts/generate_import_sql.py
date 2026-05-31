@@ -1391,8 +1391,7 @@ def disc_id_from_filename(fname):
     return int(base.lstrip("0") or "0")
 
 
-def process_all(data_dir, output_path, max_disc_id=None, reset=True,
-                dev_users_sql_path=None):
+def process_all(data_dir, output_path, max_disc_id=None, reset=True):
     # Pass 1: collect all usernames, load all disc data, accumulate max-stats
     filenames = sorted(f for f in os.listdir(data_dir) if f.endswith(".json"))
     total = len(filenames)
@@ -1464,8 +1463,8 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
 
         if reset:
             # Wipe all importer-owned tables so this script is rerunnable
-            # against a non-empty database. CASCADE also clears sessions and
-            # oauth_* rows that reference the users we're about to recreate.
+            # against a non-empty database. CASCADE also clears sessions
+            # that reference the users we're about to recreate.
             # RESTART IDENTITY resets the serial sequences; the setval(...)
             # statements at the end of this file then move them to MAX(id)+1.
             out.write("-- Reset importer-owned tables (disable with --no-reset)\n")
@@ -1857,8 +1856,6 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True,
         out.write("SELECT setval('files_id_seq', (SELECT COALESCE(MAX(id), 1) FROM files));\n")
         out.write("SELECT setval('disc_submissions_id_seq', (SELECT COALESCE(MAX(id), 1) FROM disc_submissions));\n")
 
-        _write_dev_users(out, dev_users_sql_path)
-
         out.write("\nCOMMIT;\n")
 
     print(f"[done] Wrote {output_path}", file=sys.stderr)
@@ -1911,58 +1908,13 @@ def _write_synthetic_prereqs(out):
 
 
 def _write_users(out, user_id_map):
-    out.write("-- Users (imported, non-loginable)\n")
+    out.write("-- Users (imported disc workflow identities)\n")
     batch = []
     for username, uid in sorted(user_id_map.items(), key=lambda x: x[1]):
-        email = f"{username}@imported.invalid"
-        batch.append(
-            f"({uid}, {sql_str(username)}, {sql_str(email)}, '!', "
-            f"'User', FALSE, FALSE)"
-        )
+        batch.append(f"({uid}, {sql_str(username)})")
     _write_batched(out, "users",
-        "(id, username, email, password_hash, role, is_active, email_verified) "
-        "OVERRIDING SYSTEM VALUE",
+        "(id, username) OVERRIDING SYSTEM VALUE",
         batch)
-
-
-def _write_dev_users(out, dev_users_sql_path):
-    """Inline an external developer-users SQL file (e.g. users.sql).
-
-    The external file is expected to be a self-contained, idempotent block
-    (typically `INSERT INTO users (...) VALUES (...) ON CONFLICT (username)
-    DO UPDATE SET ...;`). We deliberately do NOT bake the credentials into
-    this importer so it remains safe to commit to version control.
-
-    Must run AFTER the users_id_seq setval, so that any pure-dev usernames
-    that don't collide with imported dumpers pick fresh ids past the imported
-    range. We then realign the sequence once more, in case the upsert burned
-    sequence values on ON CONFLICT rows.
-
-    If `dev_users_sql_path` is None or the file does not exist, this just
-    emits a comment so the absence is visible in the generated SQL.
-    """
-    out.write("\n-- Developer login accounts (inlined from external SQL file)\n")
-    if not dev_users_sql_path:
-        out.write("-- (skipped: no --dev-users-sql path provided)\n")
-        return
-    if not os.path.isfile(dev_users_sql_path):
-        out.write(f"-- (skipped: {dev_users_sql_path} not found)\n")
-        print(f"[sql]   Dev users: {dev_users_sql_path} not found, skipping",
-              file=sys.stderr)
-        return
-
-    with open(dev_users_sql_path, "r") as f:
-        contents = f.read()
-    out.write(f"-- Source: {dev_users_sql_path}\n")
-    out.write(contents)
-    if not contents.endswith("\n"):
-        out.write("\n")
-    # Realign in case the upsert burned sequence values via ON CONFLICT.
-    out.write(
-        "SELECT setval('users_id_seq', "
-        "(SELECT COALESCE(MAX(id), 1) FROM users));\n"
-    )
-    print(f"[sql]   Dev users: inlined {dev_users_sql_path}", file=sys.stderr)
 
 
 def _build_empty_disc_insert(disc_id):
@@ -2122,12 +2074,6 @@ def main():
                         default=True,
                         help="Do not emit the leading TRUNCATE block; assume "
                              "the target database is already empty")
-    parser.add_argument("--dev-users-sql", default="users.sql",
-                        help="Path to an external SQL file with developer "
-                             "login accounts to inline at the end of the "
-                             "transaction. Skipped silently if missing. "
-                             "Pass an empty string to disable. "
-                             "Default: users.sql")
     args = parser.parse_args()
 
     if not os.path.isdir(args.data_dir):
@@ -2135,8 +2081,7 @@ def main():
         sys.exit(1)
 
     process_all(args.data_dir, args.output, max_disc_id=args.max_id,
-                reset=args.reset,
-                dev_users_sql_path=args.dev_users_sql or None)
+                reset=args.reset)
 
 
 if __name__ == "__main__":

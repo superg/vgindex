@@ -326,9 +326,3 @@ WHERE code IN ('AUDIO-CD');
 UPDATE systems
 SET has_offset_extra = TRUE
 WHERE code IN ('DC', 'NAOMI', 'CHIHIRO', 'NAOMI2', 'TRF');
-
--- OIDC clients seed (for phpBB and MediaWiki)
-INSERT INTO oauth_clients
-    (client_id,          client_secret,                  redirect_uri,                                            name) VALUES
-    ('phpbb-client',     'change-this-secret-phpbb',     'http://localhost:8080/forum/ucp.php?mode=login',        'phpBB Forum'),
-    ('mediawiki-client', 'change-this-secret-mediawiki', 'http://localhost:8080/wiki/Special:PluggableAuthLogin', 'MediaWiki'  );

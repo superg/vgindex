@@ -37,11 +37,9 @@ pub struct Config {
     pub wiki_url: String,
     pub forum_url: String,
     pub port: u16,
-    /// Used as the OIDC issuer and base for back-channel endpoints (token,
-    /// userinfo, jwks). Defaults to `base_url`. In Docker set this to the
-    /// internal service URL (e.g. `http://app:3000`) so MediaWiki/phpBB can
-    /// reach the token endpoint without TLS/DNS issues.
-    pub oidc_issuer_url: String,
+    pub oidc_provider_url: String,
+    pub oidc_client_id: String,
+    pub oidc_client_secret: String,
 }
 
 fn public_url(subdomain: &str, domain: &str, port: u16) -> String {
@@ -60,17 +58,25 @@ impl Config {
             .parse()
             .expect("HTTPS_PORT must be a valid port number");
 
-        let base_url = public_url("www", &domain, https_port);
+        let default_base_url = public_url("www", &domain, https_port);
+        let base_url = env::var("APP_PUBLIC_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(default_base_url);
         let wiki_url = public_url("wiki", &domain, https_port);
         let forum_url = public_url("forum", &domain, https_port);
 
         Self {
-            oidc_issuer_url: env::var("OIDC_ISSUER_URL").unwrap_or_else(|_| base_url.clone()),
             domain,
             https_port,
             base_url,
             wiki_url,
             forum_url,
+            oidc_provider_url: env::var("APP_OIDC_PROVIDER_URL")
+                .unwrap_or_else(|_| "http://phpbb/app.php/oidc".into()),
+            oidc_client_id: env::var("APP_OIDC_CLIENT_ID").unwrap_or_else(|_| "vgindex-app".into()),
+            oidc_client_secret: env::var("APP_OIDC_CLIENT_SECRET")
+                .unwrap_or_else(|_| "changeme-app-oidc".into()),
             database_url: format!(
                 "postgres://{}:{}@{}:{}/{}",
                 env::var("POSTGRES_USER").expect("POSTGRES_USER must be set"),

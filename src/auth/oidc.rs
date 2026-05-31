@@ -1,555 +1,485 @@
-use std::{collections::HashMap, sync::Arc};
-
 use axum::{
     extract::{Query, State},
-    http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Json, Redirect, Response},
-    routing::{get, post},
-    Form, Router,
+    http::{header, HeaderMap},
+    response::{IntoResponse, Redirect, Response},
+    routing::get,
+    Router,
 };
-use base64::{
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-    Engine,
-};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{Duration, Utc};
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header as JwtHeader};
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use rand::RngCore;
-use rsa::{pkcs1::EncodeRsaPrivateKey, traits::PublicKeyParts, RsaPrivateKey, RsaPublicKey};
-use serde::Deserialize;
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use sqlx::PgPool;
 
 use crate::auth::middleware::CurrentUser;
-use crate::auth::session::generate_session_id;
+use crate::auth::session;
+use crate::db::models::UserRole;
+use crate::error::{AppError, AppResult};
 use crate::AppState;
 
-// ---------------------------------------------------------------------------
-// OidcProvider — holds RSA signing key generated at startup
-// ---------------------------------------------------------------------------
-
-#[derive(Clone)]
-pub struct OidcProvider {
-    encoding_key: Arc<EncodingKey>,
-    kid: String,
-    jwks_json: Value,
-}
-
-impl OidcProvider {
-    pub fn new() -> Self {
-        tracing::info!("Generating OIDC RSA-2048 signing key (slow in debug builds)…");
-        let mut rng = rand::thread_rng();
-        let private_key =
-            RsaPrivateKey::new(&mut rng, 2048).expect("failed to generate OIDC RSA key");
-        let public_key = RsaPublicKey::from(&private_key);
-
-        let pem = private_key
-            .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
-            .expect("failed to encode RSA private key to PEM");
-
-        let encoding_key = EncodingKey::from_rsa_pem(pem.as_bytes())
-            .expect("failed to create JWT encoding key from RSA PEM");
-
-        let n_b64 = URL_SAFE_NO_PAD.encode(public_key.n().to_bytes_be());
-        let e_b64 = URL_SAFE_NO_PAD.encode(public_key.e().to_bytes_be());
-
-        let mut kid_bytes = [0u8; 8];
-        rng.fill_bytes(&mut kid_bytes);
-        let kid = hex::encode(kid_bytes);
-
-        let jwks_json = json!({
-            "keys": [{
-                "kty": "RSA",
-                "use": "sig",
-                "alg": "RS256",
-                "kid": &kid,
-                "n": n_b64,
-                "e": e_b64,
-            }]
-        });
-
-        tracing::info!("OIDC signing key ready (kid={kid})");
-
-        Self {
-            encoding_key: Arc::new(encoding_key),
-            kid,
-            jwks_json,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Internal DB row helpers
-// ---------------------------------------------------------------------------
-
-#[derive(sqlx::FromRow)]
-struct AuthCodeRow {
-    user_id: i32,
-    redirect_uri: String,
-    scope: String,
-    nonce: Option<String>,
-}
-
-#[derive(sqlx::FromRow)]
-struct AccessTokenRow {
-    user_id: i32,
-}
-
-#[derive(sqlx::FromRow)]
-struct OidcUserRow {
-    id: i32,
-    username: String,
-    email: String,
-    role: crate::db::models::UserRole,
-}
-
-// ---------------------------------------------------------------------------
-// Request / response structs
-// ---------------------------------------------------------------------------
+const LOGIN_STATE_TTL_MINUTES: i64 = 10;
+const OIDC_SCOPE: &str = "openid profile email";
 
 #[derive(Deserialize)]
-struct AuthorizeParams {
-    client_id: String,
-    redirect_uri: String,
-    response_type: String,
-    scope: Option<String>,
+struct LoginQuery {
+    return_to: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CallbackQuery {
+    code: Option<String>,
     state: Option<String>,
-    nonce: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Discovery {
+    issuer: String,
+    authorization_endpoint: String,
+    token_endpoint: String,
+    jwks_uri: String,
+}
+
+#[derive(Serialize)]
+struct TokenForm<'a> {
+    grant_type: &'static str,
+    code: &'a str,
+    redirect_uri: &'a str,
+    client_id: &'a str,
+    client_secret: &'a str,
+    code_verifier: &'a str,
 }
 
 #[derive(Deserialize)]
-struct TokenRequest {
-    grant_type: String,
-    code: String,
-    redirect_uri: String,
-    client_id: Option<String>,
-    client_secret: Option<String>,
+struct TokenResponse {
+    id_token: String,
 }
 
-// ---------------------------------------------------------------------------
-// Handlers
-// ---------------------------------------------------------------------------
-
-async fn openid_config(State(state): State<AppState>) -> Json<Value> {
-    let issuer = &state.config.oidc_issuer_url;
-    let public = &state.config.base_url;
-    Json(json!({
-        "issuer": issuer,
-        "authorization_endpoint": format!("{public}/oauth/authorize"),
-        "token_endpoint": format!("{issuer}/oauth/token"),
-        "userinfo_endpoint": format!("{issuer}/oauth/userinfo"),
-        "jwks_uri": format!("{issuer}/oauth/jwks"),
-        "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
-        "subject_types_supported": ["public"],
-        "id_token_signing_alg_values_supported": ["RS256"],
-        "scopes_supported": ["openid", "profile", "email"],
-        "claims_supported": ["sub", "preferred_username", "email", "role"],
-        "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic"],
-    }))
+#[derive(Deserialize)]
+struct Jwks {
+    keys: Vec<Jwk>,
 }
 
-async fn jwks(State(state): State<AppState>) -> Json<Value> {
-    Json(state.oidc.jwks_json.clone())
+#[derive(Deserialize)]
+struct Jwk {
+    kid: Option<String>,
+    kty: String,
+    alg: Option<String>,
+    n: String,
+    e: String,
 }
 
-async fn authorize(
+#[derive(Debug, Deserialize)]
+struct IdTokenClaims {
+    sub: String,
+    preferred_username: String,
+    role: UserRole,
+    nonce: Option<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct LoginStateRow {
+    nonce: String,
+    pkce_verifier: String,
+    return_to: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct UserIdRow {
+    id: i32,
+}
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/login", get(login))
+        .route("/auth/oidc/callback", get(callback))
+}
+
+async fn login(
     State(state): State<AppState>,
     user: CurrentUser,
-    Query(params): Query<AuthorizeParams>,
-) -> Response {
-    if params.response_type != "code" {
-        return (StatusCode::BAD_REQUEST, "unsupported response_type").into_response();
+    Query(query): Query<LoginQuery>,
+) -> AppResult<Response> {
+    let return_to = sanitize_return_to(query.return_to.as_deref());
+    if user.is_logged_in() {
+        return Ok(Redirect::to(&return_to).into_response());
     }
 
-    let client = match sqlx::query_as::<_, crate::db::models::OAuthClient>(
-        "SELECT * FROM oauth_clients WHERE client_id = $1",
+    let discovery = fetch_discovery(&state).await?;
+    let state_token = random_url_token(32);
+    let nonce = random_url_token(32);
+    let pkce_verifier = random_url_token(48);
+    let code_challenge = pkce_s256(&pkce_verifier);
+
+    store_login_state(
+        &state.pool,
+        &state_token,
+        &nonce,
+        &pkce_verifier,
+        &return_to,
     )
-    .bind(&params.client_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(c)) => c,
-        _ => return (StatusCode::BAD_REQUEST, "invalid client_id").into_response(),
-    };
+    .await?;
 
-    if !redirect_uri_matches(&client.redirect_uri, &params.redirect_uri) {
-        return (StatusCode::BAD_REQUEST, "redirect_uri mismatch").into_response();
-    }
-
-    let authenticated = match user.user() {
-        Some(u) => u,
-        None => {
-            let mut parts = vec![
-                format!("client_id={}", urlencoding::encode(&params.client_id)),
-                format!("redirect_uri={}", urlencoding::encode(&params.redirect_uri)),
-                format!(
-                    "response_type={}",
-                    urlencoding::encode(&params.response_type)
-                ),
-            ];
-            if let Some(ref s) = params.scope {
-                parts.push(format!("scope={}", urlencoding::encode(s)));
-            }
-            if let Some(ref s) = params.state {
-                parts.push(format!("state={}", urlencoding::encode(s)));
-            }
-            if let Some(ref n) = params.nonce {
-                parts.push(format!("nonce={}", urlencoding::encode(n)));
-            }
-            let authorize_path = format!("/oauth/authorize?{}", parts.join("&"));
-            let login_url = format!("/login?return_to={}", urlencoding::encode(&authorize_path));
-            return Redirect::to(&login_url).into_response();
-        }
-    };
-
-    let code = generate_session_id();
-    let expires = Utc::now() + Duration::minutes(5);
-
-    if let Err(e) = sqlx::query(
-        "INSERT INTO oauth_authorization_codes \
-             (code, client_id, user_id, redirect_uri, scope, nonce, expires_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
-    )
-    .bind(&code)
-    .bind(&params.client_id)
-    .bind(authenticated.id)
-    .bind(&params.redirect_uri)
-    .bind(params.scope.as_deref().unwrap_or("openid"))
-    .bind(params.nonce.as_deref())
-    .bind(expires)
-    .execute(&state.pool)
-    .await
-    {
-        tracing::error!("Failed to store auth code: {e}");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response();
-    }
-
-    let sep = if params.redirect_uri.contains('?') {
-        "&"
-    } else {
-        "?"
-    };
-    let mut callback = format!(
-        "{}{}code={}",
-        params.redirect_uri,
-        sep,
-        urlencoding::encode(&code)
+    let redirect_uri = callback_url(&state);
+    let auth_url = with_query(
+        &discovery.authorization_endpoint,
+        &[
+            ("response_type", "code".to_string()),
+            ("client_id", state.config.oidc_client_id.clone()),
+            ("redirect_uri", redirect_uri),
+            ("scope", OIDC_SCOPE.to_string()),
+            ("state", state_token),
+            ("nonce", nonce),
+            ("code_challenge", code_challenge),
+            ("code_challenge_method", "S256".to_string()),
+        ],
     );
-    if let Some(ref st) = params.state {
-        callback.push_str(&format!("&state={}", urlencoding::encode(st)));
-    }
 
-    Redirect::to(&callback).into_response()
+    Ok(Redirect::to(&auth_url).into_response())
 }
 
-async fn token(
+async fn callback(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Form(params): Form<TokenRequest>,
-) -> Response {
-    if params.grant_type != "authorization_code" {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "unsupported_grant_type"})),
-        )
-            .into_response();
+    Query(query): Query<CallbackQuery>,
+) -> AppResult<Response> {
+    if let Some(error) = query.error {
+        let description = query.error_description.unwrap_or_default();
+        let suffix = if description.is_empty() {
+            String::new()
+        } else {
+            format!(": {description}")
+        };
+        return Err(AppError::BadRequest(format!(
+            "OIDC authorization failed: {error}{suffix}"
+        )));
     }
 
-    let (client_id, client_secret) = if let (Some(id), Some(secret)) =
-        (params.client_id.as_ref(), params.client_secret.as_ref())
-    {
-        (id.clone(), secret.clone())
-    } else if let Some(basic) = extract_basic_auth(&headers) {
-        basic
-    } else {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "invalid_client"})),
-        )
-            .into_response();
-    };
+    let code = query
+        .code
+        .as_deref()
+        .ok_or_else(|| AppError::BadRequest("Missing OIDC authorization code".into()))?;
+    let state_token = query
+        .state
+        .as_deref()
+        .ok_or_else(|| AppError::BadRequest("Missing OIDC state".into()))?;
 
-    let client_ok = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM oauth_clients WHERE client_id = $1 AND client_secret = $2)",
-    )
-    .bind(&client_id)
-    .bind(&client_secret)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(false);
+    let login_state = consume_login_state(&state.pool, state_token).await?;
+    let discovery = fetch_discovery(&state).await?;
+    let token = exchange_code(&state, &discovery, code, &login_state.pkce_verifier).await?;
+    let claims = validate_id_token(&state, &discovery, &token.id_token, &login_state.nonce).await?;
+    let user_id = find_or_create_user(&state.pool, &claims.preferred_username).await?;
 
-    if !client_ok {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({"error": "invalid_client"})),
-        )
-            .into_response();
-    }
-
-    let auth_code = match sqlx::query_as::<_, AuthCodeRow>(
-        "DELETE FROM oauth_authorization_codes \
-         WHERE code = $1 AND client_id = $2 AND expires_at > NOW() \
-         RETURNING user_id, redirect_uri, scope, nonce",
-    )
-    .bind(&params.code)
-    .bind(&client_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(row)) => row,
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "invalid_grant"})),
-            )
-                .into_response();
+    if let Some(existing_sid) = session::extract_session_cookie(&headers) {
+        if let Err(e) = session::delete_session(&state.pool, &existing_sid).await {
+            tracing::warn!("Failed to replace previous session during OIDC login: {e}");
         }
-    };
-
-    if auth_code.redirect_uri != params.redirect_uri {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "invalid_grant"})),
-        )
-            .into_response();
     }
 
-    let user = match sqlx::query_as::<_, OidcUserRow>(
-        "SELECT id, username, email, role FROM users WHERE id = $1 AND is_active = true",
+    let ip = session::extract_client_ip(&headers);
+    let ua = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let sid = session::create_session(
+        &state.pool,
+        user_id,
+        claims.role,
+        ip.as_deref(),
+        ua.as_deref(),
     )
-    .bind(auth_code.user_id)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(u)) => u,
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "invalid_grant"})),
-            )
-                .into_response();
-        }
+    .await?;
+
+    let cookie = format!(
+        "{}={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+        session::SESSION_COOKIE_NAME,
+        14 * 86400
+    );
+    let mut response = Redirect::to(&login_state.return_to).into_response();
+    response
+        .headers_mut()
+        .insert(header::SET_COOKIE, cookie.parse().unwrap());
+    Ok(response)
+}
+
+async fn fetch_discovery(state: &AppState) -> AppResult<Discovery> {
+    let url = format!(
+        "{}/.well-known/openid-configuration",
+        state.config.oidc_provider_url.trim_end_matches('/')
+    );
+    state
+        .http
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("OIDC discovery request failed: {e}")))?
+        .error_for_status()
+        .map_err(|e| AppError::Internal(format!("OIDC discovery returned an error: {e}")))?
+        .json::<Discovery>()
+        .await
+        .map_err(|e| AppError::Internal(format!("OIDC discovery parse failed: {e}")))
+}
+
+async fn exchange_code(
+    state: &AppState,
+    discovery: &Discovery,
+    code: &str,
+    pkce_verifier: &str,
+) -> AppResult<TokenResponse> {
+    let redirect_uri = callback_url(state);
+    let form = TokenForm {
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: &redirect_uri,
+        client_id: &state.config.oidc_client_id,
+        client_secret: &state.config.oidc_client_secret,
+        code_verifier: pkce_verifier,
     };
 
-    let access_token = generate_session_id();
-    let ttl_secs: i64 = 3600;
-    let access_expires = Utc::now() + Duration::seconds(ttl_secs);
+    state
+        .http
+        .post(&discovery.token_endpoint)
+        .form(&form)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("OIDC token request failed: {e}")))?
+        .error_for_status()
+        .map_err(|e| AppError::BadRequest(format!("OIDC token exchange failed: {e}")))?
+        .json::<TokenResponse>()
+        .await
+        .map_err(|e| AppError::Internal(format!("OIDC token response parse failed: {e}")))
+}
 
-    let _ = sqlx::query(
-        "INSERT INTO oauth_access_tokens (token, user_id, client_id, scope, expires_at) \
+async fn validate_id_token(
+    state: &AppState,
+    discovery: &Discovery,
+    id_token: &str,
+    expected_nonce: &str,
+) -> AppResult<IdTokenClaims> {
+    let header = decode_header(id_token)
+        .map_err(|e| AppError::BadRequest(format!("Invalid OIDC ID token header: {e}")))?;
+    if header.alg != Algorithm::RS256 {
+        return Err(AppError::BadRequest("OIDC ID token must use RS256".into()));
+    }
+    let kid = header
+        .kid
+        .ok_or_else(|| AppError::BadRequest("OIDC ID token is missing kid".into()))?;
+
+    let jwks = fetch_jwks(state, &discovery.jwks_uri).await?;
+    let key = jwks
+        .keys
+        .iter()
+        .find(|key| {
+            key.kid.as_deref() == Some(kid.as_str())
+                && key.kty == "RSA"
+                && key.alg.as_deref().unwrap_or("RS256") == "RS256"
+        })
+        .ok_or_else(|| AppError::BadRequest("OIDC signing key not found".into()))?;
+    let decoding_key = DecodingKey::from_rsa_components(&key.n, &key.e)
+        .map_err(|e| AppError::BadRequest(format!("Invalid OIDC signing key: {e}")))?;
+
+    let mut validation = Validation::new(Algorithm::RS256);
+    validation.set_audience(&[state.config.oidc_client_id.as_str()]);
+    validation.set_issuer(&[discovery.issuer.as_str()]);
+
+    let token = decode::<IdTokenClaims>(id_token, &decoding_key, &validation)
+        .map_err(|e| AppError::BadRequest(format!("Invalid OIDC ID token: {e}")))?;
+    let claims = token.claims;
+    if claims.sub.trim().is_empty() {
+        return Err(AppError::BadRequest("OIDC ID token is missing sub".into()));
+    }
+    if claims.nonce.as_deref() != Some(expected_nonce) {
+        return Err(AppError::BadRequest("OIDC nonce mismatch".into()));
+    }
+    if claims.preferred_username.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "OIDC preferred_username is missing".into(),
+        ));
+    }
+    Ok(claims)
+}
+
+async fn fetch_jwks(state: &AppState, jwks_uri: &str) -> AppResult<Jwks> {
+    state
+        .http
+        .get(jwks_uri)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("OIDC JWKS request failed: {e}")))?
+        .error_for_status()
+        .map_err(|e| AppError::Internal(format!("OIDC JWKS returned an error: {e}")))?
+        .json::<Jwks>()
+        .await
+        .map_err(|e| AppError::Internal(format!("OIDC JWKS parse failed: {e}")))
+}
+
+async fn find_or_create_user(pool: &PgPool, username: &str) -> AppResult<i32> {
+    let username = username.trim();
+    if username.is_empty() || username.chars().count() > 64 {
+        return Err(AppError::BadRequest(
+            "phpBB username is not valid for the app".into(),
+        ));
+    }
+
+    let row: UserIdRow = sqlx::query_as(
+        "INSERT INTO users (username)
+         VALUES ($1)
+         ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
+         RETURNING id",
+    )
+    .bind(username)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.id)
+}
+
+async fn store_login_state(
+    pool: &PgPool,
+    state_token: &str,
+    nonce: &str,
+    pkce_verifier: &str,
+    return_to: &str,
+) -> Result<(), sqlx::Error> {
+    let expires = Utc::now() + Duration::minutes(LOGIN_STATE_TTL_MINUTES);
+    sqlx::query(
+        "INSERT INTO oidc_login_states
+             (state_hash, nonce, pkce_verifier, return_to, expires_at)
          VALUES ($1, $2, $3, $4, $5)",
     )
-    .bind(&access_token)
-    .bind(user.id)
-    .bind(&client_id)
-    .bind(&auth_code.scope)
-    .bind(access_expires)
-    .execute(&state.pool)
-    .await;
-
-    let now = Utc::now();
-    let mut claims = json!({
-        "iss": &state.config.oidc_issuer_url,
-        "sub": user.id.to_string(),
-        "aud": &client_id,
-        "exp": (now + Duration::seconds(ttl_secs)).timestamp(),
-        "iat": now.timestamp(),
-        "preferred_username": &user.username,
-        "email": &user.email,
-        "role": user.role.to_string(),
-    });
-    if let Some(nonce) = &auth_code.nonce {
-        claims["nonce"] = json!(nonce);
-    }
-
-    let mut jwt_header = JwtHeader::new(Algorithm::RS256);
-    jwt_header.kid = Some(state.oidc.kid.clone());
-
-    let id_token = match encode(&jwt_header, &claims, &state.oidc.encoding_key) {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::error!("Failed to encode id_token: {e}");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "server_error"})),
-            )
-                .into_response();
-        }
-    };
-
-    Json(json!({
-        "access_token": access_token,
-        "token_type": "Bearer",
-        "expires_in": ttl_secs,
-        "id_token": id_token,
-        "scope": auth_code.scope,
-    }))
-    .into_response()
+    .bind(hash_token(state_token))
+    .bind(nonce)
+    .bind(pkce_verifier)
+    .bind(return_to)
+    .bind(expires)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
-async fn userinfo(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let token_str = match headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-    {
-        Some(t) => t.to_string(),
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "invalid_token"})),
-            )
-                .into_response();
-        }
-    };
-
-    let row = match sqlx::query_as::<_, AccessTokenRow>(
-        "SELECT user_id FROM oauth_access_tokens WHERE token = $1 AND expires_at > NOW()",
+async fn consume_login_state(pool: &PgPool, state_token: &str) -> AppResult<LoginStateRow> {
+    sqlx::query_as(
+        "DELETE FROM oidc_login_states
+         WHERE state_hash = $1 AND expires_at > NOW()
+         RETURNING nonce, pkce_verifier, return_to",
     )
-    .bind(&token_str)
-    .fetch_optional(&state.pool)
-    .await
-    {
-        Ok(Some(r)) => r,
-        _ => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "invalid_token"})),
-            )
-                .into_response();
-        }
-    };
+    .bind(hash_token(state_token))
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("OIDC login state expired or was already used".into()))
+}
 
-    let user = match sqlx::query_as::<_, OidcUserRow>(
-        "SELECT id, username, email, role FROM users WHERE id = $1",
+pub async fn cleanup_expired_login_states(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM oidc_login_states WHERE expires_at < NOW()")
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+fn callback_url(state: &AppState) -> String {
+    format!(
+        "{}/auth/oidc/callback",
+        state.config.base_url.trim_end_matches('/')
     )
-    .bind(row.user_id)
-    .fetch_optional(&state.pool)
-    .await
+}
+
+fn random_url_token(byte_count: usize) -> String {
+    let mut bytes = vec![0u8; byte_count];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn hash_token(token: &str) -> String {
+    hex::encode(Sha256::digest(token.as_bytes()))
+}
+
+fn pkce_s256(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
+fn sanitize_return_to(return_to: Option<&str>) -> String {
+    let Some(return_to) = return_to else {
+        return "/".to_string();
+    };
+    if return_to.starts_with('/')
+        && !return_to.starts_with("//")
+        && !return_to.contains('\r')
+        && !return_to.contains('\n')
     {
-        Ok(Some(u)) => u,
-        _ => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "server_error"})),
+        return return_to.to_string();
+    }
+    "/".to_string()
+}
+
+fn with_query(base: &str, params: &[(&str, String)]) -> String {
+    let separator = if base.contains('?') { '&' } else { '?' };
+    let query = params
+        .iter()
+        .map(|(key, value)| {
+            format!(
+                "{}={}",
+                urlencoding::encode(key),
+                urlencoding::encode(value)
             )
-                .into_response();
-        }
-    };
-
-    Json(json!({
-        "sub": user.id.to_string(),
-        "preferred_username": &user.username,
-        "email": &user.email,
-        "role": user.role.to_string(),
-    }))
-    .into_response()
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn extract_basic_auth(headers: &HeaderMap) -> Option<(String, String)> {
-    let auth = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
-    let encoded = auth.strip_prefix("Basic ")?;
-    let decoded = String::from_utf8(STANDARD.decode(encoded).ok()?).ok()?;
-    let (id, secret) = decoded.split_once(':')?;
-    Some((id.to_string(), secret.to_string()))
-}
-
-fn redirect_uri_matches(registered: &str, requested: &str) -> bool {
-    if registered == requested {
-        return true;
-    }
-
-    let (registered_base, registered_query) = match registered.split_once('?') {
-        Some(parts) => parts,
-        None => return false,
-    };
-    let (requested_base, requested_query) = match requested.split_once('?') {
-        Some(parts) => parts,
-        None => return false,
-    };
-
-    if registered_base != requested_base {
-        return false;
-    }
-
-    let registered_params = parse_query_params(registered_query);
-    let requested_params = parse_query_params(requested_query);
-
-    registered_params.iter().all(|(key, registered_values)| {
-        requested_params
-            .get(key)
-            .map(|requested_values| {
-                registered_values
-                    .iter()
-                    .all(|value| requested_values.contains(value))
-            })
-            .unwrap_or(false)
-    })
-}
-
-fn parse_query_params(query: &str) -> HashMap<String, Vec<String>> {
-    let mut params = HashMap::new();
-
-    for pair in query.split('&').filter(|pair| !pair.is_empty()) {
-        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-        params
-            .entry(key.to_string())
-            .or_insert_with(Vec::new)
-            .push(value.to_string());
-    }
-
-    params
+        })
+        .collect::<Vec<_>>()
+        .join("&");
+    format!("{base}{separator}{query}")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::redirect_uri_matches;
+    use super::{hash_token, pkce_s256, sanitize_return_to, with_query};
 
     #[test]
-    fn redirect_uri_exact_match_still_passes() {
-        assert!(redirect_uri_matches(
-            "https://forum.localhost:8443/ucp.php?mode=login",
-            "https://forum.localhost:8443/ucp.php?mode=login"
-        ));
+    fn sanitize_return_to_accepts_root_relative_paths() {
+        assert_eq!(
+            sanitize_return_to(Some("/queue/?status=Pending")),
+            "/queue/?status=Pending"
+        );
     }
 
     #[test]
-    fn redirect_uri_with_extra_query_params_passes() {
-        assert!(redirect_uri_matches(
-            "https://forum.localhost:8443/ucp.php?mode=login",
-            "https://forum.localhost:8443/ucp.php?mode=login&login=external&oauth_service=vgindex"
-        ));
+    fn sanitize_return_to_rejects_external_or_header_like_values() {
+        assert_eq!(sanitize_return_to(Some("https://example.com")), "/");
+        assert_eq!(sanitize_return_to(Some("//example.com/path")), "/");
+        assert_eq!(sanitize_return_to(Some("/ok\r\nSet-Cookie: nope")), "/");
+        assert_eq!(sanitize_return_to(None), "/");
     }
 
     #[test]
-    fn redirect_uri_with_different_base_fails() {
-        assert!(!redirect_uri_matches(
-            "https://forum.localhost:8443/ucp.php?mode=login",
-            "https://evil.localhost:8443/ucp.php?mode=login&login=external"
-        ));
+    fn pkce_s256_matches_rfc7636_vector() {
+        assert_eq!(
+            pkce_s256("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        );
     }
 
     #[test]
-    fn redirect_uri_missing_registered_params_fails() {
-        assert!(!redirect_uri_matches(
-            "https://forum.localhost:8443/ucp.php?mode=login&oauth_service=vgindex",
-            "https://forum.localhost:8443/ucp.php?mode=login"
-        ));
+    fn hash_token_is_stable_sha256_hex() {
+        assert_eq!(
+            hash_token("state"),
+            "4ba69735ca53765ed6a709edb56c6ea236b7193a3b29a6b390c346f0f4340e4e"
+        );
     }
-}
 
-// ---------------------------------------------------------------------------
-// Router
-// ---------------------------------------------------------------------------
-
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/.well-known/openid-configuration", get(openid_config))
-        .route("/oauth/authorize", get(authorize))
-        .route("/oauth/token", post(token))
-        .route("/oauth/userinfo", get(userinfo))
-        .route("/oauth/jwks", get(jwks))
+    #[test]
+    fn with_query_appends_and_encodes_params() {
+        assert_eq!(
+            with_query(
+                "https://forum.example/authorize",
+                &[("scope", "openid profile".into())]
+            ),
+            "https://forum.example/authorize?scope=openid%20profile"
+        );
+        assert_eq!(
+            with_query(
+                "https://forum.example/authorize?x=1",
+                &[("state", "a+b".into())]
+            ),
+            "https://forum.example/authorize?x=1&state=a%2Bb"
+        );
+    }
 }

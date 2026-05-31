@@ -3,7 +3,7 @@ use chrono::{Duration, Utc};
 use rand::RngCore;
 use sqlx::PgPool;
 
-use crate::db::models::Session;
+use crate::db::models::{Session, UserRole};
 
 pub const SESSION_COOKIE_NAME: &str = "session_id";
 const SESSION_DURATION_DAYS: i64 = 14;
@@ -48,6 +48,7 @@ pub fn generate_session_id() -> String {
 pub async fn create_session(
     pool: &PgPool,
     user_id: i32,
+    role: UserRole,
     ip: Option<&str>,
     ua: Option<&str>,
 ) -> Result<String, sqlx::Error> {
@@ -55,11 +56,12 @@ pub async fn create_session(
     let expires = Utc::now() + Duration::days(SESSION_DURATION_DAYS);
 
     sqlx::query(
-        "INSERT INTO sessions (id, user_id, ip_address, user_agent, expires_at)
-         VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO sessions (id, user_id, role, ip_address, user_agent, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(&id)
     .bind(user_id)
+    .bind(role)
     .bind(ip)
     .bind(ua)
     .bind(expires)
@@ -78,8 +80,8 @@ pub async fn create_guest_session(
     let expires = Utc::now() + Duration::days(1);
 
     sqlx::query(
-        "INSERT INTO sessions (id, user_id, ip_address, user_agent, expires_at)
-         VALUES ($1, NULL, $2, $3, $4)",
+        "INSERT INTO sessions (id, user_id, role, ip_address, user_agent, expires_at)
+         VALUES ($1, NULL, NULL, $2, $3, $4)",
     )
     .bind(&id)
     .bind(ip)

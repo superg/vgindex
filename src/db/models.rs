@@ -326,25 +326,13 @@ pub struct Language {
 pub struct User {
     pub id: i32,
     pub username: String,
-    pub email: String,
-    pub password_hash: String,
-    pub role: UserRole,
-    pub email_verified: bool,
-    pub email_verify_token: Option<String>,
-    pub email_verify_expires_at: Option<DateTime<Utc>>,
-    pub password_reset_token: Option<String>,
-    pub password_reset_expires_at: Option<DateTime<Utc>>,
-    pub failed_login_attempts: i32,
-    pub locked_until: Option<DateTime<Utc>>,
-    pub is_active: bool,
-    pub created_at: DateTime<Utc>,
-    pub last_login_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Session {
     pub id: String,
     pub user_id: Option<i32>,
+    pub role: Option<UserRole>,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -435,16 +423,6 @@ pub struct DiscSubmission {
     pub review_comment: Option<String>,
     pub created_at: DateTime<Utc>,
     pub reviewed_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct OAuthClient {
-    pub id: i32,
-    pub client_id: String,
-    pub client_secret: String,
-    pub redirect_uri: String,
-    pub name: String,
-    pub created_at: DateTime<Utc>,
 }
 
 // --- Composite/view structs for rendering ---

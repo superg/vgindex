@@ -2,7 +2,7 @@
 
 This stack uses a repo-managed phpBB image and PostgreSQL. phpBB uses native
 database authentication and exposes a first-party OpenID Connect provider for
-MediaWiki.
+MediaWiki and the Rust app.
 
 ## How it works
 
@@ -15,7 +15,7 @@ The container entrypoint automates first boot:
 5. Syncs public URL and email/SMTP settings.
 6. Disables any legacy `vgindex/oidc` phpBB extension rows if they exist.
 7. Enables `vgindex/oidcprovider`, runs its migrations, and seeds the MediaWiki
-   OIDC client.
+   and Rust app OIDC clients.
 8. Generates one RSA signing key in the persisted phpBB `store` volume if it is
    missing.
 9. Starts Apache.
@@ -58,6 +58,8 @@ Main variables:
 - `PHPBB_COOKIE_DOMAIN`
 - `PHPBB_OIDC_ISSUER_URL` (default: `http://phpbb/app.php/oidc`)
 - `PHPBB_OIDC_AUTHORIZE_URL` (optional browser-facing authorize endpoint)
+- `APP_PUBLIC_URL` (optional Rust app public URL used for the callback)
+- `APP_OIDC_CLIENT_ID` / `APP_OIDC_CLIENT_SECRET`
 - `MEDIAWIKI_OIDC_CLIENT_ID` / `MEDIAWIKI_OIDC_CLIENT_SECRET`
 
 Email/password reset variables:
@@ -93,9 +95,10 @@ document can advertise a separate browser-facing authorize URL via
 public server URL. For production, set the issuer/provider URL to the public
 HTTPS forum origin, for example `https://forum.vgindex.org/app.php/oidc`.
 
-Only the seeded first-party MediaWiki client is supported in v1. Client secrets,
+Only seeded first-party clients are supported in v1. Client secrets,
 authorization codes, and opaque access tokens are stored hashed in phpBB-owned
-tables. The RSA signing key lives at
+tables. The Rust app callback is seeded from `APP_PUBLIC_URL` when set, otherwise
+as `https://www.$DOMAIN[:HTTPS_PORT]/auth/oidc/callback`. The RSA signing key lives at
 `/var/www/html/store/vgindex_oidc_private_key.pem`, which is persisted by the
 `phpbb_store` volume.
 
