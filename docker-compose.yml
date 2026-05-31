@@ -10,6 +10,7 @@ services:
     networks:
       default:
         aliases:
+          - ${SITE_HOST:-vgindex.test}
           - www.${SITE_HOST:-vgindex.test}
           - forum.${SITE_HOST:-vgindex.test}
           - wiki.${SITE_HOST:-vgindex.test}
@@ -18,6 +19,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     environment:
+      - SITE_APEX_URL=${SITE_APEX_URL:-http://vgindex.test:${SITE_PORT_HTTP:-18000}}
       - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.vgindex.test:${LOCAL_SITE_PORT:-18000}}
       - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}
       - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.vgindex.test:${LOCAL_SITE_PORT:-18000}}
