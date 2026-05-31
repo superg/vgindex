@@ -1,8 +1,8 @@
 # phpBB + PostgreSQL
 
 This stack uses a repo-managed phpBB image and PostgreSQL. phpBB uses native
-database authentication; VGIndex OIDC is not installed in the phpBB image for
-this phase.
+database authentication and exposes a first-party OpenID Connect provider for
+MediaWiki.
 
 ## How it works
 
@@ -14,7 +14,11 @@ The container entrypoint automates first boot:
 4. Forces `auth_method = db`.
 5. Syncs public URL and email/SMTP settings.
 6. Disables any legacy `vgindex/oidc` phpBB extension rows if they exist.
-7. Starts Apache.
+7. Enables `vgindex/oidcprovider`, runs its migrations, and seeds the MediaWiki
+   OIDC client.
+8. Generates one RSA signing key in the persisted phpBB `store` volume if it is
+   missing.
+9. Starts Apache.
 
 Subsequent restarts skip install and regenerate runtime config so container
 recreation stays predictable.
@@ -52,6 +56,9 @@ Main variables:
 - `PHPBB_HTTP_PORT` (host port for direct phpBB access, default `18080`)
 - `PHPBB_SERVER_NAME` / `PHPBB_SERVER_PORT` / `PHPBB_SERVER_PROTOCOL`
 - `PHPBB_COOKIE_DOMAIN`
+- `PHPBB_OIDC_ISSUER_URL` (default: `http://phpbb/app.php/oidc`)
+- `PHPBB_OIDC_AUTHORIZE_URL` (optional browser-facing authorize endpoint)
+- `MEDIAWIKI_OIDC_CLIENT_ID` / `MEDIAWIKI_OIDC_CLIENT_SECRET`
 
 Email/password reset variables:
 
@@ -68,6 +75,29 @@ Email/password reset variables:
 
 Public self-registration is disabled, but active imported users can recover
 access through phpBB password reset once email is configured.
+
+## OpenID Connect Provider
+
+The phpBB extension is served under `/app.php/oidc`:
+
+- `/app.php/oidc/.well-known/openid-configuration`
+- `/app.php/oidc/authorize`
+- `/app.php/oidc/token`
+- `/app.php/oidc/userinfo`
+- `/app.php/oidc/jwks`
+
+Local development defaults use `http://phpbb/app.php/oidc` as the internal
+issuer so MediaWiki can reach phpBB over the Docker network. The discovery
+document can advertise a separate browser-facing authorize URL via
+`PHPBB_OIDC_AUTHORIZE_URL`; otherwise it is derived from phpBB's configured
+public server URL. For production, set the issuer/provider URL to the public
+HTTPS forum origin, for example `https://forum.vgindex.org/app.php/oidc`.
+
+Only the seeded first-party MediaWiki client is supported in v1. Client secrets,
+authorization codes, and opaque access tokens are stored hashed in phpBB-owned
+tables. The RSA signing key lives at
+`/var/www/html/store/vgindex_oidc_private_key.pem`, which is persisted by the
+`phpbb_store` volume.
 
 ## Persisted Data
 

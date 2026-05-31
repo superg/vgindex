@@ -16,11 +16,13 @@ The container has a custom entrypoint that fully automates first-time setup:
 5. Starts Apache.
 
 On subsequent starts, only `update.php` runs (fast no-op if nothing changed).
+OIDC client registration is owned by the phpBB container; MediaWiki does not
+write client rows into the application database.
 
 ## Usage
 
 ```bash
-docker compose up -d postgres app mediawiki caddy
+docker compose up -d postgres phpbb mediawiki caddy
 ```
 
 No manual install steps needed. With default config, the wiki is at
@@ -32,8 +34,12 @@ All settings derived from the top-level `DOMAIN` and `HTTPS_PORT` env vars.
 Additional overrides in `docker-compose.yml`:
 
 - `MEDIAWIKI_ADMIN_USER` (default: `admin`) - local wiki admin username
-- `MEDIAWIKI_ADMIN_PASSWORD` (default: `ChangeMe!Admin2026`) - local wiki admin password
-- `OIDC_PROVIDER_URL` (default: `http://app:3000`) - internal OIDC provider URL
+- `MEDIAWIKI_ADMIN_PASSWORD` (default: `changeme-mediawiki`) - local wiki admin password
+- `OIDC_PROVIDER_URL` (default: `http://phpbb/app.php/oidc`) - phpBB OIDC issuer URL
+- `MEDIAWIKI_OIDC_CLIENT_ID` / `MEDIAWIKI_OIDC_CLIENT_SECRET`
+- `MEDIAWIKI_OIDC_VERIFY_TLS` (default: `true`) - set `false` only for local
+  HTTPS issuer testing with self-signed certificates
+- `MEDIAWIKI_LOCAL_LOGIN` (default: `false`) - keep ordinary local login hidden
 
 ## Volumes
 
@@ -46,3 +52,5 @@ ensuring Dockerfile changes (e.g. new extensions) always take effect.
 - Container is running: `docker compose ps mediawiki`
 - DB reachable: `docker compose exec mediawiki php -m | grep pgsql`
 - Route works through Caddy: open `https://wiki.$DOMAIN:$HTTPS_PORT/`
+- Discovery works from MediaWiki:
+  `docker compose exec mediawiki php -r 'echo file_get_contents(getenv("OIDC_PROVIDER_URL") . "/.well-known/openid-configuration");'`

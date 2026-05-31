@@ -1,0 +1,28 @@
+{
+    "name": "vgindex/oidcprovider",
+    "type": "phpbb-extension",
+    "description": "First-party OpenID Connect provider backed by phpBB users and groups.",
+    "homepage": "https://vgindex.org",
+    "version": "1.0.0",
+    "license": "GPL-2.0-only",
+    "authors": [
+        {
+            "name": "VGIndex"
+        }
+    ],
+    "require": {
+        "php": ">=8.1",
+        "phpbb/phpbb": ">=3.3.0,<4.0.0@dev"
+    },
+    "autoload": {
+        "psr-4": {
+            "vgindex\\oidcprovider\\": ""
+        }
+    },
+    "extra": {
+        "display-name": "VGIndex OIDC Provider",
+        "soft-require": {
+            "phpbb/phpbb": ">=3.3.0,<4.0.0@dev"
+        }
+    }
+}

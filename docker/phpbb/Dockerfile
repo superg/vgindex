@@ -25,6 +25,9 @@ RUN set -eux; \
         xml \
         zip; \
     a2enmod rewrite; \
+    printf '%s\n' 'SetEnvIfNoCase Authorization "^(.*)$" HTTP_AUTHORIZATION=$1' \
+        > /etc/apache2/conf-available/auth-headers.conf; \
+    a2enconf auth-headers; \
     rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
@@ -37,9 +40,12 @@ RUN set -eux; \
     chown -R www-data:www-data /var/www/html
 
 COPY scripts/redump_forum_importer/import.php /usr/local/bin/redump-forum-import
+COPY docker/phpbb/ext/vgindex/oidcprovider /var/www/html/ext/vgindex/oidcprovider
 
 COPY docker/phpbb/entrypoint.sh /usr/local/bin/phpbb-entrypoint.sh
-RUN chmod +x /usr/local/bin/phpbb-entrypoint.sh /usr/local/bin/redump-forum-import
+RUN set -eux; \
+    chown -R www-data:www-data /var/www/html/ext/vgindex; \
+    chmod +x /usr/local/bin/phpbb-entrypoint.sh /usr/local/bin/redump-forum-import
 
 WORKDIR /var/www/html
 
