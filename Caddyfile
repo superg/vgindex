@@ -4,6 +4,10 @@
     https_port {$CADDY_HTTPS_PORT}
 }
 
+{$SITE_APEX_URL} {
+    redir {$APP_PUBLIC_URL}{uri} permanent
+}
+
 {$APP_PUBLIC_URL} {
     reverse_proxy {$APP_UPSTREAM_HOST}:{$APP_UPSTREAM_PORT}
 }
