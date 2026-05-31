@@ -1,0 +1,24 @@
+vgindex_oidcprovider_discovery:
+    path: /oidc/.well-known/openid-configuration
+    methods: [GET]
+    defaults: { _controller: vgindex.oidcprovider.controller:discovery }
+
+vgindex_oidcprovider_authorize:
+    path: /oidc/authorize
+    methods: [GET]
+    defaults: { _controller: vgindex.oidcprovider.controller:authorize }
+
+vgindex_oidcprovider_token:
+    path: /oidc/token
+    methods: [POST]
+    defaults: { _controller: vgindex.oidcprovider.controller:token }
+
+vgindex_oidcprovider_userinfo:
+    path: /oidc/userinfo
+    methods: [GET, POST]
+    defaults: { _controller: vgindex.oidcprovider.controller:userinfo }
+
+vgindex_oidcprovider_jwks:
+    path: /oidc/jwks
+    methods: [GET]
+    defaults: { _controller: vgindex.oidcprovider.controller:jwks }

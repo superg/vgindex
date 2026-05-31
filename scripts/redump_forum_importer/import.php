@@ -2804,7 +2804,7 @@ function rebuild_search_index(): void
     $count = 0;
     $last_post_id = 0;
     $batch_size = 1000;
-    $next_report = 10000;
+    $next_report = 1000;
     $transaction_open = false;
 
     try
@@ -2846,7 +2846,7 @@ function rebuild_search_index(): void
                 $transaction_open = true;
                 while ($next_report <= $count)
                 {
-                    $next_report += 10000;
+                    $next_report += 1000;
                 }
             }
 

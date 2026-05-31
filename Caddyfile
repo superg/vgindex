@@ -1,19 +1,36 @@
 {
     email {$ACME_EMAIL}
+    auto_https disable_redirects
 }
 
-www.{$DOMAIN} {
+http://www.{$DOMAIN} {
+    redir https://www.{$DOMAIN}:{$HTTPS_PORT}{uri} permanent
+}
+
+https://www.{$DOMAIN} {
     reverse_proxy {$APP_HOST}:{$APP_PORT}
 }
 
-wiki.{$DOMAIN} {
+http://wiki.{$DOMAIN} {
+    redir https://wiki.{$DOMAIN}:{$HTTPS_PORT}{uri} permanent
+}
+
+https://wiki.{$DOMAIN} {
     reverse_proxy mediawiki:80
 }
 
-forum.{$DOMAIN} {
+http://forum.{$DOMAIN} {
+    redir https://forum.{$DOMAIN}:{$HTTPS_PORT}{uri} permanent
+}
+
+https://forum.{$DOMAIN} {
     reverse_proxy phpbb:80
 }
 
-{$DOMAIN} {
+http://{$DOMAIN} {
+    redir https://{$DOMAIN}:{$HTTPS_PORT}{uri} permanent
+}
+
+https://{$DOMAIN} {
     reverse_proxy {$APP_HOST}:{$APP_PORT}
 }

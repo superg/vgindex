@@ -5,6 +5,7 @@ required_vars=(
     PHPBB_DB_HOST PHPBB_DB_PORT PHPBB_DB_NAME PHPBB_DB_USER PHPBB_DB_PASSWORD
     PHPBB_TABLE_PREFIX PHPBB_ADMIN_USER PHPBB_ADMIN_PASSWORD PHPBB_ADMIN_EMAIL
     PHPBB_BOARD_NAME PHPBB_BOARD_DESCRIPTION
+    MEDIAWIKI_OIDC_CLIENT_ID MEDIAWIKI_OIDC_CLIENT_SECRET
 )
 missing=()
 for var in "${required_vars[@]}"; do
@@ -32,9 +33,15 @@ fi
 : "${PHPBB_SMTP_PASSWORD:=}"
 : "${PHPBB_SMTP_AUTH_METHOD:=}"
 : "${PHPBB_SMTP_SECURE:=}"
+: "${PHPBB_OIDC_ISSUER_URL:=http://phpbb/app.php/oidc}"
+: "${PHPBB_OIDC_AUTHORIZE_URL:=}"
 
 escape_php_single() {
     printf "%s" "$1" | sed "s/'/'\\\\''/g"
+}
+
+escape_sql_single() {
+    printf "%s" "$1" | sed "s/'/''/g"
 }
 
 bool_01() {
@@ -69,6 +76,47 @@ smtp_host_for_phpbb() {
             esac
             ;;
     esac
+}
+
+url_with_optional_port() {
+    local protocol host port path default_port port_suffix
+    protocol="$1"
+    host="$2"
+    port="$3"
+    path="$4"
+    default_port=""
+    case "$protocol" in
+        http://) default_port="80" ;;
+        https://) default_port="443" ;;
+    esac
+
+    port_suffix=""
+    if [ -n "$port" ] && [ "$port" != "$default_port" ]; then
+        port_suffix=":${port}"
+    fi
+
+    printf "%s%s%s%s" "$protocol" "$host" "$port_suffix" "$path"
+}
+
+phpbb_oidc_authorize_url() {
+    if [ -n "$PHPBB_OIDC_AUTHORIZE_URL" ]; then
+        printf "%s" "$PHPBB_OIDC_AUTHORIZE_URL"
+        return
+    fi
+
+    url_with_optional_port \
+        "$PHPBB_SERVER_PROTOCOL" \
+        "$PHPBB_SERVER_NAME" \
+        "$PHPBB_SERVER_PORT" \
+        "/app.php/oidc/authorize"
+}
+
+wiki_redirect_uri() {
+    if [ "$HTTPS_PORT" = "443" ]; then
+        printf "https://wiki.%s/Special:PluggableAuthLogin" "$DOMAIN"
+    else
+        printf "https://wiki.%s:%s/Special:PluggableAuthLogin" "$DOMAIN" "$HTTPS_PORT"
+    fi
 }
 
 wait_for_db() {
@@ -204,6 +252,83 @@ disable_legacy_oidc_extension() {
         >/dev/null 2>&1 || true
 }
 
+oidc_provider_enabled() {
+    local ext_table
+    ext_table="${PHPBB_TABLE_PREFIX}ext"
+
+    PGPASSWORD="$PHPBB_DB_PASSWORD" psql \
+        -h "$PHPBB_DB_HOST" \
+        -p "$PHPBB_DB_PORT" \
+        -U "$PHPBB_DB_USER" \
+        -d "$PHPBB_DB_NAME" \
+        -tAc "SELECT ext_active FROM ${ext_table} WHERE ext_name = 'vgindex/oidcprovider' LIMIT 1" 2>/dev/null | grep -q 1
+}
+
+enable_oidc_provider() {
+    echo "phpBB entrypoint: enabling VGIndex OIDC provider extension..."
+    cd /var/www/html
+
+    if oidc_provider_enabled; then
+        echo "phpBB entrypoint: OIDC provider extension already enabled."
+        return
+    fi
+
+    php bin/phpbbcli.php extension:enable vgindex/oidcprovider --no-interaction
+}
+
+sync_oidc_provider_config() {
+    echo "phpBB entrypoint: syncing OIDC provider settings..."
+    cd /var/www/html
+
+    php bin/phpbbcli.php config:set vgindex_oidc_issuer_url "$PHPBB_OIDC_ISSUER_URL" >/dev/null
+    php bin/phpbbcli.php config:set vgindex_oidc_authorize_url "$(phpbb_oidc_authorize_url)" >/dev/null
+}
+
+ensure_oidc_signing_key() {
+    local key_path
+    key_path="/var/www/html/store/vgindex_oidc_private_key.pem"
+
+    if [ ! -s "$key_path" ]; then
+        echo "phpBB entrypoint: generating OIDC signing key..."
+        php -r '$p = "/var/www/html/store/vgindex_oidc_private_key.pem"; if (is_file($p) && filesize($p) > 0) { exit(0); } $key = openssl_pkey_new(["private_key_bits" => 2048, "private_key_type" => OPENSSL_KEYTYPE_RSA]); if ($key === false || !openssl_pkey_export($key, $pem)) { fwrite(STDERR, "Could not generate OIDC signing key\n"); exit(1); } file_put_contents($p, $pem);'
+    fi
+
+    chown www-data:www-data "$key_path"
+    chmod 600 "$key_path"
+}
+
+seed_mediawiki_oidc_client() {
+    echo "phpBB entrypoint: seeding MediaWiki OIDC client..."
+
+    local clients_table redirect_uri redirect_uris_json secret_hash now
+    local client_id_sql secret_hash_sql redirect_uris_sql
+    clients_table="${PHPBB_TABLE_PREFIX}vgindex_oidc_clients"
+    redirect_uri="$(wiki_redirect_uri)"
+    redirect_uris_json="$(php -r 'echo json_encode([$argv[1]], JSON_UNESCAPED_SLASHES);' "$redirect_uri")"
+    secret_hash="$(php -r 'echo password_hash($argv[1], PASSWORD_DEFAULT);' "$MEDIAWIKI_OIDC_CLIENT_SECRET")"
+    now="$(date +%s)"
+
+    client_id_sql="$(escape_sql_single "$MEDIAWIKI_OIDC_CLIENT_ID")"
+    secret_hash_sql="$(escape_sql_single "$secret_hash")"
+    redirect_uris_sql="$(escape_sql_single "$redirect_uris_json")"
+
+    PGPASSWORD="$PHPBB_DB_PASSWORD" psql \
+        -h "$PHPBB_DB_HOST" \
+        -p "$PHPBB_DB_PORT" \
+        -U "$PHPBB_DB_USER" \
+        -d "$PHPBB_DB_NAME" \
+        -v ON_ERROR_STOP=1 \
+        -c "INSERT INTO ${clients_table} (client_id, client_secret_hash, redirect_uris, active, first_party, created_at, updated_at)
+            VALUES ('${client_id_sql}', '${secret_hash_sql}', '${redirect_uris_sql}', 1, 1, ${now}, ${now})
+            ON CONFLICT (client_id) DO UPDATE SET
+              client_secret_hash = EXCLUDED.client_secret_hash,
+              redirect_uris = EXCLUDED.redirect_uris,
+              active = 1,
+              first_party = 1,
+              updated_at = ${now};" \
+        >/dev/null
+}
+
 write_install_config() {
     local cookie_secure
     cookie_secure=true
@@ -291,6 +416,10 @@ disable_legacy_oidc_extension
 sync_server_config
 sync_auth_config
 sync_email_config
+enable_oidc_provider
+sync_oidc_provider_config
+ensure_oidc_signing_key
+seed_mediawiki_oidc_client
 
 chown -R www-data:www-data /var/www/html/cache
 

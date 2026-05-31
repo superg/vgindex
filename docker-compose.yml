@@ -13,6 +13,7 @@ services:
       - DOMAIN=${DOMAIN:-localhost}
       - APP_HOST=${APP_HOST:-app}
       - APP_PORT=${APP_PORT:-3000}
+      - HTTPS_PORT=${HTTPS_PORT:-8443}
       - ACME_EMAIL=${ACME_EMAIL:-admin@example.com}
 
     depends_on:
@@ -92,6 +93,10 @@ services:
       - PHPBB_SMTP_PASSWORD=${PHPBB_SMTP_PASSWORD:-}
       - PHPBB_SMTP_AUTH_METHOD=${PHPBB_SMTP_AUTH_METHOD:-}
       - PHPBB_SMTP_SECURE=${PHPBB_SMTP_SECURE:-}
+      - PHPBB_OIDC_ISSUER_URL=${PHPBB_OIDC_ISSUER_URL:-http://phpbb/app.php/oidc}
+      - PHPBB_OIDC_AUTHORIZE_URL=${PHPBB_OIDC_AUTHORIZE_URL:-}
+      - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
+      - MEDIAWIKI_OIDC_CLIENT_SECRET=${MEDIAWIKI_OIDC_CLIENT_SECRET:-changeme-mediawiki-oidc}
     volumes:
       - phpbb_files:/var/www/html/files
       - phpbb_store:/var/www/html/store
@@ -121,16 +126,20 @@ services:
       - HTTPS_PORT=${HTTPS_PORT:-8443}
       - MEDIAWIKI_ADMIN_USER=${MEDIAWIKI_ADMIN_USER:-admin}
       - MEDIAWIKI_ADMIN_PASSWORD=${MEDIAWIKI_ADMIN_PASSWORD:-changeme-mediawiki}
-      - OIDC_PROVIDER_URL=http://${APP_HOST:-app}:${APP_PORT:-3000}
+      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-http://phpbb/app.php/oidc}
       - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
       - MEDIAWIKI_OIDC_CLIENT_SECRET=${MEDIAWIKI_OIDC_CLIENT_SECRET:-changeme-mediawiki-oidc}
-      - POSTGRES_DB=${POSTGRES_DB:-myapp}
+      - MEDIAWIKI_OIDC_VERIFY_TLS=${MEDIAWIKI_OIDC_VERIFY_TLS:-true}
+      - MEDIAWIKI_LOCAL_LOGIN=${MEDIAWIKI_LOCAL_LOGIN:-false}
     volumes:
       - mediawiki_uploads:/var/www/html/images
       - ./docker/mediawiki/LocalSettings.php:/etc/mediawiki/LocalSettings.php:ro
+      - ./data/redump:/import/redump:ro
     depends_on:
       postgres:
         condition: service_healthy
+      phpbb:
+        condition: service_started
 
 volumes:
   pgdata:

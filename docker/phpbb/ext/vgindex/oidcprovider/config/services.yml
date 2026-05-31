@@ -1,0 +1,26 @@
+services:
+    vgindex.oidcprovider.controller:
+        class: vgindex\oidcprovider\controller\oidc_controller
+        arguments:
+            - '@config'
+            - '@request'
+            - '@user'
+            - '@vgindex.oidcprovider.repository'
+            - '@vgindex.oidcprovider.crypto'
+            - '@vgindex.oidcprovider.claims'
+
+    vgindex.oidcprovider.repository:
+        class: vgindex\oidcprovider\service\repository
+        arguments:
+            - '@dbal.conn'
+            - '%core.table_prefix%'
+
+    vgindex.oidcprovider.crypto:
+        class: vgindex\oidcprovider\service\crypto
+        arguments:
+            - '%core.root_path%'
+
+    vgindex.oidcprovider.claims:
+        class: vgindex\oidcprovider\service\claims
+        arguments:
+            - '@vgindex.oidcprovider.repository'
