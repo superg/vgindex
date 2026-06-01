@@ -47,6 +47,26 @@ Only `mediawiki_uploads` is persisted (mounted at `/var/www/html/images`).
 The rest of the container filesystem comes fresh from the image on each restart,
 ensuring Dockerfile changes (e.g. new extensions) always take effect.
 
+## Redump Wiki Import
+
+Scraped Redump wiki XML can be imported with:
+
+```bash
+bash scripts/redump_wiki_scraper/import.sh --target-domain vgindex.org
+```
+
+The importer rewrites Redump-family links before passing each XML file to
+MediaWiki. Large pages need more than PHP's default 128M CLI memory limit, so
+the script uses `1024M` by default. Override it with `--php-memory-limit 2048M`
+or `WIKI_IMPORT_MEMORY_LIMIT=2048M`.
+
+For one-off imports where pages were copied into the MediaWiki upload volume,
+pass both the host path and the matching in-container path:
+
+```bash
+bash scripts/redump_wiki_scraper/import.sh --target-domain vgindex.org --pages-dir /root/temp/vgindex/data/redump/wiki/pages --container-pages-dir /var/www/html/images/redump-import/wiki/pages
+```
+
 ## Health checks
 
 - Container is running: `docker compose ps mediawiki`
