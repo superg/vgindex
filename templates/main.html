@@ -10,7 +10,7 @@
         <table class="recent-dumps">
             <thead>
                 <tr>
-                    <th>Date</th>
+                    <th class="date-col">Date</th>
                     <th class="region-col">Region</th>
                     <th>Title</th>
                     <th>System</th>
@@ -18,8 +18,8 @@
             </thead>
             <tbody>
                 {% for disc in recent_discs %}
-                <tr>
-                    <td>{{ disc.created_at }}</td>
+                <tr class="clickable-row" data-href="/disc/{{ disc.id }}/" tabindex="0" role="link">
+                    <td class="date-col">{{ disc.created_at }}</td>
                     <td class="region-col">
                         {% for rf in disc.region_flags %}
                         <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg"

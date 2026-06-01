@@ -4,19 +4,25 @@
 
 {% block content %}
 <div class="disc-view">
-<div class="disc-title-row">
+<div class="disc-title-row{% if can_edit %} has-edit-action{% endif %}">
 <div class="disc-title-box">
 <h2>{{ title }}</h2>
 {% if show_title_foreign && !title_foreign.is_empty() %}
 <h2 class="foreign-title">{{ title_foreign }}</h2>
 {% endif %}
 </div>
+<div class="disc-title-actions">
+    {% if can_edit %}
+    <a href="/disc/{{ disc_id }}/edit/" role="button">Edit</a>
+    {% endif %}
+    <a href="/queue/?disc_id={{ disc_id }}" role="button">History</a>
+</div>
 </div>
 
 <div class="grid">
-    <section>
+    <section class="disc-info-section">
         <h3>Disc</h3>
-        <table class="table-compact">
+        <table class="table-compact disc-info-table">
             <tr><td><strong>System</strong></td><td><a href="/discs/?system={{ system_code }}">{{ system_name }}</a></td></tr>
             <tr><td><strong>Media</strong></td><td>{{ media_type }}</td></tr>
             <tr><td><strong>Category</strong></td><td>{{ category }}</td></tr>
@@ -38,7 +44,7 @@
             <tr><td><strong>{% if serial_count == 1 %}Disc Serial{% else %}Disc Serials{% endif %}</strong></td><td>{{ serial|safe }}</td></tr>
             {% endif %}
             {% if show_edition && !edition.is_empty() %}
-            <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td>{{ edition|safe }}</td></tr>
+            <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td class="disc-edition-cell"><span class="disc-edition-value">{{ edition|safe }}</span></td></tr>
             {% endif %}
             {% if show_barcode && !barcode.is_empty() %}
             <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{{ barcode|safe }}</td></tr>
@@ -67,61 +73,63 @@
         </table>
     </section>
 
-    <section>
-        <h3>Dump</h3>
-        <table class="table-compact">
-            <tr>
-                <td><strong>Status</strong></td>
-                <td><span class="status-dot {{ status_class }}"></span> {{ status_display }}</td>
-            </tr>
-            {% if !created_at.is_empty() %}
-            <tr><td><strong>Added</strong></td><td>{{ created_at }}</td></tr>
-            {% endif %}
-            {% if !updated_at.is_empty() %}
-            <tr><td><strong>Modified</strong></td><td>{{ updated_at }}</td></tr>
-            {% endif %}
-            <tr>
-                <td><strong>{% if dumper_count <= 1 %}Dumper{% else %}Dumpers{% endif %}</strong></td>
-                <td class="dumpers-cell">{{ dumpers_display|safe }}</td>
-            </tr>
-        </table>
-    </section>
+    <div class="disc-side-stack">
+        <section class="dump-info-section">
+            <h3>Dump</h3>
+            <table class="table-compact">
+                <tr>
+                    <td><strong>Status</strong></td>
+                    <td><span class="status-dot {{ status_class }}"></span> {{ status_display }}</td>
+                </tr>
+                {% if !created_at.is_empty() %}
+                <tr><td><strong>Added</strong></td><td>{{ created_at }}</td></tr>
+                {% endif %}
+                {% if !updated_at.is_empty() %}
+                <tr><td><strong>Modified</strong></td><td>{{ updated_at }}</td></tr>
+                {% endif %}
+                <tr>
+                    <td><strong>{% if dumper_count <= 1 %}Dumper{% else %}Dumpers{% endif %}</strong></td>
+                    <td class="dumpers-cell">{{ dumpers_display|safe }}</td>
+                </tr>
+            </table>
+        </section>
 
-    {% if (show_protection && !protection.is_empty()) || !contents.is_empty() || !comments.is_empty() %}
-    <section class="section-collapsible">
-        {% if show_protection && !protection.is_empty() %}
-        {% if protection.lines().count() > 5 %}
-        <details class="protection-details">
-            <summary><h3>Protection</h3></summary>
+        {% if (show_protection && !protection.is_empty()) || !contents.is_empty() || !comments.is_empty() %}
+        <section class="section-collapsible">
+            {% if show_protection && !protection.is_empty() %}
+            {% if protection.lines().count() > 5 %}
+            <details class="protection-details">
+                <summary><h3>Protection</h3></summary>
+                <p class="pre-wrap">{{ protection }}</p>
+            </details>
+            {% else %}
+            <h3>Protection</h3>
             <p class="pre-wrap">{{ protection }}</p>
-        </details>
-        {% else %}
-        <h3>Protection</h3>
-        <p class="pre-wrap">{{ protection }}</p>
-        {% endif %}
-        {% endif %}
+            {% endif %}
+            {% endif %}
 
-        {% if !comments.is_empty() %}
-        {% if comments.lines().count() > 10 %}
-        <details class="protection-details">
-            <summary><h3>Comments</h3></summary>
-            <p class="pre-wrap">{{ comments|safe }}</p>
-        </details>
-        {% else %}
-        <h3>Comments</h3>
-        <p class="pre-wrap">{{ comments|safe }}</p>
-        {% endif %}
-        {% endif %}
+            {% if !comments.is_empty() %}
+            {% if comments.lines().count() > 10 %}
+            <details class="protection-details">
+                <summary><h3>Comments</h3></summary>
+                <p class="pre-wrap disc-comments">{{ comments|safe }}</p>
+            </details>
+            {% else %}
+            <h3>Comments</h3>
+            <p class="pre-wrap disc-comments">{{ comments|safe }}</p>
+            {% endif %}
+            {% endif %}
 
-        {% if !contents.is_empty() %}
-        <details>
-            <summary><h3>Contents</h3></summary>
-            <p class="pre-wrap">{{ contents|safe }}</p>
-        </details>
-        {% endif %}
+            {% if !contents.is_empty() %}
+            <details>
+                <summary><h3>Contents</h3></summary>
+                <p class="pre-wrap disc-contents">{{ contents|safe }}</p>
+            </details>
+            {% endif %}
 
-    </section>
-    {% endif %}
+        </section>
+        {% endif %}
+    </div>
 </div>
 
 {% if show_tracks_table %}
@@ -399,7 +407,7 @@
 </section>
 {% endif %}
 
-<div class="form-actions disc-view-actions">
+<div class="disc-bottom-actions">
     {% if can_edit %}
     <a href="/disc/{{ disc_id }}/edit/" role="button">Edit</a>
     {% endif %}
