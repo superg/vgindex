@@ -17,7 +17,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
 const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
 const IS_ADD_MODE = {{ is_add_mode }};
 </script>
-<script src="/static/js/disc_edit.js?v=20260601cl" defer></script>
+<script src="/static/js/disc_edit.js" defer></script>
 {% endblock %}
 
 {% block content %}
