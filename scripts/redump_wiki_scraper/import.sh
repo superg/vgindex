@@ -15,10 +15,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PAGES_DIR="$PROJECT_ROOT/data/redump/wiki/pages"
 CONTAINER_PAGES_DIR="/import/redump/wiki/pages"
 TARGET_DOMAIN="localhost"
+PHP_MEMORY_LIMIT="${WIKI_IMPORT_MEMORY_LIMIT:-1024M}"
 
 usage() {
     echo "Usage:"
-    echo "  bash scripts/redump_wiki_scraper/import.sh [--target-domain DOMAIN[:PORT]]"
+    echo "  bash scripts/redump_wiki_scraper/import.sh [--target-domain DOMAIN[:PORT]] [--pages-dir PATH] [--container-pages-dir PATH] [--php-memory-limit LIMIT]"
 }
 
 normalize_target_domain() {
@@ -41,6 +42,30 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             fi
             TARGET_DOMAIN="$2"
+            shift 2
+            ;;
+        --pages-dir)
+            if [ "$#" -lt 2 ]; then
+                echo "ERROR: --pages-dir requires a value" >&2
+                exit 1
+            fi
+            PAGES_DIR="$2"
+            shift 2
+            ;;
+        --container-pages-dir)
+            if [ "$#" -lt 2 ]; then
+                echo "ERROR: --container-pages-dir requires a value" >&2
+                exit 1
+            fi
+            CONTAINER_PAGES_DIR="$2"
+            shift 2
+            ;;
+        --php-memory-limit)
+            if [ "$#" -lt 2 ]; then
+                echo "ERROR: --php-memory-limit requires a value" >&2
+                exit 1
+            fi
+            PHP_MEMORY_LIMIT="$2"
             shift 2
             ;;
         --help|-h)
@@ -75,18 +100,22 @@ if ! docker exec "$CONTAINER" test -d "$CONTAINER_PAGES_DIR"; then
     exit 1
 fi
 
-TOTAL=$(find "$PAGES_DIR" -name '*.xml' | wc -l)
+TOTAL=$(find "$PAGES_DIR" -maxdepth 1 -name '*.xml' | wc -l)
 echo "Importing $TOTAL pages from mounted Redump wiki XML..."
 echo "Rewriting Redump links to target domain: $TARGET_DOMAIN"
+echo "Using PHP memory limit: $PHP_MEMORY_LIMIT"
 
 echo "Deleting default Main Page so the imported one takes its place..."
-docker exec "$CONTAINER" bash -c 'echo "Main Page" > /tmp/del.txt && php /var/www/html/maintenance/deleteBatch.php /tmp/del.txt 2>/dev/null; rm -f /tmp/del.txt'
+docker exec \
+    -e PHP_MEMORY_LIMIT="$PHP_MEMORY_LIMIT" \
+    "$CONTAINER" bash -c 'echo "Main Page" > /tmp/del.txt && php -d "memory_limit=$PHP_MEMORY_LIMIT" /var/www/html/maintenance/deleteBatch.php /tmp/del.txt 2>/dev/null; rm -f /tmp/del.txt'
 
 echo ""
 
 docker exec \
     -e TARGET_DOMAIN="$TARGET_DOMAIN" \
     -e IMPORT_SOURCE_DIR="$CONTAINER_PAGES_DIR" \
+    -e PHP_MEMORY_LIMIT="$PHP_MEMORY_LIMIT" \
     "$CONTAINER" bash -c '
     set -euo pipefail
 
@@ -94,7 +123,7 @@ docker exec \
         local source="$1"
         local target="$2"
 
-        php -r "
+        php -d "memory_limit=$PHP_MEMORY_LIMIT" -r "
 function xml_url_escape(string \$url): string {
     return htmlspecialchars(\$url, ENT_NOQUOTES | ENT_SUBSTITUTE, \"UTF-8\");
 }
@@ -193,7 +222,7 @@ if (\$rewritten === null || file_put_contents(\$target, \$rewritten) === false) 
     for f in "$IMPORT_SOURCE_DIR"/*.xml; do
         [ -e "$f" ] || break
         COUNT=$((COUNT + 1))
-        if rewrite_xml "$f" "$TMP_FILE" && php /var/www/html/maintenance/importDump.php --username-prefix "" "$TMP_FILE" > /dev/null 2>&1; then
+        if rewrite_xml "$f" "$TMP_FILE" && php -d "memory_limit=$PHP_MEMORY_LIMIT" /var/www/html/maintenance/importDump.php --username-prefix "" "$TMP_FILE" > /dev/null 2>&1; then
             printf "  [%d/%d] %s\n" "$COUNT" "$TOTAL" "$(basename "$f")"
         else
             printf "  [%d/%d] FAILED: %s\n" "$COUNT" "$TOTAL" "$(basename "$f")"
@@ -206,7 +235,7 @@ if (\$rewritten === null || file_put_contents(\$target, \$rewritten) === false) 
     echo ""
     rm -f "$TMP_FILE"
     echo "Rebuilding indexes..."
-    php /var/www/html/maintenance/rebuildrecentchanges.php
-    php /var/www/html/maintenance/initSiteStats.php --update
+    php -d "memory_limit=$PHP_MEMORY_LIMIT" /var/www/html/maintenance/rebuildrecentchanges.php
+    php -d "memory_limit=$PHP_MEMORY_LIMIT" /var/www/html/maintenance/initSiteStats.php --update
     echo "Done."
 '
