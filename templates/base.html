@@ -7,7 +7,7 @@
     <link rel="icon" href="/static/favicon.ico" sizes="any">
     <link rel="shortcut icon" href="/static/favicon.ico">
     <link rel="stylesheet" href="/static/css/pico.min.css">
-    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/app.css?v=20260601cg">
     <script>
         (function() {
             var t = localStorage.getItem('theme');
@@ -88,6 +88,92 @@
                 localStorage.setItem('theme', next);
                 updateToggleState();
             });
+        })();
+
+        (function() {
+            var hoveredRow = null;
+
+            function isInteractiveElement(el) {
+                return el.closest('a, button, input, select, textarea, label, summary, [role="button"]');
+            }
+
+            function rowFromEvent(event) {
+                var row = event.target.closest && event.target.closest('tr[data-href]');
+                if (row) return row;
+
+                var rows = document.querySelectorAll('tr[data-href]');
+                for (var i = 0; i < rows.length; i++) {
+                    var rect = rows[i].getBoundingClientRect();
+                    if (
+                        event.clientX >= rect.left &&
+                        event.clientX <= rect.right &&
+                        event.clientY >= rect.top &&
+                        event.clientY <= rect.bottom
+                    ) {
+                        return rows[i];
+                    }
+                }
+                return null;
+            }
+
+            function openRow(row, event) {
+                var href = row && row.getAttribute('data-href');
+                if (!href) return;
+                if (event.metaKey || event.ctrlKey) {
+                    window.open(href, '_blank', 'noopener');
+                } else {
+                    window.location.href = href;
+                }
+            }
+
+            document.addEventListener('click', function(event) {
+                if (event.button !== 0 || isInteractiveElement(event.target)) return;
+                var row = rowFromEvent(event);
+                if (row) openRow(row, event);
+            });
+
+            document.addEventListener('mousemove', function(event) {
+                var row = rowFromEvent(event);
+                if (row === hoveredRow) return;
+                if (hoveredRow) hoveredRow.classList.remove('is-row-hover');
+                hoveredRow = row;
+                if (hoveredRow) hoveredRow.classList.add('is-row-hover');
+            });
+
+            document.addEventListener('keydown', function(event) {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                var row = event.target.closest('tr[data-href]');
+                if (!row || event.target !== row) return;
+                event.preventDefault();
+                openRow(row, event);
+            });
+        })();
+
+        (function() {
+            function setActiveNavLink() {
+                var path = window.location.pathname;
+                var activeHref = null;
+                if (path === '/') {
+                    activeHref = '/';
+                } else if (path.indexOf('/disc') === 0) {
+                    activeHref = '/discs/';
+                } else if (path.indexOf('/downloads') === 0) {
+                    activeHref = '/downloads/';
+                } else if (path.indexOf('/queue') === 0) {
+                    activeHref = '/queue/';
+                } else if (path.indexOf('/about') === 0) {
+                    activeHref = '/about/';
+                }
+                if (!activeHref) return;
+                document.querySelectorAll('.site-nav-links a').forEach(function(link) {
+                    if (link.getAttribute('href') === activeHref) {
+                        link.setAttribute('aria-current', 'page');
+                    } else {
+                        link.removeAttribute('aria-current');
+                    }
+                });
+            }
+            document.addEventListener('DOMContentLoaded', setActiveNavLink);
         })();
 
         (function() {
