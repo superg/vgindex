@@ -47,7 +47,7 @@
                             {% endmatch %}
                         </ul>
                     </li>
-                    <li><button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode"><span class="dark-mode-toggle-thumb"></span></button></li>
+                    <li><button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode" aria-pressed="false"><span class="dark-mode-toggle-thumb"></span></button></li>
                 </ul>
             </div>
             <ul class="site-nav-links">
@@ -69,12 +69,26 @@
     </main>
 
     <script>
-        document.getElementById('dark-mode-toggle').addEventListener('click', function() {
-            var html = document.documentElement;
-            var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-            html.setAttribute('data-theme', next);
-            localStorage.setItem('theme', next);
-        });
+        (function() {
+            var toggle = document.getElementById('dark-mode-toggle');
+            if (!toggle) return;
+
+            function updateToggleState() {
+                toggle.setAttribute(
+                    'aria-pressed',
+                    document.documentElement.getAttribute('data-theme') === 'dark' ? 'true' : 'false'
+                );
+            }
+
+            updateToggleState();
+            toggle.addEventListener('click', function() {
+                var html = document.documentElement;
+                var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+                html.setAttribute('data-theme', next);
+                localStorage.setItem('theme', next);
+                updateToggleState();
+            });
+        })();
 
         (function() {
             function scaleNav() {
