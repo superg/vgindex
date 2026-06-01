@@ -1757,6 +1757,16 @@ pre code {
 .disc-edit .grid {
     gap: 0.35rem;
 }
+.disc-edit .flag-select-grid {
+    column-gap: 0.85rem;
+}
+.flag-select-languages {
+    border-left: 1px solid #d7e1ea;
+    padding-left: 0.85rem;
+}
+[data-theme="dark"] .flag-select-languages {
+    border-left-color: #2a3140;
+}
 .disc-edit input[type="radio"] {
     margin: 0;
 }
@@ -1973,6 +1983,18 @@ pre code {
     padding: 0.15rem 0.25rem;
     font-size: 0.72rem;
     height: auto;
+}
+.ring-edit-table .ring-layer-label-tooltip {
+    cursor: help;
+    text-decoration: underline dotted;
+    text-underline-offset: 0.16em;
+}
+.ring-edit-table .ring-layer-label-tooltip:focus {
+    outline: 1px solid #9fb1c3;
+    outline-offset: 2px;
+}
+[data-theme="dark"] .ring-edit-table .ring-layer-label-tooltip:focus {
+    outline-color: #5a6b82;
 }
 .ring-edit-table .remove-entry {
     padding: 0.1rem 0.35rem;

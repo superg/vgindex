@@ -17,7 +17,7 @@ const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{%
 const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
 const IS_ADD_MODE = {{ is_add_mode }};
 </script>
-<script src="/static/js/disc_edit.js" defer></script>
+<script src="/static/js/disc_edit.js?v=20260601cl" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -199,8 +199,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
         </label>
     </div>
 
-    <div class="grid">
-        <div{% if !self.highlight_class("regions").is_empty() %} class="{{ self.highlight_class("regions") }}"{% endif %}>
+    <div class="grid flag-select-grid">
+        <div class="flag-select-group flag-select-regions{% if !self.highlight_class("regions").is_empty() %} {{ self.highlight_class("regions") }}{% endif %}">
         <fieldset>
             <legend>Regions:</legend>
             <div class="flag-check-list">
@@ -224,7 +224,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             {% endif %}
         </fieldset>
         </div>
-        <div{% if !self.highlight_class("languages").is_empty() %} class="{{ self.highlight_class("languages") }}"{% endif %}>
+        <div class="flag-select-group flag-select-languages{% if !self.highlight_class("languages").is_empty() %} {{ self.highlight_class("languages") }}{% endif %}">
         <fieldset>
             <legend>Languages:</legend>
             <div class="flag-check-list">
