@@ -51,7 +51,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
          JOIN systems s ON s.code = d.system_code
          WHERE d.status != 'Disabled'
          ORDER BY d.id DESC
-         LIMIT 20",
+         LIMIT 30",
     )
     .fetch_all(&state.pool)
     .await

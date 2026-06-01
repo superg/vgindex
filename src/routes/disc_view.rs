@@ -1478,7 +1478,7 @@ mod tests {
         let css = include_str!("../../static/css/app.css");
 
         assert!(template.contains("<td>{{ serial|safe }}</td>"));
-        assert!(template.contains("<td>{{ edition|safe }}</td>"));
+        assert!(template.contains(r#"<td class="disc-edition-cell"><span class="disc-edition-value">{{ edition|safe }}</span></td>"#));
         assert!(template.contains("<td>{{ barcode|safe }}</td>"));
         assert!(!template.contains("serial_count > 6"));
         assert!(!template.contains("edition_count > 6"));

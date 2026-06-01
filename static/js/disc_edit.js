@@ -172,6 +172,22 @@ function ringLayerLabel(layerIndex, layerCount) {
     return layerIndex === layerCount - 1 ? 'LS' : 'L' + layerIndex;
 }
 
+function ringLayerLabelHtml(layerIndex, layerCount) {
+    var label = ringLayerLabel(layerIndex, layerCount);
+    var tooltip = '';
+    if (label === 'L0') {
+        tooltip = 'L0 = Data side ring code.';
+    } else if (label === 'L1') {
+        tooltip = 'L1 = Data side ring code, second row (for 2+ layer discs).';
+    } else if (label === 'L2') {
+        tooltip = 'L2 = Data side ring code, third row (for 3+ layer discs only).';
+    } else if (label === 'LS') {
+        tooltip = 'LS = Label side ring codes.';
+    }
+    if (!tooltip) return '<strong>' + label + '</strong>';
+    return '<strong class="ring-layer-label-tooltip" tabindex="0" title="' + esc(tooltip) + '" aria-label="' + esc(tooltip) + '">' + label + '</strong>';
+}
+
 function systemHasFlag(flag) {
     var sel = document.getElementById('system-select');
     if (!sel || typeof SYSTEMS_HAS_FLAGS === 'undefined') return false;
@@ -296,7 +312,7 @@ function renderRingEntries() {
             if (li === 0) {
                 cells += '<td class="entry-num"' + (ml > 1 ? ' rowspan="' + ml + '"' : '') + '>' + (ei + 1) + '</td>';
             }
-            if (ml > 1) cells += '<td><strong>' + ringLayerLabel(li, ml) + '</strong></td>';
+            if (ml > 1) cells += '<td>' + ringLayerLabelHtml(li, ml) + '</td>';
             cells += '<td><input type="text" class="' + ringInputClass('ring-mc', layerHighlight && layerHighlight.mastering_code) + '" value="' + esc(l.mastering_code || '') + '"></td>';
             cells += '<td><input type="text" class="' + ringInputClass('ring-ms', layerHighlight && layerHighlight.mastering_sid) + '" value="' + esc(l.mastering_sid || '') + '"></td>';
             cells += '<td><input type="text" class="' + ringInputClass('ring-tools', layerHighlight && layerHighlight.toolstamps) + '" value="' + esc(l.toolstamps || '') + '"></td>';
