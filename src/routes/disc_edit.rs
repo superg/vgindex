@@ -2799,8 +2799,9 @@ mod operation_delta_tests {
         assert!(template.contains(
             r#"<textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">"#
         ));
-        assert!(template
-            .contains(r#"<textarea name="submission_comment" rows="2" class="auto-expand""#));
+        assert!(template.contains(
+            r#"<textarea name="submission_comment" rows="2" class="auto-expand fixed-80""#
+        ));
         assert!(!template.contains(
             r#"<textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80">"#
         ));
