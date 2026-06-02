@@ -75,6 +75,7 @@ pub(crate) struct DiscEditTemplate {
     pub systems_media_json: String,
     pub systems_has_flags_json: String,
     pub edition_suggestions_json: String,
+    pub submit_as_usernames_json: String,
     pub media_rom_extensions_json: String,
     pub media_is_cd_json: String,
 
@@ -141,6 +142,8 @@ pub(crate) struct DiscEditTemplate {
     pub dump_log: String,
     pub dump_log_required: bool,
     pub extra_upload_url: String,
+    pub show_submit_as: bool,
+    pub submit_as_username: String,
 
     pub submit_button_text: String,
     pub validation_errors: Vec<String>,
@@ -350,6 +353,57 @@ pub(crate) fn build_systems_json(all_systems: &[System]) -> (String, String) {
 pub(crate) async fn build_edition_suggestions_json(state: &AppState) -> AppResult<String> {
     let suggestions = state.edition_suggestions.get(&state.pool).await?;
     Ok(serde_json::to_string(&suggestions).unwrap_or_else(|_| "{}".into()))
+}
+
+pub(crate) async fn build_submit_as_usernames_json(pool: &sqlx::PgPool) -> AppResult<String> {
+    let usernames: Vec<String> =
+        sqlx::query_scalar("SELECT username FROM users ORDER BY LOWER(username), username")
+            .fetch_all(pool)
+            .await?;
+    Ok(serde_json::to_string(&usernames).unwrap_or_else(|_| "[]".into()))
+}
+
+const FIND_OR_CREATE_USER_SQL: &str = "INSERT INTO users (username)
+         VALUES ($1)
+         ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
+         RETURNING id";
+
+fn normalize_submit_as_username(username: Option<&str>) -> Result<String, &'static str> {
+    let username = username.unwrap_or("").trim();
+    if username.is_empty() {
+        return Err("cannot be empty");
+    }
+    if username.chars().count() > 64 {
+        return Err("must be 64 characters or fewer");
+    }
+    Ok(username.to_string())
+}
+
+fn validate_submit_as_for_add(form: &DiscEditForm, can_submit_as: bool) -> Vec<String> {
+    if !can_submit_as {
+        return Vec::new();
+    }
+    match normalize_submit_as_username(form.submit_as.as_deref()) {
+        Ok(_) => Vec::new(),
+        Err(message) => vec![format!("Submit As: {message}")],
+    }
+}
+
+fn submit_as_username_for_form(username: &str, form: &DiscEditForm, can_submit_as: bool) -> String {
+    if !can_submit_as {
+        return String::new();
+    }
+    form.submit_as.as_deref().unwrap_or(username).to_string()
+}
+
+async fn find_or_create_submit_as_user(pool: &sqlx::PgPool, username: &str) -> AppResult<i32> {
+    let username = normalize_submit_as_username(Some(username))
+        .map_err(|message| AppError::BadRequest(format!("Submit As: {message}")))?;
+    let user_id: i32 = sqlx::query_scalar(FIND_OR_CREATE_USER_SQL)
+        .bind(username)
+        .fetch_one(pool)
+        .await?;
+    Ok(user_id)
 }
 
 pub(crate) fn build_media_rom_extensions_json(all_media_types: &[EditMediaTypeRow]) -> String {
@@ -597,6 +651,7 @@ async fn edit_page(
             systems_media_json,
             systems_has_flags_json,
             edition_suggestions_json,
+            submit_as_usernames_json: "[]".to_string(),
             media_rom_extensions_json,
             media_is_cd_json,
 
@@ -736,6 +791,8 @@ async fn edit_page(
             dump_log: String::new(),
             dump_log_required: false,
             extra_upload_url: String::new(),
+            show_submit_as: false,
+            submit_as_username: String::new(),
 
             submit_button_text: if user.role.can_edit_directly() {
                 "Save".into()
@@ -818,6 +875,7 @@ pub struct DiscEditForm {
     #[serde(default)]
     pub status: String,
     pub submission_comment: Option<String>,
+    pub submit_as: Option<String>,
     pub dump_log: Option<String>,
     pub extra_upload_url: Option<String>,
 }
@@ -1012,6 +1070,7 @@ async fn render_form_with_errors(
     validation_result: ValidationResultMessage,
     is_add_mode: bool,
     can_edit_directly: bool,
+    can_submit_as: bool,
 ) -> AppResult<Response> {
     let pool = &state.pool;
     let ref_data = fetch_ref_data(pool).await?;
@@ -1023,6 +1082,11 @@ async fn render_form_with_errors(
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
+    let submit_as_usernames_json = if is_add_mode && can_submit_as {
+        build_submit_as_usernames_json(pool).await?
+    } else {
+        "[]".to_string()
+    };
     let max_layers = max_layers_for_media(&ref_data.all_media_types, &form.media_type);
 
     let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
@@ -1059,6 +1123,7 @@ async fn render_form_with_errors(
         systems_media_json,
         systems_has_flags_json,
         edition_suggestions_json,
+        submit_as_usernames_json,
         media_rom_extensions_json,
         media_is_cd_json,
 
@@ -1151,6 +1216,8 @@ async fn render_form_with_errors(
         dump_log: form.dump_log.clone().unwrap_or_default(),
         dump_log_required: is_add_mode && !can_edit_directly,
         extra_upload_url: form.extra_upload_url.clone().unwrap_or_default(),
+        show_submit_as: is_add_mode && can_submit_as,
+        submit_as_username: submit_as_username_for_form(username, form, can_submit_as),
 
         submit_button_text: if can_edit_directly {
             "Save".into()
@@ -1408,6 +1475,7 @@ async fn edit_submit(
             ValidationResultMessage::default(),
             false,
             user.role.can_edit_directly(),
+            false,
         )
         .await;
     }
@@ -1465,6 +1533,13 @@ async fn add_page(
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
+    let can_submit_as = user.role.can_moderate();
+    let submit_as_usernames_json = if can_submit_as {
+        build_submit_as_usernames_json(&state.pool).await?
+    } else {
+        "[]".to_string()
+    };
+    let username = user.username.clone();
 
     let default_system = ref_data.all_systems.iter().find(|s| s.code == "PC");
     let has_sys = |f: fn(&System) -> bool| default_system.map_or(true, f);
@@ -1472,7 +1547,7 @@ async fn add_page(
 
     Ok(Html(
         DiscEditTemplate {
-            current_user: Some(user.username),
+            current_user: Some(username.clone()),
             disc_id: 0,
             page_title: String::new(),
 
@@ -1489,6 +1564,7 @@ async fn add_page(
             systems_media_json,
             systems_has_flags_json,
             edition_suggestions_json,
+            submit_as_usernames_json,
             media_rom_extensions_json,
             media_is_cd_json,
 
@@ -1554,6 +1630,12 @@ async fn add_page(
             dump_log: String::new(),
             dump_log_required: !user.role.can_edit_directly(),
             extra_upload_url: String::new(),
+            show_submit_as: can_submit_as,
+            submit_as_username: if can_submit_as {
+                username
+            } else {
+                String::new()
+            },
 
             submit_button_text: if user.role.can_edit_directly() {
                 "Save".into()
@@ -1598,6 +1680,8 @@ async fn add_submit(
     let form = post.disc;
     let ref_data = fetch_ref_data(&state.pool).await?;
     let mut errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
+    let can_submit_as = user.role.can_moderate();
+    errors.extend(validate_submit_as_for_add(&form, can_submit_as));
 
     let dump_log_text = form
         .dump_log
@@ -1624,6 +1708,7 @@ async fn add_submit(
             validation_result,
             true,
             user.role.can_edit_directly(),
+            user.role.can_moderate(),
         )
         .await;
     }
@@ -1631,6 +1716,13 @@ async fn add_submit(
     let files_xml_str = form.files_xml.as_deref().unwrap_or("");
     let target_disc_id = queue_service::find_matching_disc(&state.pool, files_xml_str).await;
     let changes = build_new_disc_changes(&form, &ref_data.all_media_types);
+    let submitter_id = if can_submit_as {
+        let submit_as_username = normalize_submit_as_username(form.submit_as.as_deref())
+            .map_err(|message| AppError::BadRequest(format!("Submit As: {message}")))?;
+        find_or_create_submit_as_user(&state.pool, &submit_as_username).await?
+    } else {
+        user.id
+    };
 
     let submission_comment = form
         .submission_comment
@@ -1642,7 +1734,7 @@ async fn add_submit(
     let sub = queue_service::create_submission(
         &state.pool,
         SubmissionType::Disc,
-        user.id,
+        submitter_id,
         target_disc_id,
         changes,
         submission_comment.as_deref(),
@@ -2394,6 +2486,7 @@ mod operation_delta_tests {
             files_xml: None,
             status: detail.disc.status.to_string(),
             submission_comment: None,
+            submit_as: None,
             dump_log: None,
             extra_upload_url: None,
         }
@@ -2456,6 +2549,7 @@ mod operation_delta_tests {
             ),
             status: "Verified".to_string(),
             submission_comment: None,
+            submit_as: None,
             dump_log: None,
             extra_upload_url: None,
         }
@@ -2789,6 +2883,93 @@ mod operation_delta_tests {
         assert!(!script.contains("function updateEditionDatalist"));
         assert!(!script.contains("prepareEditionPicker"));
         assert!(script.contains("function fitInlineGroupForInput(input)"));
+    }
+
+    #[test]
+    fn submit_as_uses_text_field_with_native_selector() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let script = include_str!("../../static/js/disc_edit.js");
+        let css = include_str!("../../static/css/app.css");
+
+        assert!(template.contains("const SUBMIT_AS_USERNAMES ="));
+        assert!(template.contains("{% if show_submit_as %}"));
+        assert!(template.contains(r#"<label>Submit As"#));
+        assert!(template.contains(
+            r#"<input type="text" name="submit_as" id="submit-as-input" autocomplete="off""#
+        ));
+        assert!(!template.contains("<datalist"));
+        assert!(!template.contains("list=\"submit-as"));
+        assert!(!template.contains("select name=\"submit_as\""));
+
+        let comment_pos = template.find(r#"<label>Submission Comment"#).unwrap();
+        let submit_as_pos = template.find(r#"<label>Submit As"#).unwrap();
+        let validate_pos = template.find(r#"name="action" value="validate""#).unwrap();
+        assert!(comment_pos < submit_as_pos);
+        assert!(submit_as_pos < validate_pos);
+
+        assert!(script.contains("function attachSubmitAsSelector(input)"));
+        assert!(script.contains("input.removeAttribute('list')"));
+        assert!(script.contains("input.setAttribute('autocomplete', 'off')"));
+        assert!(script.contains("function ensureSubmitAsSelectorGroup(input)"));
+        assert!(script.contains("group.className = 'submit-as-picker'"));
+        assert!(script.contains("select.className = 'submit-as-user-select'"));
+        assert!(script.contains("function populateSubmitAsSelect(select)"));
+        assert!(script.contains("var selectedUser = select.value"));
+        assert!(script.contains("input.value = selectedUser"));
+        assert!(!script.contains("select.name"));
+        assert!(!script.contains("select.setAttribute('name'"));
+
+        assert!(css.contains(".disc-edit .submit-as-picker"));
+        assert!(css.contains(".disc-edit .submit-as-picker select.submit-as-user-select"));
+    }
+
+    #[test]
+    fn submit_as_validation_is_moderator_only_and_preserves_default() {
+        let mut form = new_disc_form();
+
+        assert_eq!(
+            submit_as_username_for_form("CurrentUser", &form, true),
+            "CurrentUser"
+        );
+        assert_eq!(submit_as_username_for_form("CurrentUser", &form, false), "");
+
+        form.submit_as = Some("  ".to_string());
+        assert_eq!(
+            validate_submit_as_for_add(&form, true),
+            vec!["Submit As: cannot be empty".to_string()]
+        );
+        assert!(validate_submit_as_for_add(&form, false).is_empty());
+
+        form.submit_as = Some("OtherUser".to_string());
+        assert!(validate_submit_as_for_add(&form, true).is_empty());
+        assert_eq!(
+            submit_as_username_for_form("CurrentUser", &form, true),
+            "OtherUser"
+        );
+
+        form.submit_as = Some("a".repeat(65));
+        assert_eq!(
+            validate_submit_as_for_add(&form, true),
+            vec!["Submit As: must be 64 characters or fewer".to_string()]
+        );
+    }
+
+    #[test]
+    fn submit_as_user_resolution_matches_oidc_exact_case_behavior() {
+        assert!(FIND_OR_CREATE_USER_SQL.contains("ON CONFLICT (username)"));
+        assert!(FIND_OR_CREATE_USER_SQL.contains("RETURNING id"));
+        assert!(!FIND_OR_CREATE_USER_SQL
+            .to_ascii_lowercase()
+            .contains("lower(username)"));
+
+        assert_eq!(
+            normalize_submit_as_username(Some("  Alice  ")).unwrap(),
+            "Alice"
+        );
+        assert_eq!(
+            normalize_submit_as_username(Some("alice")).unwrap(),
+            "alice"
+        );
     }
 
     #[test]

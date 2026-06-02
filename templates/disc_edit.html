@@ -10,6 +10,7 @@ const MEDIA_LAYERS = {{ media_layers_json|safe }};
 const SYSTEMS_MEDIA = {{ systems_media_json|safe }};
 const SYSTEMS_HAS_FLAGS = {{ systems_has_flags_json|safe }};
 const EDITION_SUGGESTIONS = {{ edition_suggestions_json|safe }};
+const SUBMIT_AS_USERNAMES = {{ submit_as_usernames_json|safe }};
 const MEDIA_ROM_EXTENSIONS = {{ media_rom_extensions_json|safe }};
 const MEDIA_IS_CD = {{ media_is_cd_json|safe }};
 const MEDIA_HAS_PIC = {{ media_has_pic_json|safe }};
@@ -629,6 +630,14 @@ const IS_ADD_MODE = {{ is_add_mode }};
     <label>Submission Comment
         <textarea name="submission_comment" rows="2" class="auto-expand fixed-80" placeholder="Optional comment about this submission">{{ submission_comment }}</textarea>
     </label>
+
+    {% if show_submit_as %}
+    <label>Submit As
+        <span class="submit-as-picker">
+            <input type="text" name="submit_as" id="submit-as-input" autocomplete="off" value="{{ submit_as_username }}">
+        </span>
+    </label>
+    {% endif %}
 
     {% if is_add_mode %}
     <div class="form-actions">

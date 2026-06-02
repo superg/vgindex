@@ -576,6 +576,7 @@ fn build_review_template(
         systems_media_json: systems_media_json.to_string(),
         systems_has_flags_json: systems_has_flags_json.to_string(),
         edition_suggestions_json: edition_suggestions_json.to_string(),
+        submit_as_usernames_json: "[]".to_string(),
         media_rom_extensions_json: media_rom_extensions_json.to_string(),
         media_is_cd_json: media_is_cd_json.to_string(),
 
@@ -667,6 +668,8 @@ fn build_review_template(
         dump_log: String::new(),
         dump_log_required: false,
         extra_upload_url: String::new(),
+        show_submit_as: false,
+        submit_as_username: String::new(),
 
         submit_button_text: String::new(),
         validation_errors: vec![],
@@ -858,6 +861,24 @@ fn display_media(ref_data: &disc_edit::EditRefData, code: &str) -> String {
         .unwrap_or_else(|| code.to_string())
 }
 
+fn review_named_value(
+    field: &str,
+    value: &serde_json::Value,
+    ref_data: &disc_edit::EditRefData,
+) -> String {
+    match field {
+        "system_code" => value
+            .as_str()
+            .map(|code| display_system(ref_data, code))
+            .unwrap_or_default(),
+        "media_type" => value
+            .as_str()
+            .map(|code| display_media(ref_data, code))
+            .unwrap_or_default(),
+        _ => review_display_value(value),
+    }
+}
+
 fn sector_ranges_display(value: &serde_json::Value) -> String {
     value
         .as_array()
@@ -918,26 +939,16 @@ fn build_review_diff_context(
         if !review_value_changed(old, new) {
             continue;
         }
-        let old_display = match field {
-            "system_code" => old
-                .as_str()
-                .map(|code| display_system(ref_data, code))
-                .unwrap_or_default(),
-            "media_type" => old
-                .as_str()
-                .map(|code| display_media(ref_data, code))
-                .unwrap_or_default(),
-            _ => review_display_value(old),
-        };
+        let new_display = review_named_value(field, new, ref_data);
         add_single_annotation(
             &mut context,
             field,
-            "Changed from",
-            "removed",
-            if old_display.trim().is_empty() {
+            "Changed to",
+            "added",
+            if new_display.trim().is_empty() {
                 "(empty)".to_string()
             } else {
-                old_display
+                new_display
             },
         );
     }
@@ -1068,6 +1079,64 @@ fn apply_review_diff_context(
 
     if !apply_initial_values {
         return;
+    }
+
+    if review_value_changed(
+        &db_snapshot["system_code"],
+        &submitted_snapshot["system_code"],
+    ) {
+        let old_system_code = review_display_value(&db_snapshot["system_code"]);
+        template.system_code = old_system_code.clone();
+        template.systems = build_system_options(&ref_data.all_systems, &old_system_code);
+        if let Some(system) = ref_data
+            .all_systems
+            .iter()
+            .find(|system| system.code == old_system_code)
+        {
+            template.show_title_foreign = system.has_title_foreign;
+            template.show_disc_number = system.has_disc_number;
+            template.show_disc_title = system.has_disc_title;
+            template.show_serial = system.has_serial;
+            template.show_version = system.has_version;
+            template.show_edition = system.has_edition;
+            template.show_barcode = system.has_barcode;
+            template.show_exe_date = system.has_exe_date;
+            template.show_edc = system.has_edc;
+            template.show_disc_id = system.has_disc_id;
+            template.show_key = system.has_key;
+            template.show_protection = system.has_protection;
+            template.show_sector_ranges = system.has_sector_ranges;
+            template.show_sbi = system.has_sbi;
+            template.show_pvd = system.has_pvd;
+            template.show_bca = system.has_bca;
+            template.show_header = system.has_header;
+            template.has_sample_start = system.has_sample_start;
+        }
+    }
+
+    if review_value_changed(
+        &db_snapshot["media_type"],
+        &submitted_snapshot["media_type"],
+    ) {
+        let old_media_type = review_display_value(&db_snapshot["media_type"]);
+        template.media_type_code = old_media_type.clone();
+        template.media_types_all = build_media_options(&ref_data.all_media_types, &old_media_type);
+        template.max_layers = max_layers_for_media(&ref_data.all_media_types, &old_media_type);
+        template.show_error_count = ref_data
+            .all_media_types
+            .iter()
+            .find(|media| media.code == old_media_type)
+            .map_or(false, |media| is_cd_rom_extension(&media.rom_extension));
+        template.show_pic = ref_data
+            .all_media_types
+            .iter()
+            .find(|media| media.code == old_media_type)
+            .map_or(false, |media| media.pic);
+    }
+
+    if review_value_changed(&db_snapshot["category"], &submitted_snapshot["category"]) {
+        let old_category = review_display_value(&db_snapshot["category"]);
+        template.categories = build_category_options(&ref_data.all_categories, &old_category);
     }
 
     for field in [
@@ -1724,10 +1793,16 @@ mod tests {
                     rom_extension: "iso".to_string(),
                 },
             ],
-            all_categories: vec![disc_edit::CategoryRow {
-                id: 1,
-                name: "Games".to_string(),
-            }],
+            all_categories: vec![
+                disc_edit::CategoryRow {
+                    id: 1,
+                    name: "Games".to_string(),
+                },
+                disc_edit::CategoryRow {
+                    id: 2,
+                    name: "Demos".to_string(),
+                },
+            ],
             all_regions: vec![
                 Region {
                     code: "EU".to_string(),
@@ -1868,6 +1943,33 @@ mod tests {
             .unwrap_or_default()
     }
 
+    fn selected_system(template: &DiscEditTemplate) -> String {
+        template
+            .systems
+            .iter()
+            .find(|system| system.selected)
+            .map(|system| system.code.clone())
+            .unwrap_or_default()
+    }
+
+    fn selected_media(template: &DiscEditTemplate) -> String {
+        template
+            .media_types_all
+            .iter()
+            .find(|media| media.selected)
+            .map(|media| media.code.clone())
+            .unwrap_or_default()
+    }
+
+    fn selected_category(template: &DiscEditTemplate) -> String {
+        template
+            .categories
+            .iter()
+            .find(|category| category.selected)
+            .map(|category| category.value.clone())
+            .unwrap_or_default()
+    }
+
     fn build_template(snapshot: &serde_json::Value) -> DiscEditTemplate {
         let ref_data = ref_data();
         build_review_template(
@@ -1900,6 +2002,11 @@ mod tests {
 
         apply_review_diff_context(&mut template, &submitted, &db, &ref_data, true);
 
+        assert_eq!(template.system_code, "OLD");
+        assert_eq!(template.media_type_code, "DVD");
+        assert_eq!(selected_system(&template), "OLD");
+        assert_eq!(selected_media(&template), "DVD");
+        assert_eq!(selected_category(&template), "Games");
         assert_eq!(template.title, "Old Game");
         assert_eq!(template.title_foreign, "Old Foreign");
         assert_eq!(template.disc_number, "1");
@@ -1910,12 +2017,16 @@ mod tests {
             vec!["New Game".to_string()]
         );
         assert_eq!(
-            annotation_values(&template, "system_code", "Changed from"),
-            vec!["Test Old System".to_string()]
+            annotation_values(&template, "system_code", "Changed to"),
+            vec!["Test New System".to_string()]
         );
         assert_eq!(
-            annotation_values(&template, "media_type", "Changed from"),
-            vec!["DVD-ROM".to_string()]
+            annotation_values(&template, "media_type", "Changed to"),
+            vec!["Blu-ray".to_string()]
+        );
+        assert_eq!(
+            annotation_values(&template, "category", "Changed to"),
+            vec!["Demos".to_string()]
         );
     }
 
