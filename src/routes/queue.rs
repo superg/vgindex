@@ -2107,9 +2107,10 @@ mod tests {
     }
 
     #[test]
-    fn review_textarea_assets_disable_manual_resize_and_autosize_sidecars() {
+    fn review_textarea_assets_autosize_sidecars_without_manual_resize_wrapper() {
         let css = include_str!("../../static/css/app.css");
         assert!(css.contains("textarea.auto-expand {\n    overflow: hidden;\n    resize: none;\n}"));
+        assert!(!css.contains("textarea-resize"));
         assert!(css.contains(".review-field-annotation {\n    flex: 0 0 100%;\n    width: 100%;\n    display: flex;\n    flex-wrap: nowrap;\n    align-items: center;\n    gap: 0.25rem;\n    overflow-x: auto;\n    white-space: nowrap;\n}"));
         assert!(
             css.contains(".multiline-review-field {\n    display: flex;\n    flex-wrap: nowrap;")
@@ -2137,6 +2138,9 @@ mod tests {
         ));
 
         let js = include_str!("../../static/js/disc_edit.js");
+        assert!(!js.contains("initManualTextareaResize"));
+        assert!(!js.contains("manualResized"));
+        assert!(!js.contains("textarea-resize"));
         assert!(js.contains("container.insertBefore(input, annotation);"));
         assert!(js.contains("cueField.querySelectorAll('textarea')"));
         assert!(js.contains("autoExpand(ta);"));

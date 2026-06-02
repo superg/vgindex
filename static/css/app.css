@@ -2356,81 +2356,22 @@ textarea.fixed-80 {
 textarea.full-width-textarea {
     width: 100%;
 }
-.textarea-resize-wrap {
-    position: relative;
-    display: inline-block;
-    max-width: 100%;
-    vertical-align: top;
-}
-.dump-log-collapsible .textarea-resize-wrap {
-    display: block;
-    width: 100%;
-}
-.textarea-resize-wrap > textarea {
-    display: block;
-    margin-bottom: 0;
-}
-.textarea-resize-handle {
-    position: absolute;
-    right: 0.28rem;
-    bottom: 0.28rem;
-    width: 0.72rem;
-    height: 0.72rem;
-    border-right: 2px solid rgba(83, 101, 124, 0.72);
-    border-bottom: 2px solid rgba(83, 101, 124, 0.72);
-    cursor: nwse-resize;
-    opacity: 0.78;
-}
-.textarea-resize-handle::before,
-.textarea-resize-handle::after {
-    content: "";
-    position: absolute;
-    right: 0.08rem;
-    bottom: 0.08rem;
-    width: 0.36rem;
-    height: 0.36rem;
-    border-right: 1px solid rgba(83, 101, 124, 0.72);
-    border-bottom: 1px solid rgba(83, 101, 124, 0.72);
-}
-.textarea-resize-handle::after {
-    width: 0.18rem;
-    height: 0.18rem;
-}
-.textarea-resize-wrap:hover .textarea-resize-handle {
-    opacity: 1;
-}
-[data-theme="dark"] .textarea-resize-handle,
-[data-theme="dark"] .textarea-resize-handle::before,
-[data-theme="dark"] .textarea-resize-handle::after {
-    border-color: rgba(155, 170, 191, 0.75);
-}
 
 .disc-edit .disc-form-section-multiline {
     display: grid;
     justify-items: center;
 }
 .disc-edit .disc-form-section-multiline > label,
-.disc-edit .disc-form-section-multiline > .multiline-review-field,
-.disc-edit .disc-form-section-multiline > .collapsible-review-field {
+.disc-edit .disc-form-section-multiline > .multiline-review-field {
     width: fit-content;
     max-width: 100%;
     justify-self: center;
     text-align: left;
 }
-.disc-edit .disc-form-section-multiline > .collapsible-review-field {
-    min-width: min(80ch, 100%);
-}
-.disc-edit .disc-form-section-multiline > .collapsible-review-field[open] {
-    min-width: 0;
-}
 .disc-edit .disc-form-section-multiline > label:has(textarea[name="comments"]) {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-}
-.disc-edit .disc-form-section-multiline > .collapsible-review-field > summary {
-    margin-left: 0;
-    margin-bottom: 0.08rem;
 }
 .multiline-review-field {
     display: flex;
@@ -2439,49 +2380,9 @@ textarea.full-width-textarea {
     align-items: flex-start;
     overflow-x: auto;
 }
-.collapsible-review-field {
-    margin-bottom: 0.25rem;
-}
-.collapsible-review-field > summary {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    width: fit-content;
-    margin-bottom: 0.08rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    line-height: 1.2;
-    cursor: pointer;
-    list-style: none;
-}
-.collapsible-review-field[open] > summary {
-    margin-bottom: 0.08rem;
-}
-.collapsible-review-field > summary::-webkit-details-marker {
-    display: none;
-}
-.collapsible-review-field > summary::marker {
-    content: "";
-}
-.collapsible-review-field > summary::before {
-    content: "▶";
-    display: inline-block;
-    float: none;
-    font-size: 0.8rem;
-    font-weight: 800;
-    line-height: 1;
-}
-.collapsible-review-field[open] > summary::before {
-    content: "▼";
-}
-.collapsible-review-field[open] > .multiline-review-field {
-    margin-top: 0;
-}
-.dump-log-collapsible[open] > label {
-    margin-top: 0.15rem;
-}
-.disc-edit .dump-log-collapsible,
+.disc-edit label:has(textarea[name="dump_log"]),
 .disc-edit label:has(input[name="extra_upload_url"]),
+.disc-edit label:has(input[name="submit_as"]),
 .disc-edit label:has(textarea[name="submission_comment"]) {
     --submit-field-width: min(56rem, 100%);
     display: block;
@@ -2491,12 +2392,9 @@ textarea.full-width-textarea {
     margin-right: auto;
     text-align: left;
 }
-.disc-edit .dump-log-collapsible > label,
-.disc-edit .dump-log-collapsible .textarea-resize-wrap {
-    width: 100%;
-}
-.disc-edit .dump-log-collapsible textarea,
+.disc-edit textarea[name="dump_log"],
 .disc-edit input[name="extra_upload_url"],
+.disc-edit .submit-as-picker,
 .disc-edit textarea[name="submission_comment"] {
     box-sizing: border-box;
     width: 100%;

@@ -322,7 +322,9 @@ const IS_ADD_MODE = {{ is_add_mode }};
             {% endif %}
             {% endif %}
         </div>
+        {% if !is_add_mode %}
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('edition-list','edition')">+</button>
+        {% endif %}
     </div>
 
     <div class="inline-field repeatable-inline-field{% if !self.highlight_class("barcode").is_empty() %} {{ self.highlight_class("barcode") }}{% endif %}" data-field-flag="has_barcode"{% if !show_barcode %} style="display:none"{% endif %}>
@@ -355,7 +357,9 @@ const IS_ADD_MODE = {{ is_add_mode }};
             {% endif %}
             {% endif %}
         </div>
+        {% if !is_add_mode %}
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('barcode-list','barcode')">+</button>
+        {% endif %}
     </div>
 
     <div class="inline-field{% if !self.highlight_class("version").is_empty() %} {{ self.highlight_class("version") }}{% endif %}" data-field-flag="has_version"{% if !show_version %} style="display:none"{% endif %}>
@@ -480,10 +484,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <textarea name="comments" rows="5" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
     </label>
 
-    <details class="collapsible-review-field{% if !self.highlight_class("contents").is_empty() %} {{ self.highlight_class("contents") }}{% endif %}">
-        <summary>Contents</summary>
-        <div class="multiline-review-field">
-        <label><span class="visually-hidden">Contents</span>
+    <div class="multiline-review-field{% if !self.highlight_class("contents").is_empty() %} {{ self.highlight_class("contents") }}{% endif %}">
+        <label>Contents
             <textarea name="contents" rows="5" class="hex-dump-input auto-expand fixed-80">{{ contents }}</textarea>
         </label>
         {% if self.has_old_multiline("contents") %}
@@ -491,13 +493,10 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <textarea rows="5" class="hex-dump-input auto-expand fixed-80" readonly>{{ self.old_multiline("contents") }}</textarea>
         </label>
         {% endif %}
-        </div>
-    </details>
+    </div>
 
-    <details class="collapsible-review-field{% if !self.highlight_class("protection").is_empty() %} {{ self.highlight_class("protection") }}{% endif %}" data-field-flag="has_protection"{% if !show_protection %} style="display:none"{% endif %}>
-        <summary>Protection</summary>
-        <div class="multiline-review-field">
-        <label><span class="visually-hidden">Protection</span>
+    <div class="multiline-review-field{% if !self.highlight_class("protection").is_empty() %} {{ self.highlight_class("protection") }}{% endif %}" data-field-flag="has_protection"{% if !show_protection %} style="display:none"{% endif %}>
+        <label>Protection
             <textarea name="protection" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection }}</textarea>
         </label>
         {% if self.has_old_multiline("protection") %}
@@ -505,8 +504,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <textarea rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("protection") }}</textarea>
         </label>
         {% endif %}
-        </div>
-    </details>
+    </div>
 
     <div class="multiline-review-field{% if !self.highlight_class("sector_ranges").is_empty() %} {{ self.highlight_class("sector_ranges") }}{% endif %}" data-field-flag="has_sector_ranges"{% if !show_sector_ranges %} style="display:none"{% endif %}>
         <label>Sector Ranges
@@ -519,10 +517,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <details class="collapsible-review-field{% if !self.highlight_class("sbi").is_empty() %} {{ self.highlight_class("sbi") }}{% endif %}" data-field-flag="has_sbi"{% if !show_sbi %} style="display:none"{% endif %}>
-        <summary>SBI</summary>
-        <div class="multiline-review-field">
-        <label><span class="visually-hidden">SBI</span>
+    <div class="multiline-review-field{% if !self.highlight_class("sbi").is_empty() %} {{ self.highlight_class("sbi") }}{% endif %}" data-field-flag="has_sbi"{% if !show_sbi %} style="display:none"{% endif %}>
+        <label>SBI
             <textarea name="sbi" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sbi }}</textarea>
         </label>
         {% if self.has_old_multiline("sbi") %}
@@ -530,8 +526,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <textarea rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("sbi") }}</textarea>
         </label>
         {% endif %}
-        </div>
-    </details>
+    </div>
 
     <div class="multiline-review-field{% if !self.highlight_class("pvd").is_empty() %} {{ self.highlight_class("pvd") }}{% endif %}" data-field-flag="has_pvd"{% if !show_pvd %} style="display:none"{% endif %}>
         <label>PVD
@@ -606,12 +601,9 @@ const IS_ADD_MODE = {{ is_add_mode }};
     {% endif %}
 
     {% if is_add_mode %}
-    <details class="collapsible-review-field dump-log-collapsible" open>
-        <summary>Dump Log</summary>
-        <label><span class="visually-hidden">Dump Log</span>
-            <textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">{{ dump_log }}</textarea>
-        </label>
-    </details>
+    <label>Dump Log
+        <textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">{{ dump_log }}</textarea>
+    </label>
 
     <label>Extra Upload URL
         <input type="text" name="extra_upload_url" value="{{ extra_upload_url }}" placeholder="Optional">
