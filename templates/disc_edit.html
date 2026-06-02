@@ -218,13 +218,18 @@ const IS_ADD_MODE = {{ is_add_mode }};
     </div>
 
     <div class="disc-form-section" aria-label="Regions and languages">
+    {% if is_add_mode %}
+    <div class="flag-list-controls">
+        <button type="button" id="flag-list-toggle" class="outline secondary flag-list-toggle" aria-expanded="false" data-show-all-label="Show all regions and languages" data-show-common-label="Show popular regions and languages">Show all regions and languages</button>
+    </div>
+    {% endif %}
     <div class="grid flag-select-grid">
         <div class="flag-select-group flag-select-regions{% if !self.highlight_class("regions").is_empty() %} {{ self.highlight_class("regions") }}{% endif %}">
         <fieldset>
             <legend>Regions:</legend>
             <div class="flag-check-list">
             {% for r in regions %}
-                <label class="flag-check{% if r.name == "Japan" || r.name == "Europe" || r.name == "USA" || r.name == "UK" || r.name == "France" || r.name == "Germany" || r.name == "Italy" || r.name == "Spain" %} flag-check-emphasis{% endif %}{% if !r.highlight.is_empty() %} item-{{ r.highlight }}{% endif %}">
+                <label class="flag-check{% if is_add_mode && !r.common && !r.selected %} flag-check-extra{% endif %}{% if !r.highlight.is_empty() %} item-{{ r.highlight }}{% endif %}">
                     <input type="{% if is_add_mode %}radio{% else %}checkbox{% endif %}" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
                     <img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}">
                     <span>{{ r.name }}</span>
@@ -248,7 +253,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <legend>Languages:</legend>
             <div class="flag-check-list">
             {% for lang in languages %}
-                <label class="flag-check{% if lang.name == "Japanese" || lang.name == "English" || lang.name == "German" || lang.name == "Spanish" || lang.name == "Italian" || lang.name == "French" %} flag-check-emphasis{% endif %}{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">
+                <label class="flag-check{% if is_add_mode && !lang.common && !lang.selected %} flag-check-extra{% endif %}{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">
                     <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}>
                     <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
                     <span>{{ lang.name }}</span>
