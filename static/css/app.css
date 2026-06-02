@@ -1919,6 +1919,24 @@ body:has(.disc-edit) footer.container hr {
     column-gap: 0.85rem;
     margin-bottom: 0;
 }
+.flag-list-controls {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 0.45rem;
+}
+.flag-list-toggle {
+    width: auto;
+    margin: 0;
+    padding: 0.22rem 0.55rem;
+    font-size: 0.72rem;
+}
+.disc-edit.disc-add:not(.show-all-flags) .flag-check-extra {
+    display: none !important;
+}
+.disc-edit.disc-add:not(.show-all-flags) .flag-check-list {
+    columns: 1;
+    max-width: max-content;
+}
 .flag-select-languages {
     border-left: 1px solid #d7e1ea;
     padding-left: 0.85rem;

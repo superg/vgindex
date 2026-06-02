@@ -179,6 +179,51 @@ function initSubmitAsSelector() {
     attachSubmitAsSelector(document.getElementById('submit-as-input'));
 }
 
+var FLAG_LIST_STORAGE_KEY = 'vgindex.addDisc.showAllFlags';
+
+function flagListPreference() {
+    try {
+        return window.localStorage && window.localStorage.getItem(FLAG_LIST_STORAGE_KEY) === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+function saveFlagListPreference(showAll) {
+    try {
+        if (window.localStorage) {
+            window.localStorage.setItem(FLAG_LIST_STORAGE_KEY, showAll ? 'true' : 'false');
+        }
+    } catch (e) {
+        // Ignore storage failures; the current-page toggle still works.
+    }
+}
+
+function setFlagListExpanded(showAll) {
+    var form = document.getElementById('disc-edit-form');
+    var toggle = document.getElementById('flag-list-toggle');
+    if (!form || !toggle) return;
+
+    form.classList.toggle('show-all-flags', showAll);
+    toggle.setAttribute('aria-expanded', showAll ? 'true' : 'false');
+    toggle.textContent = showAll
+        ? (toggle.dataset.showCommonLabel || 'Show popular regions and languages')
+        : (toggle.dataset.showAllLabel || 'Show all regions and languages');
+}
+
+function initFlagListToggle() {
+    var toggle = document.getElementById('flag-list-toggle');
+    if (!toggle) return;
+
+    setFlagListExpanded(flagListPreference());
+    toggle.addEventListener('click', function () {
+        var form = document.getElementById('disc-edit-form');
+        var showAll = !(form && form.classList.contains('show-all-flags'));
+        setFlagListExpanded(showAll);
+        saveFlagListPreference(showAll);
+    });
+}
+
 // Vertical repeatable array field (layerbreaks)
 function addArrayEntry(containerId, name) {
     var container = document.getElementById(containerId);
@@ -836,6 +881,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initAutoExpand();
     initEditionSelectors();
     initSubmitAsSelector();
+    initFlagListToggle();
     initIndependentInlineResizing();
     fitDiscMetaFields();
     fitAllInlineGroups();
