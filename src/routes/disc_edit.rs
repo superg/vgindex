@@ -2886,6 +2886,35 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn edition_and_barcode_plus_buttons_are_hidden_only_on_add_disc() {
+        let template = include_str!("../../templates/disc_edit.html");
+
+        assert!(template.contains(
+            r#"<button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('serial-list','serial')">+</button>"#
+        ));
+        assert!(template.contains(
+            "{% if !is_add_mode %}\n        <button type=\"button\" class=\"outline secondary array-add-btn\" onclick=\"addInlineEntry('edition-list','edition')\">+</button>\n        {% endif %}"
+        ));
+        assert!(template.contains(
+            "{% if !is_add_mode %}\n        <button type=\"button\" class=\"outline secondary array-add-btn\" onclick=\"addInlineEntry('barcode-list','barcode')\">+</button>\n        {% endif %}"
+        ));
+    }
+
+    #[test]
+    fn disc_meta_layout_is_template_native_without_legacy_normalizer() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let script = include_str!("../../static/js/disc_edit.js");
+
+        assert!(template.contains(r#"<div class="disc-meta-fields">"#));
+        assert!(template.contains(r#"<label class="disc-meta-row{% if"#));
+        assert!(template.contains(r#"<span class="disc-meta-label">System:</span>"#));
+        assert!(!script.contains("normalizeLegacyDiscMetaLayout"));
+        assert!(!script.contains("splitDiscMetaLabel"));
+        assert!(!script.contains("form.insertBefore(metaFields"));
+        assert!(script.contains("function fitDiscMetaFields()"));
+    }
+
+    #[test]
     fn submit_as_uses_text_field_with_native_selector() {
         let template = include_str!("../../templates/disc_edit.html");
         let script = include_str!("../../static/js/disc_edit.js");
@@ -2973,12 +3002,36 @@ mod operation_delta_tests {
     }
 
     #[test]
-    fn dump_log_uses_submission_comment_textarea_style() {
+    fn multiline_metadata_textareas_are_not_collapsible() {
         let template = include_str!("../../templates/disc_edit.html");
         let css = include_str!("../../static/css/app.css");
 
+        assert!(template.contains(r#"<label>Contents"#));
+        assert!(template.contains(r#"<label>Protection"#));
+        assert!(template.contains(r#"<label>SBI"#));
+        assert!(!template.contains(
+            r#"<details class="collapsible-review-field{% if !self.highlight_class("contents")"#
+        ));
+        assert!(!template.contains(
+            r#"<details class="collapsible-review-field{% if !self.highlight_class("protection")"#
+        ));
+        assert!(!template.contains(
+            r#"<details class="collapsible-review-field{% if !self.highlight_class("sbi")"#
+        ));
+        assert!(
+            !css.contains(".disc-edit .disc-form-section-multiline > .collapsible-review-field")
+        );
+    }
+
+    #[test]
+    fn dump_log_uses_submission_comment_textarea_style() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let css = include_str!("../../static/css/app.css");
+        let script = include_str!("../../static/js/disc_edit.js");
+
         assert!(template.contains(
-            r#"<textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">"#
+            r#"<label>Dump Log
+        <textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">"#
         ));
         assert!(template.contains(
             r#"<textarea name="submission_comment" rows="2" class="auto-expand fixed-80""#
@@ -2986,6 +3039,14 @@ mod operation_delta_tests {
         assert!(!template.contains(
             r#"<textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80">"#
         ));
+        assert!(!template.contains(concat!(
+            r#"<details class=""#,
+            "dump",
+            "-log",
+            "-collapsible"
+        )));
+        assert!(!css.contains(concat!(".dump", "-log", "-collapsible")));
+        assert!(!script.contains(concat!("init", "CollapsibleReviewFields")));
         assert!(css.contains("textarea.full-width-textarea {\n    width: 100%;\n}"));
     }
 

@@ -575,7 +575,6 @@ function filterMediaTypes() {
 
 // Auto-expand textareas to fit content
 function autoExpand(textarea) {
-    if (textarea.dataset && textarea.dataset.manualResized === 'true') return;
     textarea.style.height = 'auto';
     textarea.style.height = textarea.scrollHeight + 'px';
 }
@@ -602,77 +601,6 @@ function initAutoExpand() {
     areas.forEach(function (ta) {
         autoExpand(ta);
         ta.addEventListener('input', function () { autoExpand(ta); });
-    });
-}
-
-function initCollapsibleReviewFields() {
-    document.querySelectorAll('.collapsible-review-field').forEach(function (details) {
-        details.addEventListener('toggle', function () {
-            if (!details.open) return;
-            details.querySelectorAll('textarea.auto-expand').forEach(function (ta) {
-                autoExpand(ta);
-            });
-        });
-    });
-}
-
-var MANUAL_RESIZE_TEXTAREA_NAMES = {
-    'dump_log': true,
-    'cuesheet': true,
-    'comments': true,
-    'contents': true,
-    'protection': true,
-    'sbi': true,
-    'dat': true
-};
-
-function initManualTextareaResize() {
-    Object.keys(MANUAL_RESIZE_TEXTAREA_NAMES).forEach(function (name) {
-        document.querySelectorAll('textarea[name="' + name + '"]').forEach(function (textarea) {
-            if (textarea.dataset && textarea.dataset.manualResize === 'true') return;
-            if (textarea.dataset) textarea.dataset.manualResize = 'true';
-
-            var wrapper = document.createElement('span');
-            wrapper.className = 'textarea-resize-wrap';
-            textarea.parentNode.insertBefore(wrapper, textarea);
-            wrapper.appendChild(textarea);
-
-            var handle = document.createElement('span');
-            handle.className = 'textarea-resize-handle';
-            handle.setAttribute('aria-hidden', 'true');
-            wrapper.appendChild(handle);
-
-            handle.addEventListener('pointerdown', function (event) {
-                event.preventDefault();
-                var startX = event.clientX;
-                var startY = event.clientY;
-                var rect = textarea.getBoundingClientRect();
-                var startWidth = rect.width;
-                var startHeight = rect.height;
-                var minWidth = 160;
-                var minHeight = 80;
-
-                if (textarea.dataset) textarea.dataset.manualResized = 'true';
-                handle.setPointerCapture(event.pointerId);
-
-                function onMove(moveEvent) {
-                    var nextWidth = Math.max(minWidth, startWidth + (moveEvent.clientX - startX));
-                    var nextHeight = Math.max(minHeight, startHeight + (moveEvent.clientY - startY));
-                    nextWidth = Math.min(nextWidth, Math.max(minWidth, document.documentElement.clientWidth - 32));
-                    textarea.style.width = nextWidth + 'px';
-                    textarea.style.height = nextHeight + 'px';
-                }
-
-                function onUp(upEvent) {
-                    handle.releasePointerCapture(upEvent.pointerId);
-                    document.removeEventListener('pointermove', onMove);
-                    document.removeEventListener('pointerup', onUp);
-                }
-
-                document.addEventListener('pointermove', onMove);
-                document.addEventListener('pointerup', onUp);
-            });
-        });
     });
 }
 
@@ -756,58 +684,6 @@ function initIndependentInlineResizing() {
     document.querySelectorAll('.inline-field-values input').forEach(function (input) {
         attachIndependentInlineResize(input);
     });
-}
-
-function splitDiscMetaLabel(label) {
-    if (!label || label.querySelector('.disc-meta-label')) return;
-    var firstControl = label.querySelector('input, select, textarea');
-    if (!firstControl) return;
-
-    var labelText = '';
-    Array.prototype.slice.call(label.childNodes).forEach(function (node) {
-        if (node === firstControl || (node.contains && node.contains(firstControl))) return;
-        if (node.nodeType === Node.TEXT_NODE) {
-            labelText += node.textContent;
-            node.textContent = '';
-        }
-    });
-    labelText = labelText.replace(/\s+/g, ' ').trim();
-    if (!labelText) return;
-
-    var span = document.createElement('span');
-    span.className = 'disc-meta-label';
-    span.textContent = labelText;
-    label.insertBefore(span, firstControl);
-}
-
-function normalizeLegacyDiscMetaLayout() {
-    var form = document.getElementById('disc-edit-form');
-    var systemSelect = document.getElementById('system-select');
-    if (!form || !systemSelect || systemSelect.closest('.disc-meta-fields')) return;
-
-    var firstGrid = systemSelect.closest('.grid');
-    if (!firstGrid || firstGrid.parentNode !== form) return;
-
-    var metaFields = document.createElement('div');
-    metaFields.className = 'disc-meta-fields';
-    form.insertBefore(metaFields, firstGrid);
-
-    var grid = firstGrid;
-    var moved = 0;
-    while (grid && grid.classList && grid.classList.contains('grid') && !grid.classList.contains('flag-select-grid') && moved < 3) {
-        var next = grid.nextElementSibling;
-        Array.prototype.slice.call(grid.children).forEach(function (child) {
-            if (!child.matches || !child.matches('label')) return;
-            child.classList.add('disc-meta-row');
-            splitDiscMetaLabel(child);
-            metaFields.appendChild(child);
-        });
-        if (grid.children.length === 0) {
-            grid.remove();
-        }
-        moved += 1;
-        grid = next;
-    }
 }
 
 function fitDiscMetaSelect(select) {
@@ -952,15 +828,12 @@ function renderLayerbreaks() {
 
 // Init
 document.addEventListener('DOMContentLoaded', function () {
-    normalizeLegacyDiscMetaLayout();
     filterMediaTypes();
     applySystemFieldVisibility();
     refreshMediaDependentUi();
     initRingEditor();
     renderLayerbreaks();
     initAutoExpand();
-    initManualTextareaResize();
-    initCollapsibleReviewFields();
     initEditionSelectors();
     initSubmitAsSelector();
     initIndependentInlineResizing();
