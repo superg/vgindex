@@ -2454,6 +2454,19 @@ textarea.full-width-textarea {
     box-sizing: border-box;
     width: 100%;
 }
+.disc-edit label:has(textarea[name="review_comment"]) {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: left;
+}
+.disc-edit textarea[name="review_comment"] {
+    box-sizing: border-box;
+    width: 80ch;
+    max-width: 100%;
+}
 .disc-edit input[name="extra_upload_url"],
 .disc-edit textarea[name="submission_comment"] {
     text-indent: 0;
