@@ -177,6 +177,18 @@
         })();
 
         (function() {
+            function measureContentWidth(element) {
+                var minLeft = Infinity;
+                var maxRight = -Infinity;
+                Array.prototype.forEach.call(element.children, function(child) {
+                    var rect = child.getBoundingClientRect();
+                    if (rect.width <= 0) return;
+                    minLeft = Math.min(minLeft, rect.left);
+                    maxRight = Math.max(maxRight, rect.right);
+                });
+                return maxRight > minLeft ? maxRight - minLeft : element.scrollWidth;
+            }
+
             function scaleNav() {
                 var header = document.querySelector('header.container');
                 var nav = header && header.querySelector('.site-nav');
@@ -197,18 +209,14 @@
                 var containerWidth = nav.clientWidth;
                 if (containerWidth <= 0) return;
 
-                // Measure true content width by temporarily left-aligning
-                // (scrollWidth only counts right-side overflow; centered content overflows both sides)
-                navTop.style.justifyContent = 'flex-start';
-                var trueTopWidth = navTop.scrollWidth;
-                navTop.style.justifyContent = '';
+                // Measure actual child bounds without changing alignment; changing
+                // styles during mobile tap/resize can produce a visible flash.
+                var trueTopWidth = measureContentWidth(navTop);
                 var scaleTop = trueTopWidth > containerWidth ? containerWidth / trueTopWidth : 1;
 
                 var trueLinksWidth = 1;
                 if (navLinks) {
-                    navLinks.style.justifyContent = 'flex-start';
-                    trueLinksWidth = navLinks.scrollWidth;
-                    navLinks.style.justifyContent = '';
+                    trueLinksWidth = measureContentWidth(navLinks);
                 }
                 var scaleLinks = trueLinksWidth > containerWidth ? containerWidth / trueLinksWidth : 1;
 
@@ -226,8 +234,20 @@
                     navLinks.style.transformOrigin = 'top center';
                 }
             }
-            document.addEventListener('DOMContentLoaded', scaleNav);
-            window.addEventListener('resize', scaleNav);
+
+            var scaleNavQueued = false;
+            function queueScaleNav() {
+                if (scaleNavQueued) return;
+                scaleNavQueued = true;
+                window.requestAnimationFrame(function() {
+                    scaleNavQueued = false;
+                    scaleNav();
+                });
+            }
+
+            document.addEventListener('DOMContentLoaded', queueScaleNav);
+            window.addEventListener('load', queueScaleNav);
+            window.addEventListener('resize', queueScaleNav);
         })();
     </script>
 
