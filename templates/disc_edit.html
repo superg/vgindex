@@ -88,10 +88,12 @@ const IS_ADD_MODE = {{ is_add_mode }};
 {% endif %}
 {% endif %}
 
-<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review/{% else if is_add_mode %}/disc/submit/{% else %}/disc/{{ disc_id }}/edit/{% endif %}" id="disc-edit-form" class="disc-edit" novalidate>
+<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review/{% else if is_add_mode %}/disc/submit/{% else %}/disc/{{ disc_id }}/edit/{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}" novalidate>
 
-    <div class="grid">
-        <label{% if !self.highlight_class("system_code").is_empty() %} class="{{ self.highlight_class("system_code") }}"{% endif %}>System:
+    <div class="disc-form-section disc-form-section-meta" aria-label="Disc identity">
+    <div class="disc-meta-fields">
+        <label class="disc-meta-row{% if !self.highlight_class("system_code").is_empty() %} {{ self.highlight_class("system_code") }}{% endif %}">
+            <span class="disc-meta-label">System:</span>
             <select name="system_code" id="system-select">
                 {% for sys in systems %}
                 <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
@@ -106,7 +108,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-        <label{% if !self.highlight_class("media_type").is_empty() %} class="{{ self.highlight_class("media_type") }}"{% endif %}>Media:
+        <label class="disc-meta-row{% if !self.highlight_class("media_type").is_empty() %} {{ self.highlight_class("media_type") }}{% endif %}">
+            <span class="disc-meta-label">Media:</span>
             <select name="media_type" id="media-select">
                 {% for mt in media_types_all %}
                 <option value="{{ mt.code }}" {% if mt.selected %}selected{% endif %}>{{ mt.name }}</option>
@@ -121,7 +124,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-        <label{% if !self.highlight_class("category").is_empty() %} class="{{ self.highlight_class("category") }}"{% endif %}>Category:
+        <label class="disc-meta-row{% if !self.highlight_class("category").is_empty() %} {{ self.highlight_class("category") }}{% endif %}">
+            <span class="disc-meta-label">Category:</span>
             <select name="category">
                 {% for cat in categories %}
                 <option value="{{ cat.value }}" {% if cat.selected %}selected{% endif %}>{{ cat.name }}</option>
@@ -136,10 +140,9 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-    </div>
 
-    <div class="grid">
-        <label{% if !self.highlight_class("title").is_empty() %} class="{{ self.highlight_class("title") }}"{% endif %}>Title:
+        <label class="disc-meta-row{% if !self.highlight_class("title").is_empty() %} {{ self.highlight_class("title") }}{% endif %}">
+            <span class="disc-meta-label">Title:</span>
             <input type="text" name="title" value="{{ title }}">
             {% for ann in self.annotations_for("title") %}
             <div class="review-field-annotation">
@@ -150,7 +153,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-        <label data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}{% if !self.highlight_class("title_foreign").is_empty() %} class="{{ self.highlight_class("title_foreign") }}"{% endif %}>Foreign Title:
+        <label class="disc-meta-row{% if !self.highlight_class("title_foreign").is_empty() %} {{ self.highlight_class("title_foreign") }}{% endif %}" data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}>
+            <span class="disc-meta-label">Foreign Title:</span>
             <input type="text" name="title_foreign" value="{{ title_foreign }}">
             {% for ann in self.annotations_for("title_foreign") %}
             <div class="review-field-annotation">
@@ -161,10 +165,9 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-    </div>
 
-    <div class="grid">
-        <label data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}{% if !self.highlight_class("disc_number").is_empty() %} class="{{ self.highlight_class("disc_number") }}"{% endif %}>Disc Number:
+        <label class="disc-meta-row{% if !self.highlight_class("disc_number").is_empty() %} {{ self.highlight_class("disc_number") }}{% endif %}" data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}>
+            <span class="disc-meta-label">Disc Number:</span>
             <input type="text" name="disc_number" value="{{ disc_number }}">
             {% for ann in self.annotations_for("disc_number") %}
             <div class="review-field-annotation">
@@ -175,7 +178,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-        <label data-field-flag="has_disc_title"{% if !show_disc_title %} style="display:none"{% endif %}{% if !self.highlight_class("disc_title").is_empty() %} class="{{ self.highlight_class("disc_title") }}"{% endif %}>Disc Title:
+        <label class="disc-meta-row{% if !self.highlight_class("disc_title").is_empty() %} {{ self.highlight_class("disc_title") }}{% endif %}" data-field-flag="has_disc_title"{% if !show_disc_title %} style="display:none"{% endif %}>
+            <span class="disc-meta-label">Disc Title:</span>
             <input type="text" name="disc_title" value="{{ disc_title }}">
             {% for ann in self.annotations_for("disc_title") %}
             <div class="review-field-annotation">
@@ -186,7 +190,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-        <label{% if !self.highlight_class("filename_suffix").is_empty() %} class="{{ self.highlight_class("filename_suffix") }}"{% endif %}>Filename Suffix:
+        <label class="disc-meta-row{% if !self.highlight_class("filename_suffix").is_empty() %} {{ self.highlight_class("filename_suffix") }}{% endif %}">
+            <span class="disc-meta-label">Filename Suffix:</span>
             <input type="text" name="filename_suffix" value="{{ filename_suffix }}">
             {% for ann in self.annotations_for("filename_suffix") %}
             <div class="review-field-annotation">
@@ -197,15 +202,28 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
+        {% if !is_add_mode && !is_review_mode && submit_button_text == "Save" %}
+        <label class="disc-meta-row status-meta-row{% if !self.highlight_class("status").is_empty() %} {{ self.highlight_class("status") }}{% endif %}">
+            <span class="disc-meta-label">Status:</span>
+            <select name="status" class="status-select-compact">
+                <option value="Disabled" {% if status == "Disabled" %}selected{% endif %}>🔴 Disabled</option>
+                <option value="Questionable" {% if status == "Questionable" %}selected{% endif %}>🟡 Questionable</option>
+                <option value="Unverified" {% if status == "Unverified" %}selected{% endif %}>🔵 Unverified</option>
+                <option value="Verified" {% if status == "Verified" %}selected{% endif %}>🟢 Verified</option>
+            </select>
+        </label>
+        {% endif %}
+    </div>
     </div>
 
+    <div class="disc-form-section" aria-label="Regions and languages">
     <div class="grid flag-select-grid">
         <div class="flag-select-group flag-select-regions{% if !self.highlight_class("regions").is_empty() %} {{ self.highlight_class("regions") }}{% endif %}">
         <fieldset>
             <legend>Regions:</legend>
             <div class="flag-check-list">
             {% for r in regions %}
-                <label class="flag-check{% if !r.highlight.is_empty() %} item-{{ r.highlight }}{% endif %}">
+                <label class="flag-check{% if r.name == "Japan" || r.name == "Europe" || r.name == "USA" || r.name == "UK" || r.name == "France" || r.name == "Germany" || r.name == "Italy" || r.name == "Spain" %} flag-check-emphasis{% endif %}{% if !r.highlight.is_empty() %} item-{{ r.highlight }}{% endif %}">
                     <input type="{% if is_add_mode %}radio{% else %}checkbox{% endif %}" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
                     <img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}">
                     <span>{{ r.name }}</span>
@@ -229,7 +247,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <legend>Languages:</legend>
             <div class="flag-check-list">
             {% for lang in languages %}
-                <label class="flag-check{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">
+                <label class="flag-check{% if lang.name == "Japanese" || lang.name == "English" || lang.name == "German" || lang.name == "Spanish" || lang.name == "Italian" || lang.name == "French" %} flag-check-emphasis{% endif %}{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">
                     <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}>
                     <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
                     <span>{{ lang.name }}</span>
@@ -249,10 +267,12 @@ const IS_ADD_MODE = {{ is_add_mode }};
         </fieldset>
         </div>
     </div>
+    </div>
 
-    <div class="inline-field{% if !self.highlight_class("serial").is_empty() %} {{ self.highlight_class("serial") }}{% endif %}" data-field-flag="has_serial"{% if !show_serial %} style="display:none"{% endif %}>
+    <div class="disc-form-section disc-form-section-inline" aria-label="Disc identifiers">
+    <div class="inline-field repeatable-inline-field{% if !self.highlight_class("serial").is_empty() %} {{ self.highlight_class("serial") }}{% endif %}" data-field-flag="has_serial"{% if !show_serial %} style="display:none"{% endif %}>
         <span class="inline-field-label">Disc Serials</span>
-        <div id="serial-list" class="inline-field-values">
+        <div id="serial-list" class="inline-field-values repeatable-inline-values">
             {% for s in serials %}
             <input type="text" name="serial" value="{{ s.value }}"{% if !s.highlight.is_empty() %} class="item-{{ s.highlight }}"{% endif %}>
             {% endfor %}
@@ -271,9 +291,9 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('serial-list','serial')">+</button>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("edition").is_empty() %} {{ self.highlight_class("edition") }}{% endif %}" data-field-flag="has_edition"{% if !show_edition %} style="display:none"{% endif %}>
+    <div class="inline-field repeatable-inline-field{% if !self.highlight_class("edition").is_empty() %} {{ self.highlight_class("edition") }}{% endif %}" data-field-flag="has_edition"{% if !show_edition %} style="display:none"{% endif %}>
         <span class="inline-field-label">Editions</span>
-        <div id="edition-list" class="inline-field-values">
+        <div id="edition-list" class="inline-field-values repeatable-inline-values">
             {% if is_add_mode %}
             {% if editions.is_empty() %}
             <input type="text" name="edition" autocomplete="off" value="">
@@ -301,14 +321,12 @@ const IS_ADD_MODE = {{ is_add_mode }};
             {% endif %}
             {% endif %}
         </div>
-        {% if !is_add_mode %}
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('edition-list','edition')">+</button>
-        {% endif %}
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("barcode").is_empty() %} {{ self.highlight_class("barcode") }}{% endif %}" data-field-flag="has_barcode"{% if !show_barcode %} style="display:none"{% endif %}>
+    <div class="inline-field repeatable-inline-field{% if !self.highlight_class("barcode").is_empty() %} {{ self.highlight_class("barcode") }}{% endif %}" data-field-flag="has_barcode"{% if !show_barcode %} style="display:none"{% endif %}>
         <span class="inline-field-label">Barcodes</span>
-        <div id="barcode-list" class="inline-field-values">
+        <div id="barcode-list" class="inline-field-values repeatable-inline-values">
             {% if is_add_mode %}
             {% if barcodes.is_empty() %}
             <input type="text" name="barcode" value="">
@@ -336,15 +354,13 @@ const IS_ADD_MODE = {{ is_add_mode }};
             {% endif %}
             {% endif %}
         </div>
-        {% if !is_add_mode %}
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('barcode-list','barcode')">+</button>
-        {% endif %}
     </div>
 
     <div class="inline-field{% if !self.highlight_class("version").is_empty() %} {{ self.highlight_class("version") }}{% endif %}" data-field-flag="has_version"{% if !show_version %} style="display:none"{% endif %}>
         <span class="inline-field-label">Version</span>
         <div class="inline-field-values">
-            <input type="text" name="version" value="{{ version }}">
+            <input type="text" name="version" class="short-code-input" value="{{ version }}">
             {% for ann in self.annotations_for("version") %}
             <div class="review-field-annotation">
                 <span class="review-field-annotation-label">{{ ann.label }}:</span>
@@ -359,7 +375,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
     <div id="error-count-field" class="inline-field{% if !self.highlight_class("error_count").is_empty() %} {{ self.highlight_class("error_count") }}{% endif %}"{% if !show_error_count %} style="display:none"{% endif %}>
         <span class="inline-field-label">Error Count</span>
         <div class="inline-field-values">
-            <input type="number" name="error_count" value="{{ error_count }}">
+            <input type="number" name="error_count" class="short-code-input" value="{{ error_count }}">
             {% for ann in self.annotations_for("error_count") %}
             <div class="review-field-annotation">
                 <span class="review-field-annotation-label">{{ ann.label }}:</span>
@@ -438,7 +454,9 @@ const IS_ADD_MODE = {{ is_add_mode }};
             {% endfor %}
         </div>
     </div>
+    </div>
 
+    <div class="disc-form-section" aria-label="Ring codes">
     <div{% if !self.highlight_class("ring_codes").is_empty() %} class="{{ self.highlight_class("ring_codes") }}"{% endif %}>
     <fieldset>
         <legend>Ring Codes</legend>
@@ -454,13 +472,17 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <input type="hidden" name="ring_codes_json" id="ring-codes-json">
     </fieldset>
     </div>
+    </div>
 
+    <div class="disc-form-section disc-form-section-multiline" aria-label="Dump metadata">
     <label{% if !self.highlight_class("comments").is_empty() %} class="{{ self.highlight_class("comments") }}"{% endif %}>Comments
         <textarea name="comments" rows="5" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
     </label>
 
-    <div class="multiline-review-field{% if !self.highlight_class("contents").is_empty() %} {{ self.highlight_class("contents") }}{% endif %}">
-        <label>Contents
+    <details class="collapsible-review-field{% if !self.highlight_class("contents").is_empty() %} {{ self.highlight_class("contents") }}{% endif %}">
+        <summary>Contents</summary>
+        <div class="multiline-review-field">
+        <label><span class="visually-hidden">Contents</span>
             <textarea name="contents" rows="5" class="hex-dump-input auto-expand fixed-80">{{ contents }}</textarea>
         </label>
         {% if self.has_old_multiline("contents") %}
@@ -468,10 +490,13 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <textarea rows="5" class="hex-dump-input auto-expand fixed-80" readonly>{{ self.old_multiline("contents") }}</textarea>
         </label>
         {% endif %}
-    </div>
+        </div>
+    </details>
 
-    <div class="multiline-review-field{% if !self.highlight_class("protection").is_empty() %} {{ self.highlight_class("protection") }}{% endif %}" data-field-flag="has_protection"{% if !show_protection %} style="display:none"{% endif %}>
-        <label>Protection
+    <details class="collapsible-review-field{% if !self.highlight_class("protection").is_empty() %} {{ self.highlight_class("protection") }}{% endif %}" data-field-flag="has_protection"{% if !show_protection %} style="display:none"{% endif %}>
+        <summary>Protection</summary>
+        <div class="multiline-review-field">
+        <label><span class="visually-hidden">Protection</span>
             <textarea name="protection" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection }}</textarea>
         </label>
         {% if self.has_old_multiline("protection") %}
@@ -479,7 +504,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <textarea rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("protection") }}</textarea>
         </label>
         {% endif %}
-    </div>
+        </div>
+    </details>
 
     <div class="multiline-review-field{% if !self.highlight_class("sector_ranges").is_empty() %} {{ self.highlight_class("sector_ranges") }}{% endif %}" data-field-flag="has_sector_ranges"{% if !show_sector_ranges %} style="display:none"{% endif %}>
         <label>Sector Ranges
@@ -492,8 +518,10 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="multiline-review-field{% if !self.highlight_class("sbi").is_empty() %} {{ self.highlight_class("sbi") }}{% endif %}" data-field-flag="has_sbi"{% if !show_sbi %} style="display:none"{% endif %}>
-        <label>SBI
+    <details class="collapsible-review-field{% if !self.highlight_class("sbi").is_empty() %} {{ self.highlight_class("sbi") }}{% endif %}" data-field-flag="has_sbi"{% if !show_sbi %} style="display:none"{% endif %}>
+        <summary>SBI</summary>
+        <div class="multiline-review-field">
+        <label><span class="visually-hidden">SBI</span>
             <textarea name="sbi" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sbi }}</textarea>
         </label>
         {% if self.has_old_multiline("sbi") %}
@@ -501,7 +529,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <textarea rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false" readonly>{{ self.old_multiline("sbi") }}</textarea>
         </label>
         {% endif %}
-    </div>
+        </div>
+    </details>
 
     <div class="multiline-review-field{% if !self.highlight_class("pvd").is_empty() %} {{ self.highlight_class("pvd") }}{% endif %}" data-field-flag="has_pvd"{% if !show_pvd %} style="display:none"{% endif %}>
         <label>PVD
@@ -568,30 +597,23 @@ const IS_ADD_MODE = {{ is_add_mode }};
         </label>
         {% endif %}
     </div>
-
-    {% if !is_add_mode && !is_review_mode && submit_button_text == "Save" %}
-    <div class="inline-field status-inline-row{% if !self.highlight_class("status").is_empty() %} {{ self.highlight_class("status") }}{% endif %}">
-        <span class="inline-field-label">Status</span>
-        <div class="inline-field-values">
-            <select name="status" class="status-select-compact">
-                <option value="Disabled" {% if status == "Disabled" %}selected{% endif %}>🔴 Disabled</option>
-                <option value="Questionable" {% if status == "Questionable" %}selected{% endif %}>🟡 Questionable</option>
-                <option value="Unverified" {% if status == "Unverified" %}selected{% endif %}>🔵 Unverified</option>
-                <option value="Verified" {% if status == "Verified" %}selected{% endif %}>🟢 Verified</option>
-            </select>
-        </div>
     </div>
-    {% else %}
+
+    <div class="disc-form-section" aria-label="Submission controls">
+    {% if is_add_mode || is_review_mode %}
     <input type="hidden" name="status" value="{{ status }}">
     {% endif %}
 
     {% if is_add_mode %}
-    <label>Dump Log
-        <textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">{{ dump_log }}</textarea>
-    </label>
+    <details class="collapsible-review-field dump-log-collapsible" open>
+        <summary>Dump Log</summary>
+        <label><span class="visually-hidden">Dump Log</span>
+            <textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">{{ dump_log }}</textarea>
+        </label>
+    </details>
 
     <label>Extra Upload URL
-        <input type="text" name="extra_upload_url" value="{{ extra_upload_url }}">
+        <input type="text" name="extra_upload_url" value="{{ extra_upload_url }}" placeholder="Optional">
     </label>
     {% endif %}
 
@@ -605,7 +627,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
     </div>
     {% else %}
     <label>Submission Comment
-        <textarea name="submission_comment" rows="2" class="auto-expand" placeholder="Optional comment about this submission">{{ submission_comment }}</textarea>
+        <textarea name="submission_comment" rows="2" class="auto-expand fixed-80" placeholder="Optional comment about this submission">{{ submission_comment }}</textarea>
     </label>
 
     {% if is_add_mode %}
@@ -617,5 +639,6 @@ const IS_ADD_MODE = {{ is_add_mode }};
     <button type="submit" name="action" value="save">{{ submit_button_text }}</button>
     {% endif %}
     {% endif %}
+    </div>
 </form>
 {% endblock %}

@@ -452,6 +452,10 @@ details + p small {
     height: auto !important;
     min-height: 0;
 }
+#filter-form.queue-filter-form select {
+    width: max-content;
+    max-width: 100%;
+}
 
 /* Letter picker */
 .letter-picker {
@@ -1308,14 +1312,28 @@ header .site-nav-links > li:first-child {
     background: #0F141C;
 }
 .user-menu .submenu {
+    top: 100%;
     left: auto;
     right: 0;
+    transform: none;
     min-width: 0;
     width: max-content;
+    flex-direction: column;
+    align-items: stretch;
 }
 .has-submenu:hover .submenu,
 .has-submenu:focus-within .submenu {
     display: block;
+}
+.has-submenu.user-menu:hover > ul.user-submenu,
+.has-submenu.user-menu:focus-within > ul.user-submenu {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch;
+}
+.user-submenu > li {
+    display: block !important;
+    width: 100%;
 }
 .submenu li {
     padding: 0 !important;
@@ -1368,6 +1386,14 @@ header .site-nav-links > li:first-child {
     appearance: none;
     color: var(--pico-primary);
     cursor: pointer;
+}
+.user-submenu li a,
+.user-submenu li .submenu-disabled,
+.user-submenu li .submenu-button {
+    width: 100%;
+}
+.user-submenu .submenu-form {
+    width: 100%;
 }
 
 /* Search box */
@@ -1723,6 +1749,17 @@ pre code {
 .disc-edit {
     font-size: 0.75rem;
 }
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+}
 .disc-edit label,
 .disc-edit fieldset legend {
     font-size: 0.75rem;
@@ -1754,11 +1791,94 @@ pre code {
 .disc-edit fieldset legend {
     font-size: 0.75rem;
 }
+.disc-edit .disc-form-section {
+    margin: 0.6rem 0;
+    padding: 0.55rem 0;
+    border-top: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-bottom: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    background: linear-gradient(
+        90deg,
+        transparent 0,
+        rgba(127, 145, 164, 0.04) 1.5rem,
+        rgba(127, 145, 164, 0.04) calc(100% - 1.5rem),
+        transparent 100%
+    );
+}
+.disc-edit .disc-form-section:first-of-type {
+    margin-top: 0.25rem;
+    padding-bottom: 0.8rem;
+}
+.disc-edit .disc-form-section:last-of-type {
+    margin-bottom: 0;
+    padding-bottom: 0.65rem;
+    border-bottom: none;
+}
+body:has(.disc-edit) main.container {
+    padding-bottom: 0;
+}
+body:has(.disc-edit) footer.container {
+    margin-top: 0;
+    padding-top: 0;
+}
+body:has(.disc-edit) footer.container hr {
+    margin-top: 0;
+}
+[data-theme="dark"] .disc-edit .disc-form-section {
+    background: linear-gradient(
+        90deg,
+        transparent 0,
+        rgba(15, 20, 28, 0.55) 1.5rem,
+        rgba(15, 20, 28, 0.55) calc(100% - 1.5rem),
+        transparent 100%
+    );
+}
+.disc-edit .disc-meta-fields {
+    display: grid;
+    gap: 0.18rem;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+}
+.disc-edit .disc-meta-row {
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, max-content);
+    align-items: center;
+    column-gap: 0.45rem;
+    max-width: 100%;
+    margin: 0 !important;
+}
+.disc-edit .disc-meta-label {
+    text-align: right;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+.disc-edit .disc-meta-row > input[type="text"],
+.disc-edit .disc-meta-row > select {
+    margin-bottom: 0;
+}
+.disc-edit .disc-meta-row > input[type="text"] {
+    width: clamp(16rem, 36vw, 34rem);
+    max-width: 100%;
+}
+.disc-edit .disc-meta-row > select {
+    width: max-content;
+    max-width: 100%;
+}
+.disc-edit .disc-meta-row > input[name="disc_number"] {
+    width: calc(3ch + 0.7rem + (var(--pico-border-width) * 2));
+}
+.disc-edit .disc-meta-row > .review-field-annotation {
+    grid-column: 2;
+    margin-top: 0.1rem;
+}
 .disc-edit .grid {
     gap: 0.35rem;
 }
 .disc-edit .flag-select-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     column-gap: 0.85rem;
+    margin-bottom: 0;
 }
 .flag-select-languages {
     border-left: 1px solid #d7e1ea;
@@ -1776,6 +1896,29 @@ pre code {
     columns: 2;
     column-gap: 0.75rem;
     gap: 0.15rem;
+}
+@media (min-width: 82rem) {
+    .flag-check-list {
+        columns: 3;
+        column-gap: 1rem;
+    }
+}
+@media (max-width: 52rem) {
+    .disc-edit .flag-select-grid {
+        grid-template-columns: 1fr;
+    }
+    .flag-select-languages {
+        border-left: none;
+        padding-left: 0;
+    }
+    .flag-check-list {
+        columns: 2;
+    }
+}
+@media (max-width: 34rem) {
+    .flag-check-list {
+        columns: 1;
+    }
 }
 .flag-check {
     display: flex !important;
@@ -1796,6 +1939,23 @@ pre code {
     white-space: nowrap;
     font-weight: normal;
 }
+.flag-check.flag-check-emphasis {
+    margin: 0.02rem -0.18rem;
+    padding: 0.05rem 0.18rem;
+    border-left: 2px solid rgba(0, 119, 184, 0.32);
+    border-radius: 4px;
+    background: rgba(0, 119, 184, 0.08);
+}
+.flag-check.flag-check-emphasis:hover {
+    background: rgba(0, 119, 184, 0.14);
+}
+[data-theme="dark"] .flag-check.flag-check-emphasis {
+    border-left-color: rgba(125, 190, 255, 0.38);
+    background: rgba(125, 190, 255, 0.12);
+}
+[data-theme="dark"] .flag-check.flag-check-emphasis:hover {
+    background: rgba(125, 190, 255, 0.18);
+}
 
 /* Inline label + values row */
 .inline-field {
@@ -1808,6 +1968,40 @@ pre code {
 }
 .inline-field:last-child {
     border-bottom: none;
+}
+.disc-form-section-inline .inline-field:first-child {
+    padding-top: 0;
+}
+.disc-form-section-inline .inline-field:last-child {
+    padding-bottom: 0;
+}
+.disc-form-section-inline .inline-field {
+    padding-top: 0.22rem;
+    padding-bottom: 0.22rem;
+}
+.disc-edit .disc-form-section-inline {
+    display: grid;
+    row-gap: 0.18rem;
+    justify-content: center;
+}
+.disc-edit .disc-form-section-inline .inline-field {
+    width: 100%;
+    padding: 0.2rem 0.45rem;
+    border-bottom: none;
+    border-radius: 4px;
+}
+.disc-edit .disc-form-section-inline .inline-field:nth-of-type(even) {
+    background: rgba(127, 145, 164, 0.07);
+}
+[data-theme="dark"] .disc-edit .disc-form-section-inline .inline-field:nth-of-type(even) {
+    background: rgba(16, 21, 29, 0.72);
+}
+.disc-edit .disc-form-section-inline .inline-field-label {
+    width: 6.8rem;
+    min-width: 6.8rem;
+}
+.disc-edit .disc-form-section-inline .repeatable-inline-field {
+    grid-template-columns: 6.8rem auto;
 }
 .inline-radios {
     display: flex;
@@ -1836,6 +2030,54 @@ pre code {
     align-items: center;
     gap: 0.25rem;
     flex: 1;
+}
+#serial-list,
+#edition-list,
+#barcode-list {
+    flex: 0 1 auto;
+}
+.repeatable-inline-field {
+    display: grid;
+    grid-template-columns: minmax(5rem, max-content) auto;
+    grid-template-areas:
+        "label values"
+        ". add";
+    column-gap: 0.35rem;
+    row-gap: 0.2rem;
+    justify-content: flex-start;
+    align-items: flex-start;
+}
+.repeatable-inline-field .inline-field-label {
+    grid-area: label;
+    padding-top: 0.2rem;
+}
+.repeatable-inline-field .repeatable-inline-values {
+    grid-area: values;
+}
+.repeatable-inline-field .array-add-btn {
+    grid-area: add;
+    margin-top: 0.05rem;
+}
+#serial-list,
+#edition-list,
+#barcode-list {
+    flex-direction: column;
+    align-items: flex-start;
+}
+#serial-list {
+    justify-content: flex-start;
+    text-align: left;
+}
+#serial-list input[name="serial"] {
+    align-self: flex-start;
+}
+#barcode-list input[name="barcode"] {
+    align-self: flex-start;
+}
+#serial-list + .array-add-btn,
+#edition-list + .array-add-btn,
+#barcode-list + .array-add-btn {
+    align-self: flex-start;
 }
 .review-field-annotation {
     flex: 0 0 100%;
@@ -1884,6 +2126,18 @@ pre code {
     flex: 0 0 auto;
     order: 0;
 }
+.disc-edit .inline-field-values input.short-code-input {
+    width: calc(6ch + 0.7rem + (var(--pico-border-width) * 2));
+}
+.disc-edit .inline-field-values input.short-code-input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+.disc-edit .inline-field-values input.short-code-input[type="number"]::-webkit-outer-spin-button,
+.disc-edit .inline-field-values input.short-code-input[type="number"]::-webkit-inner-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+}
 .disc-edit .inline-field-values select.edition-suggestion-select {
     display: block;
     width: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
@@ -1922,10 +2176,8 @@ pre code {
 }
 
 .disc-edit .status-inline-row {
-    border-top: var(--pico-border-width) solid var(--pico-form-element-border-color);
     margin-top: 0.25rem;
-    padding-top: 0.3rem;
-    justify-content: flex-start;
+    justify-content: center;
 }
 
 .disc-edit .status-inline-row .inline-field-label {
@@ -1974,6 +2226,20 @@ pre code {
 }
 
 /* Ring code edit table */
+.disc-edit fieldset:has(#ring-editor) {
+    padding-top: 0.4rem;
+    padding-bottom: 0.45rem;
+    text-align: center;
+}
+.disc-edit fieldset:has(#ring-editor) legend {
+    margin-bottom: 0.3rem;
+}
+.disc-edit fieldset:has(#ring-editor) .table-scroll {
+    width: fit-content;
+    max-width: 100%;
+    margin: 0.1rem auto 0.15rem;
+    text-align: left;
+}
 .ring-edit-table.ring-group-start > td,
 .ring-edit-table .ring-group-start > td {
     border-top: var(--pico-border-width) solid var(--pico-form-element-border-color);
@@ -1984,10 +2250,56 @@ pre code {
     font-size: 0.72rem;
     height: auto;
 }
+.ring-edit-table th,
+.ring-edit-table td {
+    padding-top: 0.28rem;
+    padding-bottom: 0.28rem;
+}
 .ring-edit-table .ring-layer-label-tooltip {
-    cursor: help;
+    display: inline-block;
+    position: relative;
+    cursor: pointer;
     text-decoration: underline dotted;
     text-underline-offset: 0.16em;
+}
+.ring-edit-table .ring-layer-label-tooltip::before,
+.ring-edit-table .ring-layer-label-tooltip::after {
+    position: absolute;
+    top: 50%;
+    left: calc(100% + 0.45rem);
+    z-index: 20;
+    display: none;
+    pointer-events: none;
+}
+.ring-edit-table .ring-layer-label-tooltip::before {
+    content: "";
+    transform: translate(-0.35rem, -50%);
+    border-top: 0.35rem solid transparent;
+    border-bottom: 0.35rem solid transparent;
+    border-right: 0.35rem solid #f3f6fa;
+    filter: drop-shadow(-1px 0 0 #c7d1dc);
+}
+.ring-edit-table .ring-layer-label-tooltip::after {
+    content: attr(data-ring-tooltip);
+    width: max-content;
+    max-width: min(28rem, calc(100vw - 2rem));
+    transform: translateY(-50%);
+    padding: 0.35rem 0.5rem;
+    border: 1px solid #c7d1dc;
+    border-radius: 4px;
+    background: #f3f6fa;
+    color: #17202b;
+    box-shadow: 0 0.25rem 0.75rem rgba(20, 27, 36, 0.18);
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: normal;
+}
+.ring-edit-table .ring-layer-label-tooltip:hover::before,
+.ring-edit-table .ring-layer-label-tooltip:hover::after,
+.ring-edit-table .ring-layer-label-tooltip:focus::before,
+.ring-edit-table .ring-layer-label-tooltip:focus::after {
+    display: block;
 }
 .ring-edit-table .ring-layer-label-tooltip:focus {
     outline: 1px solid #9fb1c3;
@@ -1995,6 +2307,16 @@ pre code {
 }
 [data-theme="dark"] .ring-edit-table .ring-layer-label-tooltip:focus {
     outline-color: #5a6b82;
+}
+[data-theme="dark"] .ring-edit-table .ring-layer-label-tooltip::before {
+    border-right-color: #141a23;
+    filter: drop-shadow(-1px 0 0 #303947);
+}
+[data-theme="dark"] .ring-edit-table .ring-layer-label-tooltip::after {
+    border-color: #303947;
+    background: #141a23;
+    color: #d8e1ec;
+    box-shadow: 0 0.3rem 0.85rem rgba(0, 0, 0, 0.45);
 }
 .ring-edit-table .remove-entry {
     padding: 0.1rem 0.35rem;
@@ -2023,13 +2345,154 @@ textarea.fixed-80 {
 textarea.full-width-textarea {
     width: 100%;
 }
+.textarea-resize-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: top;
+}
+.dump-log-collapsible .textarea-resize-wrap {
+    display: block;
+    width: 100%;
+}
+.textarea-resize-wrap > textarea {
+    display: block;
+    margin-bottom: 0;
+}
+.textarea-resize-handle {
+    position: absolute;
+    right: 0.28rem;
+    bottom: 0.28rem;
+    width: 0.72rem;
+    height: 0.72rem;
+    border-right: 2px solid rgba(83, 101, 124, 0.72);
+    border-bottom: 2px solid rgba(83, 101, 124, 0.72);
+    cursor: nwse-resize;
+    opacity: 0.78;
+}
+.textarea-resize-handle::before,
+.textarea-resize-handle::after {
+    content: "";
+    position: absolute;
+    right: 0.08rem;
+    bottom: 0.08rem;
+    width: 0.36rem;
+    height: 0.36rem;
+    border-right: 1px solid rgba(83, 101, 124, 0.72);
+    border-bottom: 1px solid rgba(83, 101, 124, 0.72);
+}
+.textarea-resize-handle::after {
+    width: 0.18rem;
+    height: 0.18rem;
+}
+.textarea-resize-wrap:hover .textarea-resize-handle {
+    opacity: 1;
+}
+[data-theme="dark"] .textarea-resize-handle,
+[data-theme="dark"] .textarea-resize-handle::before,
+[data-theme="dark"] .textarea-resize-handle::after {
+    border-color: rgba(155, 170, 191, 0.75);
+}
 
+.disc-edit .disc-form-section-multiline {
+    display: grid;
+    justify-items: center;
+}
+.disc-edit .disc-form-section-multiline > label,
+.disc-edit .disc-form-section-multiline > .multiline-review-field,
+.disc-edit .disc-form-section-multiline > .collapsible-review-field {
+    width: fit-content;
+    max-width: 100%;
+    justify-self: center;
+    text-align: left;
+}
+.disc-edit .disc-form-section-multiline > .collapsible-review-field {
+    min-width: min(80ch, 100%);
+}
+.disc-edit .disc-form-section-multiline > .collapsible-review-field[open] {
+    min-width: 0;
+}
+.disc-edit .disc-form-section-multiline > label:has(textarea[name="comments"]) {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+.disc-edit .disc-form-section-multiline > .collapsible-review-field > summary {
+    margin-left: 0;
+    margin-bottom: 0.08rem;
+}
 .multiline-review-field {
     display: flex;
     flex-wrap: nowrap;
     gap: 0.75rem;
     align-items: flex-start;
     overflow-x: auto;
+}
+.collapsible-review-field {
+    margin-bottom: 0.25rem;
+}
+.collapsible-review-field > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    width: fit-content;
+    margin-bottom: 0.08rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    list-style: none;
+}
+.collapsible-review-field[open] > summary {
+    margin-bottom: 0.08rem;
+}
+.collapsible-review-field > summary::-webkit-details-marker {
+    display: none;
+}
+.collapsible-review-field > summary::marker {
+    content: "";
+}
+.collapsible-review-field > summary::before {
+    content: "▶";
+    display: inline-block;
+    float: none;
+    font-size: 0.8rem;
+    font-weight: 800;
+    line-height: 1;
+}
+.collapsible-review-field[open] > summary::before {
+    content: "▼";
+}
+.collapsible-review-field[open] > .multiline-review-field {
+    margin-top: 0;
+}
+.dump-log-collapsible[open] > label {
+    margin-top: 0.15rem;
+}
+.disc-edit .dump-log-collapsible,
+.disc-edit label:has(input[name="extra_upload_url"]),
+.disc-edit label:has(textarea[name="submission_comment"]) {
+    --submit-field-width: min(56rem, 100%);
+    display: block;
+    width: var(--submit-field-width);
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: left;
+}
+.disc-edit .dump-log-collapsible > label,
+.disc-edit .dump-log-collapsible .textarea-resize-wrap {
+    width: 100%;
+}
+.disc-edit .dump-log-collapsible textarea,
+.disc-edit input[name="extra_upload_url"],
+.disc-edit textarea[name="submission_comment"] {
+    box-sizing: border-box;
+    width: 100%;
+}
+.disc-edit input[name="extra_upload_url"],
+.disc-edit textarea[name="submission_comment"] {
+    text-indent: 0;
 }
 .multiline-review-field > label {
     display: flex;
@@ -2089,9 +2552,20 @@ textarea.full-width-textarea {
     flex-wrap: nowrap;
     gap: 1rem;
     margin-top: 1rem;
+    margin-left: auto;
+    margin-right: auto;
     margin-bottom: var(--pico-spacing);
     align-items: flex-end;
-    width: 100%;
+    width: min(100%, 32rem);
+}
+.disc-edit .disc-form-section:last-of-type .form-actions {
+    margin-bottom: 0.35rem;
+}
+.disc-edit .disc-form-section:last-of-type > button[type="submit"] {
+    display: block;
+    width: min(100%, calc((32rem - 1rem) / 2));
+    margin: 1rem auto 0.35rem;
+    text-align: center;
 }
 .disc-edit .form-actions button,
 .disc-edit .form-actions [type="submit"],
@@ -2145,7 +2619,26 @@ tr.field-changed > td { background-color: rgba(255, 235, 59, 0.18); }
 /* Queue submission info box */
 .submission-info {
     font-size: 0.75rem;
-    margin-bottom: 1.5rem;
+    margin: 0.6rem 0;
+    padding: 0.55rem 0;
+    border-top: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-bottom: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    background: linear-gradient(
+        90deg,
+        transparent 0,
+        rgba(127, 145, 164, 0.04) 1.5rem,
+        rgba(127, 145, 164, 0.04) calc(100% - 1.5rem),
+        transparent 100%
+    );
+}
+[data-theme="dark"] .submission-info {
+    background: linear-gradient(
+        90deg,
+        transparent 0,
+        rgba(15, 20, 28, 0.55) 1.5rem,
+        rgba(15, 20, 28, 0.55) calc(100% - 1.5rem),
+        transparent 100%
+    );
 }
 .submission-info .table-compact td {
     padding: 0.2rem 0.45rem;
@@ -2158,23 +2651,43 @@ tr.field-changed > td { background-color: rgba(255, 235, 59, 0.18); }
 }
 .submission-info .table-fit-section {
     display: table;
-    width: 100%;
+    width: min(68rem, 100%);
     max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
 }
 .submission-info pre.raw-json {
+    box-sizing: border-box;
+    width: min(68rem, 100%);
     max-height: none;
+    margin-left: auto;
+    margin-right: auto;
     overflow: visible;
     overflow-x: visible;
     white-space: pre-wrap;
     word-wrap: break-word;
     font-size: 0.8rem;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-code-background-color);
+    padding: 0.65rem 0.8rem;
 }
 .submission-info pre.raw-json code {
     max-height: none;
     overflow-y: visible;
 }
 .submission-info details {
+    width: min(68rem, 100%);
     margin-top: 0.75rem;
+    margin-left: auto;
+    margin-right: auto;
+}
+.submission-info details > summary {
+    width: fit-content;
+    margin-bottom: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.2;
 }
 
 /* Wrapped text blocks for dump log, comments, etc. */
@@ -2185,6 +2698,39 @@ tr.field-changed > td { background-color: rgba(255, 235, 59, 0.18); }
     background: var(--pico-code-background-color);
     padding: 0.75rem;
     border-radius: 4px;
+}
+body:has(.submission-info) main.container > section {
+    margin: 0.6rem 0;
+    padding: 0.55rem 0;
+    border-top: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-bottom: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    background: linear-gradient(
+        90deg,
+        transparent 0,
+        rgba(127, 145, 164, 0.04) 1.5rem,
+        rgba(127, 145, 164, 0.04) calc(100% - 1.5rem),
+        transparent 100%
+    );
+}
+[data-theme="dark"] body:has(.submission-info) main.container > section {
+    background: linear-gradient(
+        90deg,
+        transparent 0,
+        rgba(15, 20, 28, 0.55) 1.5rem,
+        rgba(15, 20, 28, 0.55) calc(100% - 1.5rem),
+        transparent 100%
+    );
+}
+body:has(.submission-info) main.container > section h3,
+body:has(.submission-info) main.container > section .section-text {
+    width: min(68rem, 100%);
+    margin-left: auto;
+    margin-right: auto;
+}
+body:has(.submission-info) main.container > section h3 {
+    margin-bottom: 0.35rem;
+    font-size: 0.9rem;
+    font-weight: 600;
 }
 
 /* Review action buttons */

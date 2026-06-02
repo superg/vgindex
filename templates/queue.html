@@ -11,7 +11,7 @@
 {% if filter_disc_id.is_empty() %}
 <details open>
     <summary></summary>
-    <form method="get" action="/queue/" id="filter-form">
+    <form method="get" action="/queue/" id="filter-form" class="queue-filter-form">
         <label>
             <span>Status</span>
             <select name="status" onchange="this.form.submit()">
