@@ -112,6 +112,73 @@ function refreshEditionSelectors() {
     });
 }
 
+function attachSubmitAsSelector(input) {
+    if (!input) return;
+    input.removeAttribute('list');
+    input.setAttribute('autocomplete', 'off');
+    var group = ensureSubmitAsSelectorGroup(input);
+    if (input.dataset && input.dataset.submitAsSelector === 'true') return;
+    if (input.dataset) input.dataset.submitAsSelector = 'true';
+
+    var select = group.querySelector('select.submit-as-user-select');
+    if (!select || !select.classList || !select.classList.contains('submit-as-user-select')) {
+        select = document.createElement('select');
+        select.className = 'submit-as-user-select';
+        select.setAttribute('aria-label', 'Choose submitter');
+        select.tabIndex = 0;
+        group.appendChild(select);
+    }
+
+    populateSubmitAsSelect(select);
+    select.addEventListener('change', function () {
+        var selectedUser = select.value;
+        if (!selectedUser) return;
+        input.value = selectedUser;
+        select.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+    });
+}
+
+function ensureSubmitAsSelectorGroup(input) {
+    var parent = input.parentNode;
+    if (parent && parent.classList && parent.classList.contains('submit-as-picker')) {
+        return parent;
+    }
+
+    var group = document.createElement('span');
+    group.className = 'submit-as-picker';
+    parent.insertBefore(group, input);
+    group.appendChild(input);
+    return group;
+}
+
+function populateSubmitAsSelect(select) {
+    if (!select) return;
+
+    select.innerHTML = '';
+
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '';
+    select.appendChild(blank);
+
+    var usernames = (typeof SUBMIT_AS_USERNAMES !== 'undefined' && Array.isArray(SUBMIT_AS_USERNAMES)) ? SUBMIT_AS_USERNAMES : [];
+    for (var i = 0; i < usernames.length; i++) {
+        var username = usernames[i];
+        var option = document.createElement('option');
+        option.value = username;
+        option.textContent = username;
+        select.appendChild(option);
+    }
+
+    select.value = '';
+}
+
+function initSubmitAsSelector() {
+    attachSubmitAsSelector(document.getElementById('submit-as-input'));
+}
+
 // Vertical repeatable array field (layerbreaks)
 function addArrayEntry(containerId, name) {
     var container = document.getElementById(containerId);
@@ -895,6 +962,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initManualTextareaResize();
     initCollapsibleReviewFields();
     initEditionSelectors();
+    initSubmitAsSelector();
     initIndependentInlineResizing();
     fitDiscMetaFields();
     fitAllInlineGroups();

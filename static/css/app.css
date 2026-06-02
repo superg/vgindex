@@ -2116,6 +2116,16 @@ body:has(.disc-edit) footer.container hr {
     flex: 0 0 auto;
     order: 0;
 }
+.disc-edit .submit-as-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.06rem;
+}
+.disc-edit .submit-as-picker input[type="text"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-bottom: 0;
+}
 .disc-edit .inline-field-values input[type="text"],
 .disc-edit .inline-field-values input[type="number"] {
     height: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
@@ -2138,7 +2148,8 @@ body:has(.disc-edit) footer.container hr {
     margin: 0;
     -webkit-appearance: none;
 }
-.disc-edit .inline-field-values select.edition-suggestion-select {
+.disc-edit .inline-field-values select.edition-suggestion-select,
+.disc-edit .submit-as-picker select.submit-as-user-select {
     display: block;
     width: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
     min-width: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
