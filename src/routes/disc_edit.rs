@@ -241,6 +241,7 @@ pub(crate) struct CheckOption {
     pub code: String,
     pub selected: bool,
     pub highlight: String,
+    pub common: bool,
 }
 
 pub(crate) struct HighlightedValue {
@@ -490,6 +491,23 @@ pub(crate) fn build_category_options(
 }
 
 pub(crate) fn build_check_options(all: &[Region], selected_codes: &[String]) -> Vec<CheckOption> {
+    const COMMON_REGIONS: &[&str] = &[
+        "Asia",
+        "Australia",
+        "Europe",
+        "France",
+        "Germany",
+        "Italy",
+        "Japan",
+        "Korea",
+        "Netherlands",
+        "Poland",
+        "Portugal",
+        "Russia",
+        "Spain",
+        "UK",
+        "USA",
+    ];
     let mut options: Vec<CheckOption> = all
         .iter()
         .map(|r| CheckOption {
@@ -498,6 +516,7 @@ pub(crate) fn build_check_options(all: &[Region], selected_codes: &[String]) -> 
             code: r.flag_code.trim().to_lowercase(),
             selected: selected_codes.iter().any(|c| c.trim() == r.code.trim()),
             highlight: String::new(),
+            common: COMMON_REGIONS.iter().any(|name| *name == r.name),
         })
         .collect();
     options.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -508,6 +527,23 @@ pub(crate) fn build_lang_check_options(
     all: &[Language],
     selected_codes: &[String],
 ) -> Vec<CheckOption> {
+    const COMMON_LANGUAGES: &[&str] = &[
+        "Danish",
+        "Dutch",
+        "English",
+        "Finnish",
+        "French",
+        "German",
+        "Italian",
+        "Japanese",
+        "Korean",
+        "Norwegian",
+        "Polish",
+        "Portuguese",
+        "Russian",
+        "Spanish",
+        "Swedish",
+    ];
     let mut options: Vec<CheckOption> = all
         .iter()
         .map(|l| CheckOption {
@@ -516,6 +552,7 @@ pub(crate) fn build_lang_check_options(
             code: l.flag_code.trim().to_lowercase(),
             selected: selected_codes.iter().any(|c| c.trim() == l.code.trim()),
             highlight: String::new(),
+            common: COMMON_LANGUAGES.iter().any(|name| *name == l.name),
         })
         .collect();
     options.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
