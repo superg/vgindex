@@ -1168,25 +1168,26 @@ header .site-nav-top {
 .user-menu-button {
     width: auto !important;
     justify-content: flex-start;
-    gap: 0.45rem;
-    padding: 0 !important;
+    gap: 0;
+    padding: 0 0.55rem 0 0 !important;
     font-size: 0.8rem;
     line-height: 1;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
+    border: 1.5px solid #9fb1c3;
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-form-element-background-color);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
     color: inherit;
     appearance: none;
-    overflow: visible;
+    overflow: hidden;
 }
 .user-menu-button:is(:hover, :focus) {
-    background: transparent;
-    box-shadow: none;
+    background: #E8F2FA;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
     color: inherit;
 }
 .user-menu-button:is(:hover, :focus) .user-menu-icon {
-    background: #E8F2FA;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
+    background: transparent;
+    box-shadow: none;
 }
 .user-menu-icon {
     display: inline-flex;
@@ -1196,34 +1197,41 @@ header .site-nav-top {
     width: var(--nav-bar-height);
     height: var(--nav-bar-height);
     box-sizing: border-box;
-    border: 1.5px solid #9fb1c3;
-    border-radius: var(--pico-border-radius);
-    background: #F4F8FB;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
+    border: 0;
+    border-right: 1.5px solid #9fb1c3;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
     font-size: 1.45rem;
     line-height: 1;
     overflow: hidden;
 }
 .user-menu-username {
     display: inline-block;
+    max-width: clamp(6ch, 12vw, 14ch);
+    overflow: hidden;
+    padding-left: 0.55rem;
     line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 [data-theme="dark"] .user-menu-button {
-    background: transparent;
-    box-shadow: none;
+    border-color: #5a6b82;
+    background: var(--pico-form-element-background-color);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.25);
 }
 [data-theme="dark"] .user-menu-button:is(:hover, :focus) {
+    background: #1E2A3A;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.25);
+}
+[data-theme="dark"] .user-menu-icon {
+    border-right-color: #5a6b82;
     background: transparent;
     box-shadow: none;
 }
-[data-theme="dark"] .user-menu-icon {
-    border-color: #5a6b82;
-    background: #141A23;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.25);
-}
 [data-theme="dark"] .user-menu-button:is(:hover, :focus) .user-menu-icon {
-    background: #1E2A3A;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.25);
+    background: transparent;
+    box-shadow: none;
 }
 
 /* Row 2: nav links */
@@ -1475,10 +1483,12 @@ nav .quick-search input[type="text"] {
     font-size: 0.9rem;
     width: clamp(100px, 18vw, 200px);
     border: 1.5px solid #9fb1c3;
+    background-color: var(--pico-form-element-background-color);
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
 }
 [data-theme="dark"] nav .quick-search input[type="text"] {
     border-color: #5a6b82;
+    background-color: var(--pico-form-element-background-color);
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.25);
 }
 
