@@ -147,6 +147,7 @@ pub(crate) struct DiscEditTemplate {
 
     pub submit_button_text: String,
     pub validation_errors: Vec<String>,
+    pub linked_validation_errors: Vec<LinkedValidationError>,
     pub validation_result: String,
     pub validation_result_disc_id: i32,
     pub validation_result_disc_title: String,
@@ -378,6 +379,167 @@ fn normalize_submit_as_username(username: Option<&str>) -> Result<String, &'stat
         return Err("must be 64 characters or fewer");
     }
     Ok(username.to_string())
+}
+
+fn trimmed_nonempty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|s| !s.is_empty())
+}
+
+fn is_valid_http_url(value: &str) -> bool {
+    reqwest::Url::parse(value)
+        .map(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
+        .unwrap_or(false)
+}
+
+fn validate_add_submission_logs(form: &DiscEditForm, logs_optional: bool) -> Vec<String> {
+    let dump_log = trimmed_nonempty(form.dump_log.as_deref());
+    let logs_url = trimmed_nonempty(form.extra_upload_url.as_deref());
+
+    let mut errors = Vec::new();
+    if !logs_optional && dump_log.is_none() {
+        errors.push("Dump Log: cannot be empty".to_string());
+    }
+    if !logs_optional && logs_url.is_none() {
+        errors.push("Logs Archive URL: cannot be empty".to_string());
+    }
+    if let Some(logs_url) = logs_url {
+        if !is_valid_http_url(logs_url) {
+            errors.push("Logs Archive URL: must be a valid URL".to_string());
+        }
+    }
+    errors
+}
+
+fn generated_name_key(name: &str) -> String {
+    name.to_lowercase()
+}
+
+fn generated_disc_name(
+    title: &str,
+    region_names: &[String],
+    language_codes: &[String],
+    disc_number: Option<&str>,
+    disc_title: Option<&str>,
+    filename_suffix: Option<&str>,
+) -> String {
+    build_rom_base_name(
+        title.trim(),
+        region_names,
+        language_codes,
+        disc_number.map(str::trim).filter(|s| !s.is_empty()),
+        disc_title.map(str::trim).filter(|s| !s.is_empty()),
+        filename_suffix.map(str::trim).filter(|s| !s.is_empty()),
+    )
+}
+
+async fn selected_region_names(
+    pool: &sqlx::PgPool,
+    region_codes: &[String],
+) -> AppResult<Vec<String>> {
+    let region_codes = norm_str_vec(region_codes.to_vec());
+    if region_codes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(sqlx::query_scalar::<_, String>(
+        "SELECT name FROM regions WHERE code = ANY($1) ORDER BY sort_order",
+    )
+    .bind(&region_codes)
+    .fetch_all(pool)
+    .await?)
+}
+
+async fn selected_language_codes(
+    pool: &sqlx::PgPool,
+    language_codes: &[String],
+) -> AppResult<Vec<String>> {
+    let language_codes = norm_str_vec(language_codes.to_vec());
+    if language_codes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(sqlx::query_scalar::<_, String>(
+        "SELECT code FROM languages WHERE code = ANY($1) ORDER BY sort_order",
+    )
+    .bind(&language_codes)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub(crate) async fn validate_generated_name_unique(
+    pool: &sqlx::PgPool,
+    form: &DiscEditForm,
+    current_disc_id: Option<i32>,
+    proposed_is_active: bool,
+) -> AppResult<Vec<LinkedValidationError>> {
+    if !proposed_is_active {
+        return Ok(Vec::new());
+    }
+    let system_code = form.system_code.trim();
+    if system_code.is_empty() || form.title.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let region_names = selected_region_names(pool, &form.regions).await?;
+    let language_codes = selected_language_codes(pool, &form.languages).await?;
+    let proposed_name = generated_disc_name(
+        &form.title,
+        &region_names,
+        &language_codes,
+        form.disc_number.as_deref(),
+        form.disc_title.as_deref(),
+        form.filename_suffix.as_deref(),
+    );
+    let proposed_key = generated_name_key(&proposed_name);
+
+    let candidates: Vec<DuplicateNameDiscRow> = sqlx::query_as(
+        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
+                COALESCE((
+                    SELECT array_agg(r.name ORDER BY r.sort_order)
+                    FROM disc_regions dr
+                    JOIN regions r ON r.code = dr.region_code
+                    WHERE dr.disc_id = d.id
+                ), ARRAY[]::TEXT[]) AS region_names,
+                COALESCE((
+                    SELECT array_agg(l.code ORDER BY l.sort_order)
+                    FROM disc_languages dl
+                    JOIN languages l ON l.code = dl.language_code
+                    WHERE dl.disc_id = d.id
+                ), ARRAY[]::TEXT[]) AS language_codes
+         FROM discs d
+         WHERE d.system_code = $1
+           AND d.status != 'Disabled'
+           AND ($2::INT IS NULL OR d.id <> $2)
+         ORDER BY d.id",
+    )
+    .bind(system_code)
+    .bind(current_disc_id)
+    .fetch_all(pool)
+    .await?;
+
+    for candidate in candidates {
+        let candidate_name = generated_disc_name(
+            &candidate.title,
+            &candidate.region_names,
+            &candidate.language_codes,
+            candidate.disc_number.as_deref(),
+            candidate.disc_title.as_deref(),
+            candidate.filename_suffix.as_deref(),
+        );
+        if generated_name_key(&candidate_name) == proposed_key {
+            return Ok(vec![LinkedValidationError {
+                text: "Generated name already exists:".to_string(),
+                disc_id: candidate.id,
+                disc_title: candidate_name,
+            }]);
+        }
+    }
+
+    Ok(Vec::new())
+}
+
+pub(crate) fn form_status_is_active(form: &DiscEditForm) -> bool {
+    normalized_disc_status(&form.status) != "Disabled"
 }
 
 fn validate_submit_as_for_add(form: &DiscEditForm, can_submit_as: bool) -> Vec<String> {
@@ -837,6 +999,7 @@ async fn edit_page(
                 "Submit".into()
             },
             validation_errors: vec![],
+            linked_validation_errors: vec![],
             validation_result: String::new(),
             validation_result_disc_id: 0,
             validation_result_disc_title: String::new(),
@@ -932,6 +1095,13 @@ pub(crate) struct ValidationResultMessage {
     pub disc_title: String,
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct LinkedValidationError {
+    pub text: String,
+    pub disc_id: i32,
+    pub disc_title: String,
+}
+
 #[derive(sqlx::FromRow)]
 struct ValidationResultDiscTitleRow {
     title: String,
@@ -940,6 +1110,17 @@ struct ValidationResultDiscTitleRow {
     filename_suffix: Option<String>,
     has_disc_number: bool,
     has_disc_title: bool,
+}
+
+#[derive(sqlx::FromRow)]
+struct DuplicateNameDiscRow {
+    id: i32,
+    title: String,
+    disc_number: Option<String>,
+    disc_title: Option<String>,
+    filename_suffix: Option<String>,
+    region_names: Vec<String>,
+    language_codes: Vec<String>,
 }
 
 pub(crate) fn validate_form(
@@ -1104,10 +1285,11 @@ async fn render_form_with_errors(
     username: &str,
     form: &DiscEditForm,
     errors: Vec<String>,
+    linked_validation_errors: Vec<LinkedValidationError>,
     validation_result: ValidationResultMessage,
     is_add_mode: bool,
     can_edit_directly: bool,
-    can_submit_as: bool,
+    can_moderate: bool,
 ) -> AppResult<Response> {
     let pool = &state.pool;
     let ref_data = fetch_ref_data(pool).await?;
@@ -1119,7 +1301,7 @@ async fn render_form_with_errors(
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
-    let submit_as_usernames_json = if is_add_mode && can_submit_as {
+    let submit_as_usernames_json = if is_add_mode && can_moderate {
         build_submit_as_usernames_json(pool).await?
     } else {
         "[]".to_string()
@@ -1251,10 +1433,10 @@ async fn render_form_with_errors(
 
         is_add_mode,
         dump_log: form.dump_log.clone().unwrap_or_default(),
-        dump_log_required: is_add_mode && !can_edit_directly,
+        dump_log_required: is_add_mode && !can_moderate,
         extra_upload_url: form.extra_upload_url.clone().unwrap_or_default(),
-        show_submit_as: is_add_mode && can_submit_as,
-        submit_as_username: submit_as_username_for_form(username, form, can_submit_as),
+        show_submit_as: is_add_mode && can_moderate,
+        submit_as_username: submit_as_username_for_form(username, form, can_moderate),
 
         submit_button_text: if can_edit_directly {
             "Save".into()
@@ -1262,6 +1444,7 @@ async fn render_form_with_errors(
             "Submit".into()
         },
         validation_errors: errors,
+        linked_validation_errors,
         validation_result: validation_result.text,
         validation_result_disc_id: validation_result.disc_id,
         validation_result_disc_title: validation_result.disc_title,
@@ -1287,11 +1470,12 @@ async fn render_form_with_errors(
         changes_json: String::new(),
     };
 
-    let status = if template.validation_errors.is_empty() {
-        StatusCode::OK
-    } else {
-        StatusCode::BAD_REQUEST
-    };
+    let status =
+        if template.validation_errors.is_empty() && template.linked_validation_errors.is_empty() {
+            StatusCode::OK
+        } else {
+            StatusCode::BAD_REQUEST
+        };
     let html = template.render().unwrap();
     Ok((status, Html(html)).into_response())
 }
@@ -1305,15 +1489,14 @@ fn valid_dat_for_matching(form: &DiscEditForm) -> Option<&str> {
     Some(text)
 }
 
-async fn build_add_validation_result(
+async fn build_add_validation_result_for_target(
     pool: &sqlx::PgPool,
-    form: &DiscEditForm,
+    target_disc_id: Option<i32>,
+    has_valid_dat: bool,
 ) -> AppResult<ValidationResultMessage> {
-    let Some(files_xml) = valid_dat_for_matching(form) else {
+    if !has_valid_dat {
         return Ok(ValidationResultMessage::default());
-    };
-
-    let target_disc_id = queue_service::find_matching_disc(pool, files_xml).await;
+    }
     let Some(disc_id) = target_disc_id else {
         return Ok(add_validation_result_for_match(None));
     };
@@ -1502,13 +1685,17 @@ async fn edit_submit(
     let form = post.disc;
     let ref_data = fetch_ref_data(&state.pool).await?;
     let errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
-    if !errors.is_empty() {
+    let linked_validation_errors =
+        validate_generated_name_unique(&state.pool, &form, Some(id), form_status_is_active(&form))
+            .await?;
+    if !errors.is_empty() || !linked_validation_errors.is_empty() {
         return render_form_with_errors(
             &state,
             id,
             &user.username,
             &form,
             errors,
+            linked_validation_errors,
             ValidationResultMessage::default(),
             false,
             user.role.can_edit_directly(),
@@ -1665,7 +1852,7 @@ async fn add_page(
 
             is_add_mode: true,
             dump_log: String::new(),
-            dump_log_required: !user.role.can_edit_directly(),
+            dump_log_required: !user.role.can_moderate(),
             extra_upload_url: String::new(),
             show_submit_as: can_submit_as,
             submit_as_username: if can_submit_as {
@@ -1680,6 +1867,7 @@ async fn add_page(
                 "Submit".into()
             },
             validation_errors: vec![],
+            linked_validation_errors: vec![],
             validation_result: String::new(),
             validation_result_disc_id: 0,
             validation_result_disc_title: String::new(),
@@ -1719,29 +1907,43 @@ async fn add_submit(
     let mut errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
     let can_submit_as = user.role.can_moderate();
     errors.extend(validate_submit_as_for_add(&form, can_submit_as));
+    errors.extend(validate_add_submission_logs(
+        &form,
+        user.role.can_moderate(),
+    ));
 
-    let dump_log_text = form
-        .dump_log
-        .as_deref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty());
-    if dump_log_text.is_none() && !user.role.can_edit_directly() {
-        errors.push("Dump Log: cannot be empty".into());
-    }
+    let target_disc_id = match valid_dat_for_matching(&form) {
+        Some(files_xml) => queue_service::find_matching_disc(&state.pool, files_xml).await,
+        None => None,
+    };
+    let linked_validation_errors =
+        validate_generated_name_unique(&state.pool, &form, target_disc_id, true).await?;
 
-    let validation_result = if post.action == "validate" || !errors.is_empty() {
-        build_add_validation_result(&state.pool, &form).await?
+    let dump_log_text = trimmed_nonempty(form.dump_log.as_deref());
+    let extra_upload_url_text = trimmed_nonempty(form.extra_upload_url.as_deref());
+
+    let validation_result = if post.action == "validate"
+        || !errors.is_empty()
+        || !linked_validation_errors.is_empty()
+    {
+        build_add_validation_result_for_target(
+            &state.pool,
+            target_disc_id,
+            valid_dat_for_matching(&form).is_some(),
+        )
+        .await?
     } else {
         ValidationResultMessage::default()
     };
 
-    if post.action == "validate" || !errors.is_empty() {
+    if post.action == "validate" || !errors.is_empty() || !linked_validation_errors.is_empty() {
         return render_form_with_errors(
             &state,
             0,
             &user.username,
             &form,
             errors,
+            linked_validation_errors,
             validation_result,
             true,
             user.role.can_edit_directly(),
@@ -1750,8 +1952,6 @@ async fn add_submit(
         .await;
     }
 
-    let files_xml_str = form.files_xml.as_deref().unwrap_or("");
-    let target_disc_id = queue_service::find_matching_disc(&state.pool, files_xml_str).await;
     let changes = build_new_disc_changes(&form, &ref_data.all_media_types);
     let submitter_id = if can_submit_as {
         let submit_as_username = normalize_submit_as_username(form.submit_as.as_deref())
@@ -1776,10 +1976,7 @@ async fn add_submit(
         changes,
         submission_comment.as_deref(),
         dump_log_text,
-        form.extra_upload_url
-            .as_deref()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty()),
+        extra_upload_url_text,
     )
     .await?;
 
@@ -2701,6 +2898,44 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn generated_disc_name_uses_canonical_rom_name_parts() {
+        let region_names = vec!["Japan".to_string(), "USA".to_string()];
+        let language_codes = vec!["en".to_string(), "ja".to_string()];
+
+        assert_eq!(
+            generated_disc_name(
+                "  Sample Game  ",
+                &region_names,
+                &language_codes,
+                Some(" 2 "),
+                Some(" Bonus Disc "),
+                Some(" Rev 1 "),
+            ),
+            "Sample Game (Japan, USA) (En,Ja) (Disc 2) (Bonus Disc) (Rev 1)"
+        );
+
+        assert_eq!(
+            generated_disc_name(
+                "Sample Game",
+                &region_names,
+                &["en".to_string()],
+                None,
+                None,
+                None,
+            ),
+            "Sample Game (Japan, USA)"
+        );
+    }
+
+    #[test]
+    fn generated_name_key_is_case_insensitive() {
+        assert_eq!(
+            generated_name_key("Sample Game (USA)"),
+            generated_name_key("sample game (usa)")
+        );
+    }
+
+    #[test]
     fn scalar_operation_change_writes_add_modify_and_remove() {
         assert_eq!(
             scalar_operation_change(&serde_json::Value::Null, &serde_json::json!("New")),
@@ -3021,6 +3256,63 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn add_submission_logs_are_required_unless_moderator_or_admin() {
+        let mut form = new_disc_form();
+
+        assert_eq!(
+            validate_add_submission_logs(&form, false),
+            vec![
+                "Dump Log: cannot be empty".to_string(),
+                "Logs Archive URL: cannot be empty".to_string()
+            ]
+        );
+        assert!(validate_add_submission_logs(&form, true).is_empty());
+
+        form.dump_log = Some("  ".to_string());
+        form.extra_upload_url = Some("\n\t".to_string());
+        assert_eq!(
+            validate_add_submission_logs(&form, false),
+            vec![
+                "Dump Log: cannot be empty".to_string(),
+                "Logs Archive URL: cannot be empty".to_string()
+            ]
+        );
+
+        form.dump_log = Some("  redumper log  ".to_string());
+        form.extra_upload_url = Some("  https://example.test/logs  ".to_string());
+        assert!(validate_add_submission_logs(&form, false).is_empty());
+
+        form.extra_upload_url = Some("not a url".to_string());
+        assert_eq!(
+            validate_add_submission_logs(&form, false),
+            vec!["Logs Archive URL: must be a valid URL".to_string()]
+        );
+        assert_eq!(
+            validate_add_submission_logs(&form, true),
+            vec!["Logs Archive URL: must be a valid URL".to_string()]
+        );
+
+        form.extra_upload_url = Some("example.test/logs".to_string());
+        assert_eq!(
+            validate_add_submission_logs(&form, false),
+            vec!["Logs Archive URL: must be a valid URL".to_string()]
+        );
+
+        form.extra_upload_url = Some("ftp://example.test/logs".to_string());
+        assert_eq!(
+            validate_add_submission_logs(&form, false),
+            vec!["Logs Archive URL: must be a valid URL".to_string()]
+        );
+
+        form.extra_upload_url = Some("http://example.test/logs".to_string());
+        assert!(validate_add_submission_logs(&form, false).is_empty());
+
+        assert!(!UserRole::UserPlus.can_moderate());
+        assert!(UserRole::Moderator.can_moderate());
+        assert!(UserRole::Admin.can_moderate());
+    }
+
+    #[test]
     fn submit_as_user_resolution_matches_oidc_exact_case_behavior() {
         assert!(FIND_OR_CREATE_USER_SQL.contains("ON CONFLICT (username)"));
         assert!(FIND_OR_CREATE_USER_SQL.contains("RETURNING id"));
@@ -3068,10 +3360,13 @@ mod operation_delta_tests {
 
         assert!(template.contains(
             r#"<label>Dump Log
-        <textarea name="dump_log" rows="16" class="auto-expand full-width-textarea">"#
+        <textarea name="dump_log" rows="16" class="auto-expand full-width-textarea" placeholder="Paste the contents of the redumper .log file here, or an equivalent if redumper was not used.  If there is no .log file generated by dumping software for this system, please indicate the dumping software that was used">"#
         ));
         assert!(template.contains(
             r#"<textarea name="submission_comment" rows="2" class="auto-expand fixed-80""#
+        ));
+        assert!(template.contains(
+            r#"<li>{{ err.text }} <a href="/disc/{{ err.disc_id }}/" target="_blank" rel="noopener noreferrer">{{ err.disc_title }}</a></li>"#
         ));
         assert!(!template.contains(
             r#"<textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80">"#

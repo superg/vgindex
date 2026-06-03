@@ -803,15 +803,15 @@ var _ringColWidths = {};
 var RING_COL_CLASSES = ['ring-mc', 'ring-ms', 'ring-tools', 'ring-moulds', 'ring-addmoulds', 'ring-offset', 'ring-offset-extra', 'ring-sample-start', 'ring-comment'];
 
 var RING_DEFAULT_WIDTHS = {
-    'ring-mc': 22,
-    'ring-ms': 10,
+    'ring-mc': 40,
+    'ring-ms': 8,
     'ring-tools': 5,
-    'ring-moulds': 10,
-    'ring-addmoulds': 14,
-    'ring-offset': 4,
+    'ring-moulds': 8,
+    'ring-addmoulds': 10,
+    'ring-offset': 3,
     'ring-offset-extra': 4,
     'ring-sample-start': 6,
-    'ring-comment': 8
+    'ring-comment': 6
 };
 
 function fitRingColumns() {

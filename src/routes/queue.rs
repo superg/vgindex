@@ -20,8 +20,9 @@ use super::disc_edit::{
     build_lang_check_options, build_media_has_pic_json, build_media_is_cd_json,
     build_media_layers_json, build_media_options, build_media_rom_extensions_json,
     build_new_disc_changes, build_sparse_edit_changes, build_system_options, build_systems_json,
-    fetch_ref_data, max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate,
-    ReviewAnnotation, ReviewOldMultiline,
+    fetch_ref_data, form_status_is_active, max_layers_for_media, validate_form,
+    validate_generated_name_unique, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
+    ReviewOldMultiline,
 };
 
 fn normalize_newlines(s: &str) -> String {
@@ -673,6 +674,7 @@ fn build_review_template(
 
         submit_button_text: String::new(),
         validation_errors: vec![],
+        linked_validation_errors: vec![],
         validation_result: String::new(),
         validation_result_disc_id: 0,
         validation_result_disc_title: String::new(),
@@ -1645,7 +1647,17 @@ async fn review_submit(
     if comments_text_contains_review_delimiter(form.disc.comments.as_deref()) {
         errors.push("Comments: remove the review delimiter before approval".to_string());
     }
-    if !errors.is_empty() {
+    let proposed_is_active = sub.target_disc_id.is_none()
+        || sub.submission_type == SubmissionType::Disc
+        || form_status_is_active(&form.disc);
+    let linked_validation_errors = validate_generated_name_unique(
+        &state.pool,
+        &form.disc,
+        sub.target_disc_id,
+        proposed_is_active,
+    )
+    .await?;
+    if !errors.is_empty() || !linked_validation_errors.is_empty() {
         let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
             .bind(sub.submitter_id)
             .fetch_one(&state.pool)
@@ -1688,6 +1700,7 @@ async fn review_submit(
             has_sys,
         );
         template.validation_errors = errors;
+        template.linked_validation_errors = linked_validation_errors;
         template.review_comment_input = review_comment.clone().unwrap_or_default();
 
         if let Some(disc_id) = sub.target_disc_id {

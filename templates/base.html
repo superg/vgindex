@@ -28,11 +28,14 @@
                     <input type="text" name="q" placeholder="Search discs..." aria-label="Search">
                 </form>
                 <ul class="site-nav-auth">
+                    {% match current_user %}
+                    {% when Some with (user) %}
                     <li class="has-submenu user-menu">
-                        <button class="user-menu-button submenu-label" type="button" aria-label="User menu" aria-haspopup="true">👤</button>
+                        <button class="user-menu-button submenu-label" type="button" aria-label="User menu" aria-haspopup="true">
+                            <span class="user-menu-icon" aria-hidden="true">👤</span>
+                            <span class="user-menu-username">{{ user }}</span>
+                        </button>
                         <ul class="submenu user-submenu">
-                            {% match current_user %}
-                            {% when Some with (user) %}
                             <li><a href="/disc/submit/">Add Disc</a></li>
                             <li><a href="/discs/?dumper={{ self.url_encode(user) }}">My Discs</a></li>
                             <li><a href="/queue/?submitter={{ self.url_encode(user) }}">My Submissions</a></li>
@@ -42,11 +45,11 @@
                                     <button class="submenu-button" type="submit">Logout</button>
                                 </form>
                             </li>
-                            {% when None %}
-                            <li><a href="/login">Login</a></li>
-                            {% endmatch %}
                         </ul>
                     </li>
+                    {% when None %}
+                    <li><a href="/login" role="button">Login</a></li>
+                    {% endmatch %}
                     <li><button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode" aria-pressed="false"><span class="dark-mode-toggle-thumb"></span></button></li>
                 </ul>
             </div>
