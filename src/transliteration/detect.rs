@@ -13,7 +13,8 @@ use super::Script;
 struct Counts {
     kana: usize,
     han: usize,
-    // future: greek, cyrillic, ...
+    cyrillic: usize,
+    greek: usize,
 }
 
 fn tally(input: &str) -> Counts {
@@ -25,6 +26,10 @@ fn tally(input: &str) -> Counts {
             0x3040..=0x30FF | 0x31F0..=0x31FF => c.kana += 1,
             // CJK Unified Ideographs (+ Extension A).
             0x3400..=0x4DBF | 0x4E00..=0x9FFF => c.han += 1,
+            // Cyrillic (+ supplement).
+            0x0400..=0x04FF | 0x0500..=0x052F => c.cyrillic += 1,
+            // Greek (+ Coptic block).
+            0x0370..=0x03FF | 0x1F00..=0x1FFF => c.greek += 1,
             _ => {}
         }
     }
@@ -34,6 +39,15 @@ fn tally(input: &str) -> Counts {
 /// Detect the dominant supported script, or `None` if nothing is transliterable.
 pub fn detect_script(input: &str) -> Option<Script> {
     let c = tally(input);
+    // Cyrillic -> Russian (the only Cyrillic backend for now).
+    if c.cyrillic > 0 && c.cyrillic >= c.kana && c.cyrillic >= c.han {
+        return Some(Script::Russian);
+    }
+    // Greek script present and dominant over CJK -> Greek. (Lone Greek symbols
+    // inside a Japanese title stay Japanese because kana dominates.)
+    if c.greek > 0 && c.greek >= c.kana && c.greek >= c.han {
+        return Some(Script::Greek);
+    }
     // Any kana is a strong Japanese signal. Han-only is ambiguous (could be
     // Chinese); until a Chinese backend exists we treat CJK as Japanese, which
     // matches this project's catalog focus.

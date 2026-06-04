@@ -878,6 +878,22 @@ function setTransliterateNote(el, msg) {
     el.style.display = msg ? '' : 'none';
 }
 
+// Region (flag code) -> transliteration script. Only regions whose script we
+// support show the Transliterate button.
+var REGION_SCRIPT = { jp: 'japanese', ru: 'russian', gr: 'greek' };
+
+// The script for the currently selected region(s), or null if none is supported.
+function selectedTransliterationScript() {
+    var inputs = document.querySelectorAll('input[name="regions"]');
+    for (var i = 0; i < inputs.length; i++) {
+        if (inputs[i].checked) {
+            var script = REGION_SCRIPT[(inputs[i].dataset.flag || '').toLowerCase()];
+            if (script) return script;
+        }
+    }
+    return null;
+}
+
 function initTransliterate() {
     var btn = document.getElementById('transliterate-btn');
     if (!btn) return;
@@ -889,7 +905,21 @@ function initTransliterate() {
         return;
     }
 
+    // Show the button only when the selected region has a supported script.
+    function refreshVisibility() {
+        btn.style.display = selectedTransliterationScript() ? '' : 'none';
+    }
+    refreshVisibility();
+    document.querySelectorAll('input[name="regions"]').forEach(function (input) {
+        input.addEventListener('change', refreshVisibility);
+    });
+
     btn.addEventListener('click', function () {
+        var script = selectedTransliterationScript();
+        if (!script) {
+            setTransliterateNote(note, 'Select a region with a supported script first.');
+            return;
+        }
         var text = foreign.value.trim();
         if (!text) {
             setTransliterateNote(note, 'Enter a Foreign Title first.');
@@ -911,7 +941,7 @@ function initTransliterate() {
         fetch('/api/transliterate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text })
+            body: JSON.stringify({ text: text, script: script })
         }).then(function (resp) {
             if (!resp.ok) {
                 return resp.text().then(function (t) {

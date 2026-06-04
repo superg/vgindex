@@ -14,7 +14,9 @@
 //! `detect::detect_script`.
 
 mod detect;
+pub mod greek;
 pub mod japanese;
+pub mod russian;
 
 pub use detect::detect_script;
 
@@ -25,13 +27,17 @@ use std::collections::HashMap;
 #[serde(rename_all = "snake_case")]
 pub enum Script {
     Japanese,
-    // future: Chinese, Greek, Cyrillic, ...
+    Russian,
+    Greek,
+    // future: Chinese, ...
 }
 
 impl Script {
     pub fn as_str(self) -> &'static str {
         match self {
             Script::Japanese => "japanese",
+            Script::Russian => "russian",
+            Script::Greek => "greek",
         }
     }
 }
@@ -78,6 +84,13 @@ impl TransliterationRegistry {
         let japanese = japanese::JapaneseTransliterator::new()?;
         backends.insert(Script::Japanese, Box::new(japanese));
 
+        backends.insert(
+            Script::Russian,
+            Box::new(russian::RussianTransliterator::new()),
+        );
+
+        backends.insert(Script::Greek, Box::new(greek::GreekTransliterator::new()));
+
         Ok(Self { backends })
     }
 
@@ -118,6 +131,17 @@ mod tests {
         assert!(reg.supports(Script::Japanese));
         let out = reg.transliterate("恋愛", None).unwrap();
         assert_eq!(out.text, "Ren'ai");
+    }
+
+    #[test]
+    fn registry_dispatches_by_explicit_script() {
+        let reg = TransliterationRegistry::new().expect("registry");
+        assert!(reg.supports(Script::Russian) && reg.supports(Script::Greek));
+        // The region-driven button passes the script explicitly.
+        let ru = reg.transliterate("Сон", Some(Script::Russian)).unwrap();
+        assert_eq!(ru.text, "Son");
+        let el = reg.transliterate("α", Some(Script::Greek)).unwrap();
+        assert_eq!(el.text, "Alpha");
     }
 
     #[test]

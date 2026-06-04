@@ -420,6 +420,90 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "bugcheck: TITLES_TSV=/tmp/jp_pairs.tsv cargo test ... bugcheck -- --ignored --nocapture"]
+    fn bugcheck() {
+        use rand::seq::SliceRandom;
+        let path = std::env::var("TITLES_TSV").unwrap_or_default();
+        if path.is_empty() {
+            return;
+        }
+        let data = std::fs::read_to_string(&path).unwrap();
+        let t = t();
+        let is_kana = |c: char| matches!(c as u32, 0x3040..=0x30FF | 0x31F0..=0x31FF);
+        let is_kanji = |c: char| matches!(c as u32, 0x3400..=0x4DBF | 0x4E00..=0x9FFF);
+
+        let mut kana_leak = Vec::new(); // real bug: untranslated kana in output
+        let mut kanji_leak = Vec::new(); // missing dictionary reading
+        let mut all: Vec<(String, String)> = Vec::new();
+        let mut n = 0u64;
+        for line in data.lines() {
+            let Some((fg, ti)) = line.split_once('\t') else { continue };
+            let Ok(out) = t.transliterate(fg) else { continue };
+            n += 1;
+            let txt = out.text;
+            if txt.chars().any(|c| c != 'ー' && is_kana(c)) {
+                kana_leak.push((fg.to_string(), txt.clone()));
+            } else if txt.chars().any(is_kanji) {
+                kanji_leak.push((fg.to_string(), txt.clone()));
+            }
+            all.push((fg.to_string(), txt));
+            let _ = ti;
+        }
+
+        println!("\n== bug scan over {n} entries ==");
+        println!("kana leaks (BUG):     {}", kana_leak.len());
+        println!("kanji leaks (no reading): {}", kanji_leak.len());
+
+        println!("\n-- sample kana leaks (if any) --");
+        for (fg, txt) in kana_leak.iter().take(15) {
+            println!("  {fg}  ->  {txt}");
+        }
+        println!("\n-- sample kanji leaks --");
+        for (fg, txt) in kanji_leak.iter().take(15) {
+            println!("  {fg}  ->  {txt}");
+        }
+
+        println!("\n-- 50 random samples (eyeball) --");
+        let mut rng = rand::thread_rng();
+        for (fg, txt) in all.choose_multiple(&mut rng, 50) {
+            let flag = if txt.chars().any(|c| c != 'ー' && (is_kana(c) || is_kanji(c))) {
+                "   <== LEFTOVER"
+            } else {
+                ""
+            };
+            println!("  {fg}  ->  {txt}{flag}");
+        }
+    }
+
+    #[test]
+    #[ignore = "sample: TITLES_TSV=/tmp/jp_pairs.tsv cargo test ... sample_mismatches -- --ignored --nocapture"]
+    fn sample_mismatches() {
+        use rand::seq::SliceRandom;
+        let path = std::env::var("TITLES_TSV").unwrap_or_default();
+        if path.is_empty() {
+            return;
+        }
+        let data = std::fs::read_to_string(&path).unwrap();
+        let t = t();
+        let mut miss: Vec<(String, String, String)> = Vec::new(); // (jp, engine, curated)
+        for line in data.lines() {
+            let Some((fg, ti)) = line.split_once('\t') else { continue };
+            let Ok(out) = t.transliterate(fg) else { continue };
+            if out.text.to_lowercase() != ti.to_lowercase() {
+                miss.push((fg.to_string(), out.text.clone(), ti.to_string()));
+            }
+        }
+        let mut rng = rand::thread_rng();
+        let picks: Vec<_> = miss.choose_multiple(&mut rng, 10).cloned().collect();
+        for (jp, eng, cur) in picks {
+            println!("Redump.org Entry title: {cur}");
+            println!("Transliterate function title: {eng}");
+            println!("Japanese title: {jp}");
+            println!();
+        }
+    }
+
+    #[test]
     #[ignore = "mining: TITLES_TSV=/tmp/jp_pairs.tsv cargo test ... mine_compounds -- --ignored --nocapture"]
     fn mine_compounds() {
         let path = std::env::var("TITLES_TSV").unwrap_or_default();
@@ -563,6 +647,7 @@ mod tests {
             "『夢』・島",
             "ＲＰＧ ２",
             "悪魔城ドラキュラ　Ｘ～月下の夜想曲～　オリジナル・ゲーム・サントラ",
+            "コール オブ デューティー:ファイネスト アワー",
         ] {
             let out = t.transliterate(s).unwrap();
             println!("{s}  ->  {}", out.text);

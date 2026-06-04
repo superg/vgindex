@@ -119,25 +119,30 @@ fn kata_base(c: char) -> Option<&'static str> {
         'ラ' => "ra", 'リ' => "ri", 'ル' => "ru", 'レ' => "re", 'ロ' => "ro",
         'ワ' => "wa", 'ヰ' => "wi", 'ヱ' => "we", 'ヲ' => "o",
         'ヴ' => "vu",
+        // Small ke/ka used in place names and counters (希望ヶ峰 -> Kibougamine).
+        'ヶ' => "ga", 'ヵ' => "ka",
         _ => return None,
     };
     Some(s)
 }
 
-/// Combine an "i"-row base (ki, shi, chi, ji, ni, hi, mi, ri, gi, bi, pi) with a
-/// small ya/yu/yo glide: きゃ -> kya, しゃ -> sha, ちゃ -> cha, じゃ -> ja.
+/// Combine a base with a small ya/yu/yo glide. Covers i-row palatalization
+/// (きゃ -> kya, しゃ -> sha, ちゃ -> cha, じゃ -> ja) and foreign yōon on other
+/// rows (デュ -> dyu, テュ -> tyu, フュ -> fyu). Returns None for a pure-vowel base
+/// (no consonant to glide).
 fn palatalize(base: &str, glide_vowel: char) -> Option<String> {
-    if !base.ends_with('i') {
+    match base {
+        "shi" => return Some(format!("sh{glide_vowel}")),
+        "chi" => return Some(format!("ch{glide_vowel}")),
+        "ji" => return Some(format!("j{glide_vowel}")),
+        _ => {}
+    }
+    // Keep the leading consonant cluster, append "y" + the glide vowel.
+    let consonant: String = base.chars().take_while(|c| !is_vowel(*c)).collect();
+    if consonant.is_empty() {
         return None;
     }
-    let r = match base {
-        "shi" => format!("sh{glide_vowel}"),
-        "chi" => format!("ch{glide_vowel}"),
-        "ji" => format!("j{glide_vowel}"),
-        // ki -> ky, ni -> ny, hi -> hy, mi -> my, ri -> ry, gi -> gy, bi -> by, pi -> py
-        _ => format!("{}y{glide_vowel}", &base[..base.len() - 1]),
-    };
-    Some(r)
+    Some(format!("{consonant}y{glide_vowel}"))
 }
 
 /// Common foreign-sound combos: base + small vowel (ファ -> fa, ティ -> ti, ウィ -> wi).
@@ -203,6 +208,11 @@ fn lex(chars: &[char]) -> Vec<Unit> {
                 } else if let Some(v) = small_vowel(c) {
                     // Stray small vowel: emit as plain vowel.
                     units.push(Unit::Syl(v.to_string()));
+                    i += 1;
+                } else if let Some(v) = small_ya(c) {
+                    // Stray small ya/yu/yo (no combinable base before it): emit the
+                    // glide on its own so the raw kana never leaks (ャ -> ya).
+                    units.push(Unit::Syl(format!("y{v}")));
                     i += 1;
                 } else {
                     // Non-kana: passthrough (coalesce runs into one Raw).
@@ -307,6 +317,16 @@ mod tests {
         assert_eq!(r("ファミコン"), "famikon");
         assert_eq!(r("ジャンプ"), "janpu");
         assert_eq!(r("シャイン"), "shain");
+    }
+
+    #[test]
+    fn foreign_yoon_does_not_leak_raw_kana() {
+        // Small ya/yu/yo after a non-i-row base: デュ -> dyu, テュ -> tyu, フュ -> fyu.
+        assert_eq!(r("デューティー"), "dyuutii");
+        assert_eq!(r("テューバ"), "tyuuba");
+        assert_eq!(r("フュージョン"), "fyuujon");
+        // No leftover katakana in any output.
+        assert!(!r("デューティー").chars().any(|c| (c as u32) >= 0x3040));
     }
 
     #[test]

@@ -235,7 +235,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <div class="flag-check-list">
             {% for r in regions %}
                 <label class="flag-check{% if is_add_mode && !r.common && !r.selected %} flag-check-extra{% endif %}{% if !r.highlight.is_empty() %} item-{{ r.highlight }}{% endif %}">
-                    <input type="{% if is_add_mode %}radio{% else %}checkbox{% endif %}" name="regions" value="{{ r.value }}" {% if r.selected %}checked{% endif %}>
+                    <input type="{% if is_add_mode %}radio{% else %}checkbox{% endif %}" name="regions" value="{{ r.value }}" data-flag="{{ r.code }}" {% if r.selected %}checked{% endif %}>
                     <img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}">
                     <span>{{ r.name }}</span>
                 </label>

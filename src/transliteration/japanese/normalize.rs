@@ -203,6 +203,10 @@ pub fn normalize(input: &str) -> String {
             '\u{3010}' | '\u{3011}' => {}                 // 【 】 -> ignore (strip)
             '\u{300C}' | '\u{300D}' => {}                 // 「 」 -> ignore (strip)
             '\u{30FB}' => out.push(' '),                  // ・ -> space
+            '\u{3001}' => out.push(','),                  // 、 -> ,
+            '\u{3002}' => out.push('.'),                  // 。 -> .
+            // Stray (semi)voiced sound marks used decoratively -> strip.
+            '\u{309B}' | '\u{309C}' | '\u{3099}' | '\u{309A}' => {}
             // Unicode Roman numerals -> ASCII letters (Ⅶ -> "VII").
             c if roman_numeral(c).is_some() => out.push_str(roman_numeral(c).unwrap()),
             // Fullwidth ASCII block U+FF01..=U+FF5E -> ASCII (subtract 0xFEE0).
@@ -271,6 +275,12 @@ mod tests {
     #[test]
     fn chouonpu_preserved() {
         assert_eq!(normalize("ラーメン"), "ラーメン");
+    }
+
+    #[test]
+    fn ideographic_comma_and_period() {
+        assert_eq!(normalize("武将、城"), "武将,城");
+        assert_eq!(normalize("終わり。"), "終わり.");
     }
 
     #[test]

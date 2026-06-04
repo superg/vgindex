@@ -151,6 +151,10 @@ const PHRASE_SEED: &[(&str, &str)] = &[
     ("総選挙", "Sousenkyo"),     // 14
     ("虫姫", "Mushihime"),       // 13
     ("魔装", "Masou"),           // 13
+    ("水滸伝", "Suikoden"),      // Suikoden; 滸 has no IPADIC reading
+    ("弐", "Ni"),                // sequel marker (二); no IPADIC reading
+    ("三國志", "Sangokushi"),    // 160 titles (traditional 國); read wrong otherwise
+    ("三国志", "Sangokushi"),    // 44 titles (modern 国)
     // --- Recurring loanwords / franchise names. Both the katakana key and the
     //     English value are DATA-DERIVED: mined by statistical association with the
     //     curated English titles and hand-verified (count in parens). Spurious
@@ -181,6 +185,9 @@ const PHRASE_SEED: &[(&str, &str)] = &[
     ("デモ", "Demo"),             // 70
     ("ダンジョン", "Dungeon"),     // 56
     ("アンジェリーク", "Angelique"), // 58
+    ("アンジェリ", "Angelique"),   // requested; longest-match keeps アンジェリーク intact
+    ("エンジェル", "Angel"),       // 24 (エンジェル = Angel)
+    ("エンゼル", "Angel"),         // 3 (older transliteration of Angel)
     ("エヴァンゲリオン", "Evangelion"), // 58
     ("パチスロ", "Pachi-Slot"),    // 154
     ("パワーアップキット", "Power-Up Kit"), // 87
