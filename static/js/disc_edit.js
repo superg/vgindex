@@ -926,6 +926,11 @@ function initTransliterate() {
             foreign.focus();
             return;
         }
+        // Mirror the server limit (title_foreign is VARCHAR(512)).
+        if (text.length > 512) {
+            setTransliterateNote(note, 'Foreign Title is too long to transliterate (max 512 characters).');
+            return;
+        }
         // Don't silently clobber a title the user has already written.
         if (target.value.trim() && target.value.trim() !== text) {
             if (!window.confirm('Replace the current Title with the transliterated draft?')) {
