@@ -32,10 +32,10 @@ async fn transliterate(
         .transliteration
         .transliterate(&req.text, req.script)
         .map_err(|e| match e {
-            // Nothing to romanize (empty, or already Latin) is a client problem.
-            TransliterationError::EmptyInput | TransliterationError::UnsupportedScript => {
-                AppError::BadRequest(e.to_string())
-            }
+            // Client problems: empty, too long, or nothing transliterable.
+            TransliterationError::EmptyInput
+            | TransliterationError::TooLong
+            | TransliterationError::UnsupportedScript => AppError::BadRequest(e.to_string()),
             TransliterationError::Backend(msg) => AppError::Internal(msg),
         })?;
 
