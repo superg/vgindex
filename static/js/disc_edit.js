@@ -880,7 +880,7 @@ function setTransliterateNote(el, msg) {
 
 // Region (flag code) -> transliteration script. Only regions whose script we
 // support show the Transliterate button.
-var REGION_SCRIPT = { jp: 'japanese', ru: 'russian', gr: 'greek' };
+var REGION_SCRIPT = { jp: 'japanese', ru: 'russian', gr: 'greek', cn: 'chinese', tw: 'chinese' };
 
 // The script for the currently selected region(s), or null if none is supported.
 function selectedTransliterationScript() {

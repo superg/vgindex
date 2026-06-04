@@ -62,6 +62,20 @@ main.container {
     padding-bottom: 0.15rem;
     margin-top: -0.4rem;
 }
+/* Desktop: give the top UI bar more breathing room (mobile stays compact). */
+@media (min-width: 769px) {
+    header .site-nav {
+        padding-top: 1rem !important;
+        padding-bottom: 0.45rem !important;
+    }
+    header .site-nav-links {
+        margin-top: 1rem !important;
+        margin-bottom: 0.9rem !important;
+    }
+    main.container {
+        margin-top: 0 !important;
+    }
+}
 main.container > *:first-child {
     margin-top: 0 !important;
 }
@@ -217,8 +231,20 @@ main > h3 {
 
 /* Merge flags in region and language columns */
 .disc-table .region-col .flag-icon,
+.recent-dumps .region-col .flag-icon,
 .disc-table .language-col .flag-icon {
     margin: 0 -1px 0 0;
+}
+
+.region-flags {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    width: max-content;
+    max-width: calc(4 * 1.55em);
+    line-height: 1;
+    vertical-align: middle;
 }
 
 /* Keep language flags compact but not touching */
@@ -250,6 +276,10 @@ main > h3 {
 .disc-table .language-col {
     text-align: left;
     max-width: 8.8em;
+}
+
+.disc-table td.region-col {
+    white-space: normal;
 }
 
 .disc-table .dumped-by-me-yes {
@@ -446,11 +476,16 @@ details + p small {
 }
 #filter-form select {
     font-size: 0.75rem;
-    line-height: 1.1;
+    /* Looser line-height + vertical padding so descenders (g, p, y) are never
+       clipped by the select box on fonts that render taller glyphs. */
+    line-height: 1.4;
     margin-bottom: 0;
-    padding: 0.1rem 0.4rem !important;
+    /* Extra right padding so option text never collides with the dropdown chevron. */
+    padding: 0.2rem 1.6rem 0.2rem 0.5rem !important;
     height: auto !important;
     min-height: 0;
+    /* Pull the chevron closer to the right edge (Pico's default is 0.75rem). */
+    background-position: right 0.5rem center;
 }
 #filter-form.queue-filter-form select {
     width: max-content;
@@ -937,7 +972,7 @@ details + p small {
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 1rem;
+    margin-bottom: 2rem;
 }
 .disc-title-row.has-edit-action {
     --disc-title-actions-space: 8.5rem;
@@ -1022,11 +1057,8 @@ details + p small {
 .disc-view h2.foreign-title {
     margin-top: 0.15rem;
     font-size: 0.9rem;
-    color: #0172ad;
+    color: var(--pico-muted-color);
     font-weight: 550;
-}
-[data-theme="dark"] .disc-view h2.foreign-title {
-    color: #5ab3e0;
 }
 
 /* Ring code table */
@@ -1114,6 +1146,7 @@ header .site-nav {
     gap: 0;
     padding: 0 !important;
     padding-top: 0.4rem !important;
+    padding-bottom: 0.3rem !important;
     overflow: visible;
 }
 
@@ -1294,6 +1327,33 @@ header .site-nav-links {
     header .site-nav-links {
         --nav-band-solid: 50%;
         --nav-band-fade: 0rem;
+        /* Full-bleed to the screen edges by cancelling the container's 0.35rem
+           side padding. Tied to the container (not 100vw), so it can never
+           exceed the viewport and trigger shrink-to-fit. */
+        width: calc(100% + 0.7rem) !important;
+        max-width: none !important;
+        margin-left: -0.35rem !important;
+        margin-right: -0.35rem !important;
+        position: relative;
+    }
+
+    header .site-nav-links::before,
+    header .site-nav-links::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        width: 100%;
+        height: 1px;
+        background: var(--nav-band-line-color);
+        pointer-events: none;
+    }
+
+    header .site-nav-links::before {
+        top: 0;
+    }
+
+    header .site-nav-links::after {
+        bottom: 0;
     }
 }
 header .site-nav-links > li {
@@ -1330,6 +1390,16 @@ header .site-nav-links > li:first-child {
     text-underline-offset: 0.25em;
     text-decoration-thickness: 1.5px;
     transition: background-color 0.15s, color 0.15s;
+}
+/* Narrow screens: shrink the nav links so the row fits on one line instead of
+   overflowing horizontally (which triggers mobile shrink-to-fit). */
+@media (max-width: 32rem) {
+    .site-nav-links > li > a,
+    .site-nav-links > li > .submenu-label {
+        font-size: 0.9rem;
+        padding-left: 0.2rem !important;
+        padding-right: 0.2rem !important;
+    }
 }
 [data-theme="dark"] .site-nav-links > li > a,
 [data-theme="dark"] .site-nav-links > li > .submenu-label {
@@ -1670,6 +1740,7 @@ nav .quick-search input[type="text"] {
 }
 .recent-dumps .region-col {
     text-align: center;
+    white-space: normal;
 }
 .clickable-row {
     cursor: pointer;
@@ -1848,6 +1919,10 @@ pre code {
     padding: 0.15rem 0.35rem;
     margin-bottom: 0.25rem;
     height: auto;
+}
+/* Selects need extra right padding so option text clears the dropdown chevron. */
+.disc-edit select {
+    padding-right: 1.6rem;
 }
 .disc-edit input[type="number"] {
     -moz-appearance: textfield;

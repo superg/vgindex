@@ -20,13 +20,13 @@
                 {% for disc in recent_discs %}
                 <tr class="clickable-row" data-href="/disc/{{ disc.id }}/" tabindex="0" role="link">
                     <td class="date-col">{{ disc.created_at }}</td>
-                    <td class="region-col">
+                    <td class="region-col"><span class="region-flags">
                         {% for rf in disc.region_flags %}
                         <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg"
                              title="{{ rf.name }}"
                              alt="{{ rf.name }}">
                         {% endfor %}
-                    </td>
+                    </span></td>
                     <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
                     <td>{{ disc.system }}</td>
                 </tr>
