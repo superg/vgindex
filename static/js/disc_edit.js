@@ -871,6 +871,100 @@ function renderLayerbreaks() {
     }
 }
 
+// Transliterate the Foreign Title into the target (Title) field via the API.
+function setTransliterateNote(el, msg) {
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.display = msg ? '' : 'none';
+}
+
+// Region (flag code) -> transliteration script. Only regions whose script we
+// support show the Transliterate button.
+var REGION_SCRIPT = { jp: 'japanese', ru: 'russian', gr: 'greek' };
+
+// The script for the currently selected region(s), or null if none is supported.
+function selectedTransliterationScript() {
+    var inputs = document.querySelectorAll('input[name="regions"]');
+    for (var i = 0; i < inputs.length; i++) {
+        if (inputs[i].checked) {
+            var script = REGION_SCRIPT[(inputs[i].dataset.flag || '').toLowerCase()];
+            if (script) return script;
+        }
+    }
+    return null;
+}
+
+function initTransliterate() {
+    var btn = document.getElementById('transliterate-btn');
+    if (!btn) return;
+    var note = document.getElementById('transliterate-note');
+    var foreign = document.querySelector('input[name="title_foreign"]');
+    var target = document.querySelector('input[name="' + (btn.dataset.target || 'title') + '"]');
+    if (!foreign || !target) {
+        btn.style.display = 'none';
+        return;
+    }
+
+    // Show the button only when the selected region has a supported script.
+    function refreshVisibility() {
+        btn.style.display = selectedTransliterationScript() ? '' : 'none';
+    }
+    refreshVisibility();
+    document.querySelectorAll('input[name="regions"]').forEach(function (input) {
+        input.addEventListener('change', refreshVisibility);
+    });
+
+    btn.addEventListener('click', function () {
+        var script = selectedTransliterationScript();
+        if (!script) {
+            setTransliterateNote(note, 'Select a region with a supported script first.');
+            return;
+        }
+        var text = foreign.value.trim();
+        if (!text) {
+            setTransliterateNote(note, 'Enter a Foreign Title first.');
+            foreign.focus();
+            return;
+        }
+        // Don't silently clobber a title the user has already written.
+        if (target.value.trim() && target.value.trim() !== text) {
+            if (!window.confirm('Replace the current Title with the transliterated draft?')) {
+                return;
+            }
+        }
+
+        var original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '…';
+        setTransliterateNote(note, '');
+
+        fetch('/api/transliterate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, script: script })
+        }).then(function (resp) {
+            if (!resp.ok) {
+                return resp.text().then(function (t) {
+                    throw new Error(t || ('HTTP ' + resp.status));
+                });
+            }
+            return resp.json();
+        }).then(function (data) {
+            target.value = data.text || '';
+            // Notify auto-resize / other listeners that the value changed.
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            target.focus();
+            // Clear any prior message; we don't surface the draft notes in the UI.
+            setTransliterateNote(note, '');
+        }).catch(function (err) {
+            setTransliterateNote(note, 'Could not transliterate: ' + (err && err.message ? err.message : 'error'));
+        }).finally(function () {
+            btn.disabled = false;
+            btn.textContent = original;
+        });
+    });
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', function () {
     filterMediaTypes();
@@ -882,6 +976,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initEditionSelectors();
     initSubmitAsSelector();
     initFlagListToggle();
+    initTransliterate();
     initIndependentInlineResizing();
     fitDiscMetaFields();
     fitAllInlineGroups();
