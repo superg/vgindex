@@ -9,10 +9,11 @@
 //! - [`Script`], [`TransliterationOutput`], [`TransliterationError`] -- shared types.
 //!
 //! Japanese (modified Hepburn) is the first backend. To add another script
-//! (Chinese, Greek, Cyrillic, ...): implement [`Transliterator`], add a variant
+//! (Greek, Cyrillic, ...): implement [`Transliterator`], add a variant
 //! to [`Script`], register it in [`TransliterationRegistry::new`], and extend
 //! `detect::detect_script`.
 
+pub mod chinese;
 mod detect;
 pub mod greek;
 pub mod japanese;
@@ -29,7 +30,7 @@ pub enum Script {
     Japanese,
     Russian,
     Greek,
-    // future: Chinese, ...
+    Chinese,
 }
 
 impl Script {
@@ -38,6 +39,7 @@ impl Script {
             Script::Japanese => "japanese",
             Script::Russian => "russian",
             Script::Greek => "greek",
+            Script::Chinese => "chinese",
         }
     }
 }
@@ -97,6 +99,10 @@ impl TransliterationRegistry {
         );
 
         backends.insert(Script::Greek, Box::new(greek::GreekTransliterator::new()));
+        backends.insert(
+            Script::Chinese,
+            Box::new(chinese::ChineseTransliterator::new()),
+        );
 
         Ok(Self { backends })
     }
@@ -146,12 +152,18 @@ mod tests {
     #[test]
     fn registry_dispatches_by_explicit_script() {
         let reg = TransliterationRegistry::new().expect("registry");
-        assert!(reg.supports(Script::Russian) && reg.supports(Script::Greek));
+        assert!(
+            reg.supports(Script::Russian)
+                && reg.supports(Script::Greek)
+                && reg.supports(Script::Chinese)
+        );
         // The region-driven button passes the script explicitly.
         let ru = reg.transliterate("Сон", Some(Script::Russian)).unwrap();
         assert_eq!(ru.text, "Son");
         let el = reg.transliterate("α", Some(Script::Greek)).unwrap();
         assert_eq!(el.text, "Alpha");
+        let zh = reg.transliterate("中国", Some(Script::Chinese)).unwrap();
+        assert_eq!(zh.text, "Zhong Guo");
     }
 
     #[test]

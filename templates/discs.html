@@ -116,7 +116,7 @@
                 {% if current_user.is_some() %}
                 <td class="dumped-by-me-col" title="Dumped by me">{% if disc.dumped_by_me %}<span class="dumped-by-me-yes">✔</span>{% else %}<span class="dumped-by-me-no">✘</span>{% endif %}</td>
                 {% endif %}
-                <td class="region-col">{% for rf in disc.region_flags %}<img class="flag-icon" src="/static/flags/{{ rf.code }}.svg" title="{{ rf.name }}" alt="{{ rf.name }}">{% endfor %}</td>
+                <td class="region-col"><span class="region-flags">{% for rf in disc.region_flags %}<img class="flag-icon" src="/static/flags/{{ rf.code }}.svg" title="{{ rf.name }}" alt="{{ rf.name }}">{% endfor %}</span></td>
                 <td class="title-col">
                     <a href="/disc/{{ disc.id }}/">{{ disc.title }}</a>
                     {% if !disc.title_foreign.is_empty() %}
