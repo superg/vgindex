@@ -1,6 +1,13 @@
-use axum::{extract::State, response::Html, routing::get, Json, Router};
+use axum::{
+    extract::State,
+    response::Html,
+    routing::{get, post},
+    Json, Router,
+};
 
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::{CurrentUser, RequireAuth};
+use crate::error::AppError;
+use crate::transliteration::{Script, TransliterationError};
 use crate::AppState;
 
 // Online means sessions active in this window: registered users are deduped by
@@ -11,6 +18,47 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/online", get(online_users))
         .route("/api/online-html", get(online_users_html))
+        .route("/api/transliterate", post(transliterate))
+}
+
+/// Transliterate a non-Latin title (currently Japanese) into a Latin-script
+/// draft for the Main Title field. Auth-gated: it's an editor helper.
+async fn transliterate(
+    State(state): State<AppState>,
+    _user: RequireAuth,
+    Json(req): Json<TransliterateRequest>,
+) -> Result<Json<TransliterateResponse>, AppError> {
+    let result = state
+        .transliteration
+        .transliterate(&req.text, req.script)
+        .map_err(|e| match e {
+            // Nothing to romanize (empty, or already Latin) is a client problem.
+            TransliterationError::EmptyInput | TransliterationError::UnsupportedScript => {
+                AppError::BadRequest(e.to_string())
+            }
+            TransliterationError::Backend(msg) => AppError::Internal(msg),
+        })?;
+
+    Ok(Json(TransliterateResponse {
+        text: result.text,
+        script: result.script,
+        notes: result.notes,
+    }))
+}
+
+#[derive(serde::Deserialize)]
+struct TransliterateRequest {
+    text: String,
+    /// Optional explicit script; auto-detected when omitted.
+    #[serde(default)]
+    script: Option<Script>,
+}
+
+#[derive(serde::Serialize)]
+struct TransliterateResponse {
+    text: String,
+    script: Script,
+    notes: Vec<String>,
 }
 
 async fn online_users(State(state): State<AppState>) -> Json<OnlineInfo> {

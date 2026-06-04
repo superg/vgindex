@@ -1945,6 +1945,21 @@ body:has(.disc-edit) footer.container hr {
     grid-column: 2;
     margin-top: 0.1rem;
 }
+.disc-edit .disc-meta-row > .transliterate-btn {
+    grid-column: 3;
+    justify-self: start;
+    width: max-content;
+    margin: 0;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+.disc-edit .disc-meta-row > .transliterate-note {
+    grid-column: 2 / -1;
+    margin-top: 0.15rem;
+    color: var(--pico-muted-color);
+    font-size: 0.8rem;
+}
 .disc-edit .grid {
     gap: 0.35rem;
 }
