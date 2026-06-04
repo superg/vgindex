@@ -21,8 +21,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/transliterate", post(transliterate))
 }
 
-/// Transliterate a non-Latin title (currently Japanese) into a Latin-script
-/// draft for the Main Title field. Auth-gated: it's an editor helper.
+/// Transliterate a non-Latin title into a Latin-script draft for the Main Title
+/// field. Auth-gated: it's an editor helper.
 async fn transliterate(
     State(state): State<AppState>,
     _user: RequireAuth,
