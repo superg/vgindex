@@ -160,6 +160,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <label class="disc-meta-row{% if !self.highlight_class("title_foreign").is_empty() %} {{ self.highlight_class("title_foreign") }}{% endif %}" data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}>
             <span class="disc-meta-label">Foreign Title:</span>
             <input type="text" name="title_foreign" value="{{ title_foreign }}">
+            <button type="button" id="transliterate-btn" class="outline secondary transliterate-btn" data-target="title" title="Romanize the Foreign Title into the Title field (draft — review the result)">Transliterate</button>
             {% for ann in self.annotations_for("title_foreign") %}
             <div class="review-field-annotation">
                 <span class="review-field-annotation-label">{{ ann.label }}:</span>
@@ -168,6 +169,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
                 {% endfor %}
             </div>
             {% endfor %}
+            <small class="transliterate-note" id="transliterate-note" role="status" aria-live="polite" style="display:none"></small>
         </label>
 
         <label class="disc-meta-row{% if !self.highlight_class("disc_number").is_empty() %} {{ self.highlight_class("disc_number") }}{% endif %}" data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}>

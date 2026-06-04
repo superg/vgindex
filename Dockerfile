@@ -1,4 +1,6 @@
-FROM rust:1.85-bookworm AS builder
+# Rust >= 1.86 required: lindera pulls ICU 2.x (rust-version 1.86); the lockfile
+# targets the 1.94 toolchain. Bump in lockstep if you change the Rust version.
+FROM rust:1.94-bookworm AS builder
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock* ./

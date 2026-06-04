@@ -6,6 +6,7 @@ mod db;
 mod error;
 mod routes;
 mod services;
+mod transliteration;
 
 use axum::{middleware, Router};
 use sqlx::PgPool;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub archive_tx: tokio::sync::mpsc::UnboundedSender<String>,
     pub edition_suggestions: services::disc_service::EditionSuggestionsCache,
     pub news_cache: services::news_service::NewsCache,
+    pub transliteration: Arc<transliteration::TransliterationRegistry>,
 }
 
 #[tokio::main]
@@ -49,6 +51,11 @@ async fn main() {
 
     std::fs::create_dir_all(config::DATA_DIR).ok();
 
+    let transliteration = Arc::new(
+        transliteration::TransliterationRegistry::new()
+            .expect("Failed to initialize transliteration registry"),
+    );
+
     let (archive_tx, archive_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     let state = AppState {
@@ -62,6 +69,7 @@ async fn main() {
         news_cache: services::news_service::NewsCache::new(Duration::from_secs(
             services::news_service::NEWS_FEED_TTL_SECONDS,
         )),
+        transliteration,
     };
 
     tokio::spawn(run_session_cleanup(pool.clone()));
