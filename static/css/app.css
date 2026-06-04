@@ -707,11 +707,30 @@ details + p small {
     margin-left: auto;
     margin-right: auto;
 }
+.disc-view.has-overflowing-detail-sections .detail-section.table-fits {
+    width: 100% !important;
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
 .disc-view .detail-section.table-fits .table-scroll {
     width: max-content;
     max-width: 100%;
 }
 .disc-view .detail-section.table-fits .table-scroll > table {
+    margin-left: 0;
+    margin-right: 0;
+}
+.disc-view .detail-section.table-overflows {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+.disc-view .detail-section.table-overflows .table-scroll {
+    width: 100%;
+}
+.disc-view .detail-section.table-overflows .table-scroll > table {
     margin-left: 0;
     margin-right: 0;
 }
