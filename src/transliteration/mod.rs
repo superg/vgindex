@@ -53,10 +53,17 @@ pub struct TransliterationOutput {
     pub notes: Vec<String>,
 }
 
+/// Maximum accepted input length, in characters. Matches the `title_foreign`
+/// column (VARCHAR(512)); anything longer is not a real title and is rejected to
+/// prevent abuse.
+pub const MAX_INPUT_CHARS: usize = 512;
+
 #[derive(Debug, thiserror::Error)]
 pub enum TransliterationError {
     #[error("input contained no transliterable text")]
     EmptyInput,
+    #[error("input exceeds the maximum length of {MAX_INPUT_CHARS} characters")]
+    TooLong,
     #[error("no transliterator available for the requested script")]
     UnsupportedScript,
     #[error("transliteration backend error: {0}")]
@@ -109,6 +116,9 @@ impl TransliterationRegistry {
         if trimmed.is_empty() {
             return Err(TransliterationError::EmptyInput);
         }
+        if trimmed.chars().count() > MAX_INPUT_CHARS {
+            return Err(TransliterationError::TooLong);
+        }
         let script = match script.or_else(|| detect_script(trimmed)) {
             Some(s) => s,
             None => return Err(TransliterationError::UnsupportedScript),
@@ -155,5 +165,13 @@ mod tests {
             reg.transliterate("Dracula", None),
             Err(TransliterationError::UnsupportedScript)
         ));
+        // Over-long input is rejected (abuse guard).
+        let too_long = "あ".repeat(MAX_INPUT_CHARS + 1);
+        assert!(matches!(
+            reg.transliterate(&too_long, None),
+            Err(TransliterationError::TooLong)
+        ));
+        // Exactly at the limit is fine.
+        assert!(reg.transliterate(&"あ".repeat(MAX_INPUT_CHARS), None).is_ok());
     }
 }
