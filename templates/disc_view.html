@@ -417,14 +417,48 @@
 </div>
 <script>
 (function() {
+    function refreshDetailSectionFit(wrapper, didOverflow) {
+        var section = wrapper.closest('.detail-section');
+        if (!section) return;
+        section.classList.toggle('table-fits', !didOverflow);
+        section.classList.toggle('table-overflows', didOverflow);
+    }
+
+    function alignFittingDetailSections() {
+        var discView = document.querySelector('.disc-view');
+        var hasOverflowingSection = !!document.querySelector('.disc-view .detail-section.table-overflows');
+        if (discView) {
+            discView.classList.toggle('has-overflowing-detail-sections', hasOverflowingSection);
+        }
+
+        var sections = Array.prototype.slice.call(document.querySelectorAll('.disc-view .detail-section.table-fits'));
+        if (!sections.length) return;
+
+        var maxWidth = 0;
+        sections.forEach(function(section) {
+            maxWidth = Math.max(maxWidth, Math.ceil(section.getBoundingClientRect().width));
+        });
+
+        sections.forEach(function(section) {
+            section.style.width = maxWidth + 'px';
+        });
+    }
+
     function scaleBottomTables() {
         document.querySelectorAll('.disc-view .detail-section .table-scroll:not(.scroll-only)').forEach(function(wrapper) {
             var table = wrapper.querySelector('table');
             if (!table) return;
+            var section = wrapper.closest('.detail-section');
+            if (section) {
+                section.classList.remove('table-fits');
+                section.classList.remove('table-overflows');
+                section.style.width = '';
+            }
             table.style.transform = '';
             table.style.transformOrigin = '';
             wrapper.style.height = '';
             wrapper.style.overflow = '';
+            wrapper.style.width = '';
             var containerWidth = wrapper.clientWidth;
             var tableWidth = table.scrollWidth;
             if (tableWidth > containerWidth && containerWidth > 0) {
@@ -433,8 +467,29 @@
                 table.style.transformOrigin = 'top left';
                 wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
                 wrapper.style.overflow = 'hidden';
+                refreshDetailSectionFit(wrapper, true);
+            } else {
+                refreshDetailSectionFit(wrapper, false);
             }
         });
+        document.querySelectorAll('.disc-view .detail-section .table-scroll.scroll-only').forEach(function(wrapper) {
+            var table = wrapper.querySelector('table');
+            if (!table) return;
+            var section = wrapper.closest('.detail-section');
+            if (section) {
+                section.classList.remove('table-fits');
+                section.classList.remove('table-overflows');
+                section.style.width = '';
+            }
+            wrapper.style.width = '';
+            var containerWidth = wrapper.clientWidth;
+            var tableWidth = table.scrollWidth;
+            refreshDetailSectionFit(wrapper, tableWidth > containerWidth && containerWidth > 0);
+            if (section && section.classList.contains('table-fits')) {
+                wrapper.style.width = tableWidth + 'px';
+            }
+        });
+        alignFittingDetailSections();
         document.querySelectorAll('.dat-filename-scaler').forEach(function(wrapper) {
             var p = wrapper.querySelector('.dat-filename');
             if (!p) return;
