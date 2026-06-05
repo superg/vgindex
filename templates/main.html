@@ -4,6 +4,7 @@
 
 {% block content %}
 <div class="home-sections">
+    <div class="home-data-column">
     <section class="home-recent-dumps">
         <h3>Recent Dumps</h3>
         <div class="recent-dumps-scaler">
@@ -40,6 +41,43 @@
         <p><a href="/discs/?sort=added&amp;order=desc">More...</a></p>
     </section>
 
+    <section class="home-recent-changes">
+        <h3>Recent Changes</h3>
+        <div class="recent-changes-scaler">
+        <table class="recent-dumps recent-changes">
+            <thead>
+                <tr>
+                    <th class="date-col">Modified</th>
+                    <th class="region-col">Region</th>
+                    <th>Title</th>
+                    <th>System</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for disc in recent_changes %}
+                <tr class="clickable-row" data-href="/disc/{{ disc.id }}/" tabindex="0" role="link">
+                    <td class="date-col">{{ disc.modified_at }}</td>
+                    <td class="region-col"><span class="region-flags">
+                        {% for rf in disc.region_flags %}
+                        <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg"
+                             title="{{ rf.name }}"
+                             alt="{{ rf.name }}">
+                        {% endfor %}
+                    </span></td>
+                    <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
+                    <td>{{ disc.system }}</td>
+                </tr>
+                {% endfor %}
+                {% if recent_changes.is_empty() %}
+                <tr><td colspan="4">No changes yet.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+        </div>
+        <p><a href="/discs/?sort=updated&amp;order=desc">More...</a></p>
+    </section>
+    </div>
+
     <section class="home-news">
         <h3>News</h3>
         {% if news_items.is_empty() %}
@@ -64,14 +102,14 @@
             </article>
             {% endfor %}
         </div>
-        <p class="home-news-forum-link"><a href="{{ self.forum_url() }}">More discussion on the forum</a></p>
+        <p class="home-news-forum-link"><a href="{{ self.forum_url() }}">More...</a></p>
         {% endif %}
     </section>
 </div>
 <script>
 (function() {
-    function scaleRecentDumps() {
-        var wrapper = document.querySelector('.recent-dumps-scaler');
+    function scaleHomeTables() {
+        document.querySelectorAll('.recent-dumps-scaler, .recent-changes-scaler').forEach(function(wrapper) {
         var table = wrapper && wrapper.querySelector('table');
         if (!table) return;
         table.style.transform = '';
@@ -88,9 +126,10 @@
             wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
             wrapper.style.overflow = 'hidden';
         }
+        });
     }
-    document.addEventListener('DOMContentLoaded', scaleRecentDumps);
-    window.addEventListener('resize', scaleRecentDumps);
+    document.addEventListener('DOMContentLoaded', scaleHomeTables);
+    window.addEventListener('resize', scaleHomeTables);
 })();
 </script>
 {% endblock %}
