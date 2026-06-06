@@ -50,6 +50,86 @@ const LETTERS: &[&str] = &[
     "T", "U", "V", "W", "X", "Y", "Z",
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HashField {
+    Crc32,
+    Md5,
+    Sha1,
+}
+
+impl HashField {
+    fn column(self) -> &'static str {
+        match self {
+            Self::Crc32 => "crc32",
+            Self::Md5 => "md5",
+            Self::Sha1 => "sha1",
+        }
+    }
+}
+
+fn quick_search_terms(input: &str) -> Vec<String> {
+    let mut normalized = input.trim().to_lowercase();
+    normalized = normalized
+        .chars()
+        .map(|c| match c {
+            ' ' | '_' | '/' | ':' | '&' => '-',
+            other => other,
+        })
+        .collect();
+    while normalized.contains("--") {
+        normalized = normalized.replace("--", "-");
+    }
+
+    normalized
+        .trim_matches('-')
+        .split('-')
+        .filter(|term| !term.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn hash_field_for_term(term: &str) -> Option<HashField> {
+    if !term.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+
+    match term.len() {
+        8 => Some(HashField::Crc32),
+        32 => Some(HashField::Md5),
+        40 => Some(HashField::Sha1),
+        _ => None,
+    }
+}
+
+fn quick_search_clause(bind_idx: u32, hash_field: Option<HashField>) -> String {
+    let bind = format!("${bind_idx}");
+    let mut clause = format!(
+        r#"(d.title ILIKE '%' || {bind} || '%'
+             OR COALESCE(d.title_foreign, '') ILIKE '%' || {bind} || '%'
+             OR EXISTS (
+                 SELECT 1
+                 FROM unnest(d.serial) elem
+                 WHERE elem ILIKE '%' || {bind} || '%'
+             )"#
+    );
+
+    if let Some(field) = hash_field {
+        clause.push_str(&format!(
+            r#"
+             OR EXISTS (
+                 SELECT 1
+                 FROM files f
+                 WHERE f.disc_id = d.id AND LOWER(f.{}) = {}
+             )"#,
+            field.column(),
+            bind
+        ));
+    }
+
+    clause.push(')');
+    clause
+}
+
 #[derive(Template)]
 #[template(path = "discs.html")]
 struct DiscsTemplate {
@@ -143,6 +223,7 @@ async fn discs_page(
     let filter_status = query.status.clone().unwrap_or_default();
     let filter_letter = query.letter.clone().unwrap_or_default();
     let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
+    let quick_search_terms = quick_search_terms(&filter_q);
     let requested_dumper = query.dumper.clone().unwrap_or_default().trim().to_string();
     let filter_dumper_lookup = if requested_dumper.is_empty() {
         None
@@ -252,25 +333,9 @@ async fn discs_page(
     } else {
         where_clauses.push("d.status != 'Disabled'".to_string());
     }
-    if !filter_q.is_empty() {
+    for term in &quick_search_terms {
         bind_idx += 1;
-        where_clauses.push(format!(
-            r#"(d.title ILIKE '%' || ${bind_idx} || '%'
-             OR COALESCE(d.title_foreign, '') ILIKE '%' || ${bind_idx} || '%'
-             OR COALESCE(d.disc_title, '') ILIKE '%' || ${bind_idx} || '%'
-             OR EXISTS (
-                 SELECT 1
-                 FROM unnest(d.serial) elem
-                 WHERE regexp_replace(elem, '\s', '', 'g')
-                       ILIKE '%' || regexp_replace(${bind_idx}, '\s', '', 'g') || '%'
-             )
-             OR EXISTS (
-                 SELECT 1
-                 FROM unnest(d.barcode) elem
-                 WHERE regexp_replace(elem, '\s', '', 'g')
-                       ILIKE '%' || regexp_replace(${bind_idx}, '\s', '', 'g') || '%'
-             ))"#
-        ));
+        where_clauses.push(quick_search_clause(bind_idx, hash_field_for_term(term)));
     }
     if filter_dumper_unknown {
         where_clauses.push("FALSE".to_string());
@@ -351,9 +416,9 @@ async fn discs_page(
         count_query = count_query.bind(filter_letter.clone());
         select_query = select_query.bind(filter_letter.clone());
     }
-    if !filter_q.is_empty() {
-        count_query = count_query.bind(filter_q.clone());
-        select_query = select_query.bind(filter_q.clone());
+    for term in &quick_search_terms {
+        count_query = count_query.bind(term.clone());
+        select_query = select_query.bind(term.clone());
     }
     if let Some(dumper_id) = filter_dumper_id {
         count_query = count_query.bind(dumper_id);
@@ -371,7 +436,7 @@ async fn discs_page(
         .await
         .unwrap_or_default();
 
-    if !filter_q.is_empty() && total_count == 1 {
+    if !quick_search_terms.is_empty() && total_count == 1 {
         if let Some(row) = raw_rows.first() {
             return Redirect::to(&format!("/disc/{}/", row.id)).into_response();
         }
@@ -553,4 +618,62 @@ struct LangRow {
 struct DumperRow {
     id: i32,
     name: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quick_search_terms_match_old_redump_normalization() {
+        assert_eq!(
+            quick_search_terms(" Final Fantasy/VII: Disc & Serial "),
+            vec!["final", "fantasy", "vii", "disc", "serial"]
+        );
+        assert_eq!(quick_search_terms("SCES-00894"), vec!["sces", "00894"]);
+        assert_eq!(
+            quick_search_terms("foo__bar//baz::qux&&zap"),
+            vec!["foo", "bar", "baz", "qux", "zap"]
+        );
+        assert!(quick_search_terms(" --  /  ").is_empty());
+    }
+
+    #[test]
+    fn hash_field_for_term_accepts_only_full_hex_hashes() {
+        assert_eq!(hash_field_for_term("deadbeef"), Some(HashField::Crc32));
+        assert_eq!(
+            hash_field_for_term("0123456789abcdef0123456789abcdef"),
+            Some(HashField::Md5)
+        );
+        assert_eq!(
+            hash_field_for_term("0123456789abcdef0123456789abcdef01234567"),
+            Some(HashField::Sha1)
+        );
+        assert_eq!(hash_field_for_term("deadbee"), None);
+        assert_eq!(hash_field_for_term("deadbeef00"), None);
+        assert_eq!(hash_field_for_term("nothex!!"), None);
+    }
+
+    #[test]
+    fn quick_search_clause_for_text_terms_uses_only_title_foreign_title_and_serial() {
+        let clause = quick_search_clause(3, None);
+
+        assert!(clause.contains("d.title ILIKE"));
+        assert!(clause.contains("d.title_foreign"));
+        assert!(clause.contains("unnest(d.serial)"));
+        assert!(!clause.contains("disc_title"));
+        assert!(!clause.contains("barcode"));
+        assert!(!clause.contains("FROM files"));
+    }
+
+    #[test]
+    fn quick_search_clause_for_hash_terms_adds_exact_file_hash_lookup() {
+        let clause = quick_search_clause(4, Some(HashField::Sha1));
+
+        assert!(clause.contains("FROM files f"));
+        assert!(clause.contains("f.disc_id = d.id"));
+        assert!(clause.contains("LOWER(f.sha1) = $4"));
+        assert!(!clause.contains("barcode"));
+        assert!(!clause.contains("disc_title"));
+    }
 }
