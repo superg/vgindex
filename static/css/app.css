@@ -695,6 +695,25 @@ details + p small {
     border-color: var(--pico-primary);
 }
 
+@media (max-width: 640px) {
+    .letter-picker {
+        display: grid;
+        grid-template-columns: repeat(14, minmax(0, 1fr));
+        gap: 0.12rem;
+        width: min(100%, 22rem);
+        max-width: 100%;
+    }
+    .letter-picker a,
+    .letter-picker a:not(:first-child) {
+        width: auto;
+        min-width: 0;
+        min-height: 0;
+        aspect-ratio: 1;
+        padding: 0;
+        font-size: 0.72rem;
+    }
+}
+
 /* Hex dump */
 .hex-dump {
     font-family: 'Courier New', Courier, monospace;
