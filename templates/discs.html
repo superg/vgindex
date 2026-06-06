@@ -11,7 +11,10 @@
 
 <details class="filter-details" open>
     <summary>Filters</summary>
-    <form method="get" action="/discs/" id="filter-form">
+    <form method="get" action="/discs/" id="filter-form" class="{% if advanced_open %}advanced-search-visible{% endif %}">
+        <button type="button" class="advanced-search-toggle" aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}" aria-controls="advanced-search-panel">
+            <span>Advanced Search</span><span class="advanced-search-icon" aria-hidden="true"></span>
+        </button>
         <label>
             <span>System</span>
             <select name="system" onchange="this.form.submit()">
@@ -19,21 +22,6 @@
                 {% for sys in systems %}
                 <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
                 {% endfor %}
-            </select>
-        </label>
-        <label>
-            <span>Status</span>
-            <select name="status" onchange="this.form.submit()">
-                <option value="" {% if filter_status.is_empty() %}selected{% endif %}>All Statuses (🟢🔵🟡)</option>
-                {% if can_view_disabled_discs %}
-                <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🔵🟡🔴)</option>
-                {% endif %}
-                <option value="Verified" {% if filter_status == "Verified" %}selected{% endif %}>Verified (🟢)</option>
-                <option value="Unverified" {% if filter_status == "Unverified" %}selected{% endif %}>Unverified (🔵)</option>
-                <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable (🟡)</option>
-                {% if can_view_disabled_discs %}
-                <option value="Disabled" {% if filter_status == "Disabled" %}selected{% endif %}>Disabled (🔴)</option>
-                {% endif %}
             </select>
         </label>
         <label>
@@ -45,33 +33,43 @@
                 {% endfor %}
             </select>
         </label>
-        <label>
-            <span>Dumper</span>
-            <select name="dumper" onchange="this.form.submit()">
-                <option value="">All Dumpers</option>
-                {% for d in dumpers %}
-                <option value="{{ d.name }}" {% if d.selected %}selected{% endif %}>{{ d.name }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <details class="advanced-search" {% if advanced_open %}open{% endif %}>
-            <summary>Advanced</summary>
+        <div class="advanced-search-panel" id="advanced-search-panel" {% if !advanced_open %}hidden{% endif %}>
             <label class="advanced-search-row">
-                <input type="checkbox" name="edition_filter" value="1" {% if filter_edition_enabled %}checked{% endif %}>
-                <span>Edition</span>
-                <input type="text" name="edition_q" value="{{ filter_edition_q }}" data-advanced-text {% if !filter_edition_enabled %}disabled{% endif %}>
-                <input type="hidden" name="edition_q" value="{{ filter_edition_q }}" data-advanced-hidden {% if filter_edition_enabled %}disabled{% endif %}>
+                <span>Status</span>
+                <select name="status" onchange="this.form.submit()">
+                    <option value="" {% if filter_status.is_empty() %}selected{% endif %}>All Statuses (🟢🔵🟡)</option>
+                    {% if can_view_disabled_discs %}
+                    <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🔵🟡🔴)</option>
+                    {% endif %}
+                    <option value="Verified" {% if filter_status == "Verified" %}selected{% endif %}>Verified (🟢)</option>
+                    <option value="Unverified" {% if filter_status == "Unverified" %}selected{% endif %}>Unverified (🔵)</option>
+                    <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable (🟡)</option>
+                    {% if can_view_disabled_discs %}
+                    <option value="Disabled" {% if filter_status == "Disabled" %}selected{% endif %}>Disabled (🔴)</option>
+                    {% endif %}
+                </select>
             </label>
             <label class="advanced-search-row">
-                <input type="checkbox" name="comments_filter" value="1" {% if filter_comments_enabled %}checked{% endif %}>
+                <span>Dumper</span>
+                <select name="dumper" onchange="this.form.submit()">
+                    <option value="">All Dumpers</option>
+                    {% for d in dumpers %}
+                    <option value="{{ d.name }}" {% if d.selected %}selected{% endif %}>{{ d.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="advanced-search-row">
+                <span>Edition</span>
+                <input type="text" name="edition_q" value="{{ filter_edition_q }}">
+            </label>
+            <label class="advanced-search-row">
                 <span>Comments</span>
-                <input type="text" name="comments_q" value="{{ filter_comments_q }}" data-advanced-text {% if !filter_comments_enabled %}disabled{% endif %}>
-                <input type="hidden" name="comments_q" value="{{ filter_comments_q }}" data-advanced-hidden {% if filter_comments_enabled %}disabled{% endif %}>
+                <input type="text" name="comments_q" value="{{ filter_comments_q }}">
             </label>
             <div class="advanced-search-actions">
-                <button type="submit">Apply</button>
+                <button type="submit">Search for Text</button>
             </div>
-        </details>
+        </div>
         <input type="hidden" name="q" value="{{ filter_q }}">
         <input type="hidden" name="sort" value="{{ sort_column }}">
         <input type="hidden" name="order" value="{{ sort_order }}">
@@ -106,11 +104,9 @@
                     <input type="hidden" name="sort" value="{{ sort_column }}">
                     <input type="hidden" name="order" value="{{ sort_order }}">
                     {% if !filter_edition_q.is_empty() %}
-                    {% if filter_edition_enabled %}<input type="hidden" name="edition_filter" value="1">{% endif %}
                     <input type="hidden" name="edition_q" value="{{ filter_edition_q }}">
                     {% endif %}
                     {% if !filter_comments_q.is_empty() %}
-                    {% if filter_comments_enabled %}<input type="hidden" name="comments_filter" value="1">{% endif %}
                     <input type="hidden" name="comments_q" value="{{ filter_comments_q }}">
                     {% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
@@ -185,11 +181,9 @@
                     <input type="hidden" name="sort" value="{{ sort_column }}">
                     <input type="hidden" name="order" value="{{ sort_order }}">
                     {% if !filter_edition_q.is_empty() %}
-                    {% if filter_edition_enabled %}<input type="hidden" name="edition_filter" value="1">{% endif %}
                     <input type="hidden" name="edition_q" value="{{ filter_edition_q }}">
                     {% endif %}
                     {% if !filter_comments_q.is_empty() %}
-                    {% if filter_comments_enabled %}<input type="hidden" name="comments_filter" value="1">{% endif %}
                     <input type="hidden" name="comments_q" value="{{ filter_comments_q }}">
                     {% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
@@ -223,37 +217,39 @@
         }
     }
 
-    function syncAdvancedRow(row) {
-        var checkbox = row.querySelector('input[type="checkbox"]');
-        var text = row.querySelector('[data-advanced-text]');
-        var hidden = row.querySelector('[data-advanced-hidden]');
-        if (!checkbox || !text || !hidden) return;
+    function initAdvancedSearchToggle() {
+        var form = document.getElementById('filter-form');
+        var toggle = document.querySelector('.advanced-search-toggle');
+        var panel = document.getElementById('advanced-search-panel');
+        if (!form || !toggle || !panel) return;
 
-        text.disabled = !checkbox.checked;
-        hidden.disabled = checkbox.checked;
-        hidden.value = text.value;
-    }
+        function updateAdvancedSearchWidths() {
+            if (!form.classList.contains('advanced-search-visible')) return;
+            var system = form.querySelector('select[name="system"]');
+            var dumper = form.querySelector('select[name="dumper"]');
+            if (system) {
+                form.style.setProperty('--advanced-system-control-width', Math.ceil(system.getBoundingClientRect().width) + 'px');
+            }
+            if (dumper) {
+                form.style.setProperty('--advanced-dumper-control-width', Math.ceil(dumper.getBoundingClientRect().width) + 'px');
+            }
+        }
 
-    function initAdvancedSearch() {
-        document.querySelectorAll('.advanced-search-row').forEach(function(row) {
-            var checkbox = row.querySelector('input[type="checkbox"]');
-            var text = row.querySelector('[data-advanced-text]');
-            if (!checkbox || !text) return;
-
-            syncAdvancedRow(row);
-            checkbox.addEventListener('change', function() {
-                syncAdvancedRow(row);
-                if (checkbox.checked) text.focus();
-            });
-            text.addEventListener('input', function() {
-                syncAdvancedRow(row);
-            });
+        toggle.addEventListener('click', function() {
+            var expanded = toggle.getAttribute('aria-expanded') === 'true';
+            toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+            panel.hidden = expanded;
+            toggle.form.classList.toggle('advanced-search-visible', !expanded);
+            updateAdvancedSearchWidths();
         });
+
+        updateAdvancedSearchWidths();
+        window.addEventListener('resize', updateAdvancedSearchWidths);
     }
 
     document.addEventListener('DOMContentLoaded', function() {
         scaleDiscTable();
-        initAdvancedSearch();
+        initAdvancedSearchToggle();
     });
     window.addEventListener('resize', scaleDiscTable);
 })();

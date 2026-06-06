@@ -114,6 +114,7 @@
         if (!table) return;
         table.style.transform = '';
         table.style.transformOrigin = '';
+        table.style.width = 'max-content';
         wrapper.style.overflow = '';
         wrapper.style.height = '';
         var containerWidth = wrapper.clientWidth;
@@ -125,6 +126,8 @@
             table.style.transformOrigin = 'top left';
             wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
             wrapper.style.overflow = 'hidden';
+        } else {
+            table.style.width = '100%';
         }
         });
     }
