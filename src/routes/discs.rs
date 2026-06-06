@@ -38,9 +38,7 @@ pub struct DiscsQuery {
     pub letter: Option<String>,
     pub status: Option<String>,
     pub q: Option<String>,
-    pub edition_filter: Option<String>,
     pub edition_q: Option<String>,
-    pub comments_filter: Option<String>,
     pub comments_q: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
@@ -130,9 +128,7 @@ fn quick_search_clause(bind_idx: u32, hash_field: Option<HashField>) -> String {
     clause
 }
 
-fn active_advanced_filter(enabled: Option<&String>, value: Option<&String>) -> Option<String> {
-    enabled?;
-
+fn active_advanced_filter(value: Option<&String>) -> Option<String> {
     let value = value?.trim();
     if value.is_empty() {
         None
@@ -174,9 +170,7 @@ struct DiscsTemplate {
     filter_status: String,
     filter_letter: String,
     filter_q: String,
-    filter_edition_enabled: bool,
     filter_edition_q: String,
-    filter_comments_enabled: bool,
     filter_comments_q: String,
     advanced_open: bool,
     filter_dumper: String,
@@ -205,17 +199,11 @@ impl DiscsTemplate {
         let mut params = String::new();
 
         if !self.filter_edition_q.is_empty() {
-            if self.filter_edition_enabled {
-                params.push_str("&edition_filter=1");
-            }
             params.push_str("&edition_q=");
             params.push_str(&self.url_encode(&self.filter_edition_q));
         }
 
         if !self.filter_comments_q.is_empty() {
-            if self.filter_comments_enabled {
-                params.push_str("&comments_filter=1");
-            }
             params.push_str("&comments_q=");
             params.push_str(&self.url_encode(&self.filter_comments_q));
         }
@@ -296,16 +284,8 @@ async fn discs_page(
         .unwrap_or_default()
         .trim()
         .to_string();
-    let active_edition_q =
-        active_advanced_filter(query.edition_filter.as_ref(), query.edition_q.as_ref());
-    let active_comments_q =
-        active_advanced_filter(query.comments_filter.as_ref(), query.comments_q.as_ref());
-    let filter_edition_enabled = active_edition_q.is_some();
-    let filter_comments_enabled = active_comments_q.is_some();
-    let advanced_open = filter_edition_enabled
-        || filter_comments_enabled
-        || !filter_edition_q.is_empty()
-        || !filter_comments_q.is_empty();
+    let active_edition_q = active_advanced_filter(query.edition_q.as_ref());
+    let active_comments_q = active_advanced_filter(query.comments_q.as_ref());
     let requested_dumper = query.dumper.clone().unwrap_or_default().trim().to_string();
     let filter_dumper_lookup = if requested_dumper.is_empty() {
         None
@@ -330,6 +310,10 @@ async fn discs_page(
         String::new()
     };
     let filter_dumper_unknown = !filter_dumper.is_empty() && filter_dumper_id.is_none();
+    let advanced_open = active_edition_q.is_some()
+        || active_comments_q.is_some()
+        || !filter_status.is_empty()
+        || !filter_dumper.is_empty();
 
     let sys_rows: Vec<SystemDropdownRow> = sqlx::query_as(
         "SELECT code, manufacturer, name FROM systems
@@ -653,9 +637,7 @@ async fn discs_page(
             filter_status,
             filter_letter,
             filter_q,
-            filter_edition_enabled,
             filter_edition_q,
-            filter_comments_enabled,
             filter_comments_q,
             advanced_open,
             filter_dumper,
@@ -815,18 +797,16 @@ mod tests {
     }
 
     #[test]
-    fn active_advanced_filter_requires_checked_non_empty_text() {
-        let enabled = "1".to_string();
+    fn active_advanced_filter_uses_non_empty_text() {
         let text = "  Original Edition  ".to_string();
         let empty = "   ".to_string();
 
         assert_eq!(
-            active_advanced_filter(Some(&enabled), Some(&text)),
+            active_advanced_filter(Some(&text)),
             Some("Original Edition".to_string())
         );
-        assert_eq!(active_advanced_filter(Some(&enabled), Some(&empty)), None);
-        assert_eq!(active_advanced_filter(None, Some(&text)), None);
-        assert_eq!(active_advanced_filter(Some(&enabled), None), None);
+        assert_eq!(active_advanced_filter(Some(&empty)), None);
+        assert_eq!(active_advanced_filter(None), None);
     }
 
     #[test]
