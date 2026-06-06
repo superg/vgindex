@@ -104,7 +104,7 @@ class repository
 
     public function find_user(int $user_id): ?array
     {
-        $sql = 'SELECT user_id, username, user_email, user_type FROM ' . $this->table_prefix . 'users'
+        $sql = 'SELECT user_id, username, user_email, user_type, user_avatar, user_avatar_type, user_avatar_width, user_avatar_height FROM ' . $this->table_prefix . 'users'
             . ' WHERE user_id = ' . $user_id;
         return $this->fetch_one($sql);
     }

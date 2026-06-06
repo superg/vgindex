@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{extract::State, response::Html, routing::get, Router};
 
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
 use crate::services::news_service::NewsItem;
 use crate::AppState;
@@ -16,7 +16,7 @@ pub fn routes() -> Router<AppState> {
 #[derive(Template)]
 #[template(path = "main.html")]
 struct MainTemplate {
-    current_user: Option<String>,
+    current_user: Option<AuthenticatedUser>,
     news_items: Vec<NewsItem>,
     recent_discs: Vec<RecentDisc>,
     recent_changes: Vec<RecentChange>,
@@ -117,7 +117,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
 
     Html(
         MainTemplate {
-            current_user: user.user().map(|u| u.username.clone()),
+            current_user: user.user().cloned(),
             news_items,
             recent_discs,
             recent_changes,

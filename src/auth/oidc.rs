@@ -77,6 +77,7 @@ struct IdTokenClaims {
     sub: String,
     preferred_username: String,
     role: UserRole,
+    picture: Option<String>,
     nonce: Option<String>,
 }
 
@@ -171,7 +172,13 @@ async fn callback(
     let discovery = fetch_discovery(&state).await?;
     let token = exchange_code(&state, &discovery, code, &login_state.pkce_verifier).await?;
     let claims = validate_id_token(&state, &discovery, &token.id_token, &login_state.nonce).await?;
-    let user_id = find_or_create_user(&state.pool, &claims.preferred_username).await?;
+    let avatar_url = sanitize_picture_url(claims.picture.as_deref());
+    let user_id = upsert_user(
+        &state.pool,
+        &claims.preferred_username,
+        avatar_url.as_deref(),
+    )
+    .await?;
 
     if let Some(existing_sid) = session::extract_session_cookie(&headers) {
         if let Err(e) = session::delete_session(&state.pool, &existing_sid).await {
@@ -316,7 +323,7 @@ async fn fetch_jwks(state: &AppState, jwks_uri: &str) -> AppResult<Jwks> {
         .map_err(|e| AppError::Internal(format!("OIDC JWKS parse failed: {e}")))
 }
 
-async fn find_or_create_user(pool: &PgPool, username: &str) -> AppResult<i32> {
+async fn upsert_user(pool: &PgPool, username: &str, avatar_url: Option<&str>) -> AppResult<i32> {
     let username = username.trim();
     if username.is_empty() || username.chars().count() > 64 {
         return Err(AppError::BadRequest(
@@ -325,15 +332,30 @@ async fn find_or_create_user(pool: &PgPool, username: &str) -> AppResult<i32> {
     }
 
     let row: UserIdRow = sqlx::query_as(
-        "INSERT INTO users (username)
-         VALUES ($1)
-         ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
+        "INSERT INTO users (username, avatar_url)
+         VALUES ($1, $2)
+         ON CONFLICT (username) DO UPDATE SET
+             username = EXCLUDED.username,
+             avatar_url = EXCLUDED.avatar_url
          RETURNING id",
     )
     .bind(username)
+    .bind(avatar_url)
     .fetch_one(pool)
     .await?;
     Ok(row.id)
+}
+
+fn sanitize_picture_url(picture: Option<&str>) -> Option<String> {
+    let picture = picture?.trim();
+    if picture.is_empty()
+        || picture.len() > 2048
+        || picture.chars().any(char::is_control)
+        || !(picture.starts_with("http://") || picture.starts_with("https://"))
+    {
+        return None;
+    }
+    Some(picture.to_string())
 }
 
 async fn store_login_state(
@@ -431,7 +453,7 @@ fn with_query(base: &str, params: &[(&str, String)]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{hash_token, pkce_s256, sanitize_return_to, with_query};
+    use super::{hash_token, pkce_s256, sanitize_picture_url, sanitize_return_to, with_query};
 
     #[test]
     fn sanitize_return_to_accepts_root_relative_paths() {
@@ -447,6 +469,21 @@ mod tests {
         assert_eq!(sanitize_return_to(Some("//example.com/path")), "/");
         assert_eq!(sanitize_return_to(Some("/ok\r\nSet-Cookie: nope")), "/");
         assert_eq!(sanitize_return_to(None), "/");
+    }
+
+    #[test]
+    fn sanitize_picture_url_accepts_only_absolute_http_urls() {
+        assert_eq!(
+            sanitize_picture_url(Some(" https://forum.example/avatar.png ")).as_deref(),
+            Some("https://forum.example/avatar.png")
+        );
+        assert_eq!(sanitize_picture_url(Some("/avatar.png")), None);
+        assert_eq!(sanitize_picture_url(Some("javascript:alert(1)")), None);
+        assert_eq!(
+            sanitize_picture_url(Some("https://example.test/a\nb")),
+            None
+        );
+        assert_eq!(sanitize_picture_url(None), None);
     }
 
     #[test]

@@ -40,7 +40,7 @@ class claims
     public function user_claims(array $user, string $role): array
     {
         $user_id = (int) $user['user_id'];
-        return [
+        $claims = [
             'sub' => 'phpbb:' . $user_id,
             'preferred_username' => (string) $user['username'],
             'email' => (string) $user['user_email'],
@@ -48,5 +48,65 @@ class claims
             'role' => $role,
             'groups' => $this->group_claims_for_role($role),
         ];
+
+        $picture = $this->picture_for_user($user);
+        if ($picture !== '') {
+            $claims['picture'] = $picture;
+        }
+
+        return $claims;
+    }
+
+    private function picture_for_user(array $user): string
+    {
+        if ((string) ($user['user_avatar'] ?? '') === '' || (string) ($user['user_avatar_type'] ?? '') === '') {
+            return '';
+        }
+        if (!function_exists('phpbb_get_user_avatar')) {
+            return '';
+        }
+
+        $html = phpbb_get_user_avatar($user, 'USER_AVATAR', true);
+        if (!is_string($html) || $html === '') {
+            return '';
+        }
+        if (!preg_match('/\bsrc="([^"]+)"/', $html, $matches)) {
+            return '';
+        }
+
+        return $this->absolute_picture_url(html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    }
+
+    private function absolute_picture_url(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return '';
+        }
+        if (preg_match('#^https?://#i', $url)) {
+            return $url;
+        }
+
+        $board_url = rtrim(generate_board_url(true), '/');
+        if (str_starts_with($url, '//')) {
+            $parts = parse_url($board_url);
+            if (!is_array($parts) || empty($parts['scheme'])) {
+                return '';
+            }
+            return $parts['scheme'] . ':' . $url;
+        }
+        if (str_starts_with($url, '/')) {
+            $parts = parse_url($board_url);
+            if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+                return '';
+            }
+            $origin = $parts['scheme'] . '://' . $parts['host'];
+            if (!empty($parts['port'])) {
+                $origin .= ':' . $parts['port'];
+            }
+            return $origin . $url;
+        }
+
+        return $board_url . '/' . ltrim($url, './');
     }
 }

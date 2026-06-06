@@ -7,7 +7,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
@@ -45,7 +45,7 @@ pub fn routes() -> Router<AppState> {
 #[derive(Template)]
 #[template(path = "disc_view.html")]
 struct DiscViewTemplate {
-    current_user: Option<String>,
+    current_user: Option<AuthenticatedUser>,
     can_edit: bool,
     disc_id: i32,
     title: String,
@@ -557,7 +557,7 @@ async fn disc_view(
 
     Ok(Html(
         DiscViewTemplate {
-            current_user: user.user().map(|u| u.username.clone()),
+            current_user: user.user().cloned(),
             can_edit,
             disc_id: id,
             title: format_display_title(

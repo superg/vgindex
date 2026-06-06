@@ -19,6 +19,18 @@ pub struct AuthenticatedUser {
     pub id: i32,
     pub username: String,
     pub role: UserRole,
+    pub avatar_url: Option<String>,
+}
+
+impl AuthenticatedUser {
+    pub fn template_only(username: impl Into<String>) -> Self {
+        Self {
+            id: 0,
+            username: username.into(),
+            role: UserRole::User,
+            avatar_url: None,
+        }
+    }
 }
 
 impl CurrentUser {
@@ -55,17 +67,19 @@ where
         if let Some(sid) = session_id {
             if let Ok(Some(session)) = session::validate_session(&app_state.pool, &sid).await {
                 if let (Some(user_id), Some(role)) = (session.user_id, session.role) {
-                    if let Ok(user) =
-                        sqlx::query_as::<_, UserRow>("SELECT id, username FROM users WHERE id = $1")
-                            .bind(user_id)
-                            .fetch_optional(&app_state.pool)
-                            .await
+                    if let Ok(user) = sqlx::query_as::<_, UserRow>(
+                        "SELECT id, username, avatar_url FROM users WHERE id = $1",
+                    )
+                    .bind(user_id)
+                    .fetch_optional(&app_state.pool)
+                    .await
                     {
                         if let Some(u) = user {
                             return Ok(CurrentUser(Some(AuthenticatedUser {
                                 id: u.id,
                                 username: u.username,
                                 role,
+                                avatar_url: u.avatar_url,
                             })));
                         }
                     }
@@ -81,6 +95,7 @@ where
 struct UserRow {
     id: i32,
     username: String,
+    avatar_url: Option<String>,
 }
 
 /// Extractor that requires authentication -- rejects with 401 if not logged in.

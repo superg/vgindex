@@ -19,6 +19,11 @@ On subsequent starts, only `update.php` runs (fast no-op if nothing changed).
 OIDC client registration is owned by the phpBB container; MediaWiki does not
 write client rows into the application database.
 
+The image patches OpenIDConnect's PostgreSQL primary-key migration during build
+so fresh databases create the `openid_connect` table with the expected schema.
+Startup fails if `update.php` fails, which prevents a broken schema from being
+silently accepted.
+
 ## Usage
 
 ```bash

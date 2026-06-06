@@ -93,6 +93,33 @@ $wgDBprefix = "";
 $wgSecretKey = requireEnv('MEDIAWIKI_SECRET_KEY');
 $wgUpgradeKey = requireEnv('MEDIAWIKI_UPGRADE_KEY');
 
+# Email
+$mediawikiEmailEnabled = envBool('MEDIAWIKI_EMAIL_ENABLE', false);
+$wgEnableEmail = $mediawikiEmailEnabled;
+$wgEnableUserEmail = $mediawikiEmailEnabled;
+
+if ($mediawikiEmailEnabled) {
+    $mediawikiEmailFrom = requireEnv('MEDIAWIKI_EMAIL_FROM');
+    $mediawikiEmailFromName = getenv('MEDIAWIKI_EMAIL_FROM_NAME');
+
+    $wgPasswordSender = $mediawikiEmailFrom;
+    $wgEmergencyContact = $mediawikiEmailFrom;
+
+    if ($mediawikiEmailFromName !== false && $mediawikiEmailFromName !== '') {
+        $wgPasswordSenderName = $mediawikiEmailFromName;
+    }
+
+    $wgSMTP = [
+        'host' => requireEnv('MEDIAWIKI_SMTP_HOST'),
+        'IDHost' => $mediawikiHost,
+        'localhost' => $mediawikiHost,
+        'port' => (int) requireEnv('MEDIAWIKI_SMTP_PORT'),
+        'auth' => true,
+        'username' => requireEnv('MEDIAWIKI_SMTP_USER'),
+        'password' => requireEnv('MEDIAWIKI_SMTP_PASSWORD'),
+    ];
+}
+
 # Default skin
 $wgDefaultSkin = "vector-2022";
 wfLoadSkin('Vector');

@@ -187,7 +187,8 @@ CREATE TYPE submission_status_enum AS ENUM ('Pending', 'Approved', 'Rejected', '
 -- users
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    username VARCHAR(64) UNIQUE NOT NULL
+    username VARCHAR(64) UNIQUE NOT NULL,
+    avatar_url TEXT
 );
 
 -- sessions

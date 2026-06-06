@@ -77,7 +77,7 @@ cp /etc/mediawiki/LocalSettings.php /var/www/html/LocalSettings.php
 chown www-data:www-data /var/www/html/LocalSettings.php
 
 echo "MediaWiki entrypoint: running update.php..."
-php maintenance/update.php --quick 2>&1 || true
+php maintenance/update.php --quick
 echo "MediaWiki entrypoint: update.php completed."
 
 exec apache2-foreground

@@ -78,6 +78,7 @@ class oidc_controller
                 'email_verified',
                 'groups',
                 'role',
+                'picture',
             ],
             'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post'],
             'code_challenge_methods_supported' => ['S256'],
