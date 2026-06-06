@@ -1423,6 +1423,21 @@ header .site-nav-top {
     line-height: 1;
     overflow: hidden;
 }
+.user-menu-avatar,
+.user-menu-silhouette {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+.user-menu-avatar {
+    display: block;
+    object-fit: cover;
+}
+.user-menu-silhouette {
+    line-height: 1;
+}
 .user-menu-username {
     display: inline-block;
     max-width: clamp(6ch, 12vw, 14ch);

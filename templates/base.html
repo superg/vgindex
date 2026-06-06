@@ -32,13 +32,21 @@
                     {% when Some with (user) %}
                     <li class="has-submenu user-menu">
                         <button class="user-menu-button submenu-label" type="button" aria-label="User menu" aria-haspopup="true">
-                            <span class="user-menu-icon" aria-hidden="true">👤</span>
-                            <span class="user-menu-username">{{ user }}</span>
+                            <span class="user-menu-icon" aria-hidden="true">
+                                {% match user.avatar_url %}
+                                {% when Some with (avatar_url) %}
+                                <img class="user-menu-avatar" src="{{ avatar_url }}" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+                                <span class="user-menu-silhouette" hidden>👤</span>
+                                {% when None %}
+                                <span class="user-menu-silhouette">👤</span>
+                                {% endmatch %}
+                            </span>
+                            <span class="user-menu-username">{{ user.username }}</span>
                         </button>
                         <ul class="submenu user-submenu">
                             <li><a href="/disc/submit/">Add Disc</a></li>
-                            <li><a href="/discs/?dumper={{ self.url_encode(user) }}">My Discs</a></li>
-                            <li><a href="/queue/?submitter={{ self.url_encode(user) }}">My Submissions</a></li>
+                            <li><a href="/discs/?dumper={{ self.url_encode(user.username) }}">My Discs</a></li>
+                            <li><a href="/queue/?submitter={{ self.url_encode(user.username) }}">My Submissions</a></li>
                             <li><span class="submenu-disabled">Settings</span></li>
                             <li>
                                 <form class="submenu-form" method="post" action="/logout">

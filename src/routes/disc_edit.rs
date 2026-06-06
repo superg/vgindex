@@ -9,7 +9,7 @@ use axum::{
 use axum_extra::extract::Form;
 use serde::Deserialize;
 
-use crate::auth::middleware::RequireAuth;
+use crate::auth::middleware::{AuthenticatedUser, RequireAuth};
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
@@ -58,7 +58,7 @@ fn user_queue_url(username: &str) -> String {
 #[derive(Template)]
 #[template(path = "disc_edit.html")]
 pub(crate) struct DiscEditTemplate {
-    pub current_user: Option<String>,
+    pub current_user: Option<AuthenticatedUser>,
     pub disc_id: i32,
     pub page_title: String,
 
@@ -841,7 +841,7 @@ async fn edit_page(
 
     Ok(Html(
         DiscEditTemplate {
-            current_user: Some(user.username.clone()),
+            current_user: Some(user.clone()),
             disc_id: id,
             page_title,
 
@@ -1339,7 +1339,7 @@ async fn render_form_with_errors(
     );
 
     let template = DiscEditTemplate {
-        current_user: Some(username.to_string()),
+        current_user: Some(AuthenticatedUser::template_only(username)),
         disc_id: id,
         page_title,
 
@@ -1791,7 +1791,7 @@ async fn add_page(
 
     Ok(Html(
         DiscEditTemplate {
-            current_user: Some(username.clone()),
+            current_user: Some(AuthenticatedUser::template_only(username.clone())),
             disc_id: 0,
             page_title: String::new(),
 

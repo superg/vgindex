@@ -8,7 +8,7 @@ use axum::{
 use axum_extra::extract::Form;
 use serde::Deserialize;
 
-use crate::auth::middleware::{CurrentUser, RequireModerator};
+use crate::auth::middleware::{AuthenticatedUser, CurrentUser, RequireModerator};
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
@@ -65,7 +65,7 @@ struct SubmitterOption {
 #[derive(Template)]
 #[template(path = "queue.html")]
 struct QueueTemplate {
-    current_user: Option<String>,
+    current_user: Option<AuthenticatedUser>,
     current_user_id: Option<i32>,
     page_title: String,
     is_public_history: bool,
@@ -309,7 +309,7 @@ async fn queue_list(
 
     Ok(Html(
         QueueTemplate {
-            current_user: current.map(|u| u.username.clone()),
+            current_user: current.cloned(),
             current_user_id: current.map(|u| u.id),
             page_title: disc_id_filter
                 .map(|disc_id| format!("History: Disc #{disc_id}"))
@@ -567,7 +567,7 @@ fn build_review_template(
     );
 
     DiscEditTemplate {
-        current_user: Some(username.to_string()),
+        current_user: Some(AuthenticatedUser::template_only(username)),
         disc_id: sub.target_disc_id.unwrap_or(0),
         page_title,
 
@@ -1183,7 +1183,7 @@ fn apply_review_diff_context(
 #[derive(Template)]
 #[template(path = "queue_detail.html")]
 struct QueueDetailTemplate {
-    current_user: Option<String>,
+    current_user: Option<AuthenticatedUser>,
     submission_id: i32,
     submission_type_display: String,
     submitter_id: i32,
@@ -1209,7 +1209,7 @@ async fn render_readonly_detail(
     reviewer_name: &str,
 ) -> AppResult<Html<String>> {
     let template = QueueDetailTemplate {
-        current_user: username.map(|name| name.to_string()),
+        current_user: username.map(AuthenticatedUser::template_only),
         submission_id: sub.id,
         submission_type_display: sub.submission_type.to_string(),
         submitter_id: sub.submitter_id,

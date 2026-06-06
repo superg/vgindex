@@ -14,6 +14,11 @@ RUN set -eux; \
         https://gerrit.wikimedia.org/r/mediawiki/extensions/PluggableAuth; \
     git clone --depth 1 -b REL1_42 \
         https://gerrit.wikimedia.org/r/mediawiki/extensions/OpenIDConnect; \
+    sed -i \
+        's/DROP[[:space:]][[:space:]]*INDEX "primary";/ALTER TABLE openid_connect DROP CONSTRAINT IF EXISTS openid_connect_pkey;/' \
+        /var/www/html/extensions/OpenIDConnect/sql/postgres/ChangePrimaryKey.sql; \
+    grep -q 'DROP CONSTRAINT IF EXISTS openid_connect_pkey' \
+        /var/www/html/extensions/OpenIDConnect/sql/postgres/ChangePrimaryKey.sql; \
     cd OpenIDConnect && \
     COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction; \
     rm -rf /var/www/html/extensions/*/.git

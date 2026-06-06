@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
 use crate::db::models::{format_display_title, DiscStatus};
 use crate::AppState;
@@ -158,7 +158,7 @@ fn normalize_status_filter(status: Option<&str>, can_view_disabled_discs: bool) 
 #[derive(Template)]
 #[template(path = "discs.html")]
 struct DiscsTemplate {
-    current_user: Option<String>,
+    current_user: Option<AuthenticatedUser>,
     can_view_disabled_discs: bool,
     discs: Vec<DiscRow>,
     systems: Vec<SystemOption>,
@@ -622,7 +622,7 @@ async fn discs_page(
 
     Html(
         DiscsTemplate {
-            current_user: user.user().map(|u| u.username.clone()),
+            current_user: user.user().cloned(),
             can_view_disabled_discs,
             discs,
             systems,

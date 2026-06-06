@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 
-use crate::auth::middleware::CurrentUser;
+use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
 use crate::services::archive_service;
 use crate::AppState;
@@ -25,7 +25,7 @@ pub fn routes() -> Router<AppState> {
 #[derive(Template)]
 #[template(path = "downloads.html")]
 struct DownloadsTemplate {
-    current_user: Option<String>,
+    current_user: Option<AuthenticatedUser>,
     systems: Vec<SystemDownload>,
 }
 impl SiteConfig for DownloadsTemplate {}
@@ -77,7 +77,7 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
 
     Html(
         DownloadsTemplate {
-            current_user: user.user().map(|u| u.username.clone()),
+            current_user: user.user().cloned(),
             systems,
         }
         .render()
