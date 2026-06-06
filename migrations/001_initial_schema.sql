@@ -165,6 +165,9 @@ CREATE TABLE files (
     UNIQUE(disc_id, track_number)
 );
 CREATE INDEX idx_files_disc ON files(disc_id);
+CREATE INDEX idx_files_crc32 ON files(LOWER(crc32));
+CREATE INDEX idx_files_md5 ON files(LOWER(md5));
+CREATE INDEX idx_files_sha1 ON files(LOWER(sha1));
 CREATE UNIQUE INDEX files_disc_cue_unique ON files (disc_id) WHERE track_number IS NULL;
 
 -- enums
