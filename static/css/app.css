@@ -622,6 +622,37 @@ details + p small {
     line-height: 1.2;
 }
 
+@media (max-width: 640px) {
+    #filter-form,
+    #filter-form.advanced-search-visible {
+        grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+        max-width: 100%;
+        justify-items: stretch;
+    }
+    #filter-form label,
+    #filter-form:not(.advanced-search-visible) label,
+    #filter-form.advanced-search-visible label,
+    #filter-form .advanced-search-row,
+    #filter-form.advanced-search-visible .advanced-search-row {
+        box-sizing: border-box;
+        grid-template-columns: 4.75rem minmax(0, 1fr);
+        justify-self: center;
+        width: min(100%, 20rem);
+        max-width: 100%;
+    }
+    #filter-form select,
+    #filter-form.advanced-search-visible select,
+    #filter-form.advanced-search-visible select[name="region"],
+    #filter-form.advanced-search-visible select[name="status"],
+    #filter-form .advanced-search-row select,
+    #filter-form.advanced-search-visible .advanced-search-row input[type="text"] {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+}
+
 /* Letter picker */
 .letter-picker {
     display: flex;
@@ -1329,7 +1360,7 @@ header .site-nav {
     align-items: stretch;
     gap: 0;
     padding: 0 !important;
-    padding-top: 0.85rem !important;
+    padding-top: 0.3rem !important;
     padding-bottom: 0.3rem !important;
     overflow: visible;
 }
