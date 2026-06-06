@@ -120,7 +120,14 @@ fn base_latin(lower: char, next_lower: Option<char>) -> Option<String> {
 fn next_is_ieyj(next_lower: Option<char>) -> bool {
     matches!(
         next_lower,
-        Some('и') | Some('е') | Some('э') | Some('ы') | Some('ю') | Some('я') | Some('ё') | Some('й')
+        Some('и')
+            | Some('е')
+            | Some('э')
+            | Some('ы')
+            | Some('ю')
+            | Some('я')
+            | Some('ё')
+            | Some('й')
     )
 }
 
@@ -215,7 +222,9 @@ mod tests {
         let (mut n, mut exact) = (0u64, 0u64);
         let mut miss = Vec::new();
         for line in data.lines() {
-            let Some((fg, ti)) = line.split_once('\t') else { continue };
+            let Some((fg, ti)) = line.split_once('\t') else {
+                continue;
+            };
             let out = tr(fg);
             // Heuristic: a romanization shares its first letter sound; skip clear
             // English replacements by requiring the engine output to overlap.
@@ -226,7 +235,10 @@ mod tests {
                 miss.push((fg.to_string(), out, ti.to_string()));
             }
         }
-        println!("\n== Russian: {exact}/{n} exact ({:.1}%) ==", 100.0 * exact as f64 / n as f64);
+        println!(
+            "\n== Russian: {exact}/{n} exact ({:.1}%) ==",
+            100.0 * exact as f64 / n as f64
+        );
         for (fg, out, ti) in &miss {
             println!("  {fg}\n    engine : {out}\n    curated: {ti}");
         }

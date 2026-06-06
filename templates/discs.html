@@ -24,12 +24,16 @@
         <label>
             <span>Status</span>
             <select name="status" onchange="this.form.submit()">
-                <option value="">All Statuses (🟢🔵🟡)</option>
+                <option value="" {% if filter_status.is_empty() %}selected{% endif %}>All Statuses (🟢🔵🟡)</option>
+                {% if can_view_disabled_discs %}
                 <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🔵🟡🔴)</option>
+                {% endif %}
                 <option value="Verified" {% if filter_status == "Verified" %}selected{% endif %}>Verified (🟢)</option>
                 <option value="Unverified" {% if filter_status == "Unverified" %}selected{% endif %}>Unverified (🔵)</option>
                 <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable (🟡)</option>
+                {% if can_view_disabled_discs %}
                 <option value="Disabled" {% if filter_status == "Disabled" %}selected{% endif %}>Disabled (🔴)</option>
+                {% endif %}
             </select>
         </label>
         <label>
@@ -50,16 +54,34 @@
                 {% endfor %}
             </select>
         </label>
+        <details class="advanced-search" {% if advanced_open %}open{% endif %}>
+            <summary>Advanced</summary>
+            <label class="advanced-search-row">
+                <input type="checkbox" name="edition_filter" value="1" {% if filter_edition_enabled %}checked{% endif %}>
+                <span>Edition</span>
+                <input type="text" name="edition_q" value="{{ filter_edition_q }}" data-advanced-text {% if !filter_edition_enabled %}disabled{% endif %}>
+                <input type="hidden" name="edition_q" value="{{ filter_edition_q }}" data-advanced-hidden {% if filter_edition_enabled %}disabled{% endif %}>
+            </label>
+            <label class="advanced-search-row">
+                <input type="checkbox" name="comments_filter" value="1" {% if filter_comments_enabled %}checked{% endif %}>
+                <span>Comments</span>
+                <input type="text" name="comments_q" value="{{ filter_comments_q }}" data-advanced-text {% if !filter_comments_enabled %}disabled{% endif %}>
+                <input type="hidden" name="comments_q" value="{{ filter_comments_q }}" data-advanced-hidden {% if filter_comments_enabled %}disabled{% endif %}>
+            </label>
+            <div class="advanced-search-actions">
+                <button type="submit">Apply</button>
+            </div>
+        </details>
         <input type="hidden" name="q" value="{{ filter_q }}">
         <input type="hidden" name="sort" value="{{ sort_column }}">
         <input type="hidden" name="order" value="{{ sort_order }}">
     </form>
 
     <div class="letter-picker">
-        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
-        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter=%23{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
+        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
+        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter=%23{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
         {% for c in letters %}
-        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ c.0 }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
+        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ c.0 }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
         {% endfor %}
     </div>
 </details>
@@ -71,7 +93,7 @@
     <nav aria-label="Pagination">
         <ul>
             {% if page > 1 %}
-            <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">&laquo; Previous</a></li>
+            <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">&laquo; Previous</a></li>
             {% endif %}
             <li>
                 <form method="get" action="/discs/" class="page-jump-form">
@@ -83,11 +105,19 @@
                     <input type="hidden" name="q" value="{{ filter_q }}">
                     <input type="hidden" name="sort" value="{{ sort_column }}">
                     <input type="hidden" name="order" value="{{ sort_order }}">
+                    {% if !filter_edition_q.is_empty() %}
+                    {% if filter_edition_enabled %}<input type="hidden" name="edition_filter" value="1">{% endif %}
+                    <input type="hidden" name="edition_q" value="{{ filter_edition_q }}">
+                    {% endif %}
+                    {% if !filter_comments_q.is_empty() %}
+                    {% if filter_comments_enabled %}<input type="hidden" name="comments_filter" value="1">{% endif %}
+                    <input type="hidden" name="comments_q" value="{{ filter_comments_q }}">
+                    {% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                 </form>
             </li>
             {% if page < total_pages %}
-            <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">Next &raquo;</a></li>
+            <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Next &raquo;</a></li>
             {% endif %}
         </ul>
     </nav>
@@ -100,14 +130,14 @@
                 {% if current_user.is_some() %}
                 <th class="dumped-by-me-col" title="Dumped by me">👤</th>
                 {% endif %}
-                <th class="region-col"><a href="/discs/?sort=region&amp;order={{ next_region_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="title-col"><a href="/discs/?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="system-col"><a href="/discs/?sort=system&amp;order={{ next_system_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=version&amp;order={{ next_version_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">Version{% if sort_column == "version" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=edition&amp;order={{ next_edition_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">Edition{% if sort_column == "edition" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="language-col"><a href="/discs/?sort=language&amp;order={{ next_language_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=serial&amp;order={{ next_serial_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">Serial{% if sort_column == "serial" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="status-col"><a href="/discs/?sort=status&amp;order={{ next_status_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ filter_q }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="region-col"><a href="/discs/?sort=region&amp;order={{ next_region_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="title-col"><a href="/discs/?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="system-col"><a href="/discs/?sort=system&amp;order={{ next_system_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=version&amp;order={{ next_version_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Version{% if sort_column == "version" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=edition&amp;order={{ next_edition_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Edition{% if sort_column == "edition" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="language-col"><a href="/discs/?sort=language&amp;order={{ next_language_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs/?sort=serial&amp;order={{ next_serial_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Serial{% if sort_column == "serial" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="status-col"><a href="/discs/?sort=status&amp;order={{ next_status_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
             </tr>
         </thead>
         <tbody>
@@ -142,7 +172,7 @@
     <nav aria-label="Pagination">
         <ul>
             {% if page > 1 %}
-            <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">&laquo; Previous</a></li>
+            <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">&laquo; Previous</a></li>
             {% endif %}
             <li>
                 <form method="get" action="/discs/" class="page-jump-form">
@@ -154,11 +184,19 @@
                     <input type="hidden" name="q" value="{{ filter_q }}">
                     <input type="hidden" name="sort" value="{{ sort_column }}">
                     <input type="hidden" name="order" value="{{ sort_order }}">
+                    {% if !filter_edition_q.is_empty() %}
+                    {% if filter_edition_enabled %}<input type="hidden" name="edition_filter" value="1">{% endif %}
+                    <input type="hidden" name="edition_q" value="{{ filter_edition_q }}">
+                    {% endif %}
+                    {% if !filter_comments_q.is_empty() %}
+                    {% if filter_comments_enabled %}<input type="hidden" name="comments_filter" value="1">{% endif %}
+                    <input type="hidden" name="comments_q" value="{{ filter_comments_q }}">
+                    {% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                 </form>
             </li>
             {% if page < total_pages %}
-            <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ filter_q }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}">Next &raquo;</a></li>
+            <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Next &raquo;</a></li>
             {% endif %}
         </ul>
     </nav>
@@ -184,7 +222,39 @@
             wrapper.style.overflow = 'hidden';
         }
     }
-    document.addEventListener('DOMContentLoaded', scaleDiscTable);
+
+    function syncAdvancedRow(row) {
+        var checkbox = row.querySelector('input[type="checkbox"]');
+        var text = row.querySelector('[data-advanced-text]');
+        var hidden = row.querySelector('[data-advanced-hidden]');
+        if (!checkbox || !text || !hidden) return;
+
+        text.disabled = !checkbox.checked;
+        hidden.disabled = checkbox.checked;
+        hidden.value = text.value;
+    }
+
+    function initAdvancedSearch() {
+        document.querySelectorAll('.advanced-search-row').forEach(function(row) {
+            var checkbox = row.querySelector('input[type="checkbox"]');
+            var text = row.querySelector('[data-advanced-text]');
+            if (!checkbox || !text) return;
+
+            syncAdvancedRow(row);
+            checkbox.addEventListener('change', function() {
+                syncAdvancedRow(row);
+                if (checkbox.checked) text.focus();
+            });
+            text.addEventListener('input', function() {
+                syncAdvancedRow(row);
+            });
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        scaleDiscTable();
+        initAdvancedSearch();
+    });
     window.addEventListener('resize', scaleDiscTable);
 })();
 </script>

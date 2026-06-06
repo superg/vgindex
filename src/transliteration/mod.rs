@@ -184,6 +184,8 @@ mod tests {
             Err(TransliterationError::TooLong)
         ));
         // Exactly at the limit is fine.
-        assert!(reg.transliterate(&"あ".repeat(MAX_INPUT_CHARS), None).is_ok());
+        assert!(reg
+            .transliterate(&"あ".repeat(MAX_INPUT_CHARS), None)
+            .is_ok());
     }
 }

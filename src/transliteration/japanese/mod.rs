@@ -81,7 +81,11 @@ impl JapaneseTransliterator {
         for token in tokens.iter_mut() {
             let surface = token.surface.to_string();
             let details = token.details();
-            let pos = details.get(POS_INDEX).map(|s| s.as_ref()).unwrap_or("").to_string();
+            let pos = details
+                .get(POS_INDEX)
+                .map(|s| s.as_ref())
+                .unwrap_or("")
+                .to_string();
             let reading = details
                 .get(READING_INDEX)
                 .map(|s| s.as_ref())
@@ -385,8 +389,14 @@ mod tests {
     #[test]
     fn join_punctuation_aware() {
         assert_eq!(join_chunks(&["Movie".into(), "-ban".into()]), "Movie-ban");
-        assert_eq!(join_chunks(&["Akumajou".into(), ":".into(), "Densetsu".into()]), "Akumajou: Densetsu");
-        assert_eq!(join_chunks(&["\"".into(), "Yume".into(), "\"".into()]), "\"Yume\"");
+        assert_eq!(
+            join_chunks(&["Akumajou".into(), ":".into(), "Densetsu".into()]),
+            "Akumajou: Densetsu"
+        );
+        assert_eq!(
+            join_chunks(&["\"".into(), "Yume".into(), "\"".into()]),
+            "\"Yume\""
+        );
     }
 
     #[test]
@@ -415,7 +425,10 @@ mod tests {
         println!("\n== transliteration bench ==");
         println!("dictionary load: {load_ms:.0} ms (once, at startup)");
         println!("per call:        {per_call_us:.1} µs  (avg over {iters}, ~mixed titles)");
-        println!("throughput:      {:.0} calls/sec", 1_000_000.0 / per_call_us);
+        println!(
+            "throughput:      {:.0} calls/sec",
+            1_000_000.0 / per_call_us
+        );
         println!("(sink {sink})");
     }
 
@@ -437,8 +450,12 @@ mod tests {
         let mut all: Vec<(String, String)> = Vec::new();
         let mut n = 0u64;
         for line in data.lines() {
-            let Some((fg, ti)) = line.split_once('\t') else { continue };
-            let Ok(out) = t.transliterate(fg) else { continue };
+            let Some((fg, ti)) = line.split_once('\t') else {
+                continue;
+            };
+            let Ok(out) = t.transliterate(fg) else {
+                continue;
+            };
             n += 1;
             let txt = out.text;
             if txt.chars().any(|c| c != 'ー' && is_kana(c)) {
@@ -466,7 +483,10 @@ mod tests {
         println!("\n-- 50 random samples (eyeball) --");
         let mut rng = rand::thread_rng();
         for (fg, txt) in all.choose_multiple(&mut rng, 50) {
-            let flag = if txt.chars().any(|c| c != 'ー' && (is_kana(c) || is_kanji(c))) {
+            let flag = if txt
+                .chars()
+                .any(|c| c != 'ー' && (is_kana(c) || is_kanji(c)))
+            {
                 "   <== LEFTOVER"
             } else {
                 ""
@@ -487,8 +507,12 @@ mod tests {
         let t = t();
         let mut miss: Vec<(String, String, String)> = Vec::new(); // (jp, engine, curated)
         for line in data.lines() {
-            let Some((fg, ti)) = line.split_once('\t') else { continue };
-            let Ok(out) = t.transliterate(fg) else { continue };
+            let Some((fg, ti)) = line.split_once('\t') else {
+                continue;
+            };
+            let Ok(out) = t.transliterate(fg) else {
+                continue;
+            };
             if out.text.to_lowercase() != ti.to_lowercase() {
                 miss.push((fg.to_string(), out.text.clone(), ti.to_string()));
             }
@@ -521,7 +545,9 @@ mod tests {
         let mut tally: std::collections::HashMap<String, (String, u32)> =
             std::collections::HashMap::new();
         for line in data.lines() {
-            let Some((fg, ti)) = line.split_once('\t') else { continue };
+            let Some((fg, ti)) = line.split_once('\t') else {
+                continue;
+            };
             let ti_l = ti.to_lowercase();
             let mut tokens = t.tokenizer.tokenize(fg).unwrap();
             let info: Vec<(String, String)> = tokens
@@ -585,8 +611,12 @@ mod tests {
         let squash = |s: &str| s.to_lowercase().replace([' ', '-', ':'], "");
         let mut mismatches: Vec<(String, String, String)> = Vec::new();
         for line in data.lines() {
-            let Some((fg, ti)) = line.split_once('\t') else { continue };
-            let Ok(out) = t.transliterate(fg) else { continue };
+            let Some((fg, ti)) = line.split_once('\t') else {
+                continue;
+            };
+            let Ok(out) = t.transliterate(fg) else {
+                continue;
+            };
             n += 1;
             let ci = out.text.to_lowercase() == ti.to_lowercase();
             if out.text == ti {
@@ -611,9 +641,19 @@ mod tests {
             }
         }
         println!("\n== {n} entries ==");
-        println!("exact match:           {exact}  ({:.1}%)", 100.0 * exact as f64 / n as f64);
-        println!("case-insensitive match:{ci_exact}  ({:.1}%)", 100.0 * ci_exact as f64 / n as f64);
-        println!("combined:              {}  ({:.1}%)", exact + ci_exact, 100.0 * (exact + ci_exact) as f64 / n as f64);
+        println!(
+            "exact match:           {exact}  ({:.1}%)",
+            100.0 * exact as f64 / n as f64
+        );
+        println!(
+            "case-insensitive match:{ci_exact}  ({:.1}%)",
+            100.0 * ci_exact as f64 / n as f64
+        );
+        println!(
+            "combined:              {}  ({:.1}%)",
+            exact + ci_exact,
+            100.0 * (exact + ci_exact) as f64 / n as f64
+        );
         println!(
             "no-katakana subset:    {ci_nk}/{n_nk}  ({:.1}%)  [kanji/kana-only titles]",
             100.0 * ci_nk as f64 / n_nk as f64

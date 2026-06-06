@@ -144,7 +144,11 @@ fn split_keep_non_dot_groups(input: &str) -> Vec<&str> {
             break;
         }
         if saw_group {
-            let end = if j < bytes.len() { bytes[j].0 } else { input.len() };
+            let end = if j < bytes.len() {
+                bytes[j].0
+            } else {
+                input.len()
+            };
             segs.push(&input[start..end]);
             i = j;
         } else {
@@ -197,14 +201,14 @@ pub fn normalize(input: &str) -> String {
         }
 
         match c {
-            '\u{3000}' => out.push(' '),                  // ideographic (fullwidth) space
-            '\u{2019}' => out.push('\''),                 // ’ -> '
-            '\u{300E}' | '\u{300F}' => out.push('"'),     // 『 』 -> "
-            '\u{3010}' | '\u{3011}' => {}                 // 【 】 -> ignore (strip)
-            '\u{300C}' | '\u{300D}' => {}                 // 「 」 -> ignore (strip)
-            '\u{30FB}' => out.push(' '),                  // ・ -> space
-            '\u{3001}' => out.push(','),                  // 、 -> ,
-            '\u{3002}' => out.push('.'),                  // 。 -> .
+            '\u{3000}' => out.push(' '),  // ideographic (fullwidth) space
+            '\u{2019}' => out.push('\''), // ’ -> '
+            '\u{300E}' | '\u{300F}' => out.push('"'), // 『 』 -> "
+            '\u{3010}' | '\u{3011}' => {} // 【 】 -> ignore (strip)
+            '\u{300C}' | '\u{300D}' => {} // 「 」 -> ignore (strip)
+            '\u{30FB}' => out.push(' '),  // ・ -> space
+            '\u{3001}' => out.push(','),  // 、 -> ,
+            '\u{3002}' => out.push('.'),  // 。 -> .
             // Stray (semi)voiced sound marks used decoratively -> strip.
             '\u{309B}' | '\u{309C}' | '\u{3099}' | '\u{309A}' => {}
             // Unicode Roman numerals -> ASCII letters (Ⅶ -> "VII").
@@ -286,7 +290,10 @@ mod tests {
     #[test]
     fn roman_numerals_to_ascii() {
         assert_eq!(normalize("幻想水滸伝Ⅱ"), "幻想水滸伝II");
-        assert_eq!(normalize("ファイナルファンタジーⅦ"), "ファイナルファンタジーVII");
+        assert_eq!(
+            normalize("ファイナルファンタジーⅦ"),
+            "ファイナルファンタジーVII"
+        );
         assert_eq!(normalize("三國志Ⅲ"), "三國志III");
     }
 
