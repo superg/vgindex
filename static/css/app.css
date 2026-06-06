@@ -9,6 +9,7 @@
     --pico-typography-spacing-vertical: 0.6rem;
     --pico-line-height: 1.4;
     --pico-block-spacing-vertical: 0.6rem;
+    --disc-filter-max-width: 50rem;
 }
 
 a {
@@ -449,8 +450,9 @@ details + p small {
 #filter-form {
     display: grid;
     grid-template-columns: auto auto auto auto;
-    width: fit-content;
+    width: min(100%, var(--disc-filter-max-width));
     margin: 0 auto 0.35rem;
+    justify-content: center;
     align-items: center;
     gap: 0.08rem 0.75rem;
 }
@@ -480,12 +482,69 @@ details + p small {
     max-width: 100%;
 }
 
+.advanced-search {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: 0.3rem;
+}
+.advanced-search > summary {
+    width: max-content;
+    margin: 0 auto 0.25rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    color: var(--pico-primary);
+}
+#filter-form .advanced-search-row {
+    display: grid;
+    grid-template-columns: auto 5rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    margin: 0.12rem auto;
+    font-size: 0.75rem;
+}
+#filter-form .advanced-search-row span {
+    text-align: right;
+}
+#filter-form .advanced-search-row input[type="checkbox"] {
+    margin: 0;
+}
+#filter-form .advanced-search-row input[type="text"] {
+    width: 100%;
+    min-width: 0;
+    min-height: 1.6rem;
+    height: auto;
+    margin: 0;
+    padding: 0.18rem 0.4rem;
+    font-size: 0.75rem;
+}
+#filter-form .advanced-search-row input[type="text"]:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+.advanced-search-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.3rem;
+}
+.advanced-search-actions button {
+    width: auto;
+    margin: 0;
+    padding: 0.22rem 0.8rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
 /* Letter picker */
 .letter-picker {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.15rem;
+    max-width: var(--disc-filter-max-width);
+    margin-left: auto;
+    margin-right: auto;
     margin-top: 0.4rem;
     margin-bottom: 0.35rem;
 }

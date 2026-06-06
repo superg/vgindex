@@ -38,6 +38,10 @@ pub struct DiscsQuery {
     pub letter: Option<String>,
     pub status: Option<String>,
     pub q: Option<String>,
+    pub edition_filter: Option<String>,
+    pub edition_q: Option<String>,
+    pub comments_filter: Option<String>,
+    pub comments_q: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
     #[serde(default, deserialize_with = "empty_string_as_none")]
@@ -104,13 +108,9 @@ fn hash_field_for_term(term: &str) -> Option<HashField> {
 fn quick_search_clause(bind_idx: u32, hash_field: Option<HashField>) -> String {
     let bind = format!("${bind_idx}");
     let mut clause = format!(
-        r#"(d.title ILIKE '%' || {bind} || '%'
-             OR COALESCE(d.title_foreign, '') ILIKE '%' || {bind} || '%'
-             OR EXISTS (
-                 SELECT 1
-                 FROM unnest(d.serial) elem
-                 WHERE elem ILIKE '%' || {bind} || '%'
-             )"#
+        r#"(LOWER(d.title) LIKE '%' || {bind} || '%'
+             OR LOWER(d.title_foreign) LIKE '%' || {bind} || '%'
+             OR LOWER(arr_to_str(d.serial, ' ')) LIKE '%' || {bind} || '%'"#
     );
 
     if let Some(field) = hash_field {
@@ -130,10 +130,40 @@ fn quick_search_clause(bind_idx: u32, hash_field: Option<HashField>) -> String {
     clause
 }
 
+fn active_advanced_filter(enabled: Option<&String>, value: Option<&String>) -> Option<String> {
+    enabled?;
+
+    let value = value?.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn edition_search_clause(bind_idx: u32) -> String {
+    format!("LOWER(arr_to_str(d.edition, ' ')) LIKE '%' || LOWER(${bind_idx}) || '%'")
+}
+
+fn comments_search_clause(bind_idx: u32) -> String {
+    format!("LOWER(d.comments) LIKE '%' || LOWER(${bind_idx}) || '%'")
+}
+
+fn normalize_status_filter(status: Option<&str>, can_view_disabled_discs: bool) -> String {
+    match status.unwrap_or_default() {
+        "All Statuses" | "Disabled" if !can_view_disabled_discs => String::new(),
+        "All Statuses" | "Disabled" | "Questionable" | "Verified" | "Unverified" => {
+            status.unwrap_or_default().to_string()
+        }
+        _ => String::new(),
+    }
+}
+
 #[derive(Template)]
 #[template(path = "discs.html")]
 struct DiscsTemplate {
     current_user: Option<String>,
+    can_view_disabled_discs: bool,
     discs: Vec<DiscRow>,
     systems: Vec<SystemOption>,
     regions: Vec<RegionOption>,
@@ -144,6 +174,11 @@ struct DiscsTemplate {
     filter_status: String,
     filter_letter: String,
     filter_q: String,
+    filter_edition_enabled: bool,
+    filter_edition_q: String,
+    filter_comments_enabled: bool,
+    filter_comments_q: String,
+    advanced_open: bool,
     filter_dumper: String,
     filter_dumper_url: String,
     filter_dumper_name: String,
@@ -164,6 +199,30 @@ struct DiscsTemplate {
     next_status_order: String,
 }
 impl SiteConfig for DiscsTemplate {}
+
+impl DiscsTemplate {
+    fn advanced_query_params(&self) -> String {
+        let mut params = String::new();
+
+        if !self.filter_edition_q.is_empty() {
+            if self.filter_edition_enabled {
+                params.push_str("&edition_filter=1");
+            }
+            params.push_str("&edition_q=");
+            params.push_str(&self.url_encode(&self.filter_edition_q));
+        }
+
+        if !self.filter_comments_q.is_empty() {
+            if self.filter_comments_enabled {
+                params.push_str("&comments_filter=1");
+            }
+            params.push_str("&comments_q=");
+            params.push_str(&self.url_encode(&self.filter_comments_q));
+        }
+
+        params
+    }
+}
 
 struct DiscRow {
     id: i32,
@@ -217,13 +276,36 @@ async fn discs_page(
 ) -> Response {
     let page = query.page.unwrap_or(1).max(1);
     let offset = (page - 1) * PAGE_SIZE;
+    let can_view_disabled_discs = user.can_view_disabled_discs();
 
     let filter_system = query.system.clone().unwrap_or_default();
     let filter_region = query.region.clone().unwrap_or_default();
-    let filter_status = query.status.clone().unwrap_or_default();
+    let filter_status = normalize_status_filter(query.status.as_deref(), can_view_disabled_discs);
     let filter_letter = query.letter.clone().unwrap_or_default();
     let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
     let quick_search_terms = quick_search_terms(&filter_q);
+    let filter_edition_q = query
+        .edition_q
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let filter_comments_q = query
+        .comments_q
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let active_edition_q =
+        active_advanced_filter(query.edition_filter.as_ref(), query.edition_q.as_ref());
+    let active_comments_q =
+        active_advanced_filter(query.comments_filter.as_ref(), query.comments_q.as_ref());
+    let filter_edition_enabled = active_edition_q.is_some();
+    let filter_comments_enabled = active_comments_q.is_some();
+    let advanced_open = filter_edition_enabled
+        || filter_comments_enabled
+        || !filter_edition_q.is_empty()
+        || !filter_comments_q.is_empty();
     let requested_dumper = query.dumper.clone().unwrap_or_default().trim().to_string();
     let filter_dumper_lookup = if requested_dumper.is_empty() {
         None
@@ -337,6 +419,14 @@ async fn discs_page(
         bind_idx += 1;
         where_clauses.push(quick_search_clause(bind_idx, hash_field_for_term(term)));
     }
+    if active_edition_q.is_some() {
+        bind_idx += 1;
+        where_clauses.push(edition_search_clause(bind_idx));
+    }
+    if active_comments_q.is_some() {
+        bind_idx += 1;
+        where_clauses.push(comments_search_clause(bind_idx));
+    }
     if filter_dumper_unknown {
         where_clauses.push("FALSE".to_string());
     } else if filter_dumper_id.is_some() {
@@ -361,16 +451,22 @@ async fn discs_page(
     let sort_order_str = query.order.clone().unwrap_or_else(|| "asc".to_string());
 
     let sort_col = match sort_column.as_str() {
-        "region"   => "(SELECT MIN(r.sort_order) FROM disc_regions dr JOIN regions r ON r.code = dr.region_code WHERE dr.disc_id = d.id)",
-        "title"    => "LOWER(d.title)",
-        "system"   => "LOWER(s.manufacturer), s.manufacturer, LOWER(s.name), s.name",
-        "version"  => "LOWER(d.version)",
-        "edition"  => "LOWER(array_to_string(d.edition, ', '))",
-        "language" => "(SELECT MIN(l.sort_order) FROM disc_languages dl JOIN languages l ON l.code = dl.language_code WHERE dl.disc_id = d.id)",
-        "serial"   => "LOWER(array_to_string(d.serial, ', '))",
-        "status"   => "CASE d.status WHEN 'Verified' THEN 1 WHEN 'Unverified' THEN 2 WHEN 'Questionable' THEN 3 ELSE 4 END",
-        "added"    => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
-        "updated"  => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
+        "region" => {
+            "(SELECT MIN(r.sort_order) FROM disc_regions dr JOIN regions r ON r.code = dr.region_code WHERE dr.disc_id = d.id)"
+        }
+        "title" => "LOWER(d.title)",
+        "system" => "LOWER(s.manufacturer), s.manufacturer, LOWER(s.name), s.name",
+        "version" => "LOWER(d.version)",
+        "edition" => "LOWER(array_to_string(d.edition, ', '))",
+        "language" => {
+            "(SELECT MIN(l.sort_order) FROM disc_languages dl JOIN languages l ON l.code = dl.language_code WHERE dl.disc_id = d.id)"
+        }
+        "serial" => "LOWER(array_to_string(d.serial, ', '))",
+        "status" => {
+            "CASE d.status WHEN 'Verified' THEN 1 WHEN 'Unverified' THEN 2 WHEN 'Questionable' THEN 3 ELSE 4 END"
+        }
+        "added" => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
+        "updated" => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
         _ => "LOWER(d.title)",
     };
     let sort_dir = match query.order.as_deref() {
@@ -419,6 +515,14 @@ async fn discs_page(
     for term in &quick_search_terms {
         count_query = count_query.bind(term.clone());
         select_query = select_query.bind(term.clone());
+    }
+    if let Some(edition_q) = &active_edition_q {
+        count_query = count_query.bind(edition_q.clone());
+        select_query = select_query.bind(edition_q.clone());
+    }
+    if let Some(comments_q) = &active_comments_q {
+        count_query = count_query.bind(comments_q.clone());
+        select_query = select_query.bind(comments_q.clone());
     }
     if let Some(dumper_id) = filter_dumper_id {
         count_query = count_query.bind(dumper_id);
@@ -535,6 +639,7 @@ async fn discs_page(
     Html(
         DiscsTemplate {
             current_user: user.user().map(|u| u.username.clone()),
+            can_view_disabled_discs,
             discs,
             systems,
             regions,
@@ -548,6 +653,11 @@ async fn discs_page(
             filter_status,
             filter_letter,
             filter_q,
+            filter_edition_enabled,
+            filter_edition_q,
+            filter_comments_enabled,
+            filter_comments_q,
+            advanced_open,
             filter_dumper,
             filter_dumper_url,
             filter_dumper_name,
@@ -655,12 +765,39 @@ mod tests {
     }
 
     #[test]
-    fn quick_search_clause_for_text_terms_uses_only_title_foreign_title_and_serial() {
+    fn status_filter_hides_disabled_choices_without_permission() {
+        assert_eq!(normalize_status_filter(None, false), "");
+        assert_eq!(normalize_status_filter(Some(""), false), "");
+        assert_eq!(normalize_status_filter(Some("Verified"), false), "Verified");
+        assert_eq!(
+            normalize_status_filter(Some("Unverified"), false),
+            "Unverified"
+        );
+        assert_eq!(
+            normalize_status_filter(Some("Questionable"), false),
+            "Questionable"
+        );
+        assert_eq!(normalize_status_filter(Some("Disabled"), false), "");
+        assert_eq!(normalize_status_filter(Some("All Statuses"), false), "");
+        assert_eq!(normalize_status_filter(Some("nope"), false), "");
+    }
+
+    #[test]
+    fn status_filter_preserves_disabled_choices_with_permission() {
+        assert_eq!(normalize_status_filter(Some("Disabled"), true), "Disabled");
+        assert_eq!(
+            normalize_status_filter(Some("All Statuses"), true),
+            "All Statuses"
+        );
+    }
+
+    #[test]
+    fn quick_search_clause_for_text_terms_uses_only_indexed_title_foreign_title_and_serial() {
         let clause = quick_search_clause(3, None);
 
-        assert!(clause.contains("d.title ILIKE"));
-        assert!(clause.contains("d.title_foreign"));
-        assert!(clause.contains("unnest(d.serial)"));
+        assert!(clause.contains("LOWER(d.title) LIKE"));
+        assert!(clause.contains("LOWER(d.title_foreign) LIKE"));
+        assert!(clause.contains("LOWER(arr_to_str(d.serial, ' ')) LIKE"));
         assert!(!clause.contains("disc_title"));
         assert!(!clause.contains("barcode"));
         assert!(!clause.contains("FROM files"));
@@ -675,5 +812,35 @@ mod tests {
         assert!(clause.contains("LOWER(f.sha1) = $4"));
         assert!(!clause.contains("barcode"));
         assert!(!clause.contains("disc_title"));
+    }
+
+    #[test]
+    fn active_advanced_filter_requires_checked_non_empty_text() {
+        let enabled = "1".to_string();
+        let text = "  Original Edition  ".to_string();
+        let empty = "   ".to_string();
+
+        assert_eq!(
+            active_advanced_filter(Some(&enabled), Some(&text)),
+            Some("Original Edition".to_string())
+        );
+        assert_eq!(active_advanced_filter(Some(&enabled), Some(&empty)), None);
+        assert_eq!(active_advanced_filter(None, Some(&text)), None);
+        assert_eq!(active_advanced_filter(Some(&enabled), None), None);
+    }
+
+    #[test]
+    fn advanced_search_clauses_use_case_insensitive_substring_matching() {
+        let edition_clause = edition_search_clause(5);
+        let comments_clause = comments_search_clause(6);
+
+        assert_eq!(
+            edition_clause,
+            "LOWER(arr_to_str(d.edition, ' ')) LIKE '%' || LOWER($5) || '%'"
+        );
+        assert_eq!(
+            comments_clause,
+            "LOWER(d.comments) LIKE '%' || LOWER($6) || '%'"
+        );
     }
 }

@@ -83,113 +83,113 @@ const PHRASE_SEED: &[(&str, &str)] = &[
     ("悪魔城", "Akumajou"),
     // --- Common loanword nouns (frequency in the 31k-entry dataset in
     //     parentheses; all verified unambiguous against real titles) ---
-    ("シリーズ", "Series"),        // 709
+    ("シリーズ", "Series"),             // 709
     ("サウンドトラック", "Soundtrack"), // 527
-    ("サントラ", "Soundtrack"),     // 45 (abbreviation of サウンドトラック)
-    ("オリジナル", "Original"),     // 473
-    ("ゲーム", "Game"),            // 335
-    ("コレクション", "Collection"), // 231
-    ("サウンド", "Sound"),         // 223
-    ("スペシャル", "Special"),      // 204
-    ("ミュージック", "Music"),      // 171
-    ("ワールド", "World"),         // 162
-    ("ポータブル", "Portable"),     // 146
-    ("スーパー", "Super"),         // 123
-    ("キング", "King"),            // 103
-    ("アーケード", "Arcade"),       // 96
-    ("テイルズ", "Tales"),         // 94
-    ("オンライン", "Online"),       // 87
-    ("デジタル", "Digital"),        // 87
-    ("ウォーズ", "Wars"),          // 74
-    ("スター", "Star"),            // 72
-    ("コール", "Call"),            // 66
-    ("デッド", "Dead"),            // 64
-    ("ベスト", "Best"),            // 37
+    ("サントラ", "Soundtrack"),         // 45 (abbreviation of サウンドトラック)
+    ("オリジナル", "Original"),         // 473
+    ("ゲーム", "Game"),                 // 335
+    ("コレクション", "Collection"),     // 231
+    ("サウンド", "Sound"),              // 223
+    ("スペシャル", "Special"),          // 204
+    ("ミュージック", "Music"),          // 171
+    ("ワールド", "World"),              // 162
+    ("ポータブル", "Portable"),         // 146
+    ("スーパー", "Super"),              // 123
+    ("キング", "King"),                 // 103
+    ("アーケード", "Arcade"),           // 96
+    ("テイルズ", "Tales"),              // 94
+    ("オンライン", "Online"),           // 87
+    ("デジタル", "Digital"),            // 87
+    ("ウォーズ", "Wars"),               // 74
+    ("スター", "Star"),                 // 72
+    ("コール", "Call"),                 // 66
+    ("デッド", "Dead"),                 // 64
+    ("ベスト", "Best"),                 // 37
     // --- Structural connectors (lowercase; the final title's first letter is
     //     re-capitalized downstream so a leading connector still looks right) ---
-    ("オブ", "of"),               // 766
-    ("ザ", "the"),                // 818
-    ("アンド", "and"),             // 39
+    ("オブ", "of"),    // 766
+    ("ザ", "the"),     // 818
+    ("アンド", "and"), // 39
     // --- Platforms / companies ---
     ("プレイステーション", "PlayStation"), // 216
-    ("マイクロソフト", "Microsoft"),    // 66
+    ("マイクロソフト", "Microsoft"),       // 66
     // --- Kanji compounds the tokenizer over-splits (mined + verified against the
     //     dataset: count = curated titles using the joined form). These are joined,
     //     never hyphenated -- matching the framework's non-hyphenated suffix cases
     //     (限定版 -> Genteiban, 恋姫 -> Koihime). ---
-    ("限定版", "Genteiban"),     // 112
+    ("限定版", "Genteiban"),        // 112
     ("錬金術士", "Renkinjutsushi"), // 78
-    ("大戦略", "Daisenryaku"),   // 58
-    ("大作戦", "Daisakusen"),    // 57
-    ("大冒険", "Daibouken"),     // 52
-    ("必勝法", "Hisshouhou"),    // 52
-    ("王子様", "Oujisama"),      // 47
-    ("完全版", "Kanzenban"),     // 46
-    ("体験版", "Taikenban"),     // 43
-    ("大航海", "Daikoukai"),     // 34
-    ("奇譚", "Kitan"),           // 33
-    ("将伝", "Shouden"),         // 33
-    ("猛将", "Moushou"),         // 33
-    ("決定版", "Ketteiban"),     // 29
-    ("大全集", "Daizenshuu"),    // 28
-    ("山佐", "Yamasa"),          // 27
-    ("鬼武者", "Onimusha"),      // 23
-    ("異聞録", "Ibunroku"),      // 23
-    ("事件簿", "Jikenbo"),       // 22
+    ("大戦略", "Daisenryaku"),      // 58
+    ("大作戦", "Daisakusen"),       // 57
+    ("大冒険", "Daibouken"),        // 52
+    ("必勝法", "Hisshouhou"),       // 52
+    ("王子様", "Oujisama"),         // 47
+    ("完全版", "Kanzenban"),        // 46
+    ("体験版", "Taikenban"),        // 43
+    ("大航海", "Daikoukai"),        // 34
+    ("奇譚", "Kitan"),              // 33
+    ("将伝", "Shouden"),            // 33
+    ("猛将", "Moushou"),            // 33
+    ("決定版", "Ketteiban"),        // 29
+    ("大全集", "Daizenshuu"),       // 28
+    ("山佐", "Yamasa"),             // 27
+    ("鬼武者", "Onimusha"),         // 23
+    ("異聞録", "Ibunroku"),         // 23
+    ("事件簿", "Jikenbo"),          // 22
     ("錬金術師", "Renkinjutsushi"), // 21
-    ("疾風伝", "Shippuuden"),    // 20
-    ("魔人", "Majin"),           // 20
-    ("名探偵", "Meitantei"),     // 19
-    ("神伝", "Shinden"),         // 19
-    ("機神", "Kishin"),          // 18
-    ("第二", "Daini"),           // 16
-    ("恋姫", "Koihime"),         // 16
-    ("大乱闘", "Dairantou"),     // 16
-    ("戦極", "Sengoku"),         // 16
-    ("豪華版", "Goukaban"),      // 15
-    ("原画集", "Gengashuu"),     // 15
-    ("総選挙", "Sousenkyo"),     // 14
-    ("虫姫", "Mushihime"),       // 13
-    ("魔装", "Masou"),           // 13
-    ("水滸伝", "Suikoden"),      // Suikoden; 滸 has no IPADIC reading
-    ("弐", "Ni"),                // sequel marker (二); no IPADIC reading
-    ("三國志", "Sangokushi"),    // 160 titles (traditional 國); read wrong otherwise
-    ("三国志", "Sangokushi"),    // 44 titles (modern 国)
+    ("疾風伝", "Shippuuden"),       // 20
+    ("魔人", "Majin"),              // 20
+    ("名探偵", "Meitantei"),        // 19
+    ("神伝", "Shinden"),            // 19
+    ("機神", "Kishin"),             // 18
+    ("第二", "Daini"),              // 16
+    ("恋姫", "Koihime"),            // 16
+    ("大乱闘", "Dairantou"),        // 16
+    ("戦極", "Sengoku"),            // 16
+    ("豪華版", "Goukaban"),         // 15
+    ("原画集", "Gengashuu"),        // 15
+    ("総選挙", "Sousenkyo"),        // 14
+    ("虫姫", "Mushihime"),          // 13
+    ("魔装", "Masou"),              // 13
+    ("水滸伝", "Suikoden"),         // Suikoden; 滸 has no IPADIC reading
+    ("弐", "Ni"),                   // sequel marker (二); no IPADIC reading
+    ("三國志", "Sangokushi"),       // 160 titles (traditional 國); read wrong otherwise
+    ("三国志", "Sangokushi"),       // 44 titles (modern 国)
     // --- Recurring loanwords / franchise names. Both the katakana key and the
     //     English value are DATA-DERIVED: mined by statistical association with the
     //     curated English titles and hand-verified (count in parens). Spurious
     //     co-occurrences, fragments, and titles with varying printed English
     //     (バイオハザード) were excluded. ---
     ("ファイナルファンタジー", "Final Fantasy"), // 223
-    ("ドラマ", "Drama"),         // 254
-    ("ガンダム", "Gundam"),       // 171
-    ("サクラ", "Sakura"),         // 135
-    ("プロモーション", "Promotion"), // 133
-    ("イース", "Ys"),             // 110
-    ("アトリエ", "Atelier"),       // 97
-    ("メモリアル", "Memorial"),    // 88
-    ("パワフルプロ", "Powerful Pro"), // 86
-    ("ウイニングポスト", "Winning Post"), // 83
-    ("ウイニングイレブン", "Winning Eleven"), // 82
-    ("プリンセス", "Princess"),    // 79
-    ("ドラキュラ", "Dracula"),     // 79
+    ("ドラマ", "Drama"),                         // 254
+    ("ガンダム", "Gundam"),                      // 171
+    ("サクラ", "Sakura"),                        // 135
+    ("プロモーション", "Promotion"),             // 133
+    ("イース", "Ys"),                            // 110
+    ("アトリエ", "Atelier"),                     // 97
+    ("メモリアル", "Memorial"),                  // 88
+    ("パワフルプロ", "Powerful Pro"),            // 86
+    ("ウイニングポスト", "Winning Post"),        // 83
+    ("ウイニングイレブン", "Winning Eleven"),    // 82
+    ("プリンセス", "Princess"),                  // 79
+    ("ドラキュラ", "Dracula"),                   // 79
     ("ファンタシースターオンライン", "Phantasy Star Online"), // 66
-    ("ソニック", "Sonic"),         // 66
-    ("ゼルダ", "Zelda"),          // 65
-    ("ロックマン", "Rockman"),     // 64
-    ("テニス", "Tennis"),         // 66
-    ("ドラゴンクエスト", "Dragon Quest"), // 71
-    ("アルティメット", "Ultimate"), // 71
+    ("ソニック", "Sonic"),                       // 66
+    ("ゼルダ", "Zelda"),                         // 65
+    ("ロックマン", "Rockman"),                   // 64
+    ("テニス", "Tennis"),                        // 66
+    ("ドラゴンクエスト", "Dragon Quest"),        // 71
+    ("アルティメット", "Ultimate"),              // 71
     ("ディアボリックラヴァーズ", "Diabolik Lovers"), // 70
-    ("クイズ", "Quiz"),           // 67
-    ("デモ", "Demo"),             // 70
-    ("ダンジョン", "Dungeon"),     // 56
-    ("アンジェリーク", "Angelique"), // 58
-    ("アンジェリ", "Angelique"),   // requested; longest-match keeps アンジェリーク intact
-    ("エンジェル", "Angel"),       // 24 (エンジェル = Angel)
-    ("エンゼル", "Angel"),         // 3 (older transliteration of Angel)
+    ("クイズ", "Quiz"),                          // 67
+    ("デモ", "Demo"),                            // 70
+    ("ダンジョン", "Dungeon"),                   // 56
+    ("アンジェリーク", "Angelique"),             // 58
+    ("アンジェリ", "Angelique"), // requested; longest-match keeps アンジェリーク intact
+    ("エンジェル", "Angel"),     // 24 (エンジェル = Angel)
+    ("エンゼル", "Angel"),       // 3 (older transliteration of Angel)
     ("エヴァンゲリオン", "Evangelion"), // 58
-    ("パチスロ", "Pachi-Slot"),    // 154
+    ("パチスロ", "Pachi-Slot"),  // 154
     ("パワーアップキット", "Power-Up Kit"), // 87
 ];
 

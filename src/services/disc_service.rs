@@ -231,6 +231,38 @@ pub(crate) fn build_edition_suggestion_map(
         .collect()
 }
 
+pub fn can_view_disc_status(status: DiscStatus, can_view_disabled_discs: bool) -> bool {
+    can_view_disabled_discs || status != DiscStatus::Disabled
+}
+
+pub fn ensure_disc_status_visible(
+    status: DiscStatus,
+    can_view_disabled_discs: bool,
+) -> AppResult<()> {
+    if can_view_disc_status(status, can_view_disabled_discs) {
+        Ok(())
+    } else {
+        Err(AppError::NotFound)
+    }
+}
+
+pub async fn get_disc_status(pool: &PgPool, disc_id: i32) -> AppResult<DiscStatus> {
+    sqlx::query_scalar("SELECT status FROM discs WHERE id = $1")
+        .bind(disc_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::NotFound)
+}
+
+pub async fn ensure_disc_id_visible(
+    pool: &PgPool,
+    disc_id: i32,
+    can_view_disabled_discs: bool,
+) -> AppResult<()> {
+    let status = get_disc_status(pool, disc_id).await?;
+    ensure_disc_status_visible(status, can_view_disabled_discs)
+}
+
 fn parse_comma_separated(s: &str) -> Vec<String> {
     let mut out: Vec<String> = s
         .split(',')
@@ -922,6 +954,17 @@ mod tests {
             edition: edition.to_string(),
             edition_count,
         }
+    }
+
+    #[test]
+    fn disabled_disc_status_requires_visibility_permission() {
+        assert!(can_view_disc_status(DiscStatus::Verified, false));
+        assert!(can_view_disc_status(DiscStatus::Questionable, false));
+        assert!(can_view_disc_status(DiscStatus::Unverified, false));
+        assert!(!can_view_disc_status(DiscStatus::Disabled, false));
+        assert!(can_view_disc_status(DiscStatus::Disabled, true));
+        assert!(ensure_disc_status_visible(DiscStatus::Disabled, false).is_err());
+        assert!(ensure_disc_status_visible(DiscStatus::Disabled, true).is_ok());
     }
 
     #[test]

@@ -542,6 +542,16 @@ pub(crate) fn form_status_is_active(form: &DiscEditForm) -> bool {
     normalized_disc_status(&form.status) != "Disabled"
 }
 
+fn preserve_existing_status_for_submission(
+    form: &mut DiscEditForm,
+    detail: &DiscDetail,
+    can_edit_directly: bool,
+) {
+    if !can_edit_directly {
+        form.status = detail.disc.status.to_string();
+    }
+}
+
 fn validate_submit_as_for_add(form: &DiscEditForm, can_submit_as: bool) -> Vec<String> {
     if !can_submit_as {
         return Vec::new();
@@ -739,6 +749,10 @@ async fn edit_page(
     Path(id): Path<i32>,
 ) -> AppResult<Html<String>> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    disc_service::ensure_disc_status_visible(
+        detail.disc.status,
+        user.role.can_view_disabled_discs(),
+    )?;
     let ref_data = fetch_ref_data(&state.pool).await?;
 
     let disc_region_codes: Vec<String> =
@@ -1682,7 +1696,14 @@ async fn edit_submit(
     Path(id): Path<i32>,
     Form(post): Form<DiscEditPostForm>,
 ) -> AppResult<Response> {
-    let form = post.disc;
+    let mut form = post.disc;
+    let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    disc_service::ensure_disc_status_visible(
+        detail.disc.status,
+        user.role.can_view_disabled_discs(),
+    )?;
+    let can_edit_directly = user.role.can_edit_directly();
+    preserve_existing_status_for_submission(&mut form, &detail, can_edit_directly);
     let ref_data = fetch_ref_data(&state.pool).await?;
     let errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
     let linked_validation_errors =
@@ -1698,13 +1719,12 @@ async fn edit_submit(
             linked_validation_errors,
             ValidationResultMessage::default(),
             false,
-            user.role.can_edit_directly(),
+            can_edit_directly,
             false,
         )
         .await;
     }
 
-    let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     let changes = build_sparse_edit_changes(&form, &detail, &ref_data.all_media_types);
 
     let submission_comment = form
@@ -1726,7 +1746,7 @@ async fn edit_submit(
     )
     .await?;
 
-    if user.role.can_edit_directly() {
+    if can_edit_directly {
         let disc_id = queue_service::approve_submission(
             &state.pool,
             &sub,
@@ -1913,7 +1933,14 @@ async fn add_submit(
     ));
 
     let target_disc_id = match valid_dat_for_matching(&form) {
-        Some(files_xml) => queue_service::find_matching_disc(&state.pool, files_xml).await,
+        Some(files_xml) => {
+            queue_service::find_matching_disc(
+                &state.pool,
+                files_xml,
+                user.role.can_view_disabled_discs(),
+            )
+            .await
+        }
         None => None,
     };
     let linked_validation_errors =
@@ -3058,6 +3085,37 @@ mod operation_delta_tests {
         let changes = build_sparse_edit_changes(&form, &detail, &media_rows());
 
         assert_eq!(changes, serde_json::json!({}));
+    }
+
+    #[test]
+    fn non_direct_edit_preserves_existing_status() {
+        let detail = base_detail();
+        let mut form = form_from_detail(&detail);
+        form.status = String::new();
+
+        preserve_existing_status_for_submission(&mut form, &detail, false);
+
+        assert_eq!(form.status, "Unverified");
+        assert!(form_status_is_active(&form));
+        let changes = build_sparse_edit_changes(&form, &detail, &media_rows());
+        assert!(changes.get("status").is_none());
+    }
+
+    #[test]
+    fn direct_edit_keeps_submitted_status() {
+        let detail = base_detail();
+        let mut form = form_from_detail(&detail);
+        form.status = "Disabled".to_string();
+
+        preserve_existing_status_for_submission(&mut form, &detail, true);
+
+        assert_eq!(form.status, "Disabled");
+        assert!(!form_status_is_active(&form));
+        let changes = build_sparse_edit_changes(&form, &detail, &media_rows());
+        assert_eq!(
+            changes["status"],
+            serde_json::json!({ "modify": { "old": "Unverified", "new": "Disabled" } })
+        );
     }
 
     #[test]

@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use crate::auth::middleware::CurrentUser;
 use crate::config::SiteConfig;
 use crate::db::models::*;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::services::disc_service;
 use crate::AppState;
 
@@ -321,6 +321,7 @@ async fn disc_view(
     Path(id): Path<i32>,
 ) -> AppResult<Html<String>> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
 
     let can_edit = user.user().map_or(false, |u| u.role.can_submit());
 
@@ -1366,15 +1367,17 @@ fn compute_sbi_xor(sector: u32, qdata: &[u8]) -> String {
 
 async fn disc_cue_download(
     State(state): State<AppState>,
+    user: CurrentUser,
     Path(id): Path<i32>,
 ) -> AppResult<impl IntoResponse> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
 
     let cue = detail
         .disc
         .cue
         .filter(|c| !c.is_empty())
-        .ok_or(crate::error::AppError::NotFound)?;
+        .ok_or(AppError::NotFound)?;
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
     let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
@@ -1403,15 +1406,17 @@ async fn disc_cue_download(
 
 async fn disc_sbi_download(
     State(state): State<AppState>,
+    user: CurrentUser,
     Path(id): Path<i32>,
 ) -> AppResult<impl IntoResponse> {
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
 
     let sbi_text = detail
         .disc
         .sbi
         .filter(|s| !s.is_empty())
-        .ok_or(crate::error::AppError::NotFound)?;
+        .ok_or(AppError::NotFound)?;
 
     let buf = build_sbi_binary(&sbi_text);
 
