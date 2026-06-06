@@ -789,10 +789,10 @@ fn extract_rom_name_attr(line: &str) -> Option<String> {
 }
 
 pub(crate) fn extract_track_from_filename(filename: &str) -> Option<String> {
-    if filename.ends_with(".iso") {
-        return Some("1".to_string());
-    }
     let lower = filename.to_lowercase();
+    if lower.ends_with(".iso") {
+        return Some("0".to_string());
+    }
     if lower.starts_with("track.") {
         return Some("1".to_string());
     }
@@ -991,8 +991,8 @@ FILE \"Track 2.bin\" BINARY\n\
     #[test]
     fn finalize_cue_strips_lead_rems_and_ends_with_newline() {
         let cue = "FILE \"Track 01.bin\" BINARY\n\
-                   TRACK 01 AUDIO\n\
-                   INDEX 01 00:00:00\n\
+	                   TRACK 01 AUDIO\n\
+	                   INDEX 01 00:00:00\n\
                    REM LEAD-OUT 02:00:00\n\
                    REM LEAD-IN 01:00:00\n\
                    REM PREGAP 00:02:00\n";
@@ -1004,6 +1004,18 @@ FILE \"Track 2.bin\" BINARY\n\
         assert!(!out.contains("LEAD-IN"));
         assert!(!out.to_uppercase().contains("PREGAP"));
         assert!(out.contains("FILE \"Awesome Game.bin\" BINARY"));
+    }
+
+    #[test]
+    fn iso_file_names_extract_as_whole_image_track_zero() {
+        assert_eq!(
+            extract_track_from_filename("Track.iso").as_deref(),
+            Some("0")
+        );
+        assert_eq!(
+            extract_track_from_filename("Game.ISO").as_deref(),
+            Some("0")
+        );
     }
 
     #[test]

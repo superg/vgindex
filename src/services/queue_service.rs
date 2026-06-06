@@ -1,4 +1,6 @@
 use sqlx::PgPool;
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
@@ -42,6 +44,7 @@ pub async fn create_submission(
 }
 
 struct RomEntry {
+    track_number: Option<String>,
     size: i64,
     crc32: String,
     md5: String,
@@ -56,13 +59,15 @@ fn parse_rom_entries(files_xml: &str) -> Vec<RomEntry> {
             if !line.starts_with("<rom ") {
                 return None;
             }
+            let name = extract_xml_attr(line, "name").unwrap_or_default();
             Some(RomEntry {
+                track_number: extract_track_from_filename(&name),
                 size: extract_xml_attr(line, "size")
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(0),
-                crc32: extract_xml_attr(line, "crc").unwrap_or_default(),
-                md5: extract_xml_attr(line, "md5").unwrap_or_default(),
-                sha1: extract_xml_attr(line, "sha1").unwrap_or_default(),
+                crc32: normalize_hash_attr(extract_xml_attr(line, "crc")),
+                md5: normalize_hash_attr(extract_xml_attr(line, "md5")),
+                sha1: normalize_hash_attr(extract_xml_attr(line, "sha1")),
             })
         })
         .collect()
@@ -75,7 +80,7 @@ pub async fn find_matching_disc(pool: &PgPool, files_xml: &str) -> Option<i32> {
     }
 
     let candidates: Vec<i32> =
-        sqlx::query_scalar("SELECT DISTINCT disc_id FROM files WHERE sha1 = $1")
+        sqlx::query_scalar("SELECT DISTINCT disc_id FROM files WHERE LOWER(sha1) = LOWER($1)")
             .bind(&submitted[0].sha1)
             .fetch_all(pool)
             .await
@@ -90,20 +95,91 @@ pub async fn find_matching_disc(pool: &PgPool, files_xml: &str) -> Option<i32> {
         .await
         .unwrap_or_default();
 
-        if disc_files.len() != submitted.len() {
-            continue;
-        }
-
-        let all_match = disc_files.iter().zip(&submitted).all(|(df, sf)| {
-            df.size == sf.size && df.crc32 == sf.crc32 && df.md5 == sf.md5 && df.sha1 == sf.sha1
-        });
-
-        if all_match {
+        if files_match_submission(&disc_files, &submitted) {
             return Some(disc_id);
         }
     }
 
     None
+}
+
+fn normalize_hash_attr(value: Option<String>) -> String {
+    value
+        .map(|s| s.trim().to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
+fn track_number_value(track_number: Option<&str>) -> Option<i32> {
+    track_number?.trim().parse().ok()
+}
+
+fn submitted_by_track(submitted: &[RomEntry]) -> Option<BTreeMap<i32, &RomEntry>> {
+    let mut tracks = BTreeMap::new();
+    for entry in submitted {
+        let track = track_number_value(entry.track_number.as_deref())?;
+        if tracks.insert(track, entry).is_some() {
+            return None;
+        }
+    }
+    Some(tracks)
+}
+
+fn files_by_track(
+    files: &[crate::db::models::File],
+) -> Option<BTreeMap<i32, &crate::db::models::File>> {
+    let mut tracks = BTreeMap::new();
+    for file in files {
+        let track = track_number_value(file.track_number.as_deref())?;
+        if tracks.insert(track, file).is_some() {
+            return None;
+        }
+    }
+    Some(tracks)
+}
+
+fn hashes_match(file: &crate::db::models::File, submitted: &RomEntry) -> bool {
+    file.size == submitted.size
+        && file.crc32.eq_ignore_ascii_case(&submitted.crc32)
+        && file.md5.eq_ignore_ascii_case(&submitted.md5)
+        && file.sha1.eq_ignore_ascii_case(&submitted.sha1)
+}
+
+fn compare_track_numbers(a: Option<&str>, b: Option<&str>) -> Ordering {
+    track_number_value(a)
+        .cmp(&track_number_value(b))
+        .then_with(|| a.unwrap_or_default().cmp(b.unwrap_or_default()))
+}
+
+fn files_match_submission(files: &[crate::db::models::File], submitted: &[RomEntry]) -> bool {
+    if files.len() != submitted.len() {
+        return false;
+    }
+
+    if let (Some(submitted_tracks), Some(file_tracks)) =
+        (submitted_by_track(submitted), files_by_track(files))
+    {
+        return submitted_tracks.iter().all(|(track, submitted_file)| {
+            file_tracks
+                .get(track)
+                .map(|disc_file| hashes_match(disc_file, submitted_file))
+                .unwrap_or(false)
+        });
+    }
+
+    let mut sorted_files: Vec<&crate::db::models::File> = files.iter().collect();
+    sorted_files.sort_by(|a, b| {
+        compare_track_numbers(a.track_number.as_deref(), b.track_number.as_deref())
+    });
+
+    let mut sorted_submitted: Vec<&RomEntry> = submitted.iter().collect();
+    sorted_submitted.sort_by(|a, b| {
+        compare_track_numbers(a.track_number.as_deref(), b.track_number.as_deref())
+    });
+
+    sorted_files
+        .iter()
+        .zip(sorted_submitted)
+        .all(|(disc_file, submitted_file)| hashes_match(disc_file, submitted_file))
 }
 
 fn extract_xml_attr(line: &str, attr: &str) -> Option<String> {
@@ -959,6 +1035,30 @@ pub async fn count_submissions(
 mod tests {
     use super::*;
 
+    fn file(
+        track_number: &str,
+        size: i64,
+        crc32: &str,
+        md5: &str,
+        sha1: &str,
+    ) -> crate::db::models::File {
+        crate::db::models::File {
+            id: 1,
+            disc_id: 1,
+            track_number: Some(track_number.to_string()),
+            size,
+            crc32: crc32.to_string(),
+            md5: md5.to_string(),
+            sha1: sha1.to_string(),
+        }
+    }
+
+    fn rom_line(track_number: &str, size: i64, crc32: &str, md5: &str, sha1: &str) -> String {
+        format!(
+            r#"<rom name="Track {track_number}.bin" size="{size}" crc="{crc32}" md5="{md5}" sha1="{sha1}" />"#
+        )
+    }
+
     fn ring_entry(mastering_code: &str, comment: &str) -> serde_json::Value {
         serde_json::json!({
             "offset_value": "",
@@ -997,6 +1097,71 @@ mod tests {
             created_at: chrono::Utc::now(),
             reviewed_at: None,
         }
+    }
+
+    #[test]
+    fn dat_match_uses_numeric_track_order() {
+        let files = vec![
+            file("1", 100, "11111111", &"1".repeat(32), &"1".repeat(40)),
+            file("10", 1000, "aaaaaaaa", &"a".repeat(32), &"a".repeat(40)),
+            file("2", 200, "22222222", &"2".repeat(32), &"2".repeat(40)),
+        ];
+        let dat = [
+            rom_line("1", 100, "11111111", &"1".repeat(32), &"1".repeat(40)),
+            rom_line("2", 200, "22222222", &"2".repeat(32), &"2".repeat(40)),
+            rom_line("10", 1000, "aaaaaaaa", &"a".repeat(32), &"a".repeat(40)),
+        ]
+        .join("\n");
+        let submitted = parse_rom_entries(&dat);
+
+        assert!(files_match_submission(&files, &submitted));
+    }
+
+    #[test]
+    fn dat_match_ignores_hash_case() {
+        let files = vec![file(
+            "1",
+            100,
+            "deadbeef",
+            "0123456789abcdef0123456789abcdef",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )];
+        let dat = rom_line(
+            "1",
+            100,
+            "DEADBEEF",
+            "0123456789ABCDEF0123456789ABCDEF",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        );
+        let submitted = parse_rom_entries(&dat);
+
+        assert!(files_match_submission(&files, &submitted));
+    }
+
+    #[test]
+    fn dat_match_accepts_single_iso_file() {
+        let files = vec![file("0", 100, "11111111", &"1".repeat(32), &"1".repeat(40))];
+        let dat = r#"<rom name="Game.iso" size="100" crc="11111111" md5="11111111111111111111111111111111" sha1="1111111111111111111111111111111111111111" />"#;
+        let submitted = parse_rom_entries(dat);
+
+        assert_eq!(submitted[0].track_number.as_deref(), Some("0"));
+        assert!(files_match_submission(&files, &submitted));
+    }
+
+    #[test]
+    fn dat_match_rejects_wrong_track_hash() {
+        let files = vec![
+            file("1", 100, "11111111", &"1".repeat(32), &"1".repeat(40)),
+            file("2", 200, "22222222", &"2".repeat(32), &"2".repeat(40)),
+        ];
+        let dat = [
+            rom_line("1", 100, "11111111", &"1".repeat(32), &"1".repeat(40)),
+            rom_line("2", 200, "33333333", &"3".repeat(32), &"3".repeat(40)),
+        ]
+        .join("\n");
+        let submitted = parse_rom_entries(&dat);
+
+        assert!(!files_match_submission(&files, &submitted));
     }
 
     #[test]
