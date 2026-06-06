@@ -73,18 +73,30 @@ fn parse_rom_entries(files_xml: &str) -> Vec<RomEntry> {
         .collect()
 }
 
-pub async fn find_matching_disc(pool: &PgPool, files_xml: &str) -> Option<i32> {
+pub async fn find_matching_disc(
+    pool: &PgPool,
+    files_xml: &str,
+    include_disabled_discs: bool,
+) -> Option<i32> {
     let submitted = parse_rom_entries(files_xml);
     if submitted.is_empty() {
         return None;
     }
 
-    let candidates: Vec<i32> =
-        sqlx::query_scalar("SELECT DISTINCT disc_id FROM files WHERE LOWER(sha1) = LOWER($1)")
-            .bind(&submitted[0].sha1)
-            .fetch_all(pool)
-            .await
-            .unwrap_or_default();
+    let candidate_sql = if include_disabled_discs {
+        "SELECT DISTINCT disc_id FROM files WHERE LOWER(sha1) = LOWER($1)"
+    } else {
+        "SELECT DISTINCT f.disc_id
+         FROM files f
+         JOIN discs d ON d.id = f.disc_id
+         WHERE LOWER(f.sha1) = LOWER($1)
+           AND d.status <> 'Disabled'"
+    };
+    let candidates: Vec<i32> = sqlx::query_scalar(candidate_sql)
+        .bind(&submitted[0].sha1)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
 
     for disc_id in candidates {
         let disc_files: Vec<crate::db::models::File> = sqlx::query_as(
@@ -831,6 +843,7 @@ pub async fn list_submissions(
     user_id_filter: Option<i32>,
     disc_id_filter: Option<i32>,
     restrict_to_public_statuses: bool,
+    hide_disabled_disc_targets: bool,
     status_filter: Option<&str>,
     type_filter: Option<&str>,
     system_filter: Option<&str>,
@@ -854,6 +867,9 @@ pub async fn list_submissions(
     }
     if restrict_to_public_statuses {
         conditions.push("ds.status IN ('Approved', 'Legacy')".to_string());
+    }
+    if hide_disabled_disc_targets {
+        conditions.push("(d.id IS NULL OR d.status <> 'Disabled')".to_string());
     }
     if status_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -955,6 +971,7 @@ pub async fn count_submissions(
     user_id_filter: Option<i32>,
     disc_id_filter: Option<i32>,
     restrict_to_public_statuses: bool,
+    hide_disabled_disc_targets: bool,
     status_filter: Option<&str>,
     type_filter: Option<&str>,
     system_filter: Option<&str>,
@@ -973,6 +990,9 @@ pub async fn count_submissions(
     }
     if restrict_to_public_statuses {
         conditions.push("ds.status IN ('Approved', 'Legacy')".to_string());
+    }
+    if hide_disabled_disc_targets {
+        conditions.push("(d.id IS NULL OR d.status <> 'Disabled')".to_string());
     }
     if status_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;

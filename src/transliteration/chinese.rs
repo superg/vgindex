@@ -244,6 +244,9 @@ mod tests {
     #[test]
     fn normalizes_common_fullwidth_punctuation() {
         assert_eq!(tr("古劍奇譚：貳"), "Gu Jian Qi Tan: Er");
-        assert_eq!(tr("汪達與巨像（中文版）"), "Wang Da Yu Ju Xiang (Zhong Wen Ban)");
+        assert_eq!(
+            tr("汪達與巨像（中文版）"),
+            "Wang Da Yu Ju Xiang (Zhong Wen Ban)"
+        );
     }
 }

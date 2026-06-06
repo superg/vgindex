@@ -214,6 +214,10 @@ impl UserRole {
     pub fn can_edit_wiki(&self) -> bool {
         *self >= Self::UserPlus
     }
+
+    pub fn can_view_disabled_discs(&self) -> bool {
+        *self >= Self::UserPlus
+    }
 }
 
 impl std::fmt::Display for UserRole {
@@ -928,6 +932,14 @@ pub struct SubmissionListRow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disabled_disc_visibility_starts_at_user_plus() {
+        assert!(!UserRole::User.can_view_disabled_discs());
+        assert!(UserRole::UserPlus.can_view_disabled_discs());
+        assert!(UserRole::Moderator.can_view_disabled_discs());
+        assert!(UserRole::Admin.can_view_disabled_discs());
+    }
 
     #[test]
     fn simplify_cue_outputs_lf_for_crlf_input() {

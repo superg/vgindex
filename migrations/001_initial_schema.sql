@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE media_types (
     code VARCHAR(8) PRIMARY KEY,
     name VARCHAR(32) UNIQUE NOT NULL,
@@ -100,6 +102,13 @@ CREATE INDEX idx_discs_disabled ON discs(status) WHERE status = 'Disabled';
 CREATE FUNCTION arr_to_str(TEXT[], TEXT) RETURNS TEXT
     LANGUAGE SQL IMMUTABLE PARALLEL SAFE
     AS $$ SELECT array_to_string($1, $2) $$;
+
+-- substring search indexes
+CREATE INDEX idx_discs_title_trgm ON discs USING GIN (LOWER(title) gin_trgm_ops);
+CREATE INDEX idx_discs_title_foreign_trgm ON discs USING GIN (LOWER(title_foreign) gin_trgm_ops);
+CREATE INDEX idx_discs_serial_trgm ON discs USING GIN (LOWER(arr_to_str(serial, ' ')) gin_trgm_ops);
+CREATE INDEX idx_discs_edition_trgm ON discs USING GIN (LOWER(arr_to_str(edition, ' ')) gin_trgm_ops);
+CREATE INDEX idx_discs_comments_trgm ON discs USING GIN (LOWER(comments) gin_trgm_ops);
 
 -- full-text search
 ALTER TABLE discs ADD COLUMN search_vector tsvector

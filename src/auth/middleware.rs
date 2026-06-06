@@ -33,6 +33,12 @@ impl CurrentUser {
     pub fn is_logged_in(&self) -> bool {
         self.0.is_some()
     }
+
+    pub fn can_view_disabled_discs(&self) -> bool {
+        self.0
+            .as_ref()
+            .is_some_and(|u| u.role.can_view_disabled_discs())
+    }
 }
 
 impl<S> FromRequestParts<S> for CurrentUser

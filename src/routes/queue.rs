@@ -156,6 +156,7 @@ async fn queue_list(
 ) -> AppResult<Html<String>> {
     let current = user.user();
     let is_logged_in = current.is_some();
+    let can_view_disabled_discs = user.can_view_disabled_discs();
     let disc_id_filter = query.disc_id;
     let is_disc_history = disc_id_filter.is_some();
     let is_public_history = is_disc_history;
@@ -163,6 +164,9 @@ async fn queue_list(
 
     if disc_id_filter.is_none() && !is_logged_in {
         return Err(AppError::Unauthorized);
+    }
+    if let Some(disc_id) = disc_id_filter {
+        disc_service::ensure_disc_id_visible(&state.pool, disc_id, can_view_disabled_discs).await?;
     }
 
     let page = query.page.unwrap_or(1).max(1);
@@ -224,6 +228,7 @@ async fn queue_list(
         None,
         disc_id_filter,
         is_disc_history,
+        !can_view_disabled_discs,
         status_for_query,
         type_for_query,
         system_for_query,
@@ -240,6 +245,7 @@ async fn queue_list(
         None,
         disc_id_filter,
         is_disc_history,
+        !can_view_disabled_discs,
         status_for_query,
         type_for_query,
         system_for_query,
@@ -357,6 +363,10 @@ async fn submission_detail(
         sub.status,
         SubmissionStatus::Approved | SubmissionStatus::Legacy
     );
+    if let Some(disc_id) = sub.target_disc_id {
+        disc_service::ensure_disc_id_visible(&state.pool, disc_id, user.can_view_disabled_discs())
+            .await?;
+    }
 
     if !(current.is_some() || is_public_status) {
         return Err(AppError::Forbidden);
