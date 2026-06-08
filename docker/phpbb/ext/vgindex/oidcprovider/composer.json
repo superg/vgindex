@@ -2,7 +2,7 @@
     "name": "vgindex/oidcprovider",
     "type": "phpbb-extension",
     "description": "First-party OpenID Connect provider backed by phpBB users and groups.",
-    "homepage": "https://vgindex.org",
+    "homepage": "https://redump.info",
     "version": "1.0.0",
     "license": "GPL-2.0-only",
     "authors": [

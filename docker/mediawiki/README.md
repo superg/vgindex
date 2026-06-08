@@ -31,7 +31,7 @@ docker compose up -d postgres phpbb mediawiki caddy
 ```
 
 No manual install steps needed. With default config, the wiki is at
-`http://wiki.vgindex.test:$LOCAL_SITE_PORT/`.
+`http://wiki.redump.test:$LOCAL_SITE_PORT/`.
 
 ## Configuration
 
@@ -57,7 +57,7 @@ ensuring Dockerfile changes (e.g. new extensions) always take effect.
 Scraped Redump wiki XML can be imported with:
 
 ```bash
-bash scripts/redump_wiki_scraper/import.sh --target-domain vgindex.org
+bash scripts/redump_wiki_scraper/import.sh --target-domain redump.info
 ```
 
 The importer rewrites Redump-family links before passing each XML file to
@@ -69,7 +69,7 @@ For one-off imports where pages were copied into the MediaWiki upload volume,
 pass both the host path and the matching in-container path:
 
 ```bash
-bash scripts/redump_wiki_scraper/import.sh --target-domain vgindex.org --pages-dir /root/temp/vgindex/data/redump/wiki/pages --container-pages-dir /var/www/html/images/redump-import/wiki/pages
+bash scripts/redump_wiki_scraper/import.sh --target-domain redump.info --pages-dir /root/temp/vgindex/data/redump/wiki/pages --container-pages-dir /var/www/html/images/redump-import/wiki/pages
 ```
 
 ## Health checks

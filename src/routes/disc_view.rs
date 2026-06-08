@@ -324,6 +324,7 @@ async fn disc_view(
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
 
     let can_edit = user.user().map_or(false, |u| u.role.can_submit());
+    let can_view_key_material = user.is_logged_in();
 
     let ring_display_layers = detail.disc.media_type.max_layers() as usize + 1;
 
@@ -517,18 +518,26 @@ async fn disc_view(
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
 
-    let disc_key = detail
-        .disc
-        .disc_key
-        .as_ref()
-        .map(|bytes| {
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        })
-        .unwrap_or_default();
-    let disc_id_text = detail.disc.disc_id.clone().unwrap_or_default();
+    let disc_key = if can_view_key_material {
+        detail
+            .disc
+            .disc_key
+            .as_ref()
+            .map(|bytes| {
+                bytes
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<String>()
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let disc_id_text = if can_view_key_material {
+        detail.disc.disc_id.clone().unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     let sector_ranges: Vec<ProtectionRangeRow> = detail
         .sector_ranges
@@ -681,8 +690,8 @@ async fn disc_view(
             pvd_rows,
             show_pvd: detail.system.has_pvd,
             pic_rows,
-            show_disc_id: detail.system.has_disc_id,
-            show_key: detail.system.has_key,
+            show_disc_id: can_view_key_material && detail.system.has_disc_id,
+            show_key: can_view_key_material && detail.system.has_key,
             disc_key,
             disc_id_text,
             sector_ranges,
@@ -1469,6 +1478,98 @@ mod tests {
         }
     }
 
+    fn disc_view_template(
+        show_disc_id: bool,
+        show_key: bool,
+        disc_id_text: &str,
+        disc_key: &str,
+    ) -> DiscViewTemplate {
+        DiscViewTemplate {
+            current_user: None,
+            can_edit: false,
+            disc_id: 1,
+            title: "Example Disc".to_string(),
+            system_name: "Sony - PlayStation 3".to_string(),
+            system_code: "PS3".to_string(),
+            media_type: "Blu-ray Disc".to_string(),
+            category: "Games".to_string(),
+            regions: Vec::new(),
+            lang_flags: Vec::new(),
+            show_title_foreign: false,
+            title_foreign: String::new(),
+            disc_title: String::new(),
+            disc_number: String::new(),
+            serial: String::new(),
+            serial_count: 0,
+            show_serial: false,
+            exe_date: String::new(),
+            show_exe_date: false,
+            version: String::new(),
+            show_version: false,
+            edition: String::new(),
+            edition_count: 0,
+            show_edition: false,
+            barcode: String::new(),
+            barcode_count: 0,
+            show_barcode: false,
+            layerbreaks: String::new(),
+            comments: String::new(),
+            contents: String::new(),
+            edc_display: String::new(),
+            show_edc: false,
+            protection: String::new(),
+            show_protection: false,
+            error_count: String::new(),
+            file_count: 0,
+            status_class: "verified".to_string(),
+            status_display: "Verified".to_string(),
+            dumper_count: 0,
+            created_at: String::new(),
+            updated_at: String::new(),
+            dumpers_display: "Unknown".to_string(),
+            ring_rows: Vec::new(),
+            ring_vis: RingColVis {
+                layer: false,
+                mastering_code: false,
+                mastering_sid: false,
+                mould_sids: false,
+                additional_moulds: false,
+                toolstamps: false,
+                offset: false,
+                offset_extra: false,
+                sample_data_start: false,
+                comment: false,
+            },
+            show_tracks_table: false,
+            track_rows: Vec::new(),
+            track_col_vis: TrackColVis {
+                track_num: false,
+                type_display: false,
+                flags: false,
+                pregap: false,
+                length: false,
+                sectors: false,
+                visible_count: 0,
+            },
+            files: Vec::new(),
+            sbi_rows: Vec::new(),
+            show_sbi: false,
+            pvd_rows: Vec::new(),
+            show_pvd: false,
+            pic_rows: Vec::new(),
+            show_disc_id,
+            show_key,
+            disc_key: disc_key.to_string(),
+            disc_id_text: disc_id_text.to_string(),
+            sector_ranges: Vec::new(),
+            show_sector_ranges: false,
+            header_rows: Vec::new(),
+            show_header: false,
+            bca_rows: Vec::new(),
+            show_bca: false,
+        }
+    }
+
     #[test]
     fn ring_layer_label_marks_final_layer_as_label_side() {
         assert_eq!(ring_layer_label(0, 2), "L0");
@@ -1490,6 +1591,30 @@ mod tests {
         assert!(!template.contains("barcode_count > 6"));
         assert!(!template.contains("td-collapse"));
         assert!(!css.contains(".td-collapse"));
+    }
+
+    #[test]
+    fn disc_view_hides_disc_id_and_key_when_visibility_flags_are_false() {
+        let html = disc_view_template(false, false, "secret-disc-id", "deadbeef")
+            .render()
+            .unwrap();
+
+        assert!(!html.contains("<strong>Disc ID</strong>"));
+        assert!(!html.contains("<strong>Disc Key</strong>"));
+        assert!(!html.contains("secret-disc-id"));
+        assert!(!html.contains("deadbeef"));
+    }
+
+    #[test]
+    fn disc_view_shows_disc_id_and_key_when_visibility_flags_are_true() {
+        let html = disc_view_template(true, true, "visible-disc-id", "deadbeef")
+            .render()
+            .unwrap();
+
+        assert!(html.contains("<strong>Disc ID</strong>"));
+        assert!(html.contains("<strong>Disc Key</strong>"));
+        assert!(html.contains("visible-disc-id"));
+        assert!(html.contains("deadbeef"));
     }
 
     #[test]

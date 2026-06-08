@@ -10,6 +10,36 @@ pub struct ArchiveResult {
     pub filename: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArchiveMetadata {
+    author: String,
+    homepage: String,
+    url: String,
+}
+
+impl ArchiveMetadata {
+    pub fn from_site_url(site_url: &str) -> Self {
+        let trimmed = site_url.trim().trim_end_matches('/');
+        let url = if trimmed.is_empty() {
+            "http://localhost/".to_string()
+        } else {
+            format!("{trimmed}/")
+        };
+        let host = crate::config::host_from_url(trimmed);
+        let site_host = if host.is_empty() {
+            "localhost".to_string()
+        } else {
+            host
+        };
+
+        Self {
+            author: site_host.clone(),
+            homepage: site_host,
+            url,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Storage helpers
 // ---------------------------------------------------------------------------
@@ -60,6 +90,7 @@ fn store_archive(system: &str, archive_type: &str, result: &ArchiveResult) {
 
 pub async fn get_or_generate_archive(
     pool: &PgPool,
+    metadata: &ArchiveMetadata,
     system: &str,
     archive_type: &str,
 ) -> AppResult<ArchiveResult> {
@@ -68,7 +99,7 @@ pub async fn get_or_generate_archive(
     }
 
     let result = match archive_type {
-        "dat" => generate_datfile_archive(pool, system).await?,
+        "dat" => generate_datfile_archive(pool, metadata, system).await?,
         "cue" => generate_cuesheet_archive(pool, system).await?,
         "key" => generate_key_archive(pool, system).await?,
         "sbi" => generate_sbi_archive(pool, system).await?,
@@ -79,7 +110,7 @@ pub async fn get_or_generate_archive(
     Ok(result)
 }
 
-pub async fn regenerate_system_archives(pool: &PgPool, system: &str) {
+pub async fn regenerate_system_archives(pool: &PgPool, metadata: &ArchiveMetadata, system: &str) {
     let sys: Option<System> = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
@@ -88,7 +119,7 @@ pub async fn regenerate_system_archives(pool: &PgPool, system: &str) {
         .flatten();
     let Some(sys) = sys else { return };
 
-    if let Ok(result) = generate_datfile_archive(pool, &sys.code).await {
+    if let Ok(result) = generate_datfile_archive(pool, metadata, &sys.code).await {
         store_archive(&sys.code, "dat", &result);
     }
 
@@ -114,6 +145,7 @@ pub async fn regenerate_system_archives(pool: &PgPool, system: &str) {
 pub async fn run_archive_worker(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<String>,
     pool: PgPool,
+    metadata: ArchiveMetadata,
 ) {
     loop {
         let Some(first) = rx.recv().await else { break };
@@ -126,7 +158,7 @@ pub async fn run_archive_worker(
 
         for code in dirty {
             tracing::info!("Regenerating archives for system {code}");
-            regenerate_system_archives(&pool, &code).await;
+            regenerate_system_archives(&pool, &metadata, &code).await;
         }
     }
 }
@@ -191,7 +223,11 @@ struct DatfileDisc {
     rom_extension: String,
 }
 
-async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveResult> {
+async fn generate_datfile_archive(
+    pool: &PgPool,
+    metadata: &ArchiveMetadata,
+    system: &str,
+) -> AppResult<ArchiveResult> {
     let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
@@ -227,14 +263,17 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
 		<description>{desc}</description>
 		<version>{ts}</version>
 		<date>{ts}</date>
-		<author>vgindex.org</author>
-		<homepage>vgindex.org</homepage>
-		<url>https://vgindex.org/</url>
+		<author>{author}</author>
+		<homepage>{homepage}</homepage>
+		<url>{url}</url>
 	</header>
 "#,
         name = html_escape(&dat_name),
         desc = html_escape(&description),
         ts = html_escape(&ts),
+        author = html_escape(&metadata.author),
+        homepage = html_escape(&metadata.homepage),
+        url = html_escape(&metadata.url),
     );
 
     struct GameEntry {
@@ -346,6 +385,29 @@ async fn generate_datfile_archive(pool: &PgPool, system: &str) -> AppResult<Arch
         data: buf,
         filename: zip_filename,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn archive_metadata_uses_site_host_and_url() {
+        let metadata = ArchiveMetadata::from_site_url("https://redump.info");
+
+        assert_eq!(metadata.author, "redump.info");
+        assert_eq!(metadata.homepage, "redump.info");
+        assert_eq!(metadata.url, "https://redump.info/");
+    }
+
+    #[test]
+    fn archive_metadata_strips_www_host_prefix() {
+        let metadata = ArchiveMetadata::from_site_url("https://www.redump.info/");
+
+        assert_eq!(metadata.author, "redump.info");
+        assert_eq!(metadata.homepage, "redump.info");
+        assert_eq!(metadata.url, "https://www.redump.info/");
+    }
 }
 
 // ---------------------------------------------------------------------------

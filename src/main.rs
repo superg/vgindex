@@ -57,6 +57,8 @@ async fn main() {
     );
 
     let (archive_tx, archive_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let archive_metadata =
+        services::archive_service::ArchiveMetadata::from_site_url(&config.site_url);
 
     let state = AppState {
         pool: pool.clone(),
@@ -75,7 +77,9 @@ async fn main() {
     tokio::spawn(run_session_cleanup(pool.clone()));
 
     tokio::spawn(services::archive_service::run_archive_worker(
-        archive_rx, pool,
+        archive_rx,
+        pool,
+        archive_metadata,
     ));
 
     let app = Router::new()

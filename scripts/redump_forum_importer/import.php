@@ -125,6 +125,50 @@ function normalize_target_domain(string $domain): string
     return $domain;
 }
 
+function target_email_domain(string $target_domain): string
+{
+    $target_domain = normalize_target_domain($target_domain);
+    $parts = parse_url('https://' . $target_domain);
+    if (is_array($parts) && !empty($parts['host']))
+    {
+        return strtolower((string) $parts['host']);
+    }
+
+    return strtolower((string) (preg_replace('/:\d+$/', '', $target_domain) ?? $target_domain));
+}
+
+function rewrite_imported_email_domain(string $email, string $target_domain): string
+{
+    $email = trim($email);
+    if ($email === '')
+    {
+        return '';
+    }
+
+    $at = strrpos($email, '@');
+    if ($at === false)
+    {
+        return $email;
+    }
+
+    $local = substr($email, 0, $at);
+    $domain = strtolower(substr($email, $at + 1));
+    $target = target_email_domain($target_domain);
+
+    if ($domain === 'redump.org')
+    {
+        return $local . '@' . $target;
+    }
+
+    if (str_ends_with($domain, '.redump.org'))
+    {
+        $subdomain = substr($domain, 0, -strlen('.redump.org'));
+        return $local . '@' . $subdomain . '.' . $target;
+    }
+
+    return $email;
+}
+
 function require_dir(string $path, string $label): void
 {
     if (!is_dir($path))
@@ -460,7 +504,7 @@ function merge_topic_aux_metadata(array $topic, array $metadata): array
     return $merged;
 }
 
-function read_users_csv(string $users_dir): array
+function read_users_csv(string $users_dir, string $target_domain): array
 {
     $path = $users_dir . '/' . USERS_CSV;
     require_file_path($path, 'users.csv');
@@ -495,7 +539,7 @@ function read_users_csv(string $users_dir): array
 
         $id = (int) $record['ID'];
         $username = (string) $record['Username'];
-        $email = (string) ($record['Email'] ?? '');
+        $email = rewrite_imported_email_domain((string) ($record['Email'] ?? ''), $target_domain);
         if ($email === '')
         {
             $email = imported_email($username, $id);
@@ -1003,7 +1047,7 @@ function text_for_search(string $html): string
     return trim(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
 }
 
-function scan_archive(string $forum_data, string $users_dir): array
+function scan_archive(string $forum_data, string $users_dir, string $target_domain): array
 {
     echo "Scanning import inputs...\n";
     require_dir($forum_data, 'Forum data directory');
@@ -1012,7 +1056,7 @@ function scan_archive(string $forum_data, string $users_dir): array
     require_dir($users_dir . '/' . USER_DATA_DIR, 'Users data directory');
 
     echo "  Reading users.csv...\n";
-    [$users_by_id, $users_by_name] = read_users_csv($users_dir);
+    [$users_by_id, $users_by_name] = read_users_csv($users_dir, $target_domain);
     echo "  Loading topic metadata...\n";
     $topic_metadata = load_topic_metadata($forum_data);
     echo "  Finding topic JSON files...\n";
@@ -1834,7 +1878,7 @@ function upsert_user_bans(int $user_id, string $email): void
     }
 }
 
-function upsert_phpbb_user(array $source_user, string $role, string $timezone, ?string $plain_password = null): int
+function upsert_phpbb_user(array $source_user, string $role, string $timezone, string $target_domain, ?string $plain_password = null): int
 {
     global $config, $phpbb_container;
 
@@ -1853,6 +1897,10 @@ function upsert_phpbb_user(array $source_user, string $role, string $timezone, ?
     if ($email === '')
     {
         $email = imported_email($source_username, $source_id);
+    }
+    else
+    {
+        $email = rewrite_imported_email_domain($email, $target_domain);
     }
 
     $existing = find_phpbb_user_by_clean($username);
@@ -1942,7 +1990,7 @@ function create_or_update_users(array $users_by_name, array $users_by_id, string
         }
 
         $role = source_user_role($source_user);
-        $user_id = upsert_phpbb_user($source_user, $role, $timezone);
+        $user_id = upsert_phpbb_user($source_user, $role, $timezone, $target_domain);
         $user_ids[$username] = $user_id;
     }
     progress_line("  Imported {$done_users}/{$total_users} user account(s).");
@@ -1970,7 +2018,7 @@ function create_or_update_users(array $users_by_name, array $users_by_id, string
     return $user_ids;
 }
 
-function seed_test_users(string $test_users_file, string $timezone): array
+function seed_test_users(string $test_users_file, string $timezone, string $target_domain): array
 {
     $definitions = load_test_user_definitions($test_users_file);
 
@@ -1987,7 +2035,7 @@ function seed_test_users(string $test_users_file, string $timezone): array
             'title' => '',
             'stub' => false,
         ];
-        $user_ids[$username] = upsert_phpbb_user($source_user, (string) $definition['role'], $timezone, (string) $definition['password']);
+        $user_ids[$username] = upsert_phpbb_user($source_user, (string) $definition['role'], $timezone, $target_domain, (string) $definition['password']);
     }
 
     return $user_ids;
@@ -2991,7 +3039,7 @@ function main(array $argv): int
         return 0;
     }
 
-    $scan = scan_archive($args['forum_data'], $args['users_dir']);
+    $scan = scan_archive($args['forum_data'], $args['users_dir'], $args['target_domain']);
     print_preflight($scan);
     assert_preflight_ok($scan);
 
@@ -3015,7 +3063,7 @@ function main(array $argv): int
     if (is_file($args['test_users_file']))
     {
         echo "Seeding test users from {$args['test_users_file']}...\n";
-        $test_user_ids = seed_test_users($args['test_users_file'], $args['source_timezone']);
+        $test_user_ids = seed_test_users($args['test_users_file'], $args['source_timezone'], $args['target_domain']);
         foreach ($test_user_ids as $username => $user_id)
         {
             $user_ids[$username] = $user_id;
