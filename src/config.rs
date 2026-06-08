@@ -32,6 +32,7 @@ pub trait SiteConfig {
 pub struct Config {
     pub site_name: String,
     pub database_url: String,
+    pub site_url: String,
     pub base_url: String,
     pub wiki_url: String,
     pub forum_url: String,
@@ -50,7 +51,7 @@ fn trim_url(value: String) -> String {
     value.trim().trim_end_matches('/').to_string()
 }
 
-fn host_from_url(url: &str) -> String {
+pub fn host_from_url(url: &str) -> String {
     let without_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
     let authority = without_scheme.split('/').next().unwrap_or(without_scheme);
     authority
@@ -67,16 +68,16 @@ fn host_from_url(url: &str) -> String {
 impl Config {
     pub fn from_env() -> Self {
         let base_url = trim_url(
-            env_nonempty("APP_PUBLIC_URL")
-                .unwrap_or_else(|| "http://www.vgindex.test:18000".into()),
+            env_nonempty("APP_PUBLIC_URL").unwrap_or_else(|| "http://www.redump.test:18000".into()),
         );
+        let site_url = trim_url(env_nonempty("SITE_APEX_URL").unwrap_or_else(|| base_url.clone()));
         let forum_url = trim_url(
             env_nonempty("PHPBB_PUBLIC_URL")
-                .unwrap_or_else(|| "http://forum.vgindex.test:18000".into()),
+                .unwrap_or_else(|| "http://forum.redump.test:18000".into()),
         );
         let wiki_url = trim_url(
             env_nonempty("MEDIAWIKI_PUBLIC_URL")
-                .unwrap_or_else(|| "http://wiki.vgindex.test:18000".into()),
+                .unwrap_or_else(|| "http://wiki.redump.test:18000".into()),
         );
         let oidc_provider_url = trim_url(
             env_nonempty("OIDC_PROVIDER_URL")
@@ -90,6 +91,7 @@ impl Config {
 
         Self {
             site_name,
+            site_url,
             base_url,
             wiki_url,
             forum_url,

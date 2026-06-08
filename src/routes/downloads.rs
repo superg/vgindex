@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 
-use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
+use crate::auth::middleware::{AuthenticatedUser, CurrentUser, RequireAuth};
 use crate::config::SiteConfig;
 use crate::services::archive_service;
 use crate::AppState;
@@ -26,6 +26,7 @@ pub fn routes() -> Router<AppState> {
 #[template(path = "downloads.html")]
 struct DownloadsTemplate {
     current_user: Option<AuthenticatedUser>,
+    can_download_keys: bool,
     systems: Vec<SystemDownload>,
 }
 impl SiteConfig for DownloadsTemplate {}
@@ -78,6 +79,7 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
     Html(
         DownloadsTemplate {
             current_user: user.user().cloned(),
+            can_download_keys: user.is_logged_in(),
             systems,
         }
         .render()
@@ -101,8 +103,11 @@ struct MediaTypeCdRow {
     rom_extension: String,
 }
 
-async fn serve_archive(pool: &sqlx::PgPool, system: &str, archive_type: &str) -> Response {
-    match archive_service::get_or_generate_archive(pool, system, archive_type).await {
+async fn serve_archive(state: &AppState, system: &str, archive_type: &str) -> Response {
+    let metadata = archive_service::ArchiveMetadata::from_site_url(&state.config.site_url);
+    match archive_service::get_or_generate_archive(&state.pool, &metadata, system, archive_type)
+        .await
+    {
         Ok(result) => (
             [
                 (header::CONTENT_TYPE, "application/zip".to_string()),
@@ -119,17 +124,130 @@ async fn serve_archive(pool: &sqlx::PgPool, system: &str, archive_type: &str) ->
 }
 
 async fn download_dat(State(state): State<AppState>, Path(system): Path<String>) -> Response {
-    serve_archive(&state.pool, &system, "dat").await
+    serve_archive(&state, &system, "dat").await
 }
 
 async fn download_cue(State(state): State<AppState>, Path(system): Path<String>) -> Response {
-    serve_archive(&state.pool, &system, "cue").await
+    serve_archive(&state, &system, "cue").await
 }
 
-async fn download_key(State(state): State<AppState>, Path(system): Path<String>) -> Response {
-    serve_archive(&state.pool, &system, "key").await
+async fn download_key(
+    State(state): State<AppState>,
+    _user: RequireAuth,
+    Path(system): Path<String>,
+) -> Response {
+    serve_archive(&state, &system, "key").await
 }
 
 async fn download_sbi(State(state): State<AppState>, Path(system): Path<String>) -> Response {
-    serve_archive(&state.pool, &system, "sbi").await
+    serve_archive(&state, &system, "sbi").await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::models::UserRole;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tower::ServiceExt;
+
+    fn template(can_download_keys: bool) -> DownloadsTemplate {
+        DownloadsTemplate {
+            current_user: can_download_keys.then(|| AuthenticatedUser {
+                id: 1,
+                username: "tester".to_string(),
+                role: UserRole::User,
+                avatar_url: None,
+            }),
+            can_download_keys,
+            systems: vec![
+                SystemDownload {
+                    code: "PS3".to_string(),
+                    name: "Sony - PlayStation 3".to_string(),
+                    has_dat: true,
+                    has_cue: false,
+                    has_key: true,
+                    has_sbi: false,
+                },
+                SystemDownload {
+                    code: "PC".to_string(),
+                    name: "IBM - PC compatible".to_string(),
+                    has_dat: true,
+                    has_cue: true,
+                    has_key: false,
+                    has_sbi: false,
+                },
+            ],
+        }
+    }
+
+    fn test_state() -> AppState {
+        let (archive_tx, _archive_rx) = tokio::sync::mpsc::unbounded_channel();
+        let database_url = "postgres://postgres:postgres@localhost/postgres".to_string();
+
+        AppState {
+            pool: sqlx::postgres::PgPoolOptions::new()
+                .connect_lazy(&database_url)
+                .unwrap(),
+            config: Arc::new(crate::config::Config {
+                site_name: "localhost".to_string(),
+                database_url,
+                site_url: "http://localhost".to_string(),
+                base_url: "http://localhost".to_string(),
+                wiki_url: "#".to_string(),
+                forum_url: "#".to_string(),
+                news_feed_url: "#".to_string(),
+                port: 0,
+                oidc_provider_url: "#".to_string(),
+                oidc_client_id: "test".to_string(),
+                oidc_client_secret: "test".to_string(),
+            }),
+            http: reqwest::Client::new(),
+            archive_tx,
+            edition_suggestions: crate::services::disc_service::EditionSuggestionsCache::new(
+                Duration::from_secs(60),
+            ),
+            news_cache: crate::services::news_service::NewsCache::new(Duration::from_secs(
+                crate::services::news_service::NEWS_FEED_TTL_SECONDS,
+            )),
+            transliteration: Arc::new(
+                crate::transliteration::TransliterationRegistry::new().unwrap(),
+            ),
+        }
+    }
+
+    #[test]
+    fn downloads_page_hides_key_links_from_guests() {
+        let html = template(false).render().unwrap();
+
+        assert!(!html.contains(r#"/keys/PS3"#));
+        assert!(html.contains(r#"/datfile/PS3"#));
+        assert!(html.contains(r#"/cues/PC"#));
+    }
+
+    #[test]
+    fn downloads_page_shows_key_links_to_authenticated_users() {
+        let html = template(true).render().unwrap();
+
+        assert!(html.contains(r#"/keys/PS3"#));
+        assert!(!html.contains(r#"/keys/PC"#));
+    }
+
+    #[tokio::test]
+    async fn key_download_route_rejects_guest_direct_links() {
+        let app = routes().with_state(test_state());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/keys/PS3")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
 }

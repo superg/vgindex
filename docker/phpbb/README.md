@@ -36,7 +36,7 @@ http://localhost:18080/
 ```
 
 The canonical local site is served through Caddy at
-`http://forum.vgindex.test:$LOCAL_SITE_PORT/`.
+`http://forum.redump.test:$LOCAL_SITE_PORT/`.
 
 ## Configuration
 
@@ -83,7 +83,7 @@ The phpBB extension is served under `/app.php/oidc`:
 Local development and production use one canonical provider URL,
 `OIDC_PROVIDER_URL`, which normally points at the public forum URL plus
 `/app.php/oidc`. For production, set `PHPBB_PUBLIC_URL` to the public HTTPS
-forum origin, for example `https://forum.vgindex.org`.
+forum origin, for example `https://forum.redump.info`.
 
 Only seeded first-party clients are supported in v1. Client secrets,
 authorization codes, and opaque access tokens are stored hashed in phpBB-owned
@@ -121,11 +121,13 @@ Remove `--dry-run` to import into a fresh/disposable phpBB board. The importer
 refuses to run if real forum content already exists beyond phpBB installer
 sample data.
 
-Use `--target-domain vgindex.org` for deployment imports. Imported Redump-family
+Use `--target-domain redump.info` for deployment imports. Imported Redump-family
 links outside the old forum are rewritten to HTTPS under that target domain,
 including wiki subdomains. Old forum post/topic links that can be mapped to
 imported phpBB IDs are stored as root-relative phpBB links, so they follow
-whatever host you use to browse the board.
+whatever host you use to browse the board. Imported user emails under
+`redump.org` or `*.redump.org` are also rewritten to the same target domain,
+with any `--target-domain` port stripped for email addresses.
 
 The importer looks for optional local test users at
 `/import/redump/users/test_users.json`, which maps to

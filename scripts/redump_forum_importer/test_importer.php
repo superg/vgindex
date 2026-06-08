@@ -72,6 +72,34 @@ $signature = format_imported_html(
 assert_contains_text('/viewtopic.php?t=456', $signature['text'], 'signature old topic rewrite');
 assert_not_contains_text('/topic/17188/', $signature['text'], 'signature does not keep old topic path');
 
+assert_same('User@vgindex.org', rewrite_imported_email_domain('User@redump.org', 'vgindex.org'), 'root redump email rewrite');
+assert_same('User@vgindex.org', rewrite_imported_email_domain('User@REDUMP.ORG', 'vgindex.org'), 'uppercase redump email rewrite');
+assert_same('User@forum.vgindex.org', rewrite_imported_email_domain('User@forum.redump.org', 'vgindex.org'), 'forum redump email rewrite');
+assert_same('User@a.b.vgindex.org', rewrite_imported_email_domain('User@a.b.redump.org', 'vgindex.org'), 'nested redump email rewrite');
+assert_same('User@example.org', rewrite_imported_email_domain('User@example.org', 'vgindex.org'), 'non-redump email unchanged');
+assert_same('User@forum.localhost', rewrite_imported_email_domain('User@forum.redump.org', 'localhost:18000'), 'email target strips port');
+
+$users_dir = sys_get_temp_dir() . '/redump-users-' . bin2hex(random_bytes(6));
+mkdir($users_dir);
+try
+{
+    file_put_contents(
+        $users_dir . '/users.csv',
+        "ID,Username,Email,Title,Registration Date\n"
+        . "1,Alice,Alice@forum.redump.org,,2020-01-02\n"
+        . "2,Bob,,,2020-01-03\n"
+    );
+    [$users_by_id, $users_by_name] = read_users_csv($users_dir, 'vgindex.org');
+    assert_same('Alice@forum.vgindex.org', $users_by_id[1]['email'], 'users.csv redump email rewritten by id');
+    assert_same('Alice@forum.vgindex.org', $users_by_name['Alice']['email'], 'users.csv redump email rewritten by name');
+    assert_contains_text('@imported.invalid', $users_by_id[2]['email'], 'blank users.csv email gets imported fallback');
+}
+finally
+{
+    @unlink($users_dir . '/users.csv');
+    @rmdir($users_dir);
+}
+
 $missing_test_users = load_test_user_definitions('/tmp/redump-missing-test-users.json');
 assert_same([], $missing_test_users, 'missing test users file is optional');
 

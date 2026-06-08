@@ -10,19 +10,19 @@ services:
     networks:
       default:
         aliases:
-          - ${SITE_HOST:-vgindex.test}
-          - www.${SITE_HOST:-vgindex.test}
-          - forum.${SITE_HOST:-vgindex.test}
-          - wiki.${SITE_HOST:-vgindex.test}
+          - ${SITE_HOST:-redump.test}
+          - www.${SITE_HOST:-redump.test}
+          - forum.${SITE_HOST:-redump.test}
+          - wiki.${SITE_HOST:-redump.test}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      - SITE_APEX_URL=${SITE_APEX_URL:-http://vgindex.test:${SITE_PORT_HTTP:-18000}}
-      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.vgindex.test:${LOCAL_SITE_PORT:-18000}}
-      - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}
-      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - SITE_APEX_URL=${SITE_APEX_URL:-http://redump.test:${SITE_PORT_HTTP:-18000}}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.redump.test:${LOCAL_SITE_PORT:-18000}}
       - APP_UPSTREAM_HOST=${APP_UPSTREAM_HOST:-app}
       - APP_UPSTREAM_PORT=${APP_UPSTREAM_PORT:-${APP_PORT:-3000}}
       - CADDY_HTTP_PORT=${CADDY_HTTP_PORT:-18000}
@@ -46,13 +46,14 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - APP_PORT=${APP_PORT:-3000}
-      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.vgindex.test:${LOCAL_SITE_PORT:-18000}}
-      - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}
-      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.vgindex.test:${LOCAL_SITE_PORT:-18000}}
-      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
+      - SITE_APEX_URL=${SITE_APEX_URL:-http://redump.test:${SITE_PORT_HTTP:-18000}}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
       - APP_OIDC_CLIENT_ID=${APP_OIDC_CLIENT_ID:-vgindex-app}
       - APP_OIDC_CLIENT_SECRET=${APP_OIDC_CLIENT_SECRET:-changeme-app-oidc}
-      - NEWS_FEED_URL=${NEWS_FEED_URL:-${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}/feed.php?mode=news}
+      - NEWS_FEED_URL=${NEWS_FEED_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/feed.php?mode=news}
     volumes:
       - archive_cache:/app/data
     depends_on:
@@ -95,12 +96,12 @@ services:
       - PHPBB_ADMIN_USER=${PHPBB_ADMIN_USER:-admin}
       - PHPBB_ADMIN_PASSWORD=${PHPBB_ADMIN_PASSWORD:-changeme-phpbb}
       - PHPBB_ADMIN_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@example.com}
-      - PHPBB_BOARD_NAME=${PHPBB_BOARD_NAME:-VGIndex Forum}
+      - PHPBB_BOARD_NAME=${PHPBB_BOARD_NAME:-redump.test Forum}
       - PHPBB_BOARD_DESCRIPTION=${PHPBB_BOARD_DESCRIPTION:-Disc Preservation Community}
-      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.vgindex.test:${LOCAL_SITE_PORT:-18000}}
-      - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}
-      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.vgindex.test:${LOCAL_SITE_PORT:-18000}}
-      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
       - PHPBB_COOKIE_DOMAIN=${PHPBB_COOKIE_DOMAIN:-}
       - PHPBB_EMAIL_ENABLE=${PHPBB_EMAIL_ENABLE:-false}
       - PHPBB_BOARD_EMAIL=${PHPBB_BOARD_EMAIL:-${SMTP_FROM:-${PHPBB_ADMIN_EMAIL:-admin@example.com}}}
@@ -142,11 +143,11 @@ services:
       - MEDIAWIKI_DB_TYPE=postgres
       - MEDIAWIKI_SECRET_KEY=${MEDIAWIKI_SECRET_KEY:-00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff}
       - MEDIAWIKI_UPGRADE_KEY=${MEDIAWIKI_UPGRADE_KEY:-0011223344556677}
-      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.vgindex.test:${LOCAL_SITE_PORT:-18000}}
+      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.redump.test:${LOCAL_SITE_PORT:-18000}}
       - MEDIAWIKI_SITE_NAME=${MEDIAWIKI_SITE_NAME:-}
       - MEDIAWIKI_ADMIN_USER=${MEDIAWIKI_ADMIN_USER:-admin}
       - MEDIAWIKI_ADMIN_PASSWORD=${MEDIAWIKI_ADMIN_PASSWORD:-changeme-mediawiki}
-      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.vgindex.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
+      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
       - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
       - MEDIAWIKI_OIDC_CLIENT_SECRET=${MEDIAWIKI_OIDC_CLIENT_SECRET:-changeme-mediawiki-oidc}
       - MEDIAWIKI_OIDC_VERIFY_TLS=${MEDIAWIKI_OIDC_VERIFY_TLS:-true}
