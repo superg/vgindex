@@ -101,10 +101,13 @@ $wgEnableUserEmail = $mediawikiEmailEnabled;
 if ($mediawikiEmailEnabled) {
     $mediawikiEmailFrom = requireEnv('MEDIAWIKI_EMAIL_FROM');
     $mediawikiEmailFromName = getenv('MEDIAWIKI_EMAIL_FROM_NAME');
+    $mediawikiSmtpHost = requireEnv('MEDIAWIKI_SMTP_HOST');
+    $mediawikiSmtpPort = (int) requireEnv('MEDIAWIKI_SMTP_PORT');
     $mediawikiSmtpUser = getenv('MEDIAWIKI_SMTP_USER');
     $mediawikiSmtpPassword = getenv('MEDIAWIKI_SMTP_PASSWORD');
     $mediawikiSmtpUser = $mediawikiSmtpUser === false ? '' : $mediawikiSmtpUser;
     $mediawikiSmtpPassword = $mediawikiSmtpPassword === false ? '' : $mediawikiSmtpPassword;
+    $mediawikiSmtpStarttls = envBool('MEDIAWIKI_SMTP_STARTTLS', strpos($mediawikiSmtpHost, '://') === false);
 
     if (($mediawikiSmtpUser === '') !== ($mediawikiSmtpPassword === '')) {
         throw new RuntimeException('MEDIAWIKI_SMTP_USER and MEDIAWIKI_SMTP_PASSWORD must both be set, or both be blank');
@@ -118,11 +121,12 @@ if ($mediawikiEmailEnabled) {
     }
 
     $wgSMTP = [
-        'host' => requireEnv('MEDIAWIKI_SMTP_HOST'),
+        'host' => $mediawikiSmtpHost,
         'IDHost' => $mediawikiHost,
         'localhost' => $mediawikiHost,
-        'port' => (int) requireEnv('MEDIAWIKI_SMTP_PORT'),
+        'port' => $mediawikiSmtpPort,
         'auth' => false,
+        'starttls' => $mediawikiSmtpStarttls,
     ];
 
     if ($mediawikiSmtpUser !== '') {
