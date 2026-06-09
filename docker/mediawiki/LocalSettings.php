@@ -101,6 +101,14 @@ $wgEnableUserEmail = $mediawikiEmailEnabled;
 if ($mediawikiEmailEnabled) {
     $mediawikiEmailFrom = requireEnv('MEDIAWIKI_EMAIL_FROM');
     $mediawikiEmailFromName = getenv('MEDIAWIKI_EMAIL_FROM_NAME');
+    $mediawikiSmtpUser = getenv('MEDIAWIKI_SMTP_USER');
+    $mediawikiSmtpPassword = getenv('MEDIAWIKI_SMTP_PASSWORD');
+    $mediawikiSmtpUser = $mediawikiSmtpUser === false ? '' : $mediawikiSmtpUser;
+    $mediawikiSmtpPassword = $mediawikiSmtpPassword === false ? '' : $mediawikiSmtpPassword;
+
+    if (($mediawikiSmtpUser === '') !== ($mediawikiSmtpPassword === '')) {
+        throw new RuntimeException('MEDIAWIKI_SMTP_USER and MEDIAWIKI_SMTP_PASSWORD must both be set, or both be blank');
+    }
 
     $wgPasswordSender = $mediawikiEmailFrom;
     $wgEmergencyContact = $mediawikiEmailFrom;
@@ -114,10 +122,14 @@ if ($mediawikiEmailEnabled) {
         'IDHost' => $mediawikiHost,
         'localhost' => $mediawikiHost,
         'port' => (int) requireEnv('MEDIAWIKI_SMTP_PORT'),
-        'auth' => true,
-        'username' => requireEnv('MEDIAWIKI_SMTP_USER'),
-        'password' => requireEnv('MEDIAWIKI_SMTP_PASSWORD'),
+        'auth' => false,
     ];
+
+    if ($mediawikiSmtpUser !== '') {
+        $wgSMTP['auth'] = true;
+        $wgSMTP['username'] = $mediawikiSmtpUser;
+        $wgSMTP['password'] = $mediawikiSmtpPassword;
+    }
 }
 
 # Default skin
