@@ -193,23 +193,61 @@ function rewrite_redump_url(string \$url, string \$target_domain): string {
     return xml_url_escape(build_url(\$parts)) . \$trailing;
 }
 
+function write_all(\$handle, string \$value): bool {
+    \$offset = 0;
+    \$length = strlen(\$value);
+    while (\$offset < \$length) {
+        \$written = fwrite(\$handle, substr(\$value, \$offset));
+        if (\$written === false || \$written === 0) {
+            return false;
+        }
+        \$offset += \$written;
+    }
+    return true;
+}
+
 \$source = \$argv[1];
 \$target = \$argv[2];
 \$target_domain = \$argv[3];
-\$xml = file_get_contents(\$source);
-if (\$xml === false) {
+\$pattern = \"~https?://(?:[A-Za-z0-9-]+\\.)*redump\\.org[^\\s<>\\x22\\x27\\[\\]{}|]*~i\";
+\$in = fopen(\$source, \"rb\");
+if (\$in === false) {
+    fwrite(STDERR, \"Could not open \$source\n\");
+    exit(1);
+}
+\$out = fopen(\$target, \"wb\");
+if (\$out === false) {
+    fclose(\$in);
+    fwrite(STDERR, \"Could not open \$target for writing\n\");
+    exit(1);
+}
+while ((\$line = fgets(\$in)) !== false) {
+    \$rewritten = preg_replace_callback(
+        \$pattern,
+        static function (array \$matches) use (\$target_domain): string {
+            return rewrite_redump_url(\$matches[0], \$target_domain);
+        },
+        \$line
+    );
+    if (\$rewritten === null || !write_all(\$out, \$rewritten)) {
+        fclose(\$in);
+        fclose(\$out);
+        unlink(\$target);
+        fwrite(STDERR, \"Could not write rewritten XML to \$target\n\");
+        exit(1);
+    }
+}
+if (!feof(\$in)) {
+    fclose(\$in);
+    fclose(\$out);
+    unlink(\$target);
     fwrite(STDERR, \"Could not read \$source\n\");
     exit(1);
 }
-\$rewritten = preg_replace_callback(
-    \"~https?://(?:[A-Za-z0-9-]+\\.)*redump\\.org[^\\s<>\\x22\\x27\\[\\]{}|]*~i\",
-    static function (array \$matches) use (\$target_domain): string {
-        return rewrite_redump_url(\$matches[0], \$target_domain);
-    },
-    \$xml
-);
-if (\$rewritten === null || file_put_contents(\$target, \$rewritten) === false) {
-    fwrite(STDERR, \"Could not write rewritten XML to \$target\n\");
+fclose(\$in);
+if (!fclose(\$out)) {
+    unlink(\$target);
+    fwrite(STDERR, \"Could not finish writing rewritten XML to \$target\n\");
     exit(1);
 }
 " "$source" "$target" "$TARGET_DOMAIN"
