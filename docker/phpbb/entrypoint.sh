@@ -100,6 +100,23 @@ smtp_host_for_phpbb() {
     esac
 }
 
+smtp_auth_method_for_phpbb() {
+    if [ -z "$PHPBB_SMTP_USER" ] && [ -z "$PHPBB_SMTP_PASSWORD" ]; then
+        return
+    fi
+
+    if [ -z "$PHPBB_SMTP_USER" ] || [ -z "$PHPBB_SMTP_PASSWORD" ]; then
+        echo "phpBB entrypoint: ERROR - PHPBB_SMTP_USER and PHPBB_SMTP_PASSWORD must both be set, or both be blank" >&2
+        exit 1
+    fi
+
+    if [ -n "$PHPBB_SMTP_AUTH_METHOD" ]; then
+        printf "%s" "$PHPBB_SMTP_AUTH_METHOD"
+    else
+        printf "PLAIN"
+    fi
+}
+
 phpbb_oidc_authorize_url() {
     printf "%s/authorize" "$OIDC_PROVIDER_URL"
 }
@@ -211,12 +228,13 @@ sync_email_config() {
     echo "phpBB entrypoint: syncing email settings..."
     cd /var/www/html
 
-    local smtp_delivery smtp_host
+    local smtp_delivery smtp_host smtp_auth_method
     smtp_delivery=0
     smtp_host="$(smtp_host_for_phpbb)"
     if [ -n "$smtp_host" ]; then
         smtp_delivery=1
     fi
+    smtp_auth_method="$(smtp_auth_method_for_phpbb)"
 
     php bin/phpbbcli.php config:set email_enable "$(bool_01 "$PHPBB_EMAIL_ENABLE")" >/dev/null
     php bin/phpbbcli.php config:set board_email "$PHPBB_BOARD_EMAIL" >/dev/null
@@ -224,7 +242,7 @@ sync_email_config() {
     php bin/phpbbcli.php config:set smtp_delivery "$smtp_delivery" >/dev/null
     php bin/phpbbcli.php config:set smtp_host "$smtp_host" >/dev/null
     php bin/phpbbcli.php config:set smtp_port "$PHPBB_SMTP_PORT" >/dev/null
-    php bin/phpbbcli.php config:set smtp_auth_method "$PHPBB_SMTP_AUTH_METHOD" >/dev/null
+    php bin/phpbbcli.php config:set smtp_auth_method "$smtp_auth_method" >/dev/null
     php bin/phpbbcli.php config:set smtp_username "$PHPBB_SMTP_USER" >/dev/null
     php bin/phpbbcli.php config:set smtp_password "$PHPBB_SMTP_PASSWORD" >/dev/null
 }
@@ -381,13 +399,14 @@ write_install_config() {
         cookie_secure=false
     fi
 
-    local email_enabled smtp_delivery smtp_host
+    local email_enabled smtp_delivery smtp_host smtp_auth_method
     email_enabled="$(bool_word "$PHPBB_EMAIL_ENABLE")"
     smtp_delivery=false
     smtp_host="$(smtp_host_for_phpbb)"
     if [ -n "$smtp_host" ]; then
         smtp_delivery=true
     fi
+    smtp_auth_method="$(smtp_auth_method_for_phpbb)"
 
     mkdir -p /var/www/html/install
     cat >/var/www/html/install/install-config.yml <<EOF
@@ -416,7 +435,7 @@ installer:
     smtp_delivery: ${smtp_delivery}
     smtp_host: "${smtp_host}"
     smtp_port: "${PHPBB_SMTP_PORT}"
-    smtp_auth: "${PHPBB_SMTP_AUTH_METHOD}"
+    smtp_auth: "${smtp_auth_method}"
     smtp_user: "${PHPBB_SMTP_USER}"
     smtp_pass: "${PHPBB_SMTP_PASSWORD}"
 
