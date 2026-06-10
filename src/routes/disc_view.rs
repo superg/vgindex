@@ -161,6 +161,14 @@ fn ring_layer_label(layer_index: usize, layer_count: usize) -> String {
     }
 }
 
+fn can_show_disc_view_protection(
+    system_code: &str,
+    has_protection: bool,
+    is_logged_in: bool,
+) -> bool {
+    has_protection && (is_logged_in || system_code.trim() != "BD-VIDEO")
+}
+
 impl RingColVis {
     fn from_rows(
         rows: &[ViewRingRow],
@@ -169,7 +177,7 @@ impl RingColVis {
         has_offset_extra: bool,
     ) -> Self {
         Self {
-            layer: rows.iter().any(|r| r.entry_rowspan > 1),
+            layer: rows.iter().any(|r| !r.layer.is_empty()),
             mastering_code: rows.iter().any(|r| !r.mastering_code.is_empty()),
             mastering_sid: rows.iter().any(|r| !r.mastering_sid.is_empty()),
             mould_sids: rows.iter().any(|r| !r.mould_sids.is_empty()),
@@ -183,6 +191,118 @@ impl RingColVis {
             comment: rows.iter().any(|r| !r.comment.is_empty()),
         }
     }
+}
+
+fn has_ring_text(value: &str) -> bool {
+    !value.trim().is_empty()
+}
+
+fn has_optional_ring_text(value: Option<&str>) -> bool {
+    value.map(has_ring_text).unwrap_or(false)
+}
+
+fn ring_layer_has_data(layer: Option<&DiscRingCodeLayer>) -> bool {
+    layer
+        .map(|l| {
+            has_optional_ring_text(l.mastering_code.as_deref())
+                || has_optional_ring_text(l.mastering_sid.as_deref())
+                || has_ring_text(&l.mould_sids)
+                || has_ring_text(&l.additional_moulds)
+                || has_ring_text(&l.toolstamps)
+        })
+        .unwrap_or(false)
+}
+
+fn build_ring_rows(entries: &[RingEntryView], ring_display_layers: usize) -> Vec<ViewRingRow> {
+    entries
+        .iter()
+        .enumerate()
+        .flat_map(|(i, e)| {
+            let offset = format_signed_offset(e.offset_value);
+            let offset_extra = format_signed_offset(e.offset_extra_value);
+            let sample_data_start = e
+                .sample_data_start
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+            let comment = e.comment.clone().unwrap_or_default();
+            let entry_num = i + 1;
+            let entry_even = entry_num % 2 == 0;
+            let visible_layers: Vec<_> = (0..ring_display_layers)
+                .filter_map(|li| {
+                    let layer = e.layers.iter().find(|l| l.layer == li as i32);
+                    if ring_layer_has_data(layer) {
+                        Some((li, layer))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if visible_layers.is_empty() {
+                let has_data = !offset.is_empty()
+                    || !offset_extra.is_empty()
+                    || !sample_data_start.is_empty()
+                    || !comment.is_empty();
+                if has_data {
+                    return vec![ViewRingRow {
+                        entry_num,
+                        layer: String::new(),
+                        mastering_code: String::new(),
+                        mastering_sid: String::new(),
+                        mould_sids: String::new(),
+                        additional_moulds: String::new(),
+                        toolstamps: String::new(),
+                        offset,
+                        offset_extra,
+                        sample_data_start,
+                        comment,
+                        first_in_entry: true,
+                        entry_even,
+                        entry_rowspan: 1,
+                    }];
+                }
+                return vec![];
+            }
+
+            let entry_rowspan = visible_layers.len();
+            visible_layers
+                .into_iter()
+                .enumerate()
+                .map(|(row_index, (li, layer))| ViewRingRow {
+                    entry_num,
+                    layer: ring_layer_label(li, ring_display_layers),
+                    mastering_code: ring_tab_replace(
+                        &layer
+                            .and_then(|l| l.mastering_code.clone())
+                            .unwrap_or_default(),
+                    ),
+                    mastering_sid: ring_tab_replace(
+                        &layer
+                            .and_then(|l| l.mastering_sid.clone())
+                            .unwrap_or_default(),
+                    ),
+                    mould_sids: ring_tab_replace(
+                        &layer.map(|l| l.mould_sids.clone()).unwrap_or_default(),
+                    ),
+                    additional_moulds: ring_tab_replace(
+                        &layer
+                            .map(|l| l.additional_moulds.clone())
+                            .unwrap_or_default(),
+                    ),
+                    toolstamps: ring_tab_replace(
+                        &layer.map(|l| l.toolstamps.clone()).unwrap_or_default(),
+                    ),
+                    offset: offset.clone(),
+                    offset_extra: offset_extra.clone(),
+                    sample_data_start: sample_data_start.clone(),
+                    comment: comment.clone(),
+                    first_in_entry: row_index == 0,
+                    entry_even,
+                    entry_rowspan: if row_index == 0 { entry_rowspan } else { 0 },
+                })
+                .collect()
+        })
+        .collect()
 }
 
 struct ViewFile {
@@ -331,86 +451,7 @@ async fn disc_view(
     let mut sorted_entries = detail.ring_entries.clone();
     disc_service::sort_ring_entry_views(&mut sorted_entries, ring_display_layers);
 
-    let ring_rows: Vec<ViewRingRow> = sorted_entries
-        .iter()
-        .enumerate()
-        .flat_map(|(i, e)| {
-            let offset = format_signed_offset(e.offset_value);
-            let offset_extra = format_signed_offset(e.offset_extra_value);
-            let sample_data_start = e
-                .sample_data_start
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            let comment = e.comment.clone().unwrap_or_default();
-            let entry_num = i + 1;
-            let entry_even = entry_num % 2 == 0;
-
-            if e.layers.is_empty() {
-                let has_data = !offset.is_empty()
-                    || !offset_extra.is_empty()
-                    || !sample_data_start.is_empty()
-                    || !comment.is_empty();
-                if has_data {
-                    return vec![ViewRingRow {
-                        entry_num,
-                        layer: String::new(),
-                        mastering_code: String::new(),
-                        mastering_sid: String::new(),
-                        mould_sids: String::new(),
-                        additional_moulds: String::new(),
-                        toolstamps: String::new(),
-                        offset,
-                        offset_extra,
-                        sample_data_start,
-                        comment,
-                        first_in_entry: true,
-                        entry_even,
-                        entry_rowspan: 1,
-                    }];
-                }
-                return vec![];
-            }
-
-            let display_count = ring_display_layers;
-            (0..display_count)
-                .map(move |li| {
-                    let layer = e.layers.iter().find(|l| l.layer == li as i32);
-                    ViewRingRow {
-                        entry_num,
-                        layer: ring_layer_label(li, display_count),
-                        mastering_code: ring_tab_replace(
-                            &layer
-                                .and_then(|l| l.mastering_code.clone())
-                                .unwrap_or_default(),
-                        ),
-                        mastering_sid: ring_tab_replace(
-                            &layer
-                                .and_then(|l| l.mastering_sid.clone())
-                                .unwrap_or_default(),
-                        ),
-                        mould_sids: ring_tab_replace(
-                            &layer.map(|l| l.mould_sids.clone()).unwrap_or_default(),
-                        ),
-                        additional_moulds: ring_tab_replace(
-                            &layer
-                                .map(|l| l.additional_moulds.clone())
-                                .unwrap_or_default(),
-                        ),
-                        toolstamps: ring_tab_replace(
-                            &layer.map(|l| l.toolstamps.clone()).unwrap_or_default(),
-                        ),
-                        offset: offset.clone(),
-                        offset_extra: offset_extra.clone(),
-                        sample_data_start: sample_data_start.clone(),
-                        comment: comment.clone(),
-                        first_in_entry: li == 0,
-                        entry_even,
-                        entry_rowspan: if li == 0 { display_count } else { 0 },
-                    }
-                })
-                .collect()
-        })
-        .collect();
+    let ring_rows = build_ring_rows(&sorted_entries, ring_display_layers);
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
     let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
@@ -563,6 +604,11 @@ async fn disc_view(
         .as_ref()
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
+    let show_protection = can_show_disc_view_protection(
+        &detail.system.code,
+        detail.system.has_protection,
+        user.is_logged_in(),
+    );
 
     Ok(Html(
         DiscViewTemplate {
@@ -635,8 +681,12 @@ async fn disc_view(
             contents: format_comments(&detail.disc.contents.clone().unwrap_or_default()),
             edc_display: if detail.disc.edc { "Yes" } else { "No" }.to_string(),
             show_edc: detail.system.has_edc,
-            protection: detail.disc.protection.clone().unwrap_or_default(),
-            show_protection: detail.system.has_protection,
+            protection: if show_protection {
+                detail.disc.protection.clone().unwrap_or_default()
+            } else {
+                String::new()
+            },
+            show_protection,
             error_count: detail
                 .disc
                 .error_count
@@ -1478,6 +1528,38 @@ mod tests {
         }
     }
 
+    fn ring_layer(layer: i32, mastering_code: &str) -> DiscRingCodeLayer {
+        DiscRingCodeLayer {
+            id: layer + 1,
+            entry_id: 1,
+            layer,
+            mastering_code: if mastering_code.is_empty() {
+                None
+            } else {
+                Some(mastering_code.to_string())
+            },
+            mastering_sid: None,
+            mould_sids: String::new(),
+            toolstamps: String::new(),
+            additional_moulds: String::new(),
+        }
+    }
+
+    fn ring_entry(
+        offset_value: Option<i32>,
+        comment: Option<&str>,
+        layers: Vec<DiscRingCodeLayer>,
+    ) -> RingEntryView {
+        RingEntryView {
+            id: 1,
+            offset_value,
+            offset_extra_value: None,
+            sample_data_start: None,
+            comment: comment.map(str::to_string),
+            layers,
+        }
+    }
+
     fn disc_view_template(
         show_disc_id: bool,
         show_key: bool,
@@ -1579,6 +1661,68 @@ mod tests {
     }
 
     #[test]
+    fn bd_video_protection_is_hidden_from_disc_view_guests() {
+        assert!(!can_show_disc_view_protection("BD-VIDEO", true, false));
+        assert!(can_show_disc_view_protection("BD-VIDEO", true, true));
+        assert!(can_show_disc_view_protection("DVD-VIDEO", true, false));
+        assert!(!can_show_disc_view_protection("BD-VIDEO", false, true));
+    }
+
+    #[test]
+    fn disc_view_template_omits_hidden_protection_text() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.protection = "Sensitive BD protection".to_string();
+        template.show_protection = can_show_disc_view_protection("BD-VIDEO", true, false);
+
+        let html = template.render().unwrap();
+
+        assert!(!html.contains("Protection"));
+        assert!(!html.contains("Sensitive BD protection"));
+    }
+
+    #[test]
+    fn disc_view_template_shows_visible_protection_text() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.protection = "Visible protection".to_string();
+        template.show_protection = can_show_disc_view_protection("BD-VIDEO", true, true);
+
+        let html = template.render().unwrap();
+
+        assert!(html.contains("Protection"));
+        assert!(html.contains("Visible protection"));
+    }
+
+    #[test]
+    fn ring_rows_hide_empty_layers_and_shrink_rowspan() {
+        let entries = vec![ring_entry(
+            Some(123),
+            None,
+            vec![ring_layer(0, "MASTER-L0"), ring_layer(1, "")],
+        )];
+
+        let rows = build_ring_rows(&entries, 2);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].layer, "L0");
+        assert_eq!(rows[0].mastering_code, "MASTER-L0");
+        assert_eq!(rows[0].offset, "+123");
+        assert_eq!(rows[0].entry_rowspan, 1);
+    }
+
+    #[test]
+    fn ring_rows_keep_entry_level_data_without_layer_rows() {
+        let entries = vec![ring_entry(Some(-12), Some("Offset-only entry"), Vec::new())];
+
+        let rows = build_ring_rows(&entries, 2);
+
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].layer.is_empty());
+        assert_eq!(rows[0].offset, "-12");
+        assert_eq!(rows[0].comment, "Offset-only entry");
+        assert_eq!(rows[0].entry_rowspan, 1);
+    }
+
+    #[test]
     fn disc_identifiers_are_not_collapsed_in_disc_section() {
         let template = include_str!("../../templates/disc_view.html");
         let css = include_str!("../../static/css/app.css");
@@ -1615,6 +1759,68 @@ mod tests {
         assert!(html.contains("<strong>Disc Key</strong>"));
         assert!(html.contains("visible-disc-id"));
         assert!(html.contains("deadbeef"));
+    }
+
+    #[test]
+    fn ring_entry_offsets_render_once_per_entry_with_rowspan() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.ring_rows = vec![
+            ViewRingRow {
+                entry_num: 1,
+                layer: "L0".to_string(),
+                mastering_code: "MASTER-L0".to_string(),
+                mastering_sid: String::new(),
+                mould_sids: String::new(),
+                additional_moulds: String::new(),
+                toolstamps: String::new(),
+                offset: "+123".to_string(),
+                offset_extra: "+4".to_string(),
+                sample_data_start: "5678".to_string(),
+                comment: "Entry comment".to_string(),
+                first_in_entry: true,
+                entry_even: false,
+                entry_rowspan: 2,
+            },
+            ViewRingRow {
+                entry_num: 1,
+                layer: "LS".to_string(),
+                mastering_code: "MASTER-LS".to_string(),
+                mastering_sid: String::new(),
+                mould_sids: String::new(),
+                additional_moulds: String::new(),
+                toolstamps: String::new(),
+                offset: "+123".to_string(),
+                offset_extra: "+4".to_string(),
+                sample_data_start: "5678".to_string(),
+                comment: "Entry comment".to_string(),
+                first_in_entry: false,
+                entry_even: false,
+                entry_rowspan: 0,
+            },
+        ];
+        template.ring_vis = RingColVis {
+            layer: true,
+            mastering_code: true,
+            mastering_sid: false,
+            mould_sids: false,
+            additional_moulds: false,
+            toolstamps: false,
+            offset: true,
+            offset_extra: true,
+            sample_data_start: true,
+            comment: true,
+        };
+
+        let html = template.render().unwrap();
+
+        assert!(html.contains(r#"<td rowspan="2">+123</td>"#));
+        assert!(html.contains(r#"<td rowspan="2">+4</td>"#));
+        assert!(html.contains(r#"<td rowspan="2">5678</td>"#));
+        assert!(html.contains(r#"<td rowspan="2">Entry comment</td>"#));
+        assert_eq!(html.matches("+123").count(), 1);
+        assert_eq!(html.matches("+4").count(), 1);
+        assert_eq!(html.matches("5678").count(), 1);
+        assert_eq!(html.matches("Entry comment").count(), 1);
     }
 
     #[test]

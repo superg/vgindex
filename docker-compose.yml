@@ -20,7 +20,8 @@ services:
       - caddy_config:/config
     environment:
       - SITE_APEX_URL=${SITE_APEX_URL:-http://redump.test:${SITE_PORT_HTTP:-18000}}
-      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://redump.test:${LOCAL_SITE_PORT:-18000}}
+      - APP_WWW_URL=${APP_WWW_URL:-http://www.redump.test:${LOCAL_SITE_PORT:-18000}}
       - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}
       - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.redump.test:${LOCAL_SITE_PORT:-18000}}
       - APP_UPSTREAM_HOST=${APP_UPSTREAM_HOST:-app}
@@ -47,7 +48,7 @@ services:
       - POSTGRES_PORT=5432
       - APP_PORT=${APP_PORT:-3000}
       - SITE_APEX_URL=${SITE_APEX_URL:-http://redump.test:${SITE_PORT_HTTP:-18000}}
-      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://redump.test:${LOCAL_SITE_PORT:-18000}}
       - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}
       - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.redump.test:${LOCAL_SITE_PORT:-18000}}
       - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
@@ -98,7 +99,7 @@ services:
       - PHPBB_ADMIN_EMAIL=${PHPBB_ADMIN_EMAIL:-admin@example.com}
       - PHPBB_BOARD_NAME=${PHPBB_BOARD_NAME:-redump.test Forum}
       - PHPBB_BOARD_DESCRIPTION=${PHPBB_BOARD_DESCRIPTION:-Disc Preservation Community}
-      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://www.redump.test:${LOCAL_SITE_PORT:-18000}}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://redump.test:${LOCAL_SITE_PORT:-18000}}
       - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}
       - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.redump.test:${LOCAL_SITE_PORT:-18000}}
       - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}

@@ -7,7 +7,7 @@
 <p class="downloads-page-desc">Download datfiles, cuesheets, keys, and SBI archives for each system.</p>
 
 <div class="downloads-table-scaler">
-<table class="striped downloads-table">
+<table class="striped downloads-table" data-downloads-width-source>
     <thead>
         <tr>
             <th>System</th>
@@ -29,25 +29,59 @@
     </tbody>
 </table>
 </div>
+
+<h4 class="downloads-section-title">BIOS</h4>
+<div class="downloads-table-scaler">
+<table class="striped downloads-table" data-downloads-match-width>
+    <thead>
+        <tr>
+            <th>System</th>
+            <th class="downloads-group-header">Downloads</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for sys in bios_systems %}
+        <tr>
+            <td>{{ sys.name }}</td>
+            <td class="download-links-cell bios-download-links-cell">
+                <a href="{{ sys.href }}">Dat</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
 <script>
 (function() {
     function scaleDownloadsTable() {
-        var wrapper = document.querySelector('.downloads-table-scaler');
-        var table = wrapper && wrapper.querySelector('table');
-        if (!table) return;
-        table.style.transform = '';
-        table.style.transformOrigin = '';
-        wrapper.style.height = '';
-        wrapper.style.overflow = '';
-        var containerWidth = wrapper.clientWidth;
-        var tableWidth = table.scrollWidth;
-        if (tableWidth > containerWidth && containerWidth > 0) {
-            var scale = containerWidth / tableWidth;
-            table.style.transform = 'scale(' + scale + ')';
-            table.style.transformOrigin = 'top left';
-            wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
-            wrapper.style.overflow = 'hidden';
+        var sourceTable = document.querySelector('[data-downloads-width-source]');
+        document.querySelectorAll('.downloads-table').forEach(function(table) {
+            table.style.width = '';
+            table.style.transform = '';
+            table.style.transformOrigin = '';
+        });
+        if (sourceTable) {
+            var sourceWidth = Math.ceil(sourceTable.getBoundingClientRect().width);
+            document.querySelectorAll('[data-downloads-match-width]').forEach(function(table) {
+                table.style.width = sourceWidth + 'px';
+            });
         }
+
+        document.querySelectorAll('.downloads-table-scaler').forEach(function(wrapper) {
+            var table = wrapper.querySelector('table');
+            if (!table) return;
+            wrapper.style.height = '';
+            wrapper.style.overflow = '';
+            var containerWidth = wrapper.clientWidth;
+            var tableWidth = table.scrollWidth;
+            if (tableWidth > containerWidth && containerWidth > 0) {
+                var scale = containerWidth / tableWidth;
+                table.style.transform = 'scale(' + scale + ')';
+                table.style.transformOrigin = 'top left';
+                wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
+                wrapper.style.overflow = 'hidden';
+            }
+        });
     }
     document.addEventListener('DOMContentLoaded', scaleDownloadsTable);
     window.addEventListener('resize', scaleDownloadsTable);

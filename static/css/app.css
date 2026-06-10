@@ -343,6 +343,10 @@ table.striped td {
     font-size: 0.8rem;
     text-align: center;
 }
+.downloads-section-title {
+    text-align: center;
+    margin: 0.5rem 0 0.75rem;
+}
 
 /* Downloads table — same width as home page recent dumps */
 .downloads-table {
@@ -376,6 +380,12 @@ table.striped td {
     gap: 0.5rem;
     align-items: center;
     white-space: nowrap;
+}
+.bios-download-links-cell {
+    justify-content: center;
+}
+.downloads-table[data-downloads-match-width] .download-links-cell {
+    justify-content: center;
 }
 
 /* Disc count line — centered, match title font size */

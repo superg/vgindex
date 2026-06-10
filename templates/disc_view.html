@@ -236,10 +236,18 @@
                 {% if ring_vis.toolstamps %}<td class="ring-fixed-cell">{{ row.toolstamps|safe }}</td>{% endif %}
                 {% if ring_vis.mould_sids %}<td class="ring-fixed-cell">{{ row.mould_sids|safe }}</td>{% endif %}
                 {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell">{{ row.additional_moulds|safe }}</td>{% endif %}
-                {% if ring_vis.offset %}<td>{{ row.offset }}</td>{% endif %}
-                {% if ring_vis.offset_extra %}<td>{{ row.offset_extra }}</td>{% endif %}
-                {% if ring_vis.sample_data_start %}<td>{{ row.sample_data_start }}</td>{% endif %}
-                {% if ring_vis.comment %}<td>{{ row.comment }}</td>{% endif %}
+                {% if ring_vis.offset %}
+                {% if row.entry_rowspan > 0 %}<td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset }}</td>{% endif %}
+                {% endif %}
+                {% if ring_vis.offset_extra %}
+                {% if row.entry_rowspan > 0 %}<td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset_extra }}</td>{% endif %}
+                {% endif %}
+                {% if ring_vis.sample_data_start %}
+                {% if row.entry_rowspan > 0 %}<td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.sample_data_start }}</td>{% endif %}
+                {% endif %}
+                {% if ring_vis.comment %}
+                {% if row.entry_rowspan > 0 %}<td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.comment }}</td>{% endif %}
+                {% endif %}
             </tr>
             {% endfor %}
         </tbody>

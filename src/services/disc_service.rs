@@ -30,37 +30,104 @@ fn normalize_newlines(s: &str) -> String {
     to_lf_newlines(s)
 }
 
-pub(crate) fn parse_hex_dump(text: &str) -> Vec<u8> {
+pub(crate) fn parse_binary_hex_input(text: &str) -> Result<Vec<u8>, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let has_offset_prefixes = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .any(|line| line.contains(':'));
+
+    if has_offset_prefixes {
+        parse_addressed_hex_dump(text)
+    } else {
+        parse_raw_hex_input(text)
+    }
+}
+
+fn parse_addressed_hex_dump(text: &str) -> Result<Vec<u8>, String> {
     let mut result = Vec::new();
-    for line in text.lines() {
+    for (line_num, line) in text.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        let after_colon = match line.find(':') {
-            Some(pos) => &line[pos + 1..],
-            None => continue,
+        let row = line_num + 1;
+        let colon_pos = match line.find(':') {
+            Some(pos) => pos,
+            None => return Err(format!("line {row}: missing offset:colon prefix")),
         };
+        let offset_part = line[..colon_pos].trim();
+        if offset_part.is_empty() || !offset_part.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!("line {row}: invalid hex offset '{offset_part}'"));
+        }
+        let after_colon = &line[colon_pos + 1..];
         let trimmed = after_colon.trim_start();
         let hex_part = match trimmed.find("   ") {
             Some(pos) => &trimmed[..pos],
             None => trimmed,
         };
+        let mut line_bytes = 0usize;
         for token in hex_part.split_whitespace() {
-            if token.len() == 2 {
-                if let Ok(b) = u8::from_str_radix(token, 16) {
-                    result.push(b);
-                }
+            if token.len() != 2 {
+                return Err(format!("line {row}: invalid hex token '{token}'"));
             }
+            let byte = u8::from_str_radix(token, 16)
+                .map_err(|_| format!("line {row}: invalid hex byte '{token}'"))?;
+            result.push(byte);
+            line_bytes += 1;
+        }
+        if line_bytes == 0 {
+            return Err(format!("line {row}: no hex bytes found"));
         }
     }
-    result
+    if result.is_empty() {
+        return Err("no hex data found".into());
+    }
+    Ok(result)
 }
 
-fn parse_pvd_hex_dump(text: &str) -> Vec<u8> {
-    let mut result = parse_hex_dump(text);
+fn parse_raw_hex_input(text: &str) -> Result<Vec<u8>, String> {
+    let mut hex = String::new();
+    for (line_num, line) in text.lines().enumerate() {
+        let row = line_num + 1;
+        for ch in line.chars() {
+            if ch.is_ascii_whitespace() {
+                continue;
+            }
+            if !ch.is_ascii_hexdigit() {
+                return Err(format!("line {row}: invalid raw hex character '{ch}'"));
+            }
+            hex.push(ch);
+        }
+    }
+
+    if hex.is_empty() {
+        return Err("no hex data found".into());
+    }
+    if hex.len() % 2 != 0 {
+        return Err("raw hex data must contain an even number of hexadecimal digits".into());
+    }
+
+    let mut result = Vec::with_capacity(hex.len() / 2);
+    for pair in hex.as_bytes().chunks_exact(2) {
+        let token = std::str::from_utf8(pair)
+            .map_err(|_| "raw hex data contains invalid UTF-8".to_string())?;
+        let byte =
+            u8::from_str_radix(token, 16).map_err(|_| format!("invalid hex byte '{token}'"))?;
+        result.push(byte);
+    }
+    Ok(result)
+}
+
+fn parse_pvd_hex_dump(text: &str) -> Result<Vec<u8>, String> {
+    let mut result = parse_binary_hex_input(text)?;
     result.truncate(82);
-    result
+    Ok(result)
 }
 
 fn parse_text_array(val: &serde_json::Value) -> Vec<String> {
@@ -619,22 +686,28 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         .as_str()
         .map(normalize_newlines)
         .filter(|s| !s.is_empty())
-        .map(|s| parse_pvd_hex_dump(&s));
+        .map(|s| parse_pvd_hex_dump(&s).map_err(|e| AppError::BadRequest(format!("PVD: {e}"))))
+        .transpose()?;
     let pic = data["pic"]
         .as_str()
         .map(normalize_newlines)
         .filter(|s| !s.is_empty())
-        .map(|s| parse_hex_dump(&s));
+        .map(|s| parse_binary_hex_input(&s).map_err(|e| AppError::BadRequest(format!("PIC: {e}"))))
+        .transpose()?;
     let bca = data["bca"]
         .as_str()
         .map(normalize_newlines)
         .filter(|s| !s.is_empty())
-        .map(|s| parse_hex_dump(&s));
+        .map(|s| parse_binary_hex_input(&s).map_err(|e| AppError::BadRequest(format!("BCA: {e}"))))
+        .transpose()?;
     let header = data["header"]
         .as_str()
         .map(normalize_newlines)
         .filter(|s| !s.is_empty())
-        .map(|s| parse_hex_dump(&s));
+        .map(|s| {
+            parse_binary_hex_input(&s).map_err(|e| AppError::BadRequest(format!("Header: {e}")))
+        })
+        .transpose()?;
     let cue = data["cuesheet"]
         .as_str()
         .map(normalize_newlines)
@@ -965,6 +1038,42 @@ mod tests {
         assert!(can_view_disc_status(DiscStatus::Disabled, true));
         assert!(ensure_disc_status_visible(DiscStatus::Disabled, false).is_err());
         assert!(ensure_disc_status_visible(DiscStatus::Disabled, true).is_ok());
+    }
+
+    #[test]
+    fn binary_hex_parser_accepts_addressed_spaced_and_compact_hex() {
+        let addressed =
+            "0320 : 20 21 22 23 24 25 26 27  28 29 2A 2B 2C 2D 2E 2F    !\"#$%&'()*+,-./\n\
+                         0330 : 30 31 32 33                                      0123";
+        let spaced = "20 21 22 23 24 25 26 27  28 29 2A 2B 2C 2D 2E 2F\n30 31 32 33";
+        let compact = "202122232425262728292A2B2C2D2E2F\n30313233";
+        let expected: Vec<u8> = (0x20..=0x33).collect();
+
+        assert_eq!(parse_binary_hex_input(addressed).unwrap(), expected);
+        assert_eq!(parse_binary_hex_input(spaced).unwrap(), expected);
+        assert_eq!(parse_binary_hex_input(compact).unwrap(), expected);
+    }
+
+    #[test]
+    fn binary_hex_parser_rejects_invalid_raw_and_mixed_inputs() {
+        assert!(parse_binary_hex_input("ABC").is_err());
+        assert!(parse_binary_hex_input("01 02 XX").is_err());
+        assert!(parse_binary_hex_input("0000 : 01 02\n03 04").is_err());
+    }
+
+    #[test]
+    fn pvd_hex_parser_keeps_existing_stored_length_limit() {
+        let bytes: Vec<u8> = (0u8..96).collect();
+        let compact = bytes
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<Vec<_>>()
+            .join("");
+
+        let parsed = parse_pvd_hex_dump(&compact).unwrap();
+
+        assert_eq!(parsed.len(), 82);
+        assert_eq!(parsed, bytes[..82]);
     }
 
     #[test]

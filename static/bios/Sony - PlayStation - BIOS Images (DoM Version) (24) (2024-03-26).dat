@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Sony - PlayStation - BIOS Images (DoM Version)</name>
+		<description>Sony - PlayStation - BIOS Images (DoM Version) (24) (2024-03-26)</description>
+		<category>Console</category>
+		<version>2024-03-26</version>
+		<author>redump.org</author>
+	</header>
+	<machine name="ps-10j">
+		<description>SCPH-1000/DTL-H1000 (Version 1.0 J)</description>
+		<rom name="ps-10j.bin" size="524288" crc="3b601fc8" md5="239665b1a3dade1b5a52c06338011044" sha1="343883a7b555646da8cee54aadd2795b6e7dd070" />
+	</machine>
+	<machine name="ps-11j">
+		<description>SCPH-3000/DTL-H1000H (Version 1.1 01/22/95)</description>
+		<rom name="ps-11j.bin" size="524288" crc="3539def6" md5="849515939161e62f6b866f6853006780" sha1="b06f4a861f74270be819aa2a07db8d0563a7cc4e" />
+	</machine>
+	<machine name="ps-20a">
+		<description>SCPH-1001/DTL-H1001 (Version 2.0 05/07/95 A)</description>
+		<rom name="ps-20a.bin" size="524288" crc="55847d8c" md5="dc2b9bf8da62ec93e868cfd29f0d067d" sha1="649895efd79d14790eabb362e94eb0622093dfb9" />
+	</machine>
+	<machine name="ps-20e">
+		<description>SCPH-1002/DTL-H1002 (Version 2.0 05/10/95 E)</description>
+		<rom name="ps-20e.bin" size="524288" crc="9bb87c4b" md5="54847e693405ffeb0359c6287434cbef" sha1="20b98f3d80f11cbf5a7bfd0779b0e63760ecc62c" />
+	</machine>
+	<machine name="ps-21a">
+		<description>SCPH-1001/DTL-H1101 (Version 2.1 07/17/95 A)</description>
+		<rom name="ps-21a.bin" size="524288" crc="aff00f2f" md5="da27e8b6dab242d8f91a9b25d80c63b8" sha1="ca7af30b50d9756cbd764640126c454cff658479" />
+	</machine>
+	<machine name="ps-21e">
+		<description>SCPH-1002/DTL-H1102 (Version 2.1 07/17/95 E)</description>
+		<rom name="ps-21e.bin" size="524288" crc="86c30531" md5="417b34706319da7cf001e76e40136c23" sha1="76cf6b1b2a7c571a6ad07f2bac0db6cd8f71e2cc" />
+	</machine>
+	<machine name="ps-21j">
+		<description>SCPH-3500 (Version 2.1 07/17/95 J)</description>
+		<rom name="ps-21j.bin" size="524288" crc="bc190209" md5="cba733ceeff5aef5c32254f1d617fa62" sha1="e38466a4ba8005fba7e9e3c7b9efeba7205bee3f" />
+	</machine>
+	<machine name="ps-22a">
+		<description>SCPH-1001/SCPH-5003/DTL-H1201/DTL-H3001 (Version 2.2 12/04/95 A)</description>
+		<rom name="ps-22a.bin" size="524288" crc="37157331" md5="924e392ed05558ffdb115408c263dccf" sha1="10155d8d6e6e832d6ea66db9bc098321fb5e8ebf" />
+	</machine>
+	<machine name="ps-22d">
+		<description>DTL-H1100 (Version 2.2 03/06/96 D)</description>
+		<rom name="ps-22d.bin" size="524288" crc="decb22f5" md5="ca5cfc321f916756e3f0effbfaeba13b" sha1="73107d468fc7cb1d2c5b18b269715dd889ecef06" />
+	</machine>
+	<machine name="ps-22e">
+		<description>SCPH-1002/DTL-H1202/DTL-H3002 (Version 2.2 12/04/95 E)</description>
+		<rom name="ps-22e.bin" size="524288" crc="1e26792f" md5="e2110b8a2b97a8e0b857a45d32f7e187" sha1="b6a11579caef3875504fcf3831b8e3922746df2c" />
+	</machine>
+	<machine name="ps-22j">
+		<description>SCPH-5000/DTL-H1200/DTL-H3000 (Version 2.2 12/04/95 J)</description>
+		<rom name="ps-22j.bin" size="524288" crc="24fc7e17" md5="57a06303dfa9cf9351222dfcbb4a29d9" sha1="ffa7f9a7fb19d773a0c3985a541c8e5623d2c30d" />
+	</machine>
+	<machine name="ps-22j(v)">
+		<description>SCPH-5903 (Version 2.2 12/04/95 J)</description>
+		<rom name="ps-22j(v).bin" size="1048576" crc="446ec5b2" md5="81328b966e6dcf7ea1e32e55e1c104bb" sha1="15c94da3cc5a38a582429575af4198c487fe893c" />
+	</machine>
+	<machine name="ps-30a">
+		<description>SCPH-5501/SCPH-5503/SCPH-7003 (Version 3.0 11/18/96 A)</description>
+		<rom name="ps-30a.bin" size="524288" crc="8d8cb7e4" md5="490f666e1afb15b7362b406ed1cea246" sha1="0555c6fae8906f3f09baf5988f00e55f88e9f30b" />
+	</machine>
+	<machine name="ps-30e">
+		<description>SCPH-5502/SCPH-5552 (Version 3.0 01/06/97 E)</description>
+		<rom name="ps-30e.bin" size="524288" crc="d786f0b9" md5="32736f17079d0b2b7024407c39bd3050" sha1="f6bc2d1f5eb6593de7d089c425ac681d6fffd3f0" />
+	</machine>
+	<machine name="ps-30j">
+		<description>SCPH-5500 (Version 3.0 09/09/96 J)</description>
+		<rom name="ps-30j.bin" size="524288" crc="ff3eeb8c" md5="8dd7d5296a650fac7319bce665a6a53c" sha1="b05def971d8ec59f346f2d9ac21fb742e3eb6917" />
+	</machine>
+	<machine name="ps-40j">
+		<description>SCPH-7000/SCPH-7500/SCPH-9000 (Version 4.0 08/18/97 J)</description>
+		<rom name="ps-40j.bin" size="524288" crc="ec541cd0" md5="8e4c14f567745eff2f0408c8129f72a6" sha1="77b10118d21ac7ffa9b35f9c4fd814da240eb3e9" />
+	</machine>
+	<machine name="ps-41a">
+		<description>SCPH-7001/SCPH-7501/SCPH-7503/SCPH-9001/SCPH-9003/SCPH-9903 (Version 4.1 12/16/97 A)</description>
+		<rom name="ps-41a.bin" size="524288" crc="502224b6" md5="1e68c231d0896b7eadcad1d7d8e76129" sha1="14df4f6c1e367ce097c11deae21566b4fe5647a9" />
+	</machine>
+	<machine name="ps-41a(w)">
+		<description>SCPH-7000W (Version 4.1 11/14/97 A)</description>
+		<rom name="ps-41a(w).bin" size="524288" crc="b7c43dad" md5="b84be139db3ee6cbd075630aa20a6553" sha1="1b0dbdb23da9dc0776aac58d0755dc80fea20975" />
+	</machine>
+	<machine name="ps-41e">
+		<description>SCPH-7002/SCPH-7502/SCPH-9002 (Version 4.1 12/16/97 E)</description>
+		<rom name="ps-41e.bin" size="524288" crc="318178bf" md5="b9d9a0286c33dc6b7237bb13cd46fdee" sha1="8d5de56a79954f29e9006929ba3fed9b6a418c1d" />
+	</machine>
+	<machine name="psone-43j">
+		<description>SCPH-100 (Version 4.3 03/11/00 J)</description>
+		<rom name="psone-43j.bin" size="524288" crc="f2af798b" md5="8abc1b549a4a80954addc48ef02c4521" sha1="339a48f4fcf63e10b5b867b8c93cfd40945faf6c" />
+	</machine>
+	<machine name="psone-44a">
+		<description>SCPH-101 (Version 4.4 03/24/00 A)</description>
+		<rom name="psone-44a.bin" size="524288" crc="6a0e22a0" md5="9a09ab7e49b422c007e6d54d7c49b965" sha1="7771d6e90980408f753891648685def6dd42ef6d" />
+	</machine>
+	<machine name="psone-44e">
+		<description>SCPH-102 (Version 4.4 03/24/00 E)</description>
+		<rom name="psone-44e.bin" size="524288" crc="0bad7ea9" md5="b10f5e0e3d9eb60e5159690680b1e774" sha1="beb0ac693c0dc26daf5665b3314db81480fa5c7c" />
+	</machine>
+	<machine name="psone-45a">
+		<description>SCPH-101 (Version 4.5 05/25/00 A)</description>
+		<rom name="psone-45a.bin" size="524288" crc="171bdcec" md5="6e3735ff4c7dc899ee98981385f6f3d0" sha1="dcffe16bd90a723499ad46c641424981338d8378" />
+	</machine>
+	<machine name="psone-45e">
+		<description>SCPH-102 (Version 4.5 05/25/00 E)</description>
+		<rom name="psone-45e.bin" size="524288" crc="76b880e5" md5="de93caec13d1a141a40a79f5c86168d6" sha1="dbc7339e5d85827c095764fc077b41f78fd2ecae" />
+	</machine>
+</datafile>

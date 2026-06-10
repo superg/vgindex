@@ -6,6 +6,7 @@ use axum::{
     routing::get,
     Router,
 };
+use std::collections::{HashMap, HashSet};
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser, RequireAuth};
 use crate::config::SiteConfig;
@@ -28,6 +29,7 @@ struct DownloadsTemplate {
     current_user: Option<AuthenticatedUser>,
     can_download_keys: bool,
     systems: Vec<SystemDownload>,
+    bios_systems: Vec<BiosDownload>,
 }
 impl SiteConfig for DownloadsTemplate {}
 
@@ -40,13 +42,60 @@ struct SystemDownload {
     has_sbi: bool,
 }
 
+struct BiosDownload {
+    name: String,
+    href: &'static str,
+}
+
+struct BiosDownloadSpec {
+    code: &'static str,
+    fallback_name: &'static str,
+    href: &'static str,
+}
+
+const BIOS_DOWNLOADS: &[BiosDownloadSpec] = &[
+    BiosDownloadSpec {
+        code: "XBOX",
+        fallback_name: "Microsoft Xbox",
+        href: "/static/bios/Microsoft%20-%20Xbox%20-%20BIOS%20Images%20%28DoM%20Version%29%20%289%29%20%282024-03-26%29.dat",
+    },
+    BiosDownloadSpec {
+        code: "GC",
+        fallback_name: "Nintendo GameCube",
+        href: "/static/bios/Nintendo%20-%20GameCube%20-%20BIOS%20Images%20%28DoM%20Version%29%20%2817%29%20%282024-03-26%29.dat",
+    },
+    BiosDownloadSpec {
+        code: "PSX",
+        fallback_name: "Sony PlayStation",
+        href: "/static/bios/Sony%20-%20PlayStation%20-%20BIOS%20Images%20%28DoM%20Version%29%20%2824%29%20%282024-03-26%29.dat",
+    },
+    BiosDownloadSpec {
+        code: "PS2",
+        fallback_name: "Sony PlayStation 2",
+        href: "/static/bios/Sony%20-%20PlayStation%202%20-%20BIOS%20Datfile%20%28140%29%20%282025-12-04%29.dat",
+    },
+];
+
+fn bios_downloads(system_names: &HashMap<String, String>) -> Vec<BiosDownload> {
+    BIOS_DOWNLOADS
+        .iter()
+        .map(|spec| BiosDownload {
+            name: system_names
+                .get(spec.code)
+                .cloned()
+                .unwrap_or_else(|| spec.fallback_name.to_string()),
+            href: spec.href,
+        })
+        .collect()
+}
+
 async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
     let media_types: Vec<MediaTypeCdRow> =
         sqlx::query_as("SELECT code, rom_extension FROM media_types")
             .fetch_all(&state.pool)
             .await
             .unwrap_or_default();
-    let cd_media_codes: std::collections::HashSet<String> = media_types
+    let cd_media_codes: HashSet<String> = media_types
         .into_iter()
         .filter(|mt| crate::db::models::is_cd_rom_extension(&mt.rom_extension))
         .map(|mt| mt.code)
@@ -61,11 +110,24 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
     .await
     .unwrap_or_default();
 
+    let system_names: HashMap<String, String> = rows
+        .iter()
+        .map(|r| {
+            (
+                r.code.clone(),
+                crate::db::models::build_system_name(&r.manufacturer, &r.name),
+            )
+        })
+        .collect();
+
     let systems = rows
-        .into_iter()
+        .iter()
         .map(|r| SystemDownload {
-            name: crate::db::models::build_system_name(&r.manufacturer, &r.name),
-            code: r.code,
+            name: system_names
+                .get(&r.code)
+                .cloned()
+                .unwrap_or_else(|| crate::db::models::build_system_name(&r.manufacturer, &r.name)),
+            code: r.code.clone(),
             has_dat: true,
             has_cue: r
                 .media_types
@@ -81,6 +143,7 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
             current_user: user.user().cloned(),
             can_download_keys: user.is_logged_in(),
             systems,
+            bios_systems: bios_downloads(&system_names),
         }
         .render()
         .unwrap(),
@@ -153,7 +216,21 @@ mod tests {
     use std::time::Duration;
     use tower::ServiceExt;
 
+    fn test_system_names() -> HashMap<String, String> {
+        [
+            ("XBOX", "Microsoft Xbox"),
+            ("GC", "Nintendo GameCube"),
+            ("PSX", "Sony PlayStation"),
+            ("PS2", "Sony PlayStation 2"),
+        ]
+        .into_iter()
+        .map(|(code, name)| (code.to_string(), name.to_string()))
+        .collect()
+    }
+
     fn template(can_download_keys: bool) -> DownloadsTemplate {
+        let system_names = test_system_names();
+
         DownloadsTemplate {
             current_user: can_download_keys.then(|| AuthenticatedUser {
                 id: 1,
@@ -180,6 +257,7 @@ mod tests {
                     has_sbi: false,
                 },
             ],
+            bios_systems: bios_downloads(&system_names),
         }
     }
 
@@ -233,6 +311,29 @@ mod tests {
 
         assert!(html.contains(r#"/keys/PS3"#));
         assert!(!html.contains(r#"/keys/PC"#));
+    }
+
+    #[test]
+    fn downloads_page_shows_bios_dat_links() {
+        let html = template(false).render().unwrap();
+
+        assert!(html.contains(">BIOS<"));
+        assert!(html.contains("Microsoft Xbox"));
+        assert!(html.contains(
+            r#"/static/bios/Microsoft%20-%20Xbox%20-%20BIOS%20Images%20%28DoM%20Version%29%20%289%29%20%282024-03-26%29.dat"#
+        ));
+        assert!(html.contains("Nintendo GameCube"));
+        assert!(html.contains(
+            r#"/static/bios/Nintendo%20-%20GameCube%20-%20BIOS%20Images%20%28DoM%20Version%29%20%2817%29%20%282024-03-26%29.dat"#
+        ));
+        assert!(html.contains("Sony PlayStation"));
+        assert!(html.contains(
+            r#"/static/bios/Sony%20-%20PlayStation%20-%20BIOS%20Images%20%28DoM%20Version%29%20%2824%29%20%282024-03-26%29.dat"#
+        ));
+        assert!(html.contains("Sony PlayStation 2"));
+        assert!(html.contains(
+            r#"/static/bios/Sony%20-%20PlayStation%202%20-%20BIOS%20Datfile%20%28140%29%20%282025-12-04%29.dat"#
+        ));
     }
 
     #[tokio::test]

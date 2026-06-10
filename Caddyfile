@@ -1,21 +1,21 @@
 {
-    {$CADDY_ACME_EMAIL}
-    http_port {$CADDY_HTTP_PORT}
-    https_port {$CADDY_HTTPS_PORT}
+	{$CADDY_ACME_EMAIL}
+	http_port {$CADDY_HTTP_PORT}
+	https_port {$CADDY_HTTPS_PORT}
 }
 
-{$SITE_APEX_URL} {
-    redir {$APP_PUBLIC_URL}{uri} permanent
+{$APP_WWW_URL} {
+	redir {$APP_PUBLIC_URL}{uri} permanent
 }
 
 {$APP_PUBLIC_URL} {
-    reverse_proxy {$APP_UPSTREAM_HOST}:{$APP_UPSTREAM_PORT}
+	reverse_proxy {$APP_UPSTREAM_HOST}:{$APP_UPSTREAM_PORT}
 }
 
 {$PHPBB_PUBLIC_URL} {
-    reverse_proxy phpbb:80
+	reverse_proxy phpbb:80
 }
 
 {$MEDIAWIKI_PUBLIC_URL} {
-    reverse_proxy mediawiki:80
+	reverse_proxy mediawiki:80
 }

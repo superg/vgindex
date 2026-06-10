@@ -2095,9 +2095,9 @@ pub(crate) fn build_flat_changes(
         "edc": new_edc,
         "layerbreaks": new_layerbreaks,
         "pvd": norm_opt_multiline_str(form.pvd.as_deref()).map(|s| normalize_pvd_hex_dump(&s)),
-        "pic": norm_opt_multiline_str(form.pic.as_deref()),
-        "bca": norm_opt_multiline_str(form.bca.as_deref()),
-        "header": norm_opt_multiline_str(form.header.as_deref()),
+        "pic": norm_opt_multiline_str(form.pic.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
+        "bca": norm_opt_multiline_str(form.bca.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
+        "header": norm_opt_multiline_str(form.header.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
         "protection": norm_opt_multiline_str(form.protection.as_deref()),
         "sbi": norm_opt_multiline_str(form.sbi.as_deref()),
         "disc_id": new_disc_id,
@@ -2925,6 +2925,31 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn build_flat_changes_normalizes_short_binary_hex_fields() {
+        let mut form = new_disc_form();
+        let pvd_bytes: Vec<u8> = (0u8..96).collect();
+        form.pvd = Some(
+            pvd_bytes
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<Vec<_>>()
+                .join(""),
+        );
+        form.header = Some("01 02\n03 04".to_string());
+        form.bca = Some("01020304".to_string());
+        form.pic = Some("01 02 03 04".to_string());
+
+        let snapshot = build_flat_changes(&form, &media_rows());
+        let expected = format_header_hex_dump(&[0x01, 0x02, 0x03, 0x04]);
+        let expected_pvd = format_pvd_hex_dump(&pvd_bytes[..82]);
+
+        assert_eq!(snapshot["pvd"].as_str().unwrap(), expected_pvd);
+        assert_eq!(snapshot["header"].as_str().unwrap(), expected);
+        assert_eq!(snapshot["bca"].as_str().unwrap(), expected);
+        assert_eq!(snapshot["pic"].as_str().unwrap(), expected);
+    }
+
+    #[test]
     fn generated_disc_name_uses_canonical_rom_name_parts() {
         let region_names = vec!["Japan".to_string(), "USA".to_string()];
         let language_codes = vec!["en".to_string(), "ja".to_string()];
@@ -3545,8 +3570,15 @@ fn format_hex_dump_edit(data: &[u8], base_addr: usize) -> String {
 }
 
 pub(crate) fn normalize_pvd_hex_dump(text: &str) -> String {
-    let bytes = disc_service::parse_hex_dump(text);
+    let bytes = disc_service::parse_binary_hex_input(text)
+        .expect("binary hex fields should be validated before normalization");
     format_pvd_hex_dump(&bytes)
+}
+
+pub(crate) fn normalize_binary_hex_dump(text: &str) -> String {
+    let bytes = disc_service::parse_binary_hex_input(text)
+        .expect("binary hex fields should be validated before normalization");
+    format_header_hex_dump(&bytes)
 }
 
 pub(crate) fn format_pvd_hex_dump(data: &[u8]) -> String {

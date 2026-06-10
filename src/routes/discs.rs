@@ -145,6 +145,27 @@ fn comments_search_clause(bind_idx: u32) -> String {
     format!("LOWER(d.comments) LIKE '%' || LOWER(${bind_idx}) || '%'")
 }
 
+fn display_title_sort_sql() -> &'static str {
+    "LOWER(
+        d.title ||
+        CASE
+            WHEN s.has_disc_number AND d.disc_number IS NOT NULL AND d.disc_number <> ''
+                THEN ' (Disc ' || d.disc_number || ')'
+            ELSE ''
+        END ||
+        CASE
+            WHEN s.has_disc_title AND d.disc_title IS NOT NULL AND d.disc_title <> ''
+                THEN ' (' || d.disc_title || ')'
+            ELSE ''
+        END ||
+        CASE
+            WHEN d.filename_suffix IS NOT NULL AND d.filename_suffix <> ''
+                THEN ' (' || d.filename_suffix || ')'
+            ELSE ''
+        END
+    )"
+}
+
 fn normalize_status_filter(status: Option<&str>, can_view_disabled_discs: bool) -> String {
     match status.unwrap_or_default() {
         "All Statuses" | "Disabled" if !can_view_disabled_discs => String::new(),
@@ -438,7 +459,7 @@ async fn discs_page(
         "region" => {
             "(SELECT MIN(r.sort_order) FROM disc_regions dr JOIN regions r ON r.code = dr.region_code WHERE dr.disc_id = d.id)"
         }
-        "title" => "LOWER(d.title)",
+        "title" => display_title_sort_sql(),
         "system" => "LOWER(s.manufacturer), s.manufacturer, LOWER(s.name), s.name",
         "version" => "LOWER(d.version)",
         "edition" => "LOWER(array_to_string(d.edition, ', '))",
@@ -451,7 +472,7 @@ async fn discs_page(
         }
         "added" => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
         "updated" => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
-        _ => "LOWER(d.title)",
+        _ => display_title_sort_sql(),
     };
     let sort_dir = match query.order.as_deref() {
         Some("desc") => "DESC",
@@ -822,5 +843,19 @@ mod tests {
             comments_clause,
             "LOWER(d.comments) LIKE '%' || LOWER($6) || '%'"
         );
+    }
+
+    #[test]
+    fn title_sort_uses_the_display_title_parts() {
+        let sql = display_title_sort_sql();
+
+        assert!(sql.contains("LOWER("));
+        assert!(sql.contains("d.title"));
+        assert!(sql.contains("s.has_disc_number"));
+        assert!(sql.contains("' (Disc ' || d.disc_number || ')'"));
+        assert!(sql.contains("s.has_disc_title"));
+        assert!(sql.contains("' (' || d.disc_title || ')'"));
+        assert!(sql.contains("d.filename_suffix"));
+        assert!(sql.contains("' (' || d.filename_suffix || ')'"));
     }
 }
