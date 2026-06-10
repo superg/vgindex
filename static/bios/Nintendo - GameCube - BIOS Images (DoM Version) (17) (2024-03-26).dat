@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Nintendo - GameCube - BIOS Images (DoM Version)</name>
+		<description>Nintendo - GameCube - BIOS Images (DoM Version) (17) (2024-03-26)</description>
+		<category>Console</category>
+		<version>2024-03-26</version>
+		<author>redump.org</author>
+	</header>
+	<machine name="gc-dvd-20010608">
+		<description>GC-D2 B (2001-06-08)</description>
+		<rom name="gc-dvd-20010608.bin" size="131072" crc="c047465a" md5="561532ad496f644897952d2cef5bb431" sha1="27872c201e87b06a19bf85d36c796ef383f8d52d" />
+	</machine>
+	<machine name="gc-dvd-20010831">
+		<description>GC-D3 (2001-08-31)</description>
+		<rom name="gc-dvd-20010831.bin" size="131072" crc="54c7d10e" md5="b953eb1a8fc9922b3f7051c1cdc451f1" sha1="ae7233cae8f94749796e0b740d6021e3b00a8926" />
+	</machine>
+	<machine name="gc-dvd-20020402">
+		<description>GC-D2 C (2002-04-02)</description>
+		<rom name="gc-dvd-20020402.bin" size="131072" crc="8bbef508" md5="413154dd0e2c824c9b18b807fd03ec4e" sha1="691e46213d8428befdf568157e670b971ab94e1d" />
+	</machine>
+	<machine name="gc-dvd-20020823">
+		<description>GC-D2 D (2002-08-23)</description>
+		<rom name="gc-dvd-20020823.bin" size="131072" crc="5205222b" md5="c03f6bbaf644eb9b3ee261dbe199eb42" sha1="2faaf92bcaffe675f54f7249d30f3791507e22ab" />
+	</machine>
+	<machine name="gc-npdp-gdev">
+		<description>GCT-0100 (DEVKIT BOOTROM v0.93a)</description>
+		<rom name="gc-npdp-gdev.bin" size="2097152" crc="48df4dcf" md5="8b83ea0612cfd242d4d18eb70c7e1e07" sha1="318b532bc149657a0ba3b6c65909ca231f347aaa" />
+	</machine>
+	<machine name="gc-npdp-ntsc">
+		<description>DOT-002 (NTSC Revision 1.0)</description>
+		<rom name="gc-npdp-ntsc.bin" size="2097152" crc="773d9a5d" md5="2183e21711fd6074e296c03813c4efa3" sha1="338b11ee65e868d0e1b37dcf93de4ecad62a16b4" />
+	</machine>
+	<machine name="gc-npdp-pal">
+		<description>DOT-002P (NPDP BOOTROM v1.0 [PAL])</description>
+		<rom name="gc-npdp-pal.bin" size="2097152" crc="7fcf6fc5" md5="7424a699a7f947fe0352600af7cc4adb" sha1="7eaf7922ae96bc40910f4401f6e501be2ad3b3f1" />
+	</machine>
+	<machine name="gc-nr-dvd-20010608">
+		<description>GC-RD2 A (2001-06-08)</description>
+		<rom name="gc-nr-dvd-20010608.bin" size="131072" crc="01bb7ab9" md5="6f2fb4bad9e7ce756a1c868a82418514" sha1="ed00b63e9f56b295ebe08b4fa0e5ca83814cb31e" />
+	</machine>
+	<machine name="gc-ntsc-10">
+		<description>DOL-001(USA) / DOL-001(JPN) / DOT-001 / SL-GC10 (NTSC Revision 1.0)</description>
+		<rom name="gc-ntsc-10.bin" size="2097152" crc="6dac1f2a" md5="fc924a7c879b661abc37cec4f018fdf3" sha1="a1837968288253ed541f2b11440b68f5a9b33875" />
+	</machine>
+	<machine name="gc-ntsc-11">
+		<description>DOL-001(USA) / DOL-001(JPN) / DOT-001 (NTSC Revision 1.1)</description>
+		<rom name="gc-ntsc-11.bin" size="2097152" crc="d5e6feea" md5="019e39822a9ca3029124f74dd4d55ac4" sha1="239eacd86527ff9a75aeb7282da65797baeef010" />
+	</machine>
+	<machine name="gc-ntsc-12-001">
+		<description>DOL-001(USA) / DOL-001(JPN) (NTSC Revision 1.2)</description>
+		<rom name="gc-ntsc-12-001.bin" size="2097152" crc="d235e3f9" md5="81df278301dc7bdf57bb760d7393ab4d" sha1="96f69a21645de73a5ba61e57951ef303d55788c5" />
+	</machine>
+	<machine name="gc-ntsc-12-101">
+		<description>DOL-101(USA) / DOL-101(JPN) (NTSC Revision 1.2)</description>
+		<rom name="gc-ntsc-12-101.bin" size="2097152" crc="86573808" md5="b17148254a5799684c7d783206504926" sha1="ef9194ab4804aa0aa8540d846caf291b28331165" />
+	</machine>
+	<machine name="gc-pal-10">
+		<description>DOL-001(EUR) / DOT-001P (PAL Revision 1.0)</description>
+		<rom name="gc-pal-10.bin" size="2097152" crc="4f319f43" md5="0cdda509e2da83c85bfe423dd87346cc" sha1="f27c63e5394e2fd1606f70df004c4fc2d6027700" />
+	</machine>
+	<machine name="gc-pal-11">
+		<description>DOL-002(BRA) (MPAL Revision 1.1)</description>
+		<rom name="gc-pal-11.bin" size="2097152" crc="667d0b64" md5="339848a0b7c2124cf155276c1e79cbd0" sha1="f3cd0c7c61cbcefa85e7de3aff4cfa50bc508714" />
+	</machine>
+	<machine name="gc-pal-12">
+		<description>DOL-101(EUR) (PAL Revision 1.2)</description>
+		<rom name="gc-pal-12.bin" size="2097152" crc="ad1b7f16" md5="db92574caab77a7ec99d4605fd6f2450" sha1="80b8744ff5e43585392f55546bd03a673d11ef5f" />
+	</machine>
+	<machine name="gc-tdev">
+		<description>DOT-006 (DEVKIT BOOTROM v1.0 [48MB])</description>
+		<rom name="gc-tdev.bin" size="2097152" crc="d5b49679" md5="86a9164e76ed90a616e1f2194cb6ae04" sha1="588c251dd3a7555509f36f729dedd1aa2f4f1613" />
+	</machine>
+	<machine name="triforce">
+		<description>Triforce (ARCADE BOOTROM)</description>
+		<rom name="triforce.bin" size="2097152" crc="d1883221" md5="d063803adcced52217989bd825d69eb8" sha1="c3cb7227e4dbc2af861e76d00cb59726105a2e4c" />
+	</machine>
+</datafile>

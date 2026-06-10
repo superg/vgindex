@@ -1,4 +1,4 @@
-use crate::db::models::extract_track_from_filename;
+use crate::{db::models::extract_track_from_filename, services::disc_service};
 
 pub fn validate_non_negative_int(s: &str) -> Result<i64, String> {
     let s = s.trim();
@@ -159,51 +159,7 @@ fn validate_sbi_line(line: &str) -> Result<(), String> {
 }
 
 pub fn validate_hex_dump(text: &str) -> Result<(), String> {
-    let text = text.trim();
-    if text.is_empty() {
-        return Ok(());
-    }
-    let mut total_bytes = 0usize;
-    for (line_num, line) in text.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let row = line_num + 1;
-        let colon_pos = line
-            .find(':')
-            .ok_or_else(|| format!("line {}: missing offset:colon prefix", row))?;
-        let offset_part = line[..colon_pos].trim();
-        if offset_part.is_empty() || !offset_part.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!(
-                "line {}: invalid hex offset '{}'",
-                row, offset_part
-            ));
-        }
-        let after_colon = &line[colon_pos + 1..];
-        let trimmed = after_colon.trim_start();
-        let hex_part = match trimmed.find("   ") {
-            Some(pos) => &trimmed[..pos],
-            None => trimmed,
-        };
-        let mut line_bytes = 0usize;
-        for token in hex_part.split_whitespace() {
-            if token.len() != 2 {
-                return Err(format!("line {}: invalid hex token '{}'", row, token));
-            }
-            u8::from_str_radix(token, 16)
-                .map_err(|_| format!("line {}: invalid hex byte '{}'", row, token))?;
-            line_bytes += 1;
-        }
-        if line_bytes == 0 {
-            return Err(format!("line {}: no hex bytes found", row));
-        }
-        total_bytes += line_bytes;
-    }
-    if total_bytes == 0 {
-        return Err("no hex data found".into());
-    }
-    Ok(())
+    disc_service::parse_binary_hex_input(text).map(|_| ())
 }
 
 pub fn validate_cuesheet(text: &str) -> Result<(), String> {
@@ -637,6 +593,8 @@ mod tests {
     fn test_hex_dump_valid() {
         assert!(validate_hex_dump("").is_ok());
         assert!(validate_hex_dump("0000 : 01 02 03 04   ....").is_ok());
+        assert!(validate_hex_dump("01 02 03 04\n05 06").is_ok());
+        assert!(validate_hex_dump("01020304\n0506").is_ok());
         let multi = "0320 : 01 02 03 04 05 06 07 08  09 0A 0B 0C 0D 0E 0F 10   ................\n\
                       0330 : 11 12 13 14 15 16 17 18  19 1A 1B 1C 1D 1E 1F 20   ............... ";
         assert!(validate_hex_dump(multi).is_ok());
@@ -646,6 +604,9 @@ mod tests {
     fn test_hex_dump_invalid() {
         assert!(validate_hex_dump("no colon here").is_err());
         assert!(validate_hex_dump("GGGG : ZZ ZZ").is_err());
+        assert!(validate_hex_dump("ABC").is_err());
+        assert!(validate_hex_dump("01 02 XX").is_err());
+        assert!(validate_hex_dump("0000 : 01 02\n03 04").is_err());
     }
 
     #[test]

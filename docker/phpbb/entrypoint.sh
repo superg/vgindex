@@ -19,7 +19,7 @@ if [ ${#missing[@]} -gt 0 ]; then
     exit 1
 fi
 
-: "${APP_PUBLIC_URL:=http://www.redump.test:18000}"
+: "${APP_PUBLIC_URL:=http://redump.test:18000}"
 : "${PHPBB_PUBLIC_URL:=http://forum.redump.test:18000}"
 : "${MEDIAWIKI_PUBLIC_URL:=http://wiki.redump.test:18000}"
 : "${OIDC_PROVIDER_URL:=${PHPBB_PUBLIC_URL%/}/app.php/oidc}"

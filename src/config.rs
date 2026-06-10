@@ -68,7 +68,7 @@ pub fn host_from_url(url: &str) -> String {
 impl Config {
     pub fn from_env() -> Self {
         let base_url = trim_url(
-            env_nonempty("APP_PUBLIC_URL").unwrap_or_else(|| "http://www.redump.test:18000".into()),
+            env_nonempty("APP_PUBLIC_URL").unwrap_or_else(|| "http://redump.test:18000".into()),
         );
         let site_url = trim_url(env_nonempty("SITE_APEX_URL").unwrap_or_else(|| base_url.clone()));
         let forum_url = trim_url(
