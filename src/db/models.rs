@@ -536,9 +536,10 @@ pub fn sanitize_filename(s: &str) -> String {
         ("¿", ""),
         ("°", ""),
     ];
-    // Longer multi-char replacements first (order matters: ": " before ":").
+    // Longer multi-char replacements first (order matters before single-char fallbacks).
     const FILESYSTEM_REPLACEMENTS: &[(&str, &str)] = &[
         (": ", " - "),
+        (" / ", " & "),
         (":", "-"),
         ("/", "-"),
         ("\\", "-"),
@@ -1106,6 +1107,16 @@ FILE \"Track 2.bin\" BINARY\n\
             "': ' must be replaced with ' - ' before ':' is mapped to '-'"
         );
         assert_eq!(build_dat_system_name("", "", "Foo:Bar"), "Foo-Bar");
+    }
+
+    #[test]
+    fn dat_system_name_slash_sanitization() {
+        assert_eq!(
+            build_dat_system_name("", "", "Foo / Bar"),
+            "Foo & Bar",
+            "' / ' must be replaced with ' & ' before '/' is mapped to '-'"
+        );
+        assert_eq!(build_dat_system_name("", "", "Foo/Bar"), "Foo-Bar");
     }
 
     #[test]

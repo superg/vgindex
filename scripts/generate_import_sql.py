@@ -220,8 +220,9 @@ _LEGACY_ASCII_FILENAME_REPLACEMENTS = [
 ]
 
 _FILESYSTEM_FILENAME_REPLACEMENTS = [
-    # Order matters: ": " must come before ":" so " - " replacement wins.
+    # Longer multi-char replacements first (order matters before single-char fallbacks).
     (": ", " - "),
+    (" / ", " & "),
     (":", "-"),
     ("/", "-"),
     ("\\", "-"),
@@ -311,6 +312,8 @@ assert build_dat_system_name("Arcade", "", "Lindbergh") == "Arcade - Lindbergh"
 assert build_dat_system_name("", "", "Audio CD") == "Audio CD"
 assert build_dat_system_name("", "", "Foo: Bar") == "Foo - Bar"
 assert build_dat_system_name("", "", "Foo:Bar") == "Foo-Bar"
+assert build_dat_system_name("", "", "Foo / Bar") == "Foo & Bar"
+assert build_dat_system_name("", "", "Foo/Bar") == "Foo-Bar"
 assert build_dat_system_name("", "", r"Foo\Bar<Baz>Qux|Zap") == "Foo-Bar_Baz_Qux+Zap"
 assert build_dat_system_name("", "", "Foo\tBar\nBaz\x7f .") == "FooBarBaz"
 assert build_dat_system_name("", "", "¡Foo¿ 360°") == "Foo 360"

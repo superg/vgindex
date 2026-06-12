@@ -86,6 +86,10 @@ class GenerateImportSqlTests(unittest.TestCase):
         self.assertEqual(generate_import_sql.sanitize_filename("u\u0308"), "ue")
         self.assertEqual(generate_import_sql.sanitize_filename("Foo\ue000Bar"), "Foo-Bar")
 
+    def test_sanitize_filename_slash_spacing(self):
+        self.assertEqual(generate_import_sql.sanitize_filename("Foo / Bar"), "Foo & Bar")
+        self.assertEqual(generate_import_sql.sanitize_filename("Foo/Bar"), "Foo-Bar")
+
     def test_write_users_outputs_only_id_and_username(self):
         out = io.StringIO()
 
