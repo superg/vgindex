@@ -392,18 +392,11 @@ async fn submission_detail(
     let show_review_form = is_mod && is_pending;
 
     if !show_review_form {
-        return render_readonly_detail(
-            current.map(|u| u.username.as_str()),
-            &sub,
-            &submitter_name,
-            &reviewer_name,
-        )
-        .await;
+        return render_readonly_detail(current.cloned(), &sub, &submitter_name, &reviewer_name)
+            .await;
     }
 
-    let reviewer_username = current
-        .map(|u| u.username.clone())
-        .ok_or(AppError::Unauthorized)?;
+    let current_user = current.cloned().ok_or(AppError::Unauthorized)?;
 
     let ref_data = fetch_ref_data(&state.pool).await?;
     let (systems_media_json, systems_has_flags_json) = build_systems_json(&ref_data.all_systems);
@@ -442,7 +435,7 @@ async fn submission_detail(
     let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
 
     let mut template = build_review_template(
-        &reviewer_username,
+        current_user,
         &sub,
         &submitter_name,
         &reviewer_name,
@@ -471,7 +464,7 @@ async fn submission_detail(
 }
 
 fn build_review_template(
-    username: &str,
+    current_user: AuthenticatedUser,
     sub: &DiscSubmission,
     submitter_name: &str,
     reviewer_name: &str,
@@ -567,7 +560,7 @@ fn build_review_template(
     );
 
     DiscEditTemplate {
-        current_user: Some(AuthenticatedUser::template_only(username)),
+        current_user: Some(current_user),
         disc_id: sub.target_disc_id.unwrap_or(0),
         page_title,
 
@@ -1203,13 +1196,13 @@ struct QueueDetailTemplate {
 impl SiteConfig for QueueDetailTemplate {}
 
 async fn render_readonly_detail(
-    username: Option<&str>,
+    current_user: Option<AuthenticatedUser>,
     sub: &DiscSubmission,
     submitter_name: &str,
     reviewer_name: &str,
 ) -> AppResult<Html<String>> {
     let template = QueueDetailTemplate {
-        current_user: username.map(AuthenticatedUser::template_only),
+        current_user,
         submission_id: sub.id,
         submission_type_display: sub.submission_type.to_string(),
         submitter_id: sub.submitter_id,
@@ -1691,7 +1684,7 @@ async fn review_submit(
         let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
 
         let mut template = build_review_template(
-            &user.username,
+            user.clone(),
             &sub,
             &submitter_name,
             "",
@@ -1996,7 +1989,7 @@ mod tests {
     fn build_template(snapshot: &serde_json::Value) -> DiscEditTemplate {
         let ref_data = ref_data();
         build_review_template(
-            "moderator",
+            AuthenticatedUser::template_only("moderator"),
             &test_submission(),
             "submitter",
             "",
@@ -2014,6 +2007,37 @@ mod tests {
             2,
             |_flag: fn(&System) -> bool| true,
         )
+    }
+
+    #[test]
+    fn queue_detail_template_preserves_current_user_avatar() {
+        let template = QueueDetailTemplate {
+            current_user: Some(AuthenticatedUser {
+                id: 42,
+                username: "moderator".to_string(),
+                role: UserRole::Moderator,
+                avatar_url: Some("https://example.test/avatar.png".to_string()),
+            }),
+            submission_id: 1,
+            submission_type_display: "Edit".to_string(),
+            submitter_id: 2,
+            submitter_name: "submitter".to_string(),
+            submission_comment: String::new(),
+            dump_log_display: String::new(),
+            extra_upload_url_display: String::new(),
+            submission_status: "Approved".to_string(),
+            reviewer_id: 42,
+            reviewer_name: "moderator".to_string(),
+            review_comment_display: String::new(),
+            created_at_display: "2026-01-01 00:00 UTC".to_string(),
+            reviewed_at_display: String::new(),
+            target_disc_id: 3,
+            changes_json: "{}".to_string(),
+        };
+
+        let html = template.render().unwrap();
+
+        assert!(html.contains(r#"src="https://example.test/avatar.png""#));
     }
 
     #[test]

@@ -1296,7 +1296,7 @@ pub(crate) fn validate_form(
 async fn render_form_with_errors(
     state: &AppState,
     id: i32,
-    username: &str,
+    current_user: AuthenticatedUser,
     form: &DiscEditForm,
     errors: Vec<String>,
     linked_validation_errors: Vec<LinkedValidationError>,
@@ -1339,7 +1339,7 @@ async fn render_form_with_errors(
     );
 
     let template = DiscEditTemplate {
-        current_user: Some(AuthenticatedUser::template_only(username)),
+        current_user: Some(current_user.clone()),
         disc_id: id,
         page_title,
 
@@ -1450,7 +1450,7 @@ async fn render_form_with_errors(
         dump_log_required: is_add_mode && !can_moderate,
         extra_upload_url: form.extra_upload_url.clone().unwrap_or_default(),
         show_submit_as: is_add_mode && can_moderate,
-        submit_as_username: submit_as_username_for_form(username, form, can_moderate),
+        submit_as_username: submit_as_username_for_form(&current_user.username, form, can_moderate),
 
         submit_button_text: if can_edit_directly {
             "Save".into()
@@ -1713,7 +1713,7 @@ async fn edit_submit(
         return render_form_with_errors(
             &state,
             id,
-            &user.username,
+            user.clone(),
             &form,
             errors,
             linked_validation_errors,
@@ -1783,15 +1783,13 @@ async fn add_page(
     } else {
         "[]".to_string()
     };
-    let username = user.username.clone();
-
     let default_system = ref_data.all_systems.iter().find(|s| s.code == "PC");
     let has_sys = |f: fn(&System) -> bool| default_system.map_or(true, f);
     let show_error_count = false;
 
     Ok(Html(
         DiscEditTemplate {
-            current_user: Some(AuthenticatedUser::template_only(username.clone())),
+            current_user: Some(user.clone()),
             disc_id: 0,
             page_title: String::new(),
 
@@ -1876,7 +1874,7 @@ async fn add_page(
             extra_upload_url: String::new(),
             show_submit_as: can_submit_as,
             submit_as_username: if can_submit_as {
-                username
+                user.username.clone()
             } else {
                 String::new()
             },
@@ -1967,7 +1965,7 @@ async fn add_submit(
         return render_form_with_errors(
             &state,
             0,
-            &user.username,
+            user.clone(),
             &form,
             errors,
             linked_validation_errors,
