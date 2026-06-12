@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha1::Digest;
+use unicode_normalization::UnicodeNormalization;
 
 // --- Enums ---
 
@@ -515,32 +516,69 @@ pub fn format_display_title(
 }
 
 pub fn sanitize_filename(s: &str) -> String {
-    // Longer multi-char replacements first (order matters: ": " before ":")
-    const REPLACEMENTS: &[(&str, &str)] = &[
-        ("Böse", "Boese"),
+    const LEGACY_ASCII_REPLACEMENTS: &[(&str, &str)] = &[
+        ("ä", "ae"),
+        ("ö", "oe"),
+        ("ü", "ue"),
+        ("²", "^2"),
+        ("Ä", "Ae"),
+        ("³", "^3"),
+        ("Ö", "Oe"),
+        ("Ü", "Ue"),
+        ("Ō", "Oo"),
+        ("α", "Alpha"),
+        ("½", "1-2"),
+        ("ū", "uu"),
+        ("Δ", "Delta"),
+        ("μ", "Mu"),
+        ("ō", "oo"),
+        ("¡", ""),
+        ("¿", ""),
+        ("°", ""),
+    ];
+    // Longer multi-char replacements first (order matters: ": " before ":").
+    const FILESYSTEM_REPLACEMENTS: &[(&str, &str)] = &[
         (": ", " - "),
-        ("\"", ""),
-        ("*", "-"),
         (":", "-"),
         ("/", "-"),
+        ("\\", "-"),
+        ("<", "_"),
+        (">", "_"),
+        ("\"", ""),
+        ("*", "-"),
         ("?", ""),
-        ("°", ""),
-        ("Ä", "A"),
-        ("å", "a"),
-        ("ä", "a"),
-        ("É", "E"),
-        ("é", "e"),
-        ("ё", "e"),
-        ("Ö", "O"),
-        ("ö", "o"),
-        ("Ñ", "N"),
-        ("ñ", "n"),
-        ("³", " 3"),
-        ("α", "Alpha"),
+        ("|", "+"),
     ];
-    let mut result = s.to_string();
-    for &(from, to) in REPLACEMENTS {
+    const STYLE_REPLACEMENTS: &[(&str, &str)] = &[];
+
+    let mut result: String = s.nfc().collect();
+    for &(from, to) in LEGACY_ASCII_REPLACEMENTS {
         result = result.replace(from, to);
+    }
+    result = transliterate_non_ascii(&result);
+    for replacements in [FILESYSTEM_REPLACEMENTS, STYLE_REPLACEMENTS] {
+        for &(from, to) in replacements {
+            result = result.replace(from, to);
+        }
+    }
+    result.retain(|c| !matches!(c as u32, 0x00..=0x1F | 0x7F));
+    result = result.trim_end_matches([' ', '.']).to_string();
+    result
+}
+
+fn transliterate_non_ascii(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if ch.is_ascii() {
+            result.push(ch);
+            continue;
+        }
+        let replacement = any_ascii::any_ascii_char(ch);
+        if replacement.is_empty() {
+            result.push('-');
+        } else {
+            result.push_str(replacement);
+        }
     }
     result
 }
@@ -1068,6 +1106,112 @@ FILE \"Track 2.bin\" BINARY\n\
             "': ' must be replaced with ' - ' before ':' is mapped to '-'"
         );
         assert_eq!(build_dat_system_name("", "", "Foo:Bar"), "Foo-Bar");
+    }
+
+    #[test]
+    fn dat_system_name_windows_forbidden_characters() {
+        assert_eq!(
+            build_dat_system_name("", "", r#"Foo\Bar<Baz>Qux|Zap"#),
+            "Foo-Bar_Baz_Qux+Zap"
+        );
+    }
+
+    #[test]
+    fn dat_system_name_control_and_trailing_characters() {
+        assert_eq!(
+            build_dat_system_name("", "", "Foo\tBar\nBaz\u{7f} ."),
+            "FooBarBaz"
+        );
+    }
+
+    #[test]
+    fn dat_system_name_style_characters() {
+        assert_eq!(build_dat_system_name("", "", "¡Foo¿ 360°"), "Foo 360");
+    }
+
+    #[test]
+    fn dat_system_name_legacy_ascii_substitution_table() {
+        let cases = [
+            ('é', "e"),
+            ('Ś', "S"),
+            ('ä', "ae"),
+            ('ö', "oe"),
+            ('ó', "o"),
+            ('ü', "ue"),
+            ('ł', "l"),
+            ('·', "-"),
+            ('å', "a"),
+            ('ę', "e"),
+            ('á', "a"),
+            ('ß', "ss"),
+            ('ñ', "n"),
+            ('â', "a"),
+            ('è', "e"),
+            ('í', "i"),
+            ('ś', "s"),
+            ('à', "a"),
+            ('ż', "z"),
+            ('²', "^2"),
+            ('É', "E"),
+            ('ç', "c"),
+            ('ě', "e"),
+            ('ń', "n"),
+            ('ë', "e"),
+            ('Ä', "Ae"),
+            ('ą', "a"),
+            ('ê', "e"),
+            ('č', "c"),
+            ('ź', "z"),
+            ('³', "^3"),
+            ('æ', "ae"),
+            ('ú', "u"),
+            ('ø', "o"),
+            ('ć', "c"),
+            ('ý', "y"),
+            ('ã', "a"),
+            ('ò', "o"),
+            ('ï', "i"),
+            ('õ', "o"),
+            ('Ö', "Oe"),
+            ('Ü', "Ue"),
+            ('î', "i"),
+            ('ô', "o"),
+            ('ù', "u"),
+            ('Ō', "Oo"),
+            ('α', "Alpha"),
+            ('û', "u"),
+            ('Ú', "U"),
+            ('½', "1-2"),
+            ('ū', "uu"),
+            ('À', "A"),
+            ('Ł', "L"),
+            ('È', "E"),
+            ('Ø', "O"),
+            ('ş', "s"),
+            ('ÿ', "y"),
+            ('Č', "C"),
+            ('Ż', "Z"),
+            ('Ș', "S"),
+            ('Δ', "Delta"),
+            ('μ', "Mu"),
+            ('Í', "I"),
+            ('Î', "I"),
+            ('ì', "i"),
+            ('ō', "oo"),
+            ('Ş', "S"),
+            ('ș', "s"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(sanitize_filename(&input.to_string()), expected, "{input}");
+        }
+    }
+
+    #[test]
+    fn dat_system_name_any_ascii_and_fallback_behavior() {
+        assert_eq!(sanitize_filename("éßłæȘ"), "esslaeS");
+        assert_eq!(sanitize_filename("u\u{308}"), "ue");
+        assert_eq!(sanitize_filename("Foo\u{e000}Bar"), "Foo-Bar");
     }
 
     #[test]

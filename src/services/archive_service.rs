@@ -276,20 +276,6 @@ async fn generate_datfile_archive(
         url = html_escape(&metadata.url),
     );
 
-    struct GameEntry {
-        id: i32,
-        name: String,
-        category: String,
-        roms: Vec<RomEntry>,
-    }
-    struct RomEntry {
-        name: String,
-        size: i64,
-        crc: String,
-        md5: String,
-        sha1: String,
-    }
-
     let mut games: Vec<GameEntry> = Vec::with_capacity(discs.len());
     for disc in &discs {
         let files: Vec<File> = sqlx::query_as("SELECT * FROM files WHERE disc_id = $1")
@@ -312,10 +298,11 @@ async fn generate_datfile_archive(
         let mut roms: Vec<RomEntry> = files
             .iter()
             .map(|file| {
-                let ext = if file.track_number.is_some() {
-                    disc.rom_extension.as_str()
-                } else {
+                let is_cue = file.track_number.is_none();
+                let ext = if is_cue {
                     "cue"
+                } else {
+                    disc.rom_extension.as_str()
                 };
                 RomEntry {
                     name: build_rom_name(
@@ -328,10 +315,11 @@ async fn generate_datfile_archive(
                     crc: file.crc32.clone(),
                     md5: file.md5.clone(),
                     sha1: file.sha1.clone(),
+                    is_cue,
                 }
             })
             .collect();
-        roms.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        sort_dat_rom_entries(&mut roms);
 
         games.push(GameEntry {
             id: disc.id,
@@ -387,6 +375,30 @@ async fn generate_datfile_archive(
     })
 }
 
+struct GameEntry {
+    id: i32,
+    name: String,
+    category: String,
+    roms: Vec<RomEntry>,
+}
+
+struct RomEntry {
+    name: String,
+    size: i64,
+    crc: String,
+    md5: String,
+    sha1: String,
+    is_cue: bool,
+}
+
+fn sort_dat_rom_entries(roms: &mut [RomEntry]) {
+    roms.sort_by(|a, b| {
+        b.is_cue
+            .cmp(&a.is_cue)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,6 +419,34 @@ mod tests {
         assert_eq!(metadata.author, "redump.info");
         assert_eq!(metadata.homepage, "redump.info");
         assert_eq!(metadata.url, "https://www.redump.info/");
+    }
+
+    #[test]
+    fn dat_rom_entries_put_cue_first_then_sort_alphabetically() {
+        let mut roms = vec![
+            rom_entry("Game (Track 2).bin", false),
+            rom_entry("Game (Track 1).bin", false),
+            rom_entry("Game.cue", true),
+        ];
+
+        sort_dat_rom_entries(&mut roms);
+
+        let names: Vec<&str> = roms.iter().map(|rom| rom.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Game.cue", "Game (Track 1).bin", "Game (Track 2).bin"]
+        );
+    }
+
+    fn rom_entry(name: &str, is_cue: bool) -> RomEntry {
+        RomEntry {
+            name: name.to_string(),
+            size: 0,
+            crc: String::new(),
+            md5: String::new(),
+            sha1: String::new(),
+            is_cue,
+        }
     }
 }
 

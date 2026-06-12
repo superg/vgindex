@@ -18,7 +18,10 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime
+
+from anyascii import anyascii as _anyascii
 
 # Sentinel created_at for disc_submissions rows that mark discs which had no
 # `added` timestamp on redump.org (early-era entries before the field was
@@ -195,29 +198,42 @@ LANG2_SORT_ORDER = {
 
 MEDIA_CODE_TO_ROM_EXT = {"cd": "bin", "gdrom": "bin", "test4l": "bin"}
 
-_FILENAME_REPLACEMENTS = [
+_LEGACY_ASCII_FILENAME_REPLACEMENTS = [
+    ("ä", "ae"),
+    ("ö", "oe"),
+    ("ü", "ue"),
+    ("²", "^2"),
+    ("Ä", "Ae"),
+    ("³", "^3"),
+    ("Ö", "Oe"),
+    ("Ü", "Ue"),
+    ("Ō", "Oo"),
+    ("α", "Alpha"),
+    ("½", "1-2"),
+    ("ū", "uu"),
+    ("Δ", "Delta"),
+    ("μ", "Mu"),
+    ("ō", "oo"),
+    ("¡", ""),
+    ("¿", ""),
+    ("°", ""),
+]
+
+_FILESYSTEM_FILENAME_REPLACEMENTS = [
     # Order matters: ": " must come before ":" so " - " replacement wins.
-    ("Böse", "Boese"),
     (": ", " - "),
-    ('"', ""),
-    ("*", "-"),
     (":", "-"),
     ("/", "-"),
+    ("\\", "-"),
+    ("<", "_"),
+    (">", "_"),
+    ('"', ""),
+    ("*", "-"),
     ("?", ""),
-    ("°", ""),
-    ("Ä", "A"),
-    ("å", "a"),
-    ("ä", "a"),
-    ("É", "E"),
-    ("é", "e"),
-    ("ё", "e"),
-    ("Ö", "O"),
-    ("ö", "o"),
-    ("Ñ", "N"),
-    ("ñ", "n"),
-    ("³", " 3"),
-    ("α", "Alpha"),
+    ("|", "+"),
 ]
+
+_STYLE_FILENAME_REPLACEMENTS = []
 
 # ---------------------------------------------------------------------------
 # ROM name generation (mirrors Rust build_rom_base_name / build_rom_name)
@@ -230,9 +246,30 @@ def sanitize_filename(s):
     importer-side filenames stay byte-for-byte identical to the ones produced
     at runtime.
     """
-    for old, new in _FILENAME_REPLACEMENTS:
+    s = unicodedata.normalize("NFC", s)
+    for old, new in _LEGACY_ASCII_FILENAME_REPLACEMENTS:
         s = s.replace(old, new)
+    s = _transliterate_non_ascii(s)
+    for replacements in (
+        _FILESYSTEM_FILENAME_REPLACEMENTS,
+        _STYLE_FILENAME_REPLACEMENTS,
+    ):
+        for old, new in replacements:
+            s = s.replace(old, new)
+    s = "".join(ch for ch in s if not (ord(ch) <= 0x1F or ord(ch) == 0x7F))
+    s = s.rstrip(" .")
     return s
+
+
+def _transliterate_non_ascii(s):
+    parts = []
+    for ch in s:
+        if ord(ch) < 128:
+            parts.append(ch)
+            continue
+        replacement = _anyascii(ch)
+        parts.append(replacement if replacement else "-")
+    return "".join(parts)
 
 
 def _join_non_empty(parts, separator):
@@ -274,6 +311,9 @@ assert build_dat_system_name("Arcade", "", "Lindbergh") == "Arcade - Lindbergh"
 assert build_dat_system_name("", "", "Audio CD") == "Audio CD"
 assert build_dat_system_name("", "", "Foo: Bar") == "Foo - Bar"
 assert build_dat_system_name("", "", "Foo:Bar") == "Foo-Bar"
+assert build_dat_system_name("", "", r"Foo\Bar<Baz>Qux|Zap") == "Foo-Bar_Baz_Qux+Zap"
+assert build_dat_system_name("", "", "Foo\tBar\nBaz\x7f .") == "FooBarBaz"
+assert build_dat_system_name("", "", "¡Foo¿ 360°") == "Foo 360"
 
 
 def build_rom_base_name(title, region_names, lang2_codes, disc_number, disc_label, filename_suffix):
