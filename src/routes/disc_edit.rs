@@ -153,6 +153,7 @@ pub(crate) struct DiscEditTemplate {
     pub validation_result: String,
     pub validation_result_disc_id: i32,
     pub validation_result_disc_title: String,
+    pub validation_result_suffix: String,
 
     pub is_review_mode: bool,
     pub changed_fields: Vec<String>,
@@ -1033,6 +1034,7 @@ async fn edit_page(
             validation_result: String::new(),
             validation_result_disc_id: 0,
             validation_result_disc_title: String::new(),
+            validation_result_suffix: String::new(),
 
             is_review_mode: false,
             changed_fields: vec![],
@@ -1124,6 +1126,7 @@ pub(crate) struct ValidationResultMessage {
     pub text: String,
     pub disc_id: i32,
     pub disc_title: String,
+    pub suffix: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1496,6 +1499,7 @@ async fn render_form_with_errors(
         validation_result: validation_result.text,
         validation_result_disc_id: validation_result.disc_id,
         validation_result_disc_title: validation_result.disc_title,
+        validation_result_suffix: validation_result.suffix,
 
         is_review_mode: false,
         changed_fields: vec![],
@@ -1537,22 +1541,97 @@ fn valid_dat_for_matching(form: &DiscEditForm) -> Option<&str> {
     Some(text)
 }
 
+fn valid_universal_hash_for_matching(form: &DiscEditForm) -> Option<&str> {
+    let text = form.universal_hash.as_deref()?.trim();
+    if text.len() != 40 || !text.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(text)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AddDiscMatchSource {
+    UniversalHash,
+    Dat,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AddDiscMatch {
+    disc_id: i32,
+    source: AddDiscMatchSource,
+}
+
+impl AddDiscMatch {
+    fn target_disc_id(self) -> i32 {
+        self.disc_id
+    }
+}
+
+fn resolve_add_disc_match(
+    universal_hash_match: Option<i32>,
+    dat_match: Option<i32>,
+) -> Option<AddDiscMatch> {
+    if let Some(disc_id) = universal_hash_match {
+        return Some(AddDiscMatch {
+            disc_id,
+            source: AddDiscMatchSource::UniversalHash,
+        });
+    }
+    dat_match.map(|disc_id| AddDiscMatch {
+        disc_id,
+        source: AddDiscMatchSource::Dat,
+    })
+}
+
+async fn find_add_disc_match(
+    pool: &sqlx::PgPool,
+    form: &DiscEditForm,
+    include_disabled_discs: bool,
+) -> Option<AddDiscMatch> {
+    let universal_hash_match = match valid_universal_hash_for_matching(form) {
+        Some(universal_hash) => {
+            queue_service::find_matching_disc_by_universal_hash(
+                pool,
+                universal_hash,
+                include_disabled_discs,
+            )
+            .await
+        }
+        None => None,
+    };
+    if universal_hash_match.is_some() {
+        return resolve_add_disc_match(universal_hash_match, None);
+    }
+
+    let dat_match = match valid_dat_for_matching(form) {
+        Some(files_xml) => {
+            queue_service::find_matching_disc(pool, files_xml, include_disabled_discs).await
+        }
+        None => None,
+    };
+    resolve_add_disc_match(None, dat_match)
+}
+
 async fn build_add_validation_result_for_target(
     pool: &sqlx::PgPool,
-    target_disc_id: Option<i32>,
-    has_valid_dat: bool,
+    add_match: Option<AddDiscMatch>,
+    has_match_input: bool,
 ) -> AppResult<ValidationResultMessage> {
-    if !has_valid_dat {
+    if !has_match_input {
         return Ok(ValidationResultMessage::default());
     }
-    let Some(disc_id) = target_disc_id else {
+    let Some(add_match) = add_match else {
         return Ok(add_validation_result_for_match(None));
     };
 
-    let disc_title = fetch_validation_result_disc_title(pool, disc_id)
+    let disc_title = fetch_validation_result_disc_title(pool, add_match.disc_id)
         .await?
-        .unwrap_or_else(|| format!("disc #{disc_id}"));
-    Ok(add_validation_result_for_match(Some((disc_id, disc_title))))
+        .unwrap_or_else(|| format!("disc #{}", add_match.disc_id));
+    Ok(add_validation_result_for_match(Some((
+        add_match.disc_id,
+        disc_title,
+        add_match.source,
+    ))))
 }
 
 async fn fetch_validation_result_disc_title(
@@ -1589,17 +1668,24 @@ async fn fetch_validation_result_disc_title(
     )))
 }
 
-fn add_validation_result_for_match(target_disc: Option<(i32, String)>) -> ValidationResultMessage {
+fn add_validation_result_for_match(
+    target_disc: Option<(i32, String, AddDiscMatchSource)>,
+) -> ValidationResultMessage {
     match target_disc {
-        Some((disc_id, disc_title)) => ValidationResultMessage {
+        Some((disc_id, disc_title, source)) => ValidationResultMessage {
             text: "This is a verification submission for".to_string(),
             disc_id,
             disc_title,
+            suffix: match source {
+                AddDiscMatchSource::UniversalHash => " (Universal Hash)".to_string(),
+                AddDiscMatchSource::Dat => String::new(),
+            },
         },
         None => ValidationResultMessage {
             text: "This is a new disc submission.".to_string(),
             disc_id: 0,
             disc_title: String::new(),
+            suffix: String::new(),
         },
     }
 }
@@ -1926,6 +2012,7 @@ async fn add_page(
             validation_result: String::new(),
             validation_result_disc_id: 0,
             validation_result_disc_title: String::new(),
+            validation_result_suffix: String::new(),
 
             is_review_mode: false,
             changed_fields: vec![],
@@ -1967,17 +2054,9 @@ async fn add_submit(
         user.role.can_moderate(),
     ));
 
-    let target_disc_id = match valid_dat_for_matching(&form) {
-        Some(files_xml) => {
-            queue_service::find_matching_disc(
-                &state.pool,
-                files_xml,
-                user.role.can_view_disabled_discs(),
-            )
-            .await
-        }
-        None => None,
-    };
+    let add_match =
+        find_add_disc_match(&state.pool, &form, user.role.can_view_disabled_discs()).await;
+    let target_disc_id = add_match.map(AddDiscMatch::target_disc_id);
     let linked_validation_errors =
         validate_generated_name_unique(&state.pool, &form, target_disc_id, true).await?;
 
@@ -1990,8 +2069,9 @@ async fn add_submit(
     {
         build_add_validation_result_for_target(
             &state.pool,
-            target_disc_id,
-            valid_dat_for_matching(&form).is_some(),
+            add_match,
+            valid_universal_hash_for_matching(&form).is_some()
+                || valid_dat_for_matching(&form).is_some(),
         )
         .await?
     } else {
@@ -2965,9 +3045,47 @@ mod operation_delta_tests {
 
         form.universal_hash = Some("g".repeat(40));
         let errors = validate_form(&form, &media_rows(), &systems_with_edc(true));
-        assert!(
-            errors.contains(&"Universal Hash: must contain only hexadecimal characters".to_string())
+        assert!(errors
+            .contains(&"Universal Hash: must contain only hexadecimal characters".to_string()));
+    }
+
+    #[test]
+    fn universal_hash_matching_input_accepts_only_valid_sha1_hex() {
+        let mut form = new_disc_form();
+
+        form.universal_hash = Some("  AABBCCDDEEFF00112233445566778899AABBCCDD  ".to_string());
+        assert_eq!(
+            valid_universal_hash_for_matching(&form),
+            Some("AABBCCDDEEFF00112233445566778899AABBCCDD")
         );
+
+        form.universal_hash = Some("abc123".to_string());
+        assert!(valid_universal_hash_for_matching(&form).is_none());
+
+        form.universal_hash = Some("g".repeat(40));
+        assert!(valid_universal_hash_for_matching(&form).is_none());
+
+        form.universal_hash = None;
+        assert!(valid_universal_hash_for_matching(&form).is_none());
+    }
+
+    #[test]
+    fn add_disc_match_prefers_universal_hash_over_dat() {
+        assert_eq!(
+            resolve_add_disc_match(Some(10), Some(20)),
+            Some(AddDiscMatch {
+                disc_id: 10,
+                source: AddDiscMatchSource::UniversalHash,
+            })
+        );
+        assert_eq!(
+            resolve_add_disc_match(None, Some(20)),
+            Some(AddDiscMatch {
+                disc_id: 20,
+                source: AddDiscMatchSource::Dat,
+            })
+        );
+        assert_eq!(resolve_add_disc_match(None, None), None);
     }
 
     #[test]
@@ -2975,15 +3093,31 @@ mod operation_delta_tests {
         let matched = add_validation_result_for_match(Some((
             123,
             "Game Title (Disc 2) (Bonus Disc)".to_string(),
+            AddDiscMatchSource::Dat,
         )));
         assert_eq!(matched.text, "This is a verification submission for");
         assert_eq!(matched.disc_id, 123);
         assert_eq!(matched.disc_title, "Game Title (Disc 2) (Bonus Disc)");
+        assert_eq!(matched.suffix, "");
+
+        let universal_hash_matched = add_validation_result_for_match(Some((
+            456,
+            "Audio Title".to_string(),
+            AddDiscMatchSource::UniversalHash,
+        )));
+        assert_eq!(
+            universal_hash_matched.text,
+            "This is a verification submission for"
+        );
+        assert_eq!(universal_hash_matched.disc_id, 456);
+        assert_eq!(universal_hash_matched.disc_title, "Audio Title");
+        assert_eq!(universal_hash_matched.suffix, " (Universal Hash)");
 
         let unmatched = add_validation_result_for_match(None);
         assert_eq!(unmatched.text, "This is a new disc submission.");
         assert_eq!(unmatched.disc_id, 0);
         assert_eq!(unmatched.disc_title, "");
+        assert_eq!(unmatched.suffix, "");
     }
 
     #[test]

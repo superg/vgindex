@@ -24,7 +24,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
 {% block content %}
 {% if !validation_result.is_empty() %}
 <div class="validation-result {% if validation_result_disc_id > 0 %}validation-result-verification{% else %}validation-result-new{% endif %}" role="status">
-    {{ validation_result }}{% if validation_result_disc_id > 0 %} <a href="/disc/{{ validation_result_disc_id }}/" target="_blank" rel="noopener noreferrer">{{ validation_result_disc_title }}</a>{% endif %}
+    {{ validation_result }}{% if validation_result_disc_id > 0 %} <a href="/disc/{{ validation_result_disc_id }}/" target="_blank" rel="noopener noreferrer">{{ validation_result_disc_title }}</a>{{ validation_result_suffix }}{% endif %}
 </div>
 {% endif %}
 {% if !validation_errors.is_empty() || !linked_validation_errors.is_empty() %}

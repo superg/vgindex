@@ -684,6 +684,7 @@ fn build_review_template(
         validation_result: String::new(),
         validation_result_disc_id: 0,
         validation_result_disc_title: String::new(),
+        validation_result_suffix: String::new(),
 
         is_review_mode: true,
         changed_fields: vec![],
@@ -2167,8 +2168,7 @@ mod tests {
     fn universal_hash_highlights_add_change_and_remove() {
         let mut db = old_snapshot();
         let mut submitted = db.clone();
-        submitted["universal_hash"] =
-            serde_json::json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        submitted["universal_hash"] = serde_json::json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
 
         let highlights = compute_field_highlights(&submitted, &db);
         assert!(highlights
