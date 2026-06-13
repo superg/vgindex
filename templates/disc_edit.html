@@ -469,6 +469,21 @@ const IS_ADD_MODE = {{ is_add_mode }};
             {% endfor %}
         </div>
     </div>
+
+    <div class="inline-field{% if !self.highlight_class("universal_hash").is_empty() %} {{ self.highlight_class("universal_hash") }}{% endif %}" data-field-flag="has_universal_hash"{% if !show_universal_hash %} style="display:none"{% endif %}>
+        <span class="inline-field-label">Universal Hash</span>
+        <div class="inline-field-values">
+            <input type="text" name="universal_hash" value="{{ universal_hash }}">
+            {% for ann in self.annotations_for("universal_hash") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
     </div>
 
     <div class="disc-form-section" aria-label="Ring codes">

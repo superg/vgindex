@@ -504,6 +504,7 @@ mod tests {
             has_edc: false,
             has_disc_id: false,
             has_key,
+            has_universal_hash: false,
             has_title_foreign: false,
             has_disc_title: false,
             has_disc_number: false,

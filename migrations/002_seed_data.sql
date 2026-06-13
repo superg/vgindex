@@ -296,6 +296,10 @@ SET has_key = TRUE
 WHERE code IN ('PS3', 'WIIU');
 
 UPDATE systems
+SET has_universal_hash = TRUE
+WHERE code IN ('AUDIO-CD');
+
+UPDATE systems
 SET has_protection = TRUE
 WHERE code IN ('PSX', 'DVD-VIDEO', 'PC', 'MAC', 'BD-VIDEO', 'GAMEWAVE');
 

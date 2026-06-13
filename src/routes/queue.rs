@@ -529,6 +529,7 @@ fn build_review_template(
     };
 
     let protection_key_disc_key = json_opt_str("disc_key");
+    let universal_hash = json_opt_str("universal_hash");
     let protection_key_disc_id = json_opt_str("disc_id");
 
     let status = snapshot["status"]
@@ -653,6 +654,7 @@ fn build_review_template(
 
         show_disc_id: has_sys(|s| s.has_disc_id),
         show_key: has_sys(|s| s.has_key),
+        show_universal_hash: has_sys(|s| s.has_universal_hash),
         show_protection: has_sys(|s| s.has_protection),
         protection: json_opt_str("protection"),
         show_sector_ranges: has_sys(|s| s.has_sector_ranges),
@@ -660,6 +662,7 @@ fn build_review_template(
         show_sbi: has_sys(|s| s.has_sbi),
         sbi: json_opt_str("sbi"),
         protection_key_disc_key,
+        universal_hash,
         protection_key_disc_id,
         has_sample_start: has_sys(|s| s.has_sample_start),
 
@@ -978,7 +981,14 @@ fn build_review_diff_context(
         }
     }
 
-    for field in ["version", "error_count", "exe_date", "disc_id", "disc_key"] {
+    for field in [
+        "version",
+        "error_count",
+        "exe_date",
+        "disc_id",
+        "disc_key",
+        "universal_hash",
+    ] {
         let old = &db_snapshot[field];
         let new = &submitted_snapshot[field];
         if review_value_changed(old, new) {
@@ -1109,6 +1119,7 @@ fn apply_review_diff_context(
             template.show_edc = system.has_edc;
             template.show_disc_id = system.has_disc_id;
             template.show_key = system.has_key;
+            template.show_universal_hash = system.has_universal_hash;
             template.show_protection = system.has_protection;
             template.show_sector_ranges = system.has_sector_ranges;
             template.show_sbi = system.has_sbi;
@@ -1264,6 +1275,7 @@ fn compute_field_highlights(
         "sbi",
         "disc_id",
         "disc_key",
+        "universal_hash",
         "pvd",
         "header",
         "bca",
@@ -1771,6 +1783,7 @@ mod tests {
             has_edc: true,
             has_disc_id: true,
             has_key: true,
+            has_universal_hash: true,
             has_title_foreign: true,
             has_disc_title: true,
             has_disc_number: true,
@@ -1884,6 +1897,7 @@ mod tests {
             "sbi": "old sbi",
             "disc_id": "old-disc-id",
             "disc_key": "1234",
+            "universal_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "cuesheet": "old cue",
             "status": "Unverified",
             "regions": ["EU", "US"],
@@ -1922,6 +1936,7 @@ mod tests {
             "sbi": "new sbi",
             "disc_id": "new-disc-id",
             "disc_key": "abcd",
+            "universal_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "cuesheet": "new cue",
             "status": "Unverified",
             "regions": ["JP", "US"],
@@ -2102,6 +2117,10 @@ mod tests {
             annotation_values(&template, "serial", "Added"),
             vec!["NEW-003".to_string()]
         );
+        assert_eq!(
+            annotation_values(&template, "universal_hash", "Changed from"),
+            vec!["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()]
+        );
         assert!(template
             .review_old_multiline
             .iter()
@@ -2142,6 +2161,32 @@ mod tests {
 
         assert_eq!(posted_template.title, "Moderator Title");
         assert_eq!(posted_template.comments, "moderator edited comments");
+    }
+
+    #[test]
+    fn universal_hash_highlights_add_change_and_remove() {
+        let mut db = old_snapshot();
+        let mut submitted = db.clone();
+        submitted["universal_hash"] =
+            serde_json::json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+
+        let highlights = compute_field_highlights(&submitted, &db);
+        assert!(highlights
+            .changed_fields
+            .contains(&"universal_hash:changed".to_string()));
+
+        db["universal_hash"] = serde_json::Value::Null;
+        let highlights = compute_field_highlights(&submitted, &db);
+        assert!(highlights
+            .changed_fields
+            .contains(&"universal_hash:added".to_string()));
+
+        db["universal_hash"] = serde_json::json!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        submitted["universal_hash"] = serde_json::Value::Null;
+        let highlights = compute_field_highlights(&submitted, &db);
+        assert!(highlights
+            .changed_fields
+            .contains(&"universal_hash:removed".to_string()));
     }
 
     #[test]
