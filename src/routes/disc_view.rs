@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Path, State},
+    extract::{rejection::PathRejection, Path, State},
     response::{Html, IntoResponse},
     routing::get,
     Router,
@@ -438,8 +438,9 @@ struct TrackColVis {
 async fn disc_view(
     State(state): State<AppState>,
     user: CurrentUser,
-    Path(id): Path<i32>,
+    id: Result<Path<i32>, PathRejection>,
 ) -> AppResult<Html<String>> {
+    let id = crate::routes::path_i32(id)?;
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
 
@@ -478,16 +479,24 @@ async fn disc_view(
         .iter()
         .filter(|f| f.track_number.is_some())
         .count();
-    let cue_track_meta = detail
-        .disc
-        .cue
-        .as_deref()
-        .map(parse_cue_track_meta)
-        .unwrap_or_default();
+    let cue_active = detail
+        .system
+        .has_cue_for_media_type(&detail.disc.media_type);
+    let cue_track_meta = if cue_active {
+        detail
+            .disc
+            .cue
+            .as_deref()
+            .map(parse_cue_track_meta)
+            .unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
 
     let mut files: Vec<ViewFile> = detail
         .files
         .iter()
+        .filter(|f| f.track_number.is_some() || cue_active)
         .map(|f| {
             let is_cue = f.track_number.is_none();
             let track = f.track_number.as_deref();
@@ -526,7 +535,7 @@ async fn disc_view(
     });
     append_synthetic_img_file(&mut files);
 
-    let track_rows = if detail.disc.media_type.is_cd() {
+    let track_rows = if cue_active {
         detail
             .disc
             .cue
@@ -538,12 +547,16 @@ async fn disc_view(
     };
     let track_col_vis = compute_track_col_vis(&track_rows);
 
-    let sbi_rows = detail
-        .disc
-        .sbi
-        .as_deref()
-        .map(|text| parse_sbi_display(text))
-        .unwrap_or_default();
+    let sbi_rows = if detail.system.has_sbi {
+        detail
+            .disc
+            .sbi
+            .as_deref()
+            .map(|text| parse_sbi_display(text))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     let pvd_rows = detail
         .disc
@@ -1427,10 +1440,18 @@ fn compute_sbi_xor(sector: u32, qdata: &[u8]) -> String {
 async fn disc_cue_download(
     State(state): State<AppState>,
     user: CurrentUser,
-    Path(id): Path<i32>,
+    id: Result<Path<i32>, PathRejection>,
 ) -> AppResult<impl IntoResponse> {
+    let id = crate::routes::path_i32(id)?;
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
+
+    if !detail
+        .system
+        .has_cue_for_media_type(&detail.disc.media_type)
+    {
+        return Err(AppError::NotFound);
+    }
 
     let cue = detail
         .disc
@@ -1466,10 +1487,15 @@ async fn disc_cue_download(
 async fn disc_sbi_download(
     State(state): State<AppState>,
     user: CurrentUser,
-    Path(id): Path<i32>,
+    id: Result<Path<i32>, PathRejection>,
 ) -> AppResult<impl IntoResponse> {
+    let id = crate::routes::path_i32(id)?;
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
+
+    if !detail.system.has_sbi {
+        return Err(AppError::NotFound);
+    }
 
     let sbi_text = detail
         .disc
@@ -1507,6 +1533,46 @@ async fn disc_sbi_download(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tower::ServiceExt;
+
+    fn test_state() -> AppState {
+        let (archive_tx, _archive_rx) = tokio::sync::mpsc::unbounded_channel();
+        let database_url = "postgres://postgres:postgres@localhost/postgres".to_string();
+
+        AppState {
+            pool: sqlx::postgres::PgPoolOptions::new()
+                .connect_lazy(&database_url)
+                .unwrap(),
+            config: Arc::new(crate::config::Config {
+                site_name: "localhost".to_string(),
+                database_url,
+                site_url: "http://localhost".to_string(),
+                base_url: "http://localhost".to_string(),
+                wiki_url: "#".to_string(),
+                forum_url: "#".to_string(),
+                news_feed_url: "#".to_string(),
+                port: 0,
+                oidc_provider_url: "#".to_string(),
+                oidc_client_id: "test".to_string(),
+                oidc_client_secret: "test".to_string(),
+            }),
+            http: reqwest::Client::new(),
+            archive_tx,
+            edition_suggestions: crate::services::disc_service::EditionSuggestionsCache::new(
+                Duration::from_secs(60),
+            ),
+            news_cache: crate::services::news_service::NewsCache::new(Duration::from_secs(
+                crate::services::news_service::NEWS_FEED_TTL_SECONDS,
+            )),
+            transliteration: Arc::new(
+                crate::transliteration::TransliterationRegistry::new().unwrap(),
+            ),
+        }
+    }
 
     fn view_file(
         name: &str,
@@ -1557,6 +1623,24 @@ mod tests {
             sample_data_start: None,
             comment: comment.map(str::to_string),
             layers,
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_disc_id_path_returns_not_found() {
+        for uri in [
+            "/disc/asdf.log",
+            "/disc/asdf.log/",
+            "/disc/asdf.log/cue",
+            "/disc/asdf.log/sbi",
+        ] {
+            let app = routes().with_state(test_state());
+            let response = app
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
         }
     }
 
@@ -1723,42 +1807,34 @@ mod tests {
     }
 
     #[test]
-    fn disc_identifiers_are_not_collapsed_in_disc_section() {
-        let template = include_str!("../../templates/disc_view.html");
+    fn ring_table_layer_rows_use_baseline_and_entry_cells_use_middle_alignment() {
         let css = include_str!("../../static/css/app.css");
 
-        assert!(template.contains("<td>{{ serial|safe }}</td>"));
-        assert!(template.contains(r#"<td class="disc-edition-cell"><span class="disc-edition-value">{{ edition|safe }}</span></td>"#));
-        assert!(template.contains("<td>{{ barcode|safe }}</td>"));
-        assert!(!template.contains("serial_count > 6"));
-        assert!(!template.contains("edition_count > 6"));
-        assert!(!template.contains("barcode_count > 6"));
-        assert!(!template.contains("td-collapse"));
-        assert!(!css.contains(".td-collapse"));
+        assert!(css.contains(
+            ".disc-view .detail-section .ring-table tbody td {\n    vertical-align: baseline !important;\n}"
+        ));
+        assert!(css.contains(
+            ".disc-view .detail-section .ring-table tbody .ring-entry-cell {\n    vertical-align: middle !important;\n}"
+        ));
+        assert!(css.contains(".ring-table .entry-num {\n    font-weight: 600;\n}"));
     }
 
     #[test]
-    fn disc_view_hides_disc_id_and_key_when_visibility_flags_are_false() {
-        let html = disc_view_template(false, false, "secret-disc-id", "deadbeef")
-            .render()
-            .unwrap();
+    fn ring_entry_level_cells_are_marked_for_middle_alignment() {
+        let template = include_str!("../../templates/disc_view.html");
 
-        assert!(!html.contains("<strong>Disc ID</strong>"));
-        assert!(!html.contains("<strong>Disc Key</strong>"));
-        assert!(!html.contains("secret-disc-id"));
-        assert!(!html.contains("deadbeef"));
-    }
-
-    #[test]
-    fn disc_view_shows_disc_id_and_key_when_visibility_flags_are_true() {
-        let html = disc_view_template(true, true, "visible-disc-id", "deadbeef")
-            .render()
-            .unwrap();
-
-        assert!(html.contains("<strong>Disc ID</strong>"));
-        assert!(html.contains("<strong>Disc Key</strong>"));
-        assert!(html.contains("visible-disc-id"));
-        assert!(html.contains("deadbeef"));
+        assert!(template.contains(r#"<td class="entry-num ring-entry-cell""#));
+        assert!(template.contains(r#"<td class="ring-fixed-cell ring-entry-cell""#));
+        assert!(template.contains(r#"<td class="ring-entry-cell""#));
+        assert!(template
+            .contains(r#"<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>"#));
+        assert!(
+            template.contains(r#"<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>"#)
+        );
+        assert!(!template.contains(r#"<td class="ring-layer-col ring-entry-cell""#));
+        assert!(!template.contains(
+            r#"<td class="ring-fixed-cell ring-entry-cell">{{ row.mastering_code|safe }}</td>"#
+        ));
     }
 
     #[test]
@@ -1813,14 +1889,102 @@ mod tests {
 
         let html = template.render().unwrap();
 
-        assert!(html.contains(r#"<td rowspan="2">+123</td>"#));
-        assert!(html.contains(r#"<td rowspan="2">+4</td>"#));
-        assert!(html.contains(r#"<td rowspan="2">5678</td>"#));
-        assert!(html.contains(r#"<td rowspan="2">Entry comment</td>"#));
+        assert!(
+            html.contains(r#"<td class="ring-fixed-cell ring-entry-cell" rowspan="2">+123</td>"#)
+        );
+        assert!(html.contains(r#"<td class="ring-fixed-cell ring-entry-cell" rowspan="2">+4</td>"#));
+        assert!(html.contains(r#"<td class="ring-entry-cell" rowspan="2">5678</td>"#));
+        assert!(html.contains(r#"<td class="ring-entry-cell" rowspan="2">Entry comment</td>"#));
         assert_eq!(html.matches("+123").count(), 1);
         assert_eq!(html.matches("+4").count(), 1);
         assert_eq!(html.matches("5678").count(), 1);
         assert_eq!(html.matches("Entry comment").count(), 1);
+    }
+
+    #[test]
+    fn disc_identifiers_are_not_collapsed_in_disc_section() {
+        let template = include_str!("../../templates/disc_view.html");
+        let css = include_str!("../../static/css/app.css");
+
+        assert!(template.contains("<td>{{ serial|safe }}</td>"));
+        assert!(template.contains(r#"<td class="disc-edition-cell"><span class="disc-edition-value">{{ edition|safe }}</span></td>"#));
+        assert!(template.contains("<td>{{ barcode|safe }}</td>"));
+        assert!(!template.contains("serial_count > 6"));
+        assert!(!template.contains("edition_count > 6"));
+        assert!(!template.contains("barcode_count > 6"));
+        assert!(!template.contains("td-collapse"));
+        assert!(!css.contains(".td-collapse"));
+    }
+
+    #[test]
+    fn disc_view_hides_disc_id_and_key_when_visibility_flags_are_false() {
+        let html = disc_view_template(false, false, "secret-disc-id", "deadbeef")
+            .render()
+            .unwrap();
+
+        assert!(!html.contains("<strong>Disc ID</strong>"));
+        assert!(!html.contains("<strong>Disc Key</strong>"));
+        assert!(!html.contains("secret-disc-id"));
+        assert!(!html.contains("deadbeef"));
+    }
+
+    #[test]
+    fn disc_view_shows_disc_id_and_key_when_visibility_flags_are_true() {
+        let html = disc_view_template(true, true, "visible-disc-id", "deadbeef")
+            .render()
+            .unwrap();
+
+        assert!(html.contains("<strong>Disc ID</strong>"));
+        assert!(html.contains("<strong>Disc Key</strong>"));
+        assert!(html.contains("visible-disc-id"));
+        assert!(html.contains("deadbeef"));
+    }
+
+    #[test]
+    fn tracks_table_sectors_use_fixed_font_like_length() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.show_tracks_table = true;
+        template.track_col_vis = TrackColVis {
+            track_num: false,
+            type_display: true,
+            flags: false,
+            pregap: false,
+            length: true,
+            sectors: true,
+            visible_count: 3,
+        };
+        template.track_rows = vec![
+            ViewTrackTableRow {
+                is_session_header: false,
+                is_total_row: false,
+                session_label: String::new(),
+                track_num: String::new(),
+                type_display: "Data".to_string(),
+                flags_display: String::new(),
+                pregap: String::new(),
+                length: "00:02:00".to_string(),
+                sectors: "12345".to_string(),
+            },
+            ViewTrackTableRow {
+                is_session_header: false,
+                is_total_row: true,
+                session_label: String::new(),
+                track_num: String::new(),
+                type_display: "Total".to_string(),
+                flags_display: String::new(),
+                pregap: String::new(),
+                length: "00:04:00".to_string(),
+                sectors: "67890".to_string(),
+            },
+        ];
+
+        let html = template.render().unwrap();
+
+        assert!(html.contains(r#"<td class="col-num"><code>00:02:00</code></td>"#));
+        assert!(html.contains(r#"<td class="col-num"><code>12345</code></td>"#));
+        assert!(html.contains(r#"<td class="col-num"><strong><code>00:04:00</code></strong></td>"#));
+        assert!(html.contains(r#"<td class="col-num"><strong><code>67890</code></strong></td>"#));
+        assert!(!html.contains(r#"<td class="col-num">12345</td>"#));
     }
 
     #[test]

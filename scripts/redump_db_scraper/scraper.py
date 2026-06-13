@@ -8,6 +8,7 @@ same directory as this script.
 Usage:
     python scraper.py
     python scraper.py --config /path/to/scraper.cfg
+    python scraper.py --check-modified 200
 """
 
 import argparse
@@ -827,41 +828,17 @@ def scrape_disc(
     return result, warnings
 
 
-def fetch_root_metadata(
-    session: requests.Session, disc_id: int, delay: float
-) -> tuple[dict | str | None, list[str]]:
-    warnings: list[str] = []
-    disc_url = f"{BASE_URL}/disc/{disc_id}/"
+def _positive_int(value: str) -> int:
     try:
-        resp = _rate_limited_get(session, disc_url, delay, timeout=30)
-    except _Interrupted:
-        return None, warnings
-    except requests.RequestException as e:
-        warnings.append(f"[disc] Request failed: {e}")
-        return None, warnings
-
-    if resp.status_code in (403, 404):
-        return None, warnings
-    if resp.url.rstrip("/") != disc_url.rstrip("/"):
-        warnings.append(f"[disc] Redirected to {resp.url}")
-        return None, warnings
-    if resp.status_code != 200:
-        warnings.append(f"[disc] HTTP {resp.status_code}")
-        return None, warnings
-    if NONEXISTENT_DISC_RE.search(resp.text):
-        return "nonexistent", warnings
-    if not _is_complete_redump_html(resp.text):
-        warnings.append("[disc] Incomplete/truncated HTML")
-        return None, warnings
-    metadata = parse_disc_root_metadata(resp.text)
-    return metadata, warnings
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def main():
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Scrape disc data from redump.org using scraper.cfg settings."
     )
@@ -871,9 +848,19 @@ def main():
     )
     parser.add_argument(
         "--check-modified",
-        action="store_true",
-        help="Also run the modified-disc detection phase (delete local JSONs whose remote modified date changed, so backfill re-scrapes them). Off by default because the modified listing is unreliable.",
+        type=_positive_int,
+        metavar="N",
+        help="Delete local files for the N latest modified disc IDs, so backfill re-scrapes them.",
     )
+    return parser
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = build_arg_parser()
     args = parser.parse_args()
     config_path = Path(args.config).expanduser().resolve() if args.config else default_config_path()
 
@@ -890,10 +877,10 @@ def main():
     print(f"Delay: {config.delay_seconds}s, Workers: {config.workers}")
     print()
 
-    if args.check_modified:
-        run_modified_detection_phase(session, config)
+    if args.check_modified is not None:
+        run_modified_detection_phase(session, config, args.check_modified)
     else:
-        print("Skipping modified-disc detection (pass --check-modified to enable).\n")
+        print("Skipping modified-disc replacement (pass --check-modified N to enable).\n")
     if not interrupted:
         run_backfill_phase(session, config)
     if not interrupted:
@@ -902,20 +889,6 @@ def main():
     print_summary()
     if interrupted:
         sys.exit(1)
-
-
-def _load_local_disc_json(output_dir: str, disc_id: int) -> dict | None:
-    path = os.path.join(output_dir, _output_relpath(disc_id))
-    if not os.path.isfile(path) or os.path.getsize(path) == 0:
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            return data
-    except (OSError, json.JSONDecodeError):
-        return None
-    return None
 
 
 def _has_nonexistent_marker(output_dir: str, disc_id: int) -> bool:
@@ -1045,86 +1018,64 @@ def iter_modified_disc_ids(session: requests.Session, delay: float):
         url = next_url
 
 
-def _fetch_root_metadata_with_retry(
-    session: requests.Session, disc_id: int, delay: float, max_attempts: int = 5
-) -> tuple[dict | str | None, list[str]]:
-    """fetch_root_metadata with exponential backoff. Returns (None, warnings) on persistent failure."""
-    backoff_seconds = 1.0
-    last_warnings: list[str] = []
-    for attempt in range(1, max_attempts + 1):
-        if interrupted:
-            return None, last_warnings
-        result, warnings = fetch_root_metadata(session, disc_id, delay)
-        last_warnings = warnings
-        if result == "nonexistent" or isinstance(result, dict):
-            return result, warnings
-        if attempt == max_attempts:
-            return None, warnings
-        wait_for = min(backoff_seconds * (2 ** (attempt - 1)), 30.0)
-        deadline = time.monotonic() + wait_for
-        while time.monotonic() < deadline:
-            if interrupted:
-                return None, warnings
-            time.sleep(min(0.25, deadline - time.monotonic()))
-    return None, last_warnings
+def _create_backup_dir(output_dir: str) -> str:
+    base_name = datetime.now(timezone.utc).strftime("backup-%Y%m%d-%H%M%SZ")
+    for idx in range(100):
+        name = base_name if idx == 0 else f"{base_name}-{idx:02d}"
+        path = os.path.join(output_dir, name)
+        try:
+            os.makedirs(path)
+            return path
+        except FileExistsError:
+            continue
+    raise OSError(f"Could not create unique backup directory under {output_dir}")
 
 
-def run_modified_detection_phase(session: requests.Session, config: ScraperConfig) -> None:
-    print("Modified detection phase: building list of modified disc IDs (no scraping yet)...")
+def run_modified_detection_phase(
+    session: requests.Session, config: ScraperConfig, limit: int
+) -> None:
+    print(
+        f"Modified replacement phase: collecting the {limit} latest modified disc IDs "
+        "(no scraping yet)..."
+    )
     to_delete: list[int] = []
-    cutoff_disc_id: int | None = None
+    seen: set[int] = set()
 
     for disc_id in iter_modified_disc_ids(session, config.delay_seconds):
         if interrupted:
             return
-        if _has_nonexistent_marker(config.output_dir, disc_id):
+        if disc_id in seen:
             continue
-        local_json = _load_local_disc_json(config.output_dir, disc_id)
-        if local_json is None:
-            # Missing/empty/corrupt — backfill or discovery will handle.
-            continue
-
-        root_metadata, warnings = _fetch_root_metadata_with_retry(
-            session, disc_id, config.delay_seconds
-        )
-        if interrupted:
-            return
-        if root_metadata == "nonexistent":
-            continue
-        if not isinstance(root_metadata, dict):
-            print(f"Disc {disc_id}: root fetch failed after retries; queuing for re-scrape.")
-            for w in warnings:
-                print(f"  ^ {w}")
-            to_delete.append(disc_id)
-            continue
-
-        local_modified = str(local_json.get("modified", "")).strip()
-        remote_modified = str(root_metadata.get("modified", "")).strip()
-
-        if local_modified and remote_modified and local_modified == remote_modified:
-            cutoff_disc_id = disc_id
-            print(f"Cutoff at disc {disc_id}: modified date unchanged ({remote_modified}).")
-            break
-
+        seen.add(disc_id)
         to_delete.append(disc_id)
+        if len(to_delete) >= limit:
+            break
 
     if interrupted:
         return
 
-    if cutoff_disc_id is None and to_delete:
-        print("Reached end of modified listing without finding a cutoff.")
-    print(f"Detected {len(to_delete)} modified disc(s); deleting local JSONs so backfill repopulates them.")
+    if len(to_delete) < limit:
+        print(f"Modified listing ended after {len(to_delete)} unique disc ID(s).")
+    print(
+        f"Moving local files for {len(to_delete)} latest modified disc ID(s) "
+        "so backfill repopulates them."
+    )
 
+    backup_dir: str | None = None
     for disc_id in to_delete:
         if interrupted:
             return
         path = os.path.join(config.output_dir, _output_relpath(disc_id))
+        if not os.path.isfile(path):
+            continue
+        if backup_dir is None:
+            backup_dir = _create_backup_dir(config.output_dir)
         try:
-            os.remove(path)
-        except FileNotFoundError:
-            pass
+            os.rename(path, os.path.join(backup_dir, os.path.basename(path)))
         except OSError as exc:
-            print(f"Failed to delete {path}: {exc}")
+            print(f"Failed to move {path} to {backup_dir}: {exc}")
+    if backup_dir is not None:
+        print(f"Backup directory: {backup_dir}")
     print()
 
 

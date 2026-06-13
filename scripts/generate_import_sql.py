@@ -485,7 +485,7 @@ def sql_int4range_array(ranges):
         return "NULL"
     parts = []
     for start, end in ranges:
-        parts.append(f"'[{start},{end}]'::INT4RANGE")
+        parts.append(f"'[{start},{end})'::INT4RANGE")
     return f"ARRAY[{', '.join(parts)}]"
 
 

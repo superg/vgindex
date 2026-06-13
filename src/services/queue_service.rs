@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
-use crate::services::disc_service;
+use crate::services::{archive_service, disc_service};
 
 fn normalize_newlines(s: &str) -> String {
     s.replace("\r\n", "\n").replace('\r', "\n")
@@ -752,6 +752,14 @@ pub async fn approve_submission(
     archive_tx: &tokio::sync::mpsc::UnboundedSender<String>,
 ) -> AppResult<Option<i32>> {
     let mut effective_data = resolve_submission_data(pool, sub, changes).await?;
+    let previous_system_code: Option<String> = if let Some(existing_id) = sub.target_disc_id {
+        sqlx::query_scalar("SELECT system_code FROM discs WHERE id = $1")
+            .bind(existing_id)
+            .fetch_optional(pool)
+            .await?
+    } else {
+        None
+    };
 
     if let Some(obj) = effective_data.as_object_mut() {
         if sub.target_disc_id.is_none() {
@@ -823,7 +831,19 @@ pub async fn approve_submission(
             .await
             .ok()
             .flatten();
+
+    let mut dirty_systems = Vec::new();
+    if let Some(code) = previous_system_code {
+        dirty_systems.push(code);
+    }
     if let Some(code) = system_code {
+        if !dirty_systems.iter().any(|dirty| dirty == &code) {
+            dirty_systems.push(code);
+        }
+    }
+
+    for code in dirty_systems {
+        archive_service::invalidate_system_archives(&code);
         let _ = archive_tx.send(code);
     }
 

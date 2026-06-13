@@ -1343,8 +1343,13 @@ details + p small {
 .ring-entry-even > td {
     background: rgba(0,0,0,0.04);
 }
-.ring-table .entry-num {
+.disc-view .detail-section .ring-table tbody td {
+    vertical-align: baseline !important;
+}
+.disc-view .detail-section .ring-table tbody .ring-entry-cell {
     vertical-align: middle !important;
+}
+.ring-table .entry-num {
     font-weight: 600;
 }
 .ring-table .ring-fixed-cell {

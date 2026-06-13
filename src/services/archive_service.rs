@@ -5,6 +5,8 @@ use zip::write::{SimpleFileOptions, ZipWriter};
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 
+const ARCHIVE_CACHE_VERSION: &str = "v2";
+
 pub struct ArchiveResult {
     pub data: Vec<u8>,
     pub filename: String,
@@ -46,10 +48,11 @@ impl ArchiveMetadata {
 
 fn archive_subdir(system: &str, archive_type: &str) -> String {
     format!(
-        "{}/archives/{}-{}",
+        "{}/archives/{}-{}-{}",
         crate::config::DATA_DIR,
         system,
-        archive_type
+        archive_type,
+        ARCHIVE_CACHE_VERSION
     )
 }
 
@@ -84,6 +87,24 @@ fn store_archive(system: &str, archive_type: &str, result: &ArchiveResult) {
     }
 }
 
+fn clear_cached_archive(system: &str, archive_type: &str) {
+    let dir = archive_subdir(system, archive_type);
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("zip") {
+                std::fs::remove_file(&path).ok();
+            }
+        }
+    }
+}
+
+pub fn invalidate_system_archives(system: &str) {
+    for archive_type in ["dat", "cue", "key", "sbi"] {
+        clear_cached_archive(system, archive_type);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -94,6 +115,11 @@ pub async fn get_or_generate_archive(
     system: &str,
     archive_type: &str,
 ) -> AppResult<ArchiveResult> {
+    if !archive_type_is_available(pool, system, archive_type).await? {
+        clear_cached_archive(system, archive_type);
+        return Err(AppError::NotFound);
+    }
+
     if let Some(result) = find_cached_archive(system, archive_type) {
         return Ok(result);
     }
@@ -123,22 +149,29 @@ pub async fn regenerate_system_archives(pool: &PgPool, metadata: &ArchiveMetadat
         store_archive(&sys.code, "dat", &result);
     }
 
-    if system_has_cd_media(pool, &sys.media_types).await {
+    let has_cue_media = system_has_bin_media(pool, &sys.media_types).await;
+    if archive_type_supported_by_system(&sys, "cue", has_cue_media).unwrap_or(false) {
         if let Ok(result) = generate_cuesheet_archive(pool, &sys.code).await {
             store_archive(&sys.code, "cue", &result);
         }
+    } else {
+        clear_cached_archive(&sys.code, "cue");
     }
 
-    if sys.has_key {
+    if archive_type_supported_by_system(&sys, "key", false).unwrap_or(false) {
         if let Ok(result) = generate_key_archive(pool, &sys.code).await {
             store_archive(&sys.code, "key", &result);
         }
+    } else {
+        clear_cached_archive(&sys.code, "key");
     }
 
-    if sys.has_sbi {
+    if archive_type_supported_by_system(&sys, "sbi", false).unwrap_or(false) {
         if let Ok(result) = generate_sbi_archive(pool, &sys.code).await {
             store_archive(&sys.code, "sbi", &result);
         }
+    } else {
+        clear_cached_archive(&sys.code, "sbi");
     }
 }
 
@@ -167,7 +200,45 @@ pub async fn run_archive_worker(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-async fn system_has_cd_media(pool: &PgPool, media_type_codes: &[String]) -> bool {
+fn archive_type_supported_by_system(
+    sys: &System,
+    archive_type: &str,
+    has_cue_media: bool,
+) -> AppResult<bool> {
+    match archive_type {
+        "dat" => Ok(true),
+        "cue" => Ok(has_cue_media),
+        "key" => Ok(sys.has_key),
+        "sbi" => Ok(sys.has_sbi),
+        _ => Err(AppError::NotFound),
+    }
+}
+
+async fn archive_type_is_available(
+    pool: &PgPool,
+    system: &str,
+    archive_type: &str,
+) -> AppResult<bool> {
+    if !matches!(archive_type, "dat" | "cue" | "key" | "sbi") {
+        return Err(AppError::NotFound);
+    }
+
+    let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
+        .bind(system)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let has_cue_media = if archive_type == "cue" {
+        system_has_bin_media(pool, &sys.media_types).await
+    } else {
+        false
+    };
+
+    archive_type_supported_by_system(&sys, archive_type, has_cue_media)
+}
+
+async fn system_has_bin_media(pool: &PgPool, media_type_codes: &[String]) -> bool {
     if media_type_codes.is_empty() {
         return false;
     }
@@ -220,6 +291,7 @@ struct DatfileDisc {
     disc_number: Option<String>,
     disc_title: Option<String>,
     category_name: String,
+    media_type_code: String,
     rom_extension: String,
 }
 
@@ -238,6 +310,7 @@ async fn generate_datfile_archive(
         "SELECT d.id, d.title,
                 d.filename_suffix, d.disc_number, d.disc_title,
                 c.name AS category_name,
+                d.media_type_code,
                 mt.rom_extension
          FROM discs d
          JOIN categories c ON c.id = d.category_id
@@ -295,8 +368,10 @@ async fn generate_datfile_archive(
         );
 
         let total_tracks = files.iter().filter(|f| f.track_number.is_some()).count();
+        let cue_active = dat_disc_has_active_cue(disc, &sys);
         let mut roms: Vec<RomEntry> = files
             .iter()
+            .filter(|file| dat_file_is_active(file, cue_active))
             .map(|file| {
                 let is_cue = file.track_number.is_none();
                 let ext = if is_cue {
@@ -399,9 +474,76 @@ fn sort_dat_rom_entries(roms: &mut [RomEntry]) {
     });
 }
 
+fn dat_disc_has_active_cue(disc: &DatfileDisc, sys: &System) -> bool {
+    is_cd_rom_extension(&disc.rom_extension)
+        && sys
+            .media_types
+            .iter()
+            .any(|code| code.eq_ignore_ascii_case(&disc.media_type_code))
+}
+
+fn dat_file_is_active(file: &File, cue_active: bool) -> bool {
+    file.track_number.is_some() || cue_active
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn system(has_key: bool, has_sbi: bool) -> System {
+        System {
+            code: "SYS".to_string(),
+            system_type: "Console".to_string(),
+            manufacturer: "Example".to_string(),
+            name: "System".to_string(),
+            short_name: String::new(),
+            media_types: vec!["cd".to_string(), "gdrom".to_string(), "dvd5".to_string()],
+            has_exe_date: false,
+            has_sbi,
+            has_pvd: false,
+            has_edc: false,
+            has_disc_id: false,
+            has_key,
+            has_title_foreign: false,
+            has_disc_title: false,
+            has_disc_number: false,
+            has_serial: false,
+            has_barcode: false,
+            has_version: false,
+            has_edition: false,
+            has_protection: false,
+            has_sector_ranges: false,
+            has_header: false,
+            has_bca: false,
+            has_sample_start: false,
+            has_offset_extra: false,
+        }
+    }
+
+    fn dat_disc(media_type_code: &str, rom_extension: &str) -> DatfileDisc {
+        DatfileDisc {
+            id: 1,
+            title: "Game".to_string(),
+            filename_suffix: None,
+            disc_number: None,
+            disc_title: None,
+            category_name: "Games".to_string(),
+            media_type_code: media_type_code.to_string(),
+            rom_extension: rom_extension.to_string(),
+        }
+    }
+
+    fn file(track_number: Option<&str>) -> File {
+        File {
+            id: 1,
+            disc_id: 1,
+            track_number: track_number.map(str::to_string),
+            size: 0,
+            crc32: String::new(),
+            md5: String::new(),
+            sha1: String::new(),
+        }
+    }
 
     #[test]
     fn archive_metadata_uses_site_host_and_url() {
@@ -438,6 +580,46 @@ mod tests {
         );
     }
 
+    #[test]
+    fn dat_cue_entries_are_active_only_for_supported_bin_media() {
+        let sys = system(false, false);
+
+        assert!(dat_disc_has_active_cue(&dat_disc("cd", "bin"), &sys));
+        assert!(dat_disc_has_active_cue(&dat_disc("gdrom", "BIN"), &sys));
+        assert!(!dat_disc_has_active_cue(&dat_disc("dvd5", "iso"), &sys));
+        assert!(!dat_disc_has_active_cue(&dat_disc("other", "bin"), &sys));
+    }
+
+    #[test]
+    fn dat_file_filter_keeps_non_cue_rows_and_gates_cue_rows() {
+        let cue_file = file(None);
+        let track_file = file(Some("1"));
+
+        assert!(dat_file_is_active(&track_file, false));
+        assert!(!dat_file_is_active(&cue_file, false));
+        assert!(dat_file_is_active(&cue_file, true));
+    }
+
+    #[test]
+    fn archive_availability_uses_system_flags_for_key_and_sbi() {
+        let key_system = system(true, false);
+        let sbi_system = system(false, true);
+        let plain_system = system(false, false);
+
+        assert!(archive_type_supported_by_system(&key_system, "key", false).unwrap());
+        assert!(!archive_type_supported_by_system(&plain_system, "key", false).unwrap());
+        assert!(archive_type_supported_by_system(&sbi_system, "sbi", false).unwrap());
+        assert!(!archive_type_supported_by_system(&plain_system, "sbi", false).unwrap());
+    }
+
+    #[test]
+    fn archive_availability_uses_bin_media_for_cues() {
+        let sys = system(false, false);
+
+        assert!(archive_type_supported_by_system(&sys, "cue", true).unwrap());
+        assert!(!archive_type_supported_by_system(&sys, "cue", false).unwrap());
+    }
+
     fn rom_entry(name: &str, is_cue: bool) -> RomEntry {
         RomEntry {
             name: name.to_string(),
@@ -471,18 +653,22 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Arc
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if !system_has_cd_media(pool, &sys.media_types).await {
+    if !system_has_bin_media(pool, &sys.media_types).await {
         return Err(AppError::NotFound);
     }
 
     let discs: Vec<CueDisc> = sqlx::query_as(
         "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.cue
          FROM discs d
+         JOIN media_types mt ON mt.code = d.media_type_code
          WHERE d.system_code = $1 AND d.status NOT IN ('Disabled', 'Questionable')
+               AND d.media_type_code = ANY($2)
+               AND LOWER(mt.rom_extension) = 'bin'
                AND d.cue IS NOT NULL AND d.cue != ''
          ORDER BY d.title",
     )
     .bind(&sys.code)
+    .bind(&sys.media_types)
     .fetch_all(pool)
     .await?;
 
