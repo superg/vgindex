@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Path, State},
+    extract::{rejection::PathRejection, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
@@ -746,8 +746,9 @@ pub(crate) fn ring_layers(media_layers: u32) -> u32 {
 async fn edit_page(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
-    Path(id): Path<i32>,
+    id: Result<Path<i32>, PathRejection>,
 ) -> AppResult<Html<String>> {
+    let id = crate::routes::path_i32(id)?;
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(
         detail.disc.status,
@@ -1693,9 +1694,10 @@ fn build_ring_codes_json_from_detail(detail: &DiscDetail) -> serde_json::Value {
 async fn edit_submit(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
-    Path(id): Path<i32>,
+    id: Result<Path<i32>, PathRejection>,
     Form(post): Form<DiscEditPostForm>,
 ) -> AppResult<Response> {
+    let id = crate::routes::path_i32(id)?;
     let mut form = post.disc;
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(

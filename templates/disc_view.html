@@ -158,7 +158,7 @@
                 {% if track_col_vis.flags %}<td></td>{% endif %}
                 {% if track_col_vis.pregap %}<td></td>{% endif %}
                 {% if track_col_vis.length %}<td class="col-num"><strong><code>{{ row.length }}</code></strong></td>{% endif %}
-                {% if track_col_vis.sectors %}<td class="col-num"><strong>{{ row.sectors }}</strong></td>{% endif %}
+                {% if track_col_vis.sectors %}<td class="col-num"><strong><code>{{ row.sectors }}</code></strong></td>{% endif %}
             </tr>
             {% else %}
             <tr>
@@ -167,7 +167,7 @@
                 {% if track_col_vis.flags %}<td>{{ row.flags_display }}</td>{% endif %}
                 {% if track_col_vis.pregap %}<td class="col-num"><code>{{ row.pregap }}</code></td>{% endif %}
                 {% if track_col_vis.length %}<td class="col-num"><code>{{ row.length }}</code></td>{% endif %}
-                {% if track_col_vis.sectors %}<td class="col-num">{{ row.sectors }}</td>{% endif %}
+                {% if track_col_vis.sectors %}<td class="col-num"><code>{{ row.sectors }}</code></td>{% endif %}
             </tr>
             {% endif %}
             {% endfor %}
@@ -229,7 +229,7 @@
         <tbody>
             {% for row in ring_rows %}
             <tr class="{% if row.first_in_entry && row.entry_num > 1 %}ring-group-start{% endif %}{% if row.entry_even %} ring-entry-even{% endif %}">
-                {% if row.entry_rowspan > 0 %}<td class="entry-num"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="entry-num ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
                 {% if ring_vis.layer %}<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>{% endif %}
                 {% if ring_vis.mastering_code %}<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>{% endif %}
                 {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell">{{ row.mastering_sid|safe }}</td>{% endif %}
@@ -237,16 +237,16 @@
                 {% if ring_vis.mould_sids %}<td class="ring-fixed-cell">{{ row.mould_sids|safe }}</td>{% endif %}
                 {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell">{{ row.additional_moulds|safe }}</td>{% endif %}
                 {% if ring_vis.offset %}
-                {% if row.entry_rowspan > 0 %}<td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset }}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.offset_extra %}
-                {% if row.entry_rowspan > 0 %}<td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset_extra }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset_extra }}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.sample_data_start %}
-                {% if row.entry_rowspan > 0 %}<td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.sample_data_start }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.sample_data_start }}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.comment %}
-                {% if row.entry_rowspan > 0 %}<td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.comment }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.comment }}</td>{% endif %}
                 {% endif %}
             </tr>
             {% endfor %}

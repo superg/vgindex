@@ -103,6 +103,16 @@ class GenerateImportSqlTests(unittest.TestCase):
         self.assertNotIn("email", sql)
         self.assertNotIn("role", sql)
 
+    def test_sql_int4range_array_preserves_scraped_end_values(self):
+        sql = generate_import_sql.sql_int4range_array([(108976, 113071), (3719856, 3723951)])
+
+        self.assertEqual(
+            sql,
+            "ARRAY['[108976,113071)'::INT4RANGE, '[3719856,3723951)'::INT4RANGE]",
+        )
+        self.assertNotIn("113071]", sql)
+        self.assertNotIn("3723951]", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

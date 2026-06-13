@@ -311,6 +311,18 @@ pub struct System {
     pub has_offset_extra: bool,
 }
 
+impl System {
+    pub fn supports_media_type(&self, media_type: &MediaType) -> bool {
+        self.media_types
+            .iter()
+            .any(|code| code.eq_ignore_ascii_case(media_type.code()))
+    }
+
+    pub fn has_cue_for_media_type(&self, media_type: &MediaType) -> bool {
+        media_type.is_cd() && self.supports_media_type(media_type)
+    }
+}
+
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]
 pub struct Region {
     pub code: String,
@@ -972,12 +984,62 @@ pub struct SubmissionListRow {
 mod tests {
     use super::*;
 
+    fn media_type(code: &str, rom_extension: &str) -> MediaType {
+        MediaType {
+            code: code.to_string(),
+            name: code.to_string(),
+            layer_count: 1,
+            pic: false,
+            rom_extension: rom_extension.to_string(),
+        }
+    }
+
+    fn system_with_media(media_types: &[&str]) -> System {
+        System {
+            code: "SYS".to_string(),
+            system_type: "Console".to_string(),
+            manufacturer: "Example".to_string(),
+            name: "System".to_string(),
+            short_name: String::new(),
+            media_types: media_types.iter().map(|code| code.to_string()).collect(),
+            has_exe_date: false,
+            has_sbi: false,
+            has_pvd: false,
+            has_edc: false,
+            has_disc_id: false,
+            has_key: false,
+            has_title_foreign: false,
+            has_disc_title: false,
+            has_disc_number: false,
+            has_serial: false,
+            has_barcode: false,
+            has_version: false,
+            has_edition: false,
+            has_protection: false,
+            has_sector_ranges: false,
+            has_header: false,
+            has_bca: false,
+            has_sample_start: false,
+            has_offset_extra: false,
+        }
+    }
+
     #[test]
     fn disabled_disc_visibility_starts_at_user_plus() {
         assert!(!UserRole::User.can_view_disabled_discs());
         assert!(UserRole::UserPlus.can_view_disabled_discs());
         assert!(UserRole::Moderator.can_view_disabled_discs());
         assert!(UserRole::Admin.can_view_disabled_discs());
+    }
+
+    #[test]
+    fn cue_capability_follows_bin_rom_extension_and_system_media() {
+        let sys = system_with_media(&["cd", "gdrom", "dvd5"]);
+
+        assert!(sys.has_cue_for_media_type(&media_type("cd", "bin")));
+        assert!(sys.has_cue_for_media_type(&media_type("gdrom", "BIN")));
+        assert!(!sys.has_cue_for_media_type(&media_type("dvd5", "iso")));
+        assert!(!sys.has_cue_for_media_type(&media_type("other", "bin")));
     }
 
     #[test]

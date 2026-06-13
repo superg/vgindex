@@ -1285,11 +1285,20 @@ pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> 
         .await?
         .ok_or(AppError::NotFound)?;
     enrich_media_type(pool, &mut disc).await?;
+    let system = get_system(pool, &disc.system_code).await?;
 
     let raw_cue = match &disc.cue {
         Some(c) if !c.is_empty() => c,
-        _ => return Ok(()),
+        _ => {
+            delete_cue_file_entry(pool, disc_id).await?;
+            return Ok(());
+        }
     };
+
+    if !system.has_cue_for_media_type(&disc.media_type) {
+        delete_cue_file_entry(pool, disc_id).await?;
+        return Ok(());
+    }
 
     let region_names: Vec<String> = sqlx::query_scalar(
         "SELECT r.name FROM regions r
@@ -1344,6 +1353,14 @@ pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> 
     .execute(pool)
     .await?;
 
+    Ok(())
+}
+
+async fn delete_cue_file_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> {
+    sqlx::query("DELETE FROM files WHERE disc_id = $1 AND track_number IS NULL")
+        .bind(disc_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
