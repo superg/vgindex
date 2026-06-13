@@ -115,6 +115,42 @@ pub async fn find_matching_disc(
     None
 }
 
+pub(crate) fn universal_hash_bytes_for_matching(universal_hash: Option<&str>) -> Option<Vec<u8>> {
+    let text = universal_hash?.trim();
+    if text.len() != 40 || !text.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    hex::decode(text).ok()
+}
+
+pub async fn find_matching_disc_by_universal_hash(
+    pool: &PgPool,
+    universal_hash: &str,
+    include_disabled_discs: bool,
+) -> Option<i32> {
+    let hash_bytes = universal_hash_bytes_for_matching(Some(universal_hash))?;
+    let sql = if include_disabled_discs {
+        "SELECT id
+         FROM discs
+         WHERE universal_hash = $1
+         ORDER BY id
+         LIMIT 1"
+    } else {
+        "SELECT id
+         FROM discs
+         WHERE universal_hash = $1
+           AND status <> 'Disabled'
+         ORDER BY id
+         LIMIT 1"
+    };
+
+    sqlx::query_scalar(sql)
+        .bind(hash_bytes)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or_default()
+}
+
 fn normalize_hash_attr(value: Option<String>) -> String {
     value
         .map(|s| s.trim().to_ascii_lowercase())
@@ -1203,6 +1239,33 @@ mod tests {
         let submitted = parse_rom_entries(&dat);
 
         assert!(!files_match_submission(&files, &submitted));
+    }
+
+    #[test]
+    fn universal_hash_matching_normalizes_valid_sha1_hex() {
+        let hash = "AABBCCDDEEFF00112233445566778899AABBCCDD";
+        let bytes = universal_hash_bytes_for_matching(Some(hash)).unwrap();
+
+        assert_eq!(
+            bytes,
+            vec![
+                0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+                0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd
+            ]
+        );
+        assert_eq!(
+            universal_hash_bytes_for_matching(Some("  aabbccddeeff00112233445566778899aabbccdd  ")),
+            Some(bytes)
+        );
+    }
+
+    #[test]
+    fn universal_hash_matching_rejects_invalid_sha1_hex() {
+        assert!(universal_hash_bytes_for_matching(None).is_none());
+        assert!(universal_hash_bytes_for_matching(Some("")).is_none());
+        assert!(universal_hash_bytes_for_matching(Some("abc123")).is_none());
+        assert!(universal_hash_bytes_for_matching(Some(&"g".repeat(40))).is_none());
+        assert!(universal_hash_bytes_for_matching(Some(&"a".repeat(41))).is_none());
     }
 
     #[test]
