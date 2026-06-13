@@ -1979,7 +1979,7 @@ async fn add_submit(
         .await;
     }
 
-    let changes = build_new_disc_changes(&form, &ref_data.all_media_types);
+    let changes = build_add_submission_changes(&form, &ref_data.all_media_types, target_disc_id);
     let submitter_id = if can_submit_as {
         let submit_as_username = normalize_submit_as_username(form.submit_as.as_deref())
             .map_err(|message| AppError::BadRequest(format!("Submit As: {message}")))?;
@@ -2544,6 +2544,20 @@ pub(crate) fn build_new_disc_changes(
     build_history_changes(form, None, all_media_types)
 }
 
+fn build_add_submission_changes(
+    form: &DiscEditForm,
+    all_media_types: &[EditMediaTypeRow],
+    target_disc_id: Option<i32>,
+) -> serde_json::Value {
+    let mut changes = build_new_disc_changes(form, all_media_types);
+    if target_disc_id.is_some() {
+        if let Some(obj) = changes.as_object_mut() {
+            obj.remove("dat");
+        }
+    }
+    changes
+}
+
 #[cfg(test)]
 mod operation_delta_tests {
     use super::*;
@@ -3059,6 +3073,33 @@ mod operation_delta_tests {
         assert_eq!(
             changes["status"],
             serde_json::json!({ "add": { "new": "Verified" } })
+        );
+        assert_eq!(
+            changes["dat"],
+            serde_json::json!({
+                "add": {
+                    "new": r#"<rom name="Track.iso" size="1" crc="11111111" md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" />"#
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn build_add_submission_changes_omits_dat_for_verification() {
+        let form = new_disc_form();
+
+        let new_disc_changes = build_add_submission_changes(&form, &media_rows(), None);
+        let verification_changes = build_add_submission_changes(&form, &media_rows(), Some(1));
+
+        assert!(new_disc_changes.get("dat").is_some());
+        assert!(verification_changes.get("dat").is_none());
+        assert_eq!(
+            verification_changes["title"],
+            serde_json::json!({ "add": { "new": "New Game" } })
+        );
+        assert_eq!(
+            verification_changes["regions"],
+            serde_json::json!({ "add": ["Europe", "Asia", "Europe"] })
         );
     }
 
