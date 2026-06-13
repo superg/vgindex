@@ -1256,6 +1256,7 @@ mod tests {
             "serial": ["ABC-001"],
             "edition": ["Original"],
             "barcode": ["1234567890"],
+            "dat": r#"<rom name="Existing.iso" size="1" crc="11111111" md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" />"#,
             "ring_codes": [{
                 "id": 1,
                 "offset_value": "",
@@ -1304,6 +1305,10 @@ mod tests {
         assert_eq!(
             result["barcode"],
             serde_json::json!(["1234567890", "0987654321"])
+        );
+        assert_eq!(
+            result["dat"],
+            r#"<rom name="Existing.iso" size="1" crc="11111111" md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" />"#
         );
         assert_eq!(result["ring_codes"].as_array().unwrap().len(), 1);
         assert_eq!(result["ring_codes"][0]["id"], 1);
