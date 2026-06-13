@@ -303,6 +303,7 @@ fn is_nullable_scalar_field(key: &str) -> bool {
             | "sbi"
             | "disc_id"
             | "disc_key"
+            | "universal_hash"
             | "pvd"
             | "header"
             | "bca"

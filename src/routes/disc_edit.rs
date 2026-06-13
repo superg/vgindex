@@ -123,6 +123,7 @@ pub(crate) struct DiscEditTemplate {
 
     pub show_disc_id: bool,
     pub show_key: bool,
+    pub show_universal_hash: bool,
     pub show_protection: bool,
     pub protection: String,
     pub show_sector_ranges: bool,
@@ -130,6 +131,7 @@ pub(crate) struct DiscEditTemplate {
     pub show_sbi: bool,
     pub sbi: String,
     pub protection_key_disc_key: String,
+    pub universal_hash: String,
     pub protection_key_disc_id: String,
     pub has_sample_start: bool,
 
@@ -334,6 +336,7 @@ pub(crate) fn build_systems_json(all_systems: &[System]) -> (String, String) {
                 "has_edc": s.has_edc,
                 "has_disc_id": s.has_disc_id,
                 "has_key": s.has_key,
+                "has_universal_hash": s.has_universal_hash,
                 "has_pvd": s.has_pvd,
                 "has_bca": s.has_bca,
                 "has_header": s.has_header,
@@ -970,6 +973,7 @@ async fn edit_page(
 
             show_disc_id: detail.system.has_disc_id,
             show_key: detail.system.has_key,
+            show_universal_hash: detail.system.has_universal_hash,
             show_protection: detail.system.has_protection,
             protection: detail.disc.protection.clone().unwrap_or_default(),
             show_sector_ranges: detail.system.has_sector_ranges,
@@ -980,6 +984,17 @@ async fn edit_page(
             protection_key_disc_key: detail
                 .disc
                 .disc_key
+                .as_ref()
+                .map(|bytes| {
+                    bytes
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>()
+                })
+                .unwrap_or_default(),
+            universal_hash: detail
+                .disc
+                .universal_hash
                 .as_ref()
                 .map(|bytes| {
                     bytes
@@ -1082,6 +1097,7 @@ pub struct DiscEditForm {
     pub sector_ranges: Option<String>,
     pub sbi: Option<String>,
     pub protection_key_disc_key: Option<String>,
+    pub universal_hash: Option<String>,
     pub protection_key_disc_id: Option<String>,
     #[serde(rename = "cuesheet")]
     pub cue: Option<String>,
@@ -1244,6 +1260,17 @@ pub(crate) fn validate_form(
                 errors.push("Disc Key: must contain only hexadecimal characters".into());
             } else if text.len() % 2 != 0 {
                 errors.push("Disc Key: must have an even number of hexadecimal characters".into());
+            }
+        }
+    }
+
+    if let Some(ref text) = form.universal_hash {
+        let text = text.trim();
+        if !text.is_empty() {
+            if !text.chars().all(|c| c.is_ascii_hexdigit()) {
+                errors.push("Universal Hash: must contain only hexadecimal characters".into());
+            } else if text.len() != 40 {
+                errors.push("Universal Hash: must be 40 hexadecimal characters".into());
             }
         }
     }
@@ -1431,6 +1458,7 @@ async fn render_form_with_errors(
 
         show_disc_id: has_sys(|s| s.has_disc_id),
         show_key: has_sys(|s| s.has_key),
+        show_universal_hash: has_sys(|s| s.has_universal_hash),
         show_protection: has_sys(|s| s.has_protection),
         protection: form.protection.clone().unwrap_or_default(),
         show_sector_ranges: has_sys(|s| s.has_sector_ranges),
@@ -1439,6 +1467,11 @@ async fn render_form_with_errors(
         sbi: form.sbi.clone().unwrap_or_default(),
         has_sample_start: has_sys(|s| s.has_sample_start),
         protection_key_disc_key: form.protection_key_disc_key.clone().unwrap_or_default(),
+        universal_hash: form
+            .universal_hash
+            .as_deref()
+            .map(|hash| hash.trim().to_ascii_lowercase())
+            .unwrap_or_default(),
         protection_key_disc_id: form.protection_key_disc_id.clone().unwrap_or_default(),
 
         cue: form.cue.clone().unwrap_or_default(),
@@ -1855,6 +1888,7 @@ async fn add_page(
 
             show_disc_id: has_sys(|s| s.has_disc_id),
             show_key: has_sys(|s| s.has_key),
+            show_universal_hash: has_sys(|s| s.has_universal_hash),
             show_protection: has_sys(|s| s.has_protection),
             protection: String::new(),
             show_sector_ranges: has_sys(|s| s.has_sector_ranges),
@@ -1862,6 +1896,7 @@ async fn add_page(
             show_sbi: has_sys(|s| s.has_sbi),
             sbi: String::new(),
             protection_key_disc_key: String::new(),
+            universal_hash: String::new(),
             protection_key_disc_id: String::new(),
             has_sample_start: has_sys(|s| s.has_sample_start),
 
@@ -2051,6 +2086,8 @@ pub(crate) fn build_flat_changes(
         })
         .collect();
     let new_disc_key = norm_opt_str(form.protection_key_disc_key.as_deref());
+    let new_universal_hash =
+        norm_opt_str(form.universal_hash.as_deref()).map(|hash| hash.to_ascii_lowercase());
     let new_disc_id = norm_opt_str(form.protection_key_disc_id.as_deref());
     let new_ring_codes = form
         .ring_codes_json
@@ -2102,6 +2139,7 @@ pub(crate) fn build_flat_changes(
         "sbi": norm_opt_multiline_str(form.sbi.as_deref()),
         "disc_id": new_disc_id,
         "disc_key": new_disc_key,
+        "universal_hash": new_universal_hash,
         "cuesheet": new_cue,
         "dat": norm_opt_multiline_str(form.files_xml.as_deref()).map(|s| simplify_files_xml(&s, rom_ext)),
         "regions": new_regions,
@@ -2471,6 +2509,7 @@ fn build_history_changes(
         "sbi",
         "disc_id",
         "disc_key",
+        "universal_hash",
         "pvd",
         "header",
         "bca",
@@ -2597,6 +2636,7 @@ mod operation_delta_tests {
             has_edc: true,
             has_disc_id: true,
             has_key: true,
+            has_universal_hash: true,
             has_title_foreign: true,
             has_disc_title: true,
             has_disc_number: true,
@@ -2686,6 +2726,7 @@ mod operation_delta_tests {
                 sbi: Some("old sbi".to_string()),
                 disc_id: Some("old-disc-id".to_string()),
                 disc_key: Some(vec![0x12, 0x34]),
+                universal_hash: Some(vec![0xaa; 20]),
                 cue: None,
                 pvd: None,
                 pic: None,
@@ -2756,6 +2797,12 @@ mod operation_delta_tests {
                     .map(|b| format!("{:02x}", b))
                     .collect::<String>()
             }),
+            universal_hash: detail.disc.universal_hash.as_ref().map(|bytes| {
+                bytes
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<String>()
+            }),
             protection_key_disc_id: detail.disc.disc_id.clone(),
             cue: detail.disc.cue.clone(),
             files_xml: None,
@@ -2817,6 +2864,7 @@ mod operation_delta_tests {
             sector_ranges: None,
             sbi: Some("new sbi".to_string()),
             protection_key_disc_key: Some("aabbccdd".to_string()),
+            universal_hash: Some("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB".to_string()),
             protection_key_disc_id: Some("new-disc-id".to_string()),
             cue: None,
             files_xml: Some(
@@ -2905,6 +2953,21 @@ mod operation_delta_tests {
         let errors = validate_form(&form, &media_rows(), &systems_with_edc(false));
 
         assert!(!errors.contains(&"EDC: select Yes or No".to_string()));
+    }
+
+    #[test]
+    fn validate_form_requires_universal_hash_to_be_sha1_hex() {
+        let mut form = new_disc_form();
+
+        form.universal_hash = Some("abc123".to_string());
+        let errors = validate_form(&form, &media_rows(), &systems_with_edc(true));
+        assert!(errors.contains(&"Universal Hash: must be 40 hexadecimal characters".to_string()));
+
+        form.universal_hash = Some("g".repeat(40));
+        let errors = validate_form(&form, &media_rows(), &systems_with_edc(true));
+        assert!(
+            errors.contains(&"Universal Hash: must contain only hexadecimal characters".to_string())
+        );
     }
 
     #[test]
@@ -3048,6 +3111,14 @@ mod operation_delta_tests {
         assert_eq!(
             changes["edc"],
             serde_json::json!({ "add": { "new": true } })
+        );
+        assert_eq!(
+            changes["universal_hash"],
+            serde_json::json!({
+                "add": {
+                    "new": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+            })
         );
         assert_eq!(
             changes["layerbreaks"],
@@ -3199,6 +3270,7 @@ mod operation_delta_tests {
         form.serial = vec!["KEEP-002".to_string(), "NEW-003".to_string()];
         form.edition = vec!["Original".to_string(), "original".to_string()];
         form.barcode = vec![];
+        form.universal_hash = Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string());
 
         let changes = build_sparse_edit_changes(&form, &detail, &media_rows());
 
@@ -3243,6 +3315,15 @@ mod operation_delta_tests {
             changes["barcode"],
             serde_json::json!({ "remove": ["111111111111"] })
         );
+        assert_eq!(
+            changes["universal_hash"],
+            serde_json::json!({
+                "modify": {
+                    "old": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "new": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                }
+            })
+        );
     }
 
     #[test]
@@ -3271,6 +3352,8 @@ mod operation_delta_tests {
         assert!(script.contains("'serial': true"));
         assert!(script.contains("'edition': true"));
         assert!(script.contains("'barcode': true"));
+        assert!(script.contains("'universal_hash': true"));
+        assert!(script.contains("'universal_hash': 18"));
         assert!(script.contains("function attachIndependentInlineResize(input)"));
         assert!(script.contains("function fitInlineInput(input)"));
         assert!(script.contains("function fitInlineInputSoon(input)"));

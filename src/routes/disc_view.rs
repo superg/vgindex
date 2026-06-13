@@ -101,6 +101,8 @@ struct DiscViewTemplate {
     show_disc_id: bool,
     show_key: bool,
     disc_key: String,
+    show_universal_hash: bool,
+    universal_hash: String,
     disc_id_text: String,
     sector_ranges: Vec<ProtectionRangeRow>,
     show_sector_ranges: bool,
@@ -592,6 +594,17 @@ async fn disc_view(
     } else {
         String::new()
     };
+    let universal_hash = detail
+        .disc
+        .universal_hash
+        .as_ref()
+        .map(|bytes| {
+            bytes
+                .iter()
+                .map(|b| format!("{:02x}", b))
+                .collect::<String>()
+        })
+        .unwrap_or_default();
 
     let sector_ranges: Vec<ProtectionRangeRow> = detail
         .sector_ranges
@@ -756,6 +769,8 @@ async fn disc_view(
             show_disc_id: can_view_key_material && detail.system.has_disc_id,
             show_key: can_view_key_material && detail.system.has_key,
             disc_key,
+            show_universal_hash: detail.system.has_universal_hash,
+            universal_hash,
             disc_id_text,
             sector_ranges,
             show_sector_ranges: detail.system.has_sector_ranges,
@@ -1726,6 +1741,8 @@ mod tests {
             show_disc_id,
             show_key,
             disc_key: disc_key.to_string(),
+            show_universal_hash: false,
+            universal_hash: String::new(),
             disc_id_text: disc_id_text.to_string(),
             sector_ranges: Vec::new(),
             show_sector_ranges: false,
@@ -1938,6 +1955,28 @@ mod tests {
         assert!(html.contains("<strong>Disc Key</strong>"));
         assert!(html.contains("visible-disc-id"));
         assert!(html.contains("deadbeef"));
+    }
+
+    #[test]
+    fn disc_view_hides_empty_universal_hash() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.show_universal_hash = true;
+
+        let html = template.render().unwrap();
+
+        assert!(!html.contains("<strong>Universal Hash</strong>"));
+    }
+
+    #[test]
+    fn disc_view_shows_populated_universal_hash() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.show_universal_hash = true;
+        template.universal_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string();
+
+        let html = template.render().unwrap();
+
+        assert!(html.contains("<strong>Universal Hash</strong>"));
+        assert!(html.contains("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
     }
 
     #[test]

@@ -147,7 +147,7 @@ fn parse_text_array(val: &serde_json::Value) -> Vec<String> {
     }
 }
 
-fn parse_hex_text_bytes(val: Option<&str>) -> AppResult<Option<Vec<u8>>> {
+fn parse_hex_text_bytes_for(field_name: &str, val: Option<&str>) -> AppResult<Option<Vec<u8>>> {
     let Some(raw) = val else {
         return Ok(None);
     };
@@ -157,23 +157,41 @@ fn parse_hex_text_bytes(val: Option<&str>) -> AppResult<Option<Vec<u8>>> {
     }
     if !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(AppError::BadRequest(
-            "disc_key must contain only hexadecimal characters".into(),
+            format!("{field_name} must contain only hexadecimal characters"),
         ));
     }
     if trimmed.len() % 2 != 0 {
         return Err(AppError::BadRequest(
-            "disc_key must contain an even number of hexadecimal characters".into(),
+            format!("{field_name} must contain an even number of hexadecimal characters"),
         ));
     }
     let mut bytes = Vec::with_capacity(trimmed.len() / 2);
     for pair in trimmed.as_bytes().chunks_exact(2) {
-        let token = std::str::from_utf8(pair)
-            .map_err(|_| AppError::BadRequest("disc_key contains invalid UTF-8".into()))?;
-        let byte = u8::from_str_radix(token, 16)
-            .map_err(|_| AppError::BadRequest("disc_key contains invalid hex bytes".into()))?;
+        let token = std::str::from_utf8(pair).map_err(|_| {
+            AppError::BadRequest(format!("{field_name} contains invalid UTF-8"))
+        })?;
+        let byte = u8::from_str_radix(token, 16).map_err(|_| {
+            AppError::BadRequest(format!("{field_name} contains invalid hex bytes"))
+        })?;
         bytes.push(byte);
     }
     Ok(Some(bytes))
+}
+
+fn parse_hex_text_bytes(val: Option<&str>) -> AppResult<Option<Vec<u8>>> {
+    parse_hex_text_bytes_for("disc_key", val)
+}
+
+fn parse_universal_hash_bytes(val: Option<&str>) -> AppResult<Option<Vec<u8>>> {
+    let bytes = parse_hex_text_bytes_for("universal_hash", val)?;
+    if let Some(bytes) = &bytes {
+        if bytes.len() != 20 {
+            return Err(AppError::BadRequest(
+                "universal_hash must be 40 hexadecimal characters".into(),
+            ));
+        }
+    }
+    Ok(bytes)
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -679,6 +697,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
     let disc_key = parse_hex_text_bytes(data["disc_key"].as_str())?;
+    let universal_hash = parse_universal_hash_bytes(data["universal_hash"].as_str())?;
     let error_count = data["error_count"].as_i64().map(|v| v as i32);
     let exe_date = data["exe_date"].as_str().filter(|s| !s.is_empty());
     let edc = data["edc"].as_bool().unwrap_or(false);
@@ -745,9 +764,10 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
          layerbreaks = $18,
          pvd = $19, pic = $20, bca = $21, header = $22,
          protection = $23, sbi = $24, disc_id = $25, disc_key = $26,
-         cue = $27,
-         status = $28::disc_status_enum
-         WHERE id = $29",
+         universal_hash = $27,
+         cue = $28,
+         status = $29::disc_status_enum
+         WHERE id = $30",
     )
     .bind(title) // $1
     .bind(system_code) // $2
@@ -775,9 +795,10 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     .bind(sbi) // $24
     .bind(disc_id_text) // $25
     .bind(&disc_key) // $26
-    .bind(cue) // $27
-    .bind(status) // $28
-    .bind(disc_id) // $29
+    .bind(&universal_hash) // $27
+    .bind(cue) // $28
+    .bind(status) // $29
+    .bind(disc_id) // $30
     .execute(pool)
     .await?;
 
@@ -1137,6 +1158,7 @@ mod tests {
                 sbi: None,
                 disc_id: None,
                 disc_key: None,
+                universal_hash: Some((0u8..20).collect()),
                 cue: None,
                 pvd: None,
                 pic: None,
@@ -1157,6 +1179,7 @@ mod tests {
                 has_edc: false,
                 has_disc_id: false,
                 has_key: false,
+                has_universal_hash: false,
                 has_title_foreign: false,
                 has_disc_title: false,
                 has_disc_number: false,
@@ -1217,6 +1240,10 @@ mod tests {
         assert_eq!(layers[0]["mastering_code"], "L0-MC");
         assert_eq!(layers[1]["mastering_code"], "");
         assert_eq!(layers[2]["mastering_code"], "LS-MC");
+        assert_eq!(
+            snapshot["universal_hash"],
+            "000102030405060708090a0b0c0d0e0f10111213"
+        );
     }
 
     #[test]
@@ -1549,6 +1576,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "sbi": detail.disc.sbi,
         "disc_id": detail.disc.disc_id,
         "disc_key": detail.disc.disc_key.as_ref().map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()),
+        "universal_hash": detail.disc.universal_hash.as_ref().map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()),
         "cuesheet": cue,
         "status": detail.disc.status.to_string(),
         "regions": region_codes,

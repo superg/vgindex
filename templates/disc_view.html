@@ -70,6 +70,9 @@
             {% if show_key && !disc_key.is_empty() %}
             <tr><td><strong>Disc Key</strong></td><td>{{ disc_key }}</td></tr>
             {% endif %}
+            {% if show_universal_hash && !universal_hash.is_empty() %}
+            <tr><td><strong>Universal Hash</strong></td><td>{{ universal_hash }}</td></tr>
+            {% endif %}
         </table>
     </section>
 

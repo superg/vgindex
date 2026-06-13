@@ -667,7 +667,8 @@ var INPUT_PADDING = 24;
 var INDEPENDENT_INLINE_FIELDS = {
     'serial': true,
     'edition': true,
-    'barcode': true
+    'barcode': true,
+    'universal_hash': true
 };
 
 var DEFAULT_WIDTHS = {
@@ -679,6 +680,7 @@ var DEFAULT_WIDTHS = {
     'exe_date': 10,
     'layerbreak': 8,
     'protection_key_disc_key': 32,
+    'universal_hash': 18,
     'protection_key_disc_id': 32
 };
 
