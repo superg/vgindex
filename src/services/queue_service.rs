@@ -895,6 +895,15 @@ pub async fn get_submission(pool: &PgPool, id: i32) -> AppResult<DiscSubmission>
         .ok_or(AppError::NotFound)
 }
 
+fn submission_type_filter_condition(type_filter: Option<&str>) -> Option<&'static str> {
+    match type_filter.unwrap_or_default() {
+        "Edit" => Some("ds.submission_type = 'Edit'"),
+        "New Disc" => Some("ds.submission_type = 'Disc' AND ds.target_disc_id IS NULL"),
+        "Verification" => Some("ds.submission_type = 'Disc' AND ds.target_disc_id IS NOT NULL"),
+        _ => None,
+    }
+}
+
 pub async fn list_submissions(
     pool: &PgPool,
     user_id_filter: Option<i32>,
@@ -932,9 +941,8 @@ pub async fn list_submissions(
         idx += 1;
         conditions.push(format!("ds.status::text = ${idx}"));
     }
-    if type_filter.is_some_and(|s| !s.is_empty()) {
-        idx += 1;
-        conditions.push(format!("ds.submission_type::text = ${idx}"));
+    if let Some(condition) = submission_type_filter_condition(type_filter) {
+        conditions.push(condition.to_string());
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -1004,11 +1012,6 @@ pub async fn list_submissions(
             query = query.bind(status.to_string());
         }
     }
-    if let Some(sub_type) = type_filter {
-        if !sub_type.is_empty() {
-            query = query.bind(sub_type.to_string());
-        }
-    }
     if let Some(system) = system_filter {
         if !system.is_empty() {
             query = query.bind(system.to_string());
@@ -1055,9 +1058,8 @@ pub async fn count_submissions(
         idx += 1;
         conditions.push(format!("ds.status::text = ${idx}"));
     }
-    if type_filter.is_some_and(|s| !s.is_empty()) {
-        idx += 1;
-        conditions.push(format!("ds.submission_type::text = ${idx}"));
+    if let Some(condition) = submission_type_filter_condition(type_filter) {
+        conditions.push(condition.to_string());
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -1087,11 +1089,6 @@ pub async fn count_submissions(
     if let Some(status) = status_filter {
         if !status.is_empty() {
             query = query.bind(status.to_string());
-        }
-    }
-    if let Some(sub_type) = type_filter {
-        if !sub_type.is_empty() {
-            query = query.bind(sub_type.to_string());
         }
     }
     if let Some(system) = system_filter {
@@ -1174,6 +1171,26 @@ mod tests {
             created_at: chrono::Utc::now(),
             reviewed_at: None,
         }
+    }
+
+    #[test]
+    fn submission_type_filter_conditions_split_disc_submissions_by_target() {
+        assert_eq!(submission_type_filter_condition(None), None);
+        assert_eq!(submission_type_filter_condition(Some("")), None);
+        assert_eq!(
+            submission_type_filter_condition(Some("Edit")),
+            Some("ds.submission_type = 'Edit'")
+        );
+        assert_eq!(
+            submission_type_filter_condition(Some("New Disc")),
+            Some("ds.submission_type = 'Disc' AND ds.target_disc_id IS NULL")
+        );
+        assert_eq!(
+            submission_type_filter_condition(Some("Verification")),
+            Some("ds.submission_type = 'Disc' AND ds.target_disc_id IS NOT NULL")
+        );
+        assert_eq!(submission_type_filter_condition(Some("Disc")), None);
+        assert_eq!(submission_type_filter_condition(Some("Unknown")), None);
     }
 
     #[test]

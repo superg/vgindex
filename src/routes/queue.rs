@@ -76,6 +76,7 @@ struct QueueTemplate {
     filter_disc_id: String,
     filter_status: String,
     filter_type: String,
+    filter_type_url: String,
     filter_system: String,
     filter_submitter: String,
     filter_submitter_url: String,
@@ -149,6 +150,17 @@ const PAGE_SIZE: i64 = 50;
 pub(crate) const COMMENTS_REVIEW_DELIMITER: &str =
     "--- REVIEW NEW COMMENTS BELOW - REMOVE THIS LINE BEFORE APPROVING ---";
 
+fn normalize_queue_type_filter(sub_type: Option<&str>, is_disc_history: bool) -> String {
+    if is_disc_history {
+        return String::new();
+    }
+
+    match sub_type.unwrap_or_default() {
+        "" | "Edit" | "New Disc" | "Verification" => sub_type.unwrap_or_default().to_string(),
+        _ => String::new(),
+    }
+}
+
 async fn queue_list(
     State(state): State<AppState>,
     user: CurrentUser,
@@ -182,11 +194,7 @@ async fn queue_list(
             _ => "Pending".to_string(),
         }
     };
-    let filter_type = if is_disc_history {
-        String::new()
-    } else {
-        query.sub_type.clone().unwrap_or_default()
-    };
+    let filter_type = normalize_queue_type_filter(query.sub_type.as_deref(), is_disc_history);
     let filter_system = if is_disc_history {
         String::new()
     } else {
@@ -197,6 +205,7 @@ async fn queue_list(
     } else {
         String::new()
     };
+    let filter_type_url = urlencoding::encode(&filter_type).into_owned();
     let filter_submitter_url = urlencoding::encode(&filter_submitter).into_owned();
     let sort_column = query.sort.clone().unwrap_or_else(|| "date".to_string());
     let sort_order = query.order.clone().unwrap_or_else(|| "desc".to_string());
@@ -324,6 +333,7 @@ async fn queue_list(
                 .unwrap_or_default(),
             filter_status,
             filter_type,
+            filter_type_url,
             filter_system,
             filter_submitter,
             filter_submitter_url,
@@ -1973,6 +1983,24 @@ mod tests {
             .find(|annotation| annotation.field == field && annotation.label == label)
             .map(|annotation| annotation.values.clone())
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn queue_type_filter_normalizes_public_values() {
+        assert_eq!(normalize_queue_type_filter(None, false), "");
+        assert_eq!(normalize_queue_type_filter(Some(""), false), "");
+        assert_eq!(normalize_queue_type_filter(Some("Edit"), false), "Edit");
+        assert_eq!(
+            normalize_queue_type_filter(Some("New Disc"), false),
+            "New Disc"
+        );
+        assert_eq!(
+            normalize_queue_type_filter(Some("Verification"), false),
+            "Verification"
+        );
+        assert_eq!(normalize_queue_type_filter(Some("Disc"), false), "");
+        assert_eq!(normalize_queue_type_filter(Some("Unknown"), false), "");
+        assert_eq!(normalize_queue_type_filter(Some("Verification"), true), "");
     }
 
     fn selected_system(template: &DiscEditTemplate) -> String {

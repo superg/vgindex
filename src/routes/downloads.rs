@@ -120,23 +120,22 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
         })
         .collect();
 
-    let systems = rows
-        .iter()
-        .map(|r| SystemDownload {
-            name: system_names
-                .get(&r.code)
-                .cloned()
-                .unwrap_or_else(|| crate::db::models::build_system_name(&r.manufacturer, &r.name)),
-            code: r.code.clone(),
-            has_dat: true,
-            has_cue: r
-                .media_types
-                .iter()
-                .any(|code| cd_media_codes.contains(code)),
-            has_key: r.has_key,
-            has_sbi: r.has_sbi,
-        })
-        .collect();
+    let systems =
+        rows.iter()
+            .map(|r| SystemDownload {
+                name: system_names.get(&r.code).cloned().unwrap_or_else(|| {
+                    crate::db::models::build_system_name(&r.manufacturer, &r.name)
+                }),
+                code: r.code.clone(),
+                has_dat: true,
+                has_cue: r
+                    .media_types
+                    .iter()
+                    .any(|code| cd_media_codes.contains(code)),
+                has_key: r.has_key,
+                has_sbi: r.has_sbi,
+            })
+            .collect();
 
     Html(
         DownloadsTemplate {

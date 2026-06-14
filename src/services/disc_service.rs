@@ -156,20 +156,19 @@ fn parse_hex_text_bytes_for(field_name: &str, val: Option<&str>) -> AppResult<Op
         return Ok(None);
     }
     if !trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(AppError::BadRequest(
-            format!("{field_name} must contain only hexadecimal characters"),
-        ));
+        return Err(AppError::BadRequest(format!(
+            "{field_name} must contain only hexadecimal characters"
+        )));
     }
     if trimmed.len() % 2 != 0 {
-        return Err(AppError::BadRequest(
-            format!("{field_name} must contain an even number of hexadecimal characters"),
-        ));
+        return Err(AppError::BadRequest(format!(
+            "{field_name} must contain an even number of hexadecimal characters"
+        )));
     }
     let mut bytes = Vec::with_capacity(trimmed.len() / 2);
     for pair in trimmed.as_bytes().chunks_exact(2) {
-        let token = std::str::from_utf8(pair).map_err(|_| {
-            AppError::BadRequest(format!("{field_name} contains invalid UTF-8"))
-        })?;
+        let token = std::str::from_utf8(pair)
+            .map_err(|_| AppError::BadRequest(format!("{field_name} contains invalid UTF-8")))?;
         let byte = u8::from_str_radix(token, 16).map_err(|_| {
             AppError::BadRequest(format!("{field_name} contains invalid hex bytes"))
         })?;
