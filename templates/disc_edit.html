@@ -72,8 +72,10 @@ const IS_ADD_MODE = {{ is_add_mode }};
 
 {% if !dump_log_display.is_empty() %}
 <section>
-    <h3>Dump Log</h3>
-    <p class="pre-wrap section-text">{{ dump_log_display }}</p>
+    <details class="dump-log-details" open>
+        <summary><h3>Dump Log</h3></summary>
+        <p class="pre-wrap section-text dump-log-content">{{ dump_log_display }}</p>
+    </details>
 </section>
 {% endif %}
 
