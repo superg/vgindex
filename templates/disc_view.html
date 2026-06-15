@@ -472,7 +472,9 @@
             wrapper.style.width = '';
             var containerWidth = wrapper.clientWidth;
             var tableWidth = table.scrollWidth;
-            if (tableWidth > containerWidth && containerWidth > 0) {
+            // Tolerance avoids a false scrollbar from sub-pixel rounding of
+            // fixed-layout table widths.
+            if (tableWidth > containerWidth + 2 && containerWidth > 0) {
                 var scale = containerWidth / tableWidth;
                 table.style.transform = 'scale(' + scale + ')';
                 table.style.transformOrigin = 'top left';
@@ -495,7 +497,9 @@
             wrapper.style.width = '';
             var containerWidth = wrapper.clientWidth;
             var tableWidth = table.scrollWidth;
-            refreshDetailSectionFit(wrapper, tableWidth > containerWidth && containerWidth > 0);
+            // Tolerance avoids a false scrollbar from sub-pixel rounding of
+            // fixed-layout table widths.
+            refreshDetailSectionFit(wrapper, tableWidth > containerWidth + 2 && containerWidth > 0);
             if (section && section.classList.contains('table-fits')) {
                 wrapper.style.width = tableWidth + 'px';
             }

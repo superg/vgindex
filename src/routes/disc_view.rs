@@ -1824,14 +1824,12 @@ mod tests {
     }
 
     #[test]
-    fn ring_table_layer_rows_use_baseline_and_entry_cells_use_middle_alignment() {
+    fn ring_table_cells_use_middle_alignment() {
         let css = include_str!("../../static/css/app.css");
 
+        // All ring cells share middle alignment so single-row entries line up.
         assert!(css.contains(
-            ".disc-view .detail-section .ring-table tbody td {\n    vertical-align: baseline !important;\n}"
-        ));
-        assert!(css.contains(
-            ".disc-view .detail-section .ring-table tbody .ring-entry-cell {\n    vertical-align: middle !important;\n}"
+            ".disc-view .detail-section .ring-table tbody td {\n    vertical-align: middle !important;\n}"
         ));
         assert!(css.contains(".ring-table .entry-num {\n    font-weight: 600;\n}"));
     }
