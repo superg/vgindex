@@ -66,6 +66,15 @@
                 <span>Comments</span>
                 <input type="text" name="comments_q" value="{{ filter_comments_q }}">
             </label>
+            <label class="advanced-search-row">
+                <span>Sort by</span>
+                <select class="sort-select" onchange="var p=this.value.split('|');this.form.sort.value=p[0];this.form.order.value=p[1];this.form.submit();">
+                    <option value="title|asc" {% if sort_column == "title" %}selected{% endif %}>Alphabetical</option>
+                    <option value="added|desc" {% if sort_column == "added" && sort_order == "desc" %}selected{% endif %}>Added Date: Newest</option>
+                    <option value="added|asc" {% if sort_column == "added" && sort_order == "asc" %}selected{% endif %}>Added Date: Oldest</option>
+                    <option value="updated|desc" {% if sort_column == "updated" %}selected{% endif %}>Modification Date: Newest</option>
+                </select>
+            </label>
             <div class="advanced-search-actions">
                 <button type="submit">Search for Text</button>
             </div>
@@ -73,6 +82,7 @@
         <input type="hidden" name="q" value="{{ filter_q }}">
         <input type="hidden" name="sort" value="{{ sort_column }}">
         <input type="hidden" name="order" value="{{ sort_order }}">
+        <input type="hidden" name="advanced" id="advanced-flag" value="{% if advanced_open %}1{% else %}0{% endif %}">
     </form>
 
     <div class="letter-picker">
@@ -235,11 +245,14 @@
             }
         }
 
+        var advFlag = form.querySelector('#advanced-flag');
+
         toggle.addEventListener('click', function() {
             var expanded = toggle.getAttribute('aria-expanded') === 'true';
             toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
             panel.hidden = expanded;
             toggle.form.classList.toggle('advanced-search-visible', !expanded);
+            if (advFlag) advFlag.value = expanded ? '0' : '1';
             updateAdvancedSearchWidths();
         });
 

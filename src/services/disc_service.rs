@@ -8,6 +8,43 @@ use tokio::sync::RwLock;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 
+/// SQL predicate over submission alias `ds` and disc alias `d`: selects submission
+/// rows that represent a genuine, publicly-approved change to a disc — Approved/Legacy
+/// status, excluding the disc's initial creation row and empty "backfill" edits.
+///
+/// Single source of truth shared by the home "Recent Changes" list and the disc list
+/// "Modification date" sort, so both agree on what counts as a change.
+pub const RECENT_CHANGE_PREDICATE: &str = "
+    ds.status IN ('Approved', 'Legacy')
+    AND (
+      (
+        ds.submission_type = 'Edit'
+        AND NOT (
+          ds.changes = '{}'::jsonb
+          AND COALESCE(ds.review_comment, '') IN ('added-backfill', 'no-added-sentinel')
+        )
+      )
+      OR (
+        ds.submission_type = 'Disc'
+        AND ds.id <> (
+          SELECT MIN(ds_first.id)
+          FROM disc_submissions ds_first
+          WHERE ds_first.target_disc_id = d.id
+            AND ds_first.status IN ('Approved', 'Legacy')
+        )
+      )
+    )";
+
+/// Correlated subquery yielding a disc's most recent genuine-change timestamp
+/// (per [`RECENT_CHANGE_PREDICATE`]), or NULL if the disc has no qualifying change.
+/// Expects an outer disc aliased `d`.
+pub fn modification_date_sql() -> String {
+    format!(
+        "(SELECT MAX(ds.created_at) FROM disc_submissions ds \
+         WHERE ds.target_disc_id = d.id AND {RECENT_CHANGE_PREDICATE})"
+    )
+}
+
 const EDITION_USAGE_COUNTS_SQL: &str = "\
 SELECT d.system_code,
        btrim(e.edition) AS edition,

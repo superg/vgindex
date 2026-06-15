@@ -10,6 +10,7 @@ use serde::Deserialize;
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
 use crate::db::models::{format_display_title, DiscStatus};
+use crate::services::disc_service;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -45,6 +46,7 @@ pub struct DiscsQuery {
     #[serde(default, deserialize_with = "empty_string_as_none")]
     pub page: Option<i64>,
     pub dumper: Option<String>,
+    pub advanced: Option<String>,
 }
 
 const LETTERS: &[&str] = &[
@@ -229,6 +231,10 @@ impl DiscsTemplate {
             params.push_str(&self.url_encode(&self.filter_comments_q));
         }
 
+        if self.advanced_open {
+            params.push_str("&advanced=1");
+        }
+
         params
     }
 }
@@ -331,7 +337,8 @@ async fn discs_page(
         String::new()
     };
     let filter_dumper_unknown = !filter_dumper.is_empty() && filter_dumper_id.is_none();
-    let advanced_open = active_edition_q.is_some()
+    let advanced_open = query.advanced.as_deref() == Some("1")
+        || active_edition_q.is_some()
         || active_comments_q.is_some()
         || !filter_status.is_empty()
         || !filter_dumper.is_empty();
@@ -455,6 +462,10 @@ async fn discs_page(
     let sort_column = query.sort.clone().unwrap_or_else(|| "title".to_string());
     let sort_order_str = query.order.clone().unwrap_or_else(|| "asc".to_string());
 
+    // "updated" (Modification date) uses the shared genuine-change logic so it
+    // matches the home "Recent Changes" list (excludes the initial add, empty
+    // backfills, and unapproved submissions). NULL for never-changed discs.
+    let modification_sql = disc_service::modification_date_sql();
     let sort_col = match sort_column.as_str() {
         "region" => {
             "(SELECT MIN(r.sort_order) FROM disc_regions dr JOIN regions r ON r.code = dr.region_code WHERE dr.disc_id = d.id)"
@@ -471,12 +482,18 @@ async fn discs_page(
             "CASE d.status WHEN 'Verified' THEN 1 WHEN 'Unverified' THEN 2 WHEN 'Questionable' THEN 3 ELSE 4 END"
         }
         "added" => "(SELECT MIN(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
-        "updated" => "(SELECT MAX(created_at) FROM disc_submissions WHERE target_disc_id = d.id)",
+        "updated" => modification_sql.as_str(),
         _ => display_title_sort_sql(),
     };
     let sort_dir = match query.order.as_deref() {
         Some("desc") => "DESC",
         _ => "ASC",
+    };
+    // Date sorts derive from submission timestamps; discs with no submissions
+    // yield NULL and would otherwise sort first on DESC. Keep them last.
+    let nulls_clause = match sort_column.as_str() {
+        "added" | "updated" => " NULLS LAST",
+        _ => "",
     };
 
     let sql_count = format!(
@@ -496,7 +513,7 @@ async fn discs_page(
          FROM discs d
          JOIN systems s ON s.code = d.system_code
          WHERE {where_sql}
-         ORDER BY {sort_col} {sort_dir} LIMIT {PAGE_SIZE} OFFSET {offset}"
+         ORDER BY {sort_col} {sort_dir}{nulls_clause} LIMIT {PAGE_SIZE} OFFSET {offset}"
     );
 
     let mut count_query = sqlx::query_scalar::<_, i64>(&sql_count);

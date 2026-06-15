@@ -3,40 +3,28 @@ use axum::{extract::State, response::Html, routing::get, Router};
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
+use crate::services::disc_service::RECENT_CHANGE_PREDICATE;
 use crate::services::news_service::NewsItem;
 use crate::AppState;
 
 const HOME_RECENT_LIMIT: i64 = 30;
 const HOME_NEWS_LIMIT: usize = 3;
-const HOME_RECENT_CHANGES_SQL: &str = "
-    SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
-           MAX(ds.created_at) AS modified_at
-    FROM discs d
-    JOIN systems s ON s.code = d.system_code
-    JOIN disc_submissions ds ON ds.target_disc_id = d.id
-    WHERE d.status != 'Disabled'
-      AND ds.status IN ('Approved', 'Legacy')
-      AND (
-        (
-          ds.submission_type = 'Edit'
-          AND NOT (
-            ds.changes = '{}'::jsonb
-            AND COALESCE(ds.review_comment, '') IN ('added-backfill', 'no-added-sentinel')
-          )
-        )
-        OR (
-          ds.submission_type = 'Disc'
-          AND ds.id <> (
-            SELECT MIN(ds_first.id)
-            FROM disc_submissions ds_first
-            WHERE ds_first.target_disc_id = d.id
-              AND ds_first.status IN ('Approved', 'Legacy')
-          )
-        )
-      )
-    GROUP BY d.id, d.title, s.code, s.short_name
-    ORDER BY MAX(ds.created_at) DESC, d.id DESC
-    LIMIT $1";
+// Shares `RECENT_CHANGE_PREDICATE` with the disc list "Modification date" sort so
+// both agree on what counts as a genuine change.
+fn home_recent_changes_sql() -> String {
+    format!(
+        "SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
+                MAX(ds.created_at) AS modified_at
+         FROM discs d
+         JOIN systems s ON s.code = d.system_code
+         JOIN disc_submissions ds ON ds.target_disc_id = d.id
+         WHERE d.status != 'Disabled'
+           AND {RECENT_CHANGE_PREDICATE}
+         GROUP BY d.id, d.title, s.code, s.short_name
+         ORDER BY MAX(ds.created_at) DESC, d.id DESC
+         LIMIT $1"
+    )
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(homepage))
@@ -114,7 +102,7 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
         });
     }
 
-    let change_rows: Vec<RecentChangeRow> = sqlx::query_as(HOME_RECENT_CHANGES_SQL)
+    let change_rows: Vec<RecentChangeRow> = sqlx::query_as(&home_recent_changes_sql())
         .bind(HOME_RECENT_LIMIT)
         .fetch_all(&state.pool)
         .await
@@ -196,22 +184,23 @@ mod tests {
 
     #[test]
     fn recent_changes_query_only_uses_public_history_rows() {
-        assert!(HOME_RECENT_CHANGES_SQL.contains("ds.status IN ('Approved', 'Legacy')"));
+        assert!(home_recent_changes_sql().contains("ds.status IN ('Approved', 'Legacy')"));
     }
 
     #[test]
     fn recent_changes_query_excludes_new_disc_creation_rows() {
-        assert!(HOME_RECENT_CHANGES_SQL.contains("ds.changes = '{}'::jsonb"));
-        assert!(HOME_RECENT_CHANGES_SQL.contains(
+        let sql = home_recent_changes_sql();
+        assert!(sql.contains("ds.changes = '{}'::jsonb"));
+        assert!(sql.contains(
             "COALESCE(ds.review_comment, '') IN ('added-backfill', 'no-added-sentinel')"
         ));
-        assert!(HOME_RECENT_CHANGES_SQL.contains("ds.submission_type = 'Disc'"));
-        assert!(HOME_RECENT_CHANGES_SQL.contains("ds.id <> ("));
-        assert!(HOME_RECENT_CHANGES_SQL.contains("SELECT MIN(ds_first.id)"));
+        assert!(sql.contains("ds.submission_type = 'Disc'"));
+        assert!(sql.contains("ds.id <> ("));
+        assert!(sql.contains("SELECT MIN(ds_first.id)"));
     }
 
     #[test]
     fn recent_changes_query_keeps_edit_rows() {
-        assert!(HOME_RECENT_CHANGES_SQL.contains("ds.submission_type = 'Edit'"));
+        assert!(home_recent_changes_sql().contains("ds.submission_type = 'Edit'"));
     }
 }

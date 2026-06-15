@@ -11,10 +11,19 @@
     --pico-block-spacing-vertical: 0.6rem;
     --disc-filter-max-width: 50rem;
 }
+/* Lower-table value grey (code values) — a touch darker in light / brighter in dark
+   than Pico defaults (#646b79 / #8891a4). Scheme-specific selectors so they beat
+   Pico's own scheme-scoped variables. */
+:root:not([data-theme="dark"]) {
+    --pico-code-color: #565c68;
+}
+[data-theme="dark"] {
+    --pico-code-color: #cfd6e1;
+}
 
 a {
     text-decoration: none;
-    color: #035c90;
+    color: #0062b8;
 }
 a:hover {
     text-decoration: underline;
@@ -157,26 +166,24 @@ main > h3 {
     color: inherit;
 }
 [data-theme="dark"] .disc-table .title-col a {
-    color: #CDE6F3;
+    color: #c6e3fd;
 }
 .disc-table .title-col .foreign-title {
     margin-top: 0.08rem;
     font-size: 0.72rem;
     line-height: 1.2;
-    color: #6b7280;
-}
-[data-theme="dark"] .disc-table .title-col .foreign-title {
-    color: #C0C6D0;
+    /* Shared muted value grey (auto light/dark via --pico-code-color). */
+    color: var(--pico-code-color);
 }
 .disc-table .submission-title-col a {
     color: inherit;
 }
 [data-theme="dark"] .disc-table .submission-title-col a {
-    color: #CDE6F3;
+    color: #c6e3fd;
 }
 [data-theme="dark"] .disc-table th:not(.title-col) a,
 [data-theme="dark"] .disc-table td:not(.title-col):not(.submission-title-col) a {
-    color: #BED4DF;
+    color: #c6e3fd;
 }
 [data-theme="dark"] .disc-table th:not(.title-col) a:hover,
 [data-theme="dark"] .disc-table td:not(.title-col):not(.submission-title-col) a:hover {
@@ -533,7 +540,7 @@ details + p small {
     color: var(--pico-primary);
 }
 [data-theme="dark"] #filter-form > .advanced-search-toggle {
-    color: #CDE6F3;
+    color: #c6e3fd;
 }
 #filter-form > .advanced-search-toggle:hover,
 #filter-form > .advanced-search-toggle:focus-visible {
@@ -612,7 +619,8 @@ details + p small {
     max-width: 100%;
 }
 #filter-form.advanced-search-visible select[name="region"],
-#filter-form.advanced-search-visible select[name="status"] {
+#filter-form.advanced-search-visible select[name="status"],
+#filter-form.advanced-search-visible select.sort-select {
     width: var(--advanced-dumper-control-width, max-content);
 }
 .advanced-search-actions {
@@ -931,6 +939,10 @@ details + p small {
 .disc-view .detail-section.table-fits .table-scroll {
     width: max-content;
     max-width: 100%;
+    /* Section is classified as fitting, so never show a horizontal scrollbar —
+       avoids a spurious bar from sub-pixel width mismatches. Only genuinely
+       overflowing sections (.table-overflows) keep overflow-x: auto. */
+    overflow-x: hidden;
 }
 .disc-view .detail-section.table-fits .table-scroll > table {
     margin-left: 0;
@@ -1188,6 +1200,44 @@ details + p small {
     transform: rotate(90deg);
 }
 
+/* Dump Log (submission review) — collapsible, fixed 30-line height, resizable */
+.dump-log-details > summary {
+    list-style: none;
+    width: fit-content;
+    cursor: pointer;
+}
+.dump-log-details > summary::-webkit-details-marker {
+    display: none;
+}
+.dump-log-details > summary::marker {
+    content: '';
+}
+.dump-log-details > summary::after {
+    display: none !important;
+}
+.dump-log-details > summary h3 {
+    display: inline-block;
+    margin: 0;
+}
+.dump-log-details > summary h3::after {
+    content: ' ▶';
+    font-size: 0.65em;
+    margin-left: 0.3rem;
+    display: inline-block;
+    transition: transform 0.15s;
+    vertical-align: middle;
+}
+.dump-log-details[open] > summary h3::after {
+    transform: rotate(90deg);
+}
+.dump-log-content {
+    /* ~30 lines at line-height 1.4 (1 line = 1.4em of the 0.85rem font) */
+    height: 42em;
+    min-height: 4em;
+    overflow: auto;
+    resize: vertical;
+}
+
 /* Title box — bordered container around main title and foreign title */
 .disc-title-box {
     border: 1px solid #c8cdd6;
@@ -1334,38 +1384,32 @@ details + p small {
 .disc-view .table-scroll-compact > table.ring-table .ring-entry-col {
     width: 3ch;
 }
+/* Divider between ring entries — sits only on each entry's first row, so
+   multi-layer entries stay internally seamless while entry boundaries are clear. */
 .ring-group-start > td {
-    border-top: 1px solid #F5F9FC;
+    border-top: 1px solid #e8ebef;
 }
 [data-theme="dark"] .ring-group-start > td {
-    border-top-color: #2B3645;
-}
-.ring-entry-even > td {
-    background: rgba(0,0,0,0.04);
+    border-top-color: #2C3540;
 }
 .disc-view .detail-section .ring-table tbody td {
-    vertical-align: baseline !important;
-}
-.disc-view .detail-section .ring-table tbody .ring-entry-cell {
     vertical-align: middle !important;
 }
 .ring-table .entry-num {
     font-weight: 600;
 }
 .ring-table .ring-fixed-cell {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 0.72rem;
+    /* Match Files/PVD values: same monospace family, weight, and code color. */
+    font-family: var(--pico-font-family-monospace);
+    font-size: 0.75rem;
     font-weight: 400;
-    color: #2b2f35;
+    color: var(--pico-code-color);
 }
 .ring-table .ring-fixed-cell * {
     font-family: inherit;
     font-size: inherit;
     font-weight: inherit;
     color: inherit;
-}
-[data-theme="dark"] .ring-table .ring-fixed-cell {
-    color: #C0C6D0;
 }
 .ring-tab-marker {
     display: inline-block;
@@ -1394,7 +1438,6 @@ header .site-nav {
     align-items: stretch;
     gap: 0;
     padding: 0 !important;
-    padding-top: 0.3rem !important;
     padding-bottom: 0.3rem !important;
     overflow: visible;
 }
@@ -1505,11 +1548,8 @@ header .site-nav-top {
 }
 .user-menu-username {
     display: inline-block;
-    max-width: clamp(6ch, 12vw, 14ch);
-    overflow: hidden;
     padding-left: 0.55rem;
     line-height: 1;
-    text-overflow: ellipsis;
     white-space: nowrap;
 }
 [data-theme="dark"] .user-menu-button {
@@ -1541,7 +1581,7 @@ header .site-nav-links {
     flex-direction: row !important;
     flex-wrap: nowrap !important;
     list-style: none;
-    margin: 0.7rem auto 0.09rem !important;
+    margin: 0.5rem auto 0.09rem !important;
     padding: 0.08rem 0 !important;
     align-items: center;
     justify-content: center;
@@ -1619,6 +1659,18 @@ header .site-nav-links {
     header .site-nav-links::after {
         bottom: 0;
     }
+
+    /* Mobile: user menu shows the avatar icon only, not the username */
+    header .user-menu-username {
+        display: none;
+    }
+    /* Drop the username divider/padding so the box hugs just the avatar */
+    header .user-menu-button {
+        padding: 0 !important;
+    }
+    header .user-menu-icon {
+        border-right: 0;
+    }
 }
 header .site-nav-links > li {
     display: flex;
@@ -1685,7 +1737,7 @@ header .site-nav-links > li:first-child {
 }
 [data-theme="dark"] .site-nav-links > li > a[aria-current="page"] {
     background-color: #181C24;
-    color: #CDE6F3;
+    color: #c6e3fd;
 }
 
 /* Nav submenu dropdown */
@@ -1694,7 +1746,7 @@ header .site-nav-links > li:first-child {
     color: var(--pico-primary);
 }
 [data-theme="dark"] .submenu-label {
-    color: #CDE6F3;
+    color: #c6e3fd;
 }
 .has-submenu {
     position: relative;
@@ -1843,7 +1895,7 @@ nav .quick-search input[type="text"] {
 .home-data-column {
     display: flex;
     flex-direction: column;
-    gap: 1.15rem;
+    gap: 0.5rem;
 }
 .home-data-column section {
     width: 100%;
@@ -1950,7 +2002,7 @@ nav .quick-search input[type="text"] {
 }
 .home-news-actions a,
 .home-news-forum-link a {
-    color: #035c90;
+    color: #0062b8;
     font-weight: 600;
     text-decoration-thickness: 1px;
     text-underline-offset: 0.18em;
@@ -2000,7 +2052,7 @@ nav .quick-search input[type="text"] {
 }
 .home-recent-dumps p a,
 .home-recent-changes p a {
-    color: #035c90;
+    color: #0062b8;
     font-weight: bold;
 }
 
@@ -2026,6 +2078,12 @@ nav .quick-search input[type="text"] {
     font-size: 0.85rem;
     vertical-align: middle;
     white-space: nowrap;
+}
+/* Light mode: plain-text row values (Date, System) use the regular text color
+   instead of the role="link" primary blue. Title links keep the link color;
+   dark mode keeps its own #EDECEF row override. */
+:root:not([data-theme="dark"]) .recent-dumps tbody tr.clickable-row td {
+    color: #373c44;
 }
 .recent-dumps .date-col {
     width: 5.6rem;
@@ -2106,7 +2164,7 @@ table.striped tbody tr.clickable-row.is-row-hover td {
     box-shadow: 0 0 0 1.5px #607085, inset 0 1px 2px rgba(0,0,0,0.35);
 }
 .dark-mode-toggle:focus-visible {
-    outline: 2px solid #0172ad;
+    outline: 2px solid #0062b8;
     outline-offset: 3px;
 }
 .dark-mode-toggle-thumb {
@@ -2114,7 +2172,7 @@ table.striped tbody tr.clickable-row.is-row-hover td {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #0172ad;
+    background: #0062b8;
     margin-top: 2px;
     transition: margin-top 0.2s, background 0.2s;
 }
@@ -2941,10 +2999,10 @@ textarea.full-width-textarea {
     background: #62af9a;
 }
 .validation-result-new {
-    background: #0172ad;
+    background: #0062b8;
 }
 .validation-result a {
-    color: #035c90;
+    color: #0062b8;
     font-weight: 700;
 }
 .validation-errors strong {
@@ -3178,14 +3236,14 @@ body:has(.submission-info) main.container > section h3 {
     color: #EDECEF;
 }
 [data-theme="dark"] a {
-    color: #CDE6F3;
+    color: #c6e3fd;
 }
 [data-theme="dark"] a:hover {
     color: #DDEFF7;
 }
 [data-theme="dark"] .validation-result a,
 [data-theme="dark"] .validation-result a:hover {
-    color: #035c90;
+    color: #0062b8;
 }
 /* Headers and More... match h3 heading color in dark mode */
 [data-theme="dark"] .recent-dumps th {
