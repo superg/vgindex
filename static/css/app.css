@@ -799,9 +799,11 @@ details + p small {
     display: grid;
     grid-template-areas: "disc dump aux";
     grid-template-columns: fit-content(var(--disc-info-max-width)) max-content fit-content(var(--disc-aux-max-width));
-    justify-content: space-evenly;
+    /* Center the three columns as a group; padding between them is bounded
+       (min 1.5rem .. max 3.5rem, scaling with viewport). */
+    justify-content: center;
     align-items: start;
-    gap: 0.5rem 1rem;
+    gap: 0.5rem clamp(1.5rem, 4vw, 3.5rem);
     margin-bottom: 2.5rem;
 }
 .disc-view .disc-side-stack {

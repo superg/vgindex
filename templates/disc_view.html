@@ -112,15 +112,8 @@
             {% endif %}
 
             {% if !comments.is_empty() %}
-            {% if comments.lines().count() > 10 %}
-            <details class="protection-details">
-                <summary><h3>Comments</h3></summary>
-                <p class="pre-wrap disc-comments">{{ comments|safe }}</p>
-            </details>
-            {% else %}
             <h3>Comments</h3>
             <p class="pre-wrap disc-comments">{{ comments|safe }}</p>
-            {% endif %}
             {% endif %}
 
             {% if !contents.is_empty() %}
