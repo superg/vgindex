@@ -215,7 +215,7 @@ INSERT INTO systems
     ('FPP',         'Arcade', 'Funworld',                'Photo Play',                              '{cd,dvd5,dvd9}'),
     ('SP21',        '',       'Sega',                    'Prologue 21 Multimedia Karaoke System',   '{cd}'),
     ('ARCH',        '',       'Acorn',                   'Archimedes & Risc PC',                    '{cd}'),
-    ('PPC',         '',       '',                        'Pocket PC',                               '{cd,dvd5,dvd9}'),
+    ('PPC',         '',       'Microsoft',               'Pocket PC',                               '{cd,dvd5,dvd9}'),
     ('HDDVD-VIDEO', '',       '',                        'HD DVD-Video',                            '{hdvd15,hdvd30}'),
     ('X68K',        '',       'Sharp',                   'X68000',                                  '{cd,dvd5,dvd9}'),
     ('KS573',       'Arcade', 'Konami',                  'System 573',                              '{cd}'),
