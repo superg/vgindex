@@ -156,7 +156,7 @@ INSERT INTO systems
     ('DC',          '',       'Sega',                    'Dreamcast',                               '{cd,gdrom}'),
     ('WII',         '',       'Nintendo',                'Wii',                                     '{dvd5wii,dvd9wii}'),
     ('SS',          '',       'Sega',                    'Saturn',                                  '{cd}'),
-    ('3DO',         '',       'Panasonic',               '3DO Interactive Multiplayer',             '{cd}'),
+    ('3DO',         '',       '',                        '3DO Interactive Multiplayer',             '{cd}'),
     ('PC',          '',       'IBM',                     'PC compatible',                           '{cd,dvd5,dvd9,bd25,bd50,bd100,bd128}'),
     ('PCE',         '',       'NEC',                     'PC Engine CD & TurboGrafx CD',            '{cd}'),
     ('CDTV',        '',       'Commodore',               'Amiga CDTV',                              '{cd}'),
