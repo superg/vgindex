@@ -95,7 +95,7 @@ SYSTEM_NAME_TO_CODE = {
     "Panasonic M2": "M2",
     "Hasbro VideoNow Color": "HVNC",
     "Hasbro VideoNow Jr.": "HVNJR",
-    "Navisoft Naviken 2.1": "NAVI21",
+    "Navisoft Naviken 2.1": "NAVI",
     "Memorex Visual Information System": "VIS",
     "Mattel Fisher-Price iXL": "IXL",
     "Atari Jaguar CD Interactive Multimedia System": "AJCD",
