@@ -67,7 +67,7 @@
                 <input type="text" name="comments_q" value="{{ filter_comments_q }}">
             </label>
             <label class="advanced-search-row">
-                <span>Sort by</span>
+                <span>Order</span>
                 <select class="sort-select" onchange="var p=this.value.split('|');this.form.sort.value=p[0];this.form.order.value=p[1];this.form.submit();">
                     <option value="title|asc" {% if sort_column == "title" %}selected{% endif %}>Alphabetical</option>
                     <option value="added|desc" {% if sort_column == "added" && sort_order == "desc" %}selected{% endif %}>Added Date: Newest</option>
