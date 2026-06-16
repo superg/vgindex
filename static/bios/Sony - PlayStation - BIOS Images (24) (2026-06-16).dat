@@ -2,11 +2,14 @@
 <!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
 <datafile>
 	<header>
-		<name>Sony - PlayStation - BIOS Images (DoM Version)</name>
-		<description>Sony - PlayStation - BIOS Images (DoM Version) (24) (2024-03-26)</description>
-		<category>Console</category>
-		<version>2024-03-26</version>
-		<author>redump.org</author>
+		<name>Sony - PlayStation - BIOS Images</name>
+		<description>Sony - PlayStation - BIOS Images (24) (2026-06-16)</description>
+		<category>Firmware</category>
+		<version>2026-06-16</version>
+		<date>2026-06-16</date>
+		<author>redump</author>
+		<homepage>https://redump.info/</homepage>
+		<url>https://redump.info/</url>
 	</header>
 	<machine name="ps-10j">
 		<description>SCPH-1000/DTL-H1000 (Version 1.0 J)</description>
