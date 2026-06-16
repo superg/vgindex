@@ -156,15 +156,15 @@ INSERT INTO systems
     ('DC',          '',       'Sega',                    'Dreamcast',                               '{cd,gdrom}'),
     ('WII',         '',       'Nintendo',                'Wii',                                     '{dvd5wii,dvd9wii}'),
     ('SS',          '',       'Sega',                    'Saturn',                                  '{cd}'),
-    ('3DO',         '',       'Panasonic',               '3DO Interactive Multiplayer',             '{cd}'),
+    ('3DO',         '',       '',                        '3DO Interactive Multiplayer',             '{cd}'),
     ('PC',          '',       'IBM',                     'PC compatible',                           '{cd,dvd5,dvd9,bd25,bd50,bd100,bd128}'),
     ('PCE',         '',       'NEC',                     'PC Engine CD & TurboGrafx CD',            '{cd}'),
     ('CDTV',        '',       'Commodore',               'Amiga CDTV',                              '{cd}'),
     ('CD32',        '',       'Commodore',               'Amiga CD32',                              '{cd}'),
-    ('ACD',         '',       'Commodore',               'Amiga CD',                                '{cd}'),
+    ('ACD',         '',       'Commodore',               'Amiga CD',                                '{cd,dvd5,dvd9}'),
     ('AUDIO-CD',    '',       '',                        'Audio CD',                                '{cd}'),
     ('QIS',         '',       'Bandai',                  'Playdia Quick Interactive System',        '{cd}'),
-    ('PIPPIN',      '',       'Bandai',                  'Pippin',                                  '{cd}'),
+    ('PIPPIN',      '',       'Apple',                   'Pippin',                                  '{cd}'),
     ('PC-98',       '',       'NEC',                     'PC-98 series',                            '{cd}'),
     ('PS3',         '',       'Sony',                    'PlayStation 3',                           '{cd,dvd5,dvd9,bd25,bd50}'),
     ('XBOX',        '',       'Microsoft',               'Xbox',                                    '{cd,dvd5,dvd9}'),
@@ -189,7 +189,7 @@ INSERT INTO systems
     ('ENHANCED-CD', '',       '',                        'Enhanced CD',                             '{cd}'),
     ('WIIU',        '',       'Nintendo',                'Wii U',                                   '{bd25wiiu}'),
     ('XBOXONE',     '',       'Microsoft',               'Xbox One',                                '{bd25,bd50}'),
-    ('PSXGS',       '',       '',                        'PlayStation GameShark Updates',           '{cd}'),
+    ('PSXGS',       '',       'Datel',                   'PlayStation Cheat Device Updates',        '{cd}'),
     ('KSITE',       '',       'Tomy',                    'Kiss-Site',                               '{cd}'),
     ('GAMEWAVE',    '',       'ZAPiT Games',             'Game Wave Family Entertainment System',   '{cd,dvd5}'),
     ('QUIZARD',     '',       'TAB-Austria',             'Quizard',                                 '{cd}'),
@@ -207,15 +207,15 @@ INSERT INTO systems
     ('M2',          '',       'Panasonic',               'M2',                                      '{cd}'),
     ('HVNC',        '',       'Hasbro',                  'VideoNow Color',                          '{cd}'),
     ('HVNJR',       '',       'Hasbro',                  'VideoNow Jr.',                            '{cd}'),
-    ('NAVI21',      '',       'Navisoft',                'Naviken 2.1',                             '{cd}'),
+    ('NAVI',        '',       'Navisoft',                'Naviken',                                 '{cd}'),
     ('VIS',         '',       'Memorex',                 'Visual Information System',               '{cd}'),
     ('IXL',         '',       'Mattel',                  'Fisher-Price iXL',                        '{cd}'),
     ('AJCD',        '',       'Atari',                   'Jaguar CD Interactive Multimedia System', '{cd}'),
     ('HVN',         '',       'Hasbro',                  'VideoNow',                                '{cd}'),
-    ('FPP',         'Arcade', 'funworld',                'Photo Play',                              '{cd,dvd5,dvd9}'),
+    ('FPP',         'Arcade', 'Funworld',                'Photo Play',                              '{cd,dvd5,dvd9}'),
     ('SP21',        '',       'Sega',                    'Prologue 21 Multimedia Karaoke System',   '{cd}'),
-    ('ARCH',        '',       'Acorn',                   'Archimedes',                              '{cd}'),
-    ('PPC',         '',       '',                        'Pocket PC',                               '{cd,dvd5,dvd9}'),
+    ('ARCH',        '',       'Acorn',                   'Archimedes & Risc PC',                    '{cd}'),
+    ('PPC',         '',       'Microsoft',               'Pocket PC',                               '{cd,dvd5,dvd9}'),
     ('HDDVD-VIDEO', '',       '',                        'HD DVD-Video',                            '{hdvd15,hdvd30}'),
     ('X68K',        '',       'Sharp',                   'X68000',                                  '{cd,dvd5,dvd9}'),
     ('KS573',       'Arcade', 'Konami',                  'System 573',                              '{cd}'),
@@ -253,7 +253,7 @@ END;
 
 UPDATE systems
 SET has_title_foreign = TRUE
-WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'NUON', 'SRE2', 'KEA', 'KFB', 'KM2', 'SRE', 'NAVI21', 'AJCD', 'FPP', 'SP21', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'KS573', 'XBOXSX', 'PS5');
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'NUON', 'SRE2', 'KEA', 'KFB', 'KM2', 'SRE', 'NAVI', 'AJCD', 'FPP', 'SP21', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'KS573', 'XBOXSX', 'PS5');
 
 UPDATE systems
 SET has_disc_number = TRUE
@@ -261,19 +261,19 @@ WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS',
 
 UPDATE systems
 SET has_disc_title = TRUE
-WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'CDI', 'VCD', 'PC-FX', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'PS4', 'ENHANCED-CD', 'XBOXONE', 'GAMEWAVE', 'SRE2', 'KEA', 'KFB', 'SRE', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI21', 'HVN', 'SP21', 'PPC', 'HDDVD-VIDEO', 'X68K', 'KS573', 'XBOXSX', 'PS5');
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'CDI', 'VCD', 'PC-FX', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'PS4', 'ENHANCED-CD', 'XBOXONE', 'GAMEWAVE', 'SRE2', 'KEA', 'KFB', 'SRE', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI', 'HVN', 'SP21', 'PPC', 'HDDVD-VIDEO', 'X68K', 'KS573', 'XBOXSX', 'PS5');
 
 UPDATE systems
 SET has_serial = TRUE
-WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'GAMEWAVE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'NUON', 'SRE2', 'KEA', 'KFB', 'KM2', 'SRE', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI21', 'VIS', 'IXL', 'AJCD', 'HVN', 'FPP', 'SP21', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'IKTV', 'KS573', 'XBOXSX', 'PS5');
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'GAMEWAVE', 'QUIZARD', 'NAOMI2', 'NS246', 'KSGV', 'NUON', 'SRE2', 'KEA', 'KFB', 'KM2', 'SRE', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI', 'VIS', 'IXL', 'AJCD', 'HVN', 'FPP', 'SP21', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'IKTV', 'KS573', 'XBOXSX', 'PS5');
 
 UPDATE systems
 SET has_edition = TRUE
-WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'GAMEWAVE', 'QUIZARD', 'NAOMI2', 'NS246', 'NUON', 'ITE', 'SRE', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI21', 'VIS', 'IXL', 'AJCD', 'HVN', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'IKTV', 'XBOXSX', 'PS5');
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'NAOMI', 'TRF', 'CHIHIRO', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'LINDBERGH', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'GAMEWAVE', 'QUIZARD', 'NAOMI2', 'NS246', 'NUON', 'ITE', 'SRE', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI', 'VIS', 'IXL', 'AJCD', 'HVN', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'IKTV', 'XBOXSX', 'PS5');
 
 UPDATE systems
 SET has_barcode = TRUE
-WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'GAMEWAVE', 'NUON', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI21', 'VIS', 'IXL', 'AJCD', 'HVN', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'IKTV', 'XBOXSX', 'PS5');
+WHERE code IN ('PSX', 'PS2', 'DVD-VIDEO', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC', 'PCE', 'CDTV', 'CD32', 'ACD', 'AUDIO-CD', 'QIS', 'PIPPIN', 'PC-98', 'PS3', 'XBOX', 'XBOX360', 'MAC', 'FMT', 'HS', 'CDI', 'VCD', 'PC-FX', 'VFLASH', 'NGCD', 'BD-VIDEO', 'PALM', 'PHOTO-CD', 'PS4', 'PC-88', 'ENHANCED-CD', 'WIIU', 'XBOXONE', 'PSXGS', 'KSITE', 'GAMEWAVE', 'NUON', 'HVNXP', 'HVNC', 'HVNJR', 'NAVI', 'VIS', 'IXL', 'AJCD', 'HVN', 'ARCH', 'PPC', 'HDDVD-VIDEO', 'X68K', 'IKTV', 'XBOXSX', 'PS5');
 
 UPDATE systems
 SET has_version = TRUE
@@ -281,7 +281,7 @@ WHERE code IN ('PSX', 'PS2', 'PSP', 'MCD', 'GC', 'DC', 'WII', 'SS', '3DO', 'PC',
 
 UPDATE systems
 SET has_exe_date = TRUE
-WHERE code IN ('PSX', 'PS2', 'MCD', 'DC', 'SS', 'CDTV', 'CD32', 'ACD', 'QIS', 'PC-98', 'FMT', 'HS', 'NAOMI', 'TRF', 'CHIHIRO', 'NGCD', 'NAOMI2', 'KSGV', 'KEA', 'KFB', 'NAVI21', 'KS573');
+WHERE code IN ('PSX', 'PS2', 'MCD', 'DC', 'SS', 'CDTV', 'CD32', 'ACD', 'QIS', 'PC-98', 'FMT', 'HS', 'NAOMI', 'TRF', 'CHIHIRO', 'NGCD', 'NAOMI2', 'KSGV', 'KEA', 'KFB', 'NAVI', 'KS573');
 
 UPDATE systems
 SET has_edc = TRUE
