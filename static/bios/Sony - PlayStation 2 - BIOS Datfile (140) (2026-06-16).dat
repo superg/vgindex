@@ -3,13 +3,13 @@
 <datafile>
 	<header>
 		<name>Sony - PlayStation 2 - BIOS Images</name>
-		<description>Sony - PlayStation 2 - BIOS Images (140) (2025-12-04)</description>
+		<description>Sony - PlayStation 2 - BIOS Images (140) (2026-06-16)</description>
 		<category>Firmware</category>
-		<version>1.0</version>
-		<date>2025-12-04</date>
-		<author>Deterous;AKuHAK</author>
-		<homepage>http://redump.org/</homepage>
-		<url>http://redump.org/</url>
+		<version>2026-06-16</version>
+		<date>2026-06-16</date>
+		<author>redump</author>
+		<homepage>https://redump.info/</homepage>
+		<url>https://redump.info/</url>
 	</header>
 	<machine name="ps2-0100j-20000117-050310">
 		<category>Boot</category>

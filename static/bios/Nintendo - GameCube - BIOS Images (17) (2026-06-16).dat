@@ -2,11 +2,14 @@
 <!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
 <datafile>
 	<header>
-		<name>Nintendo - GameCube - BIOS Images (DoM Version)</name>
-		<description>Nintendo - GameCube - BIOS Images (DoM Version) (17) (2024-03-26)</description>
-		<category>Console</category>
-		<version>2024-03-26</version>
-		<author>redump.org</author>
+		<name>Nintendo - GameCube - BIOS Images</name>
+		<description>Nintendo - GameCube - BIOS Images (17) (2026-06-16)</description>
+		<category>Firmware</category>
+		<version>2026-06-16</version>
+		<date>2026-06-16</date>
+		<author>redump</author>
+		<homepage>https://redump.info/</homepage>
+		<url>https://redump.info/</url>
 	</header>
 	<machine name="gc-dvd-20010608">
 		<description>GC-D2 B (2001-06-08)</description>
