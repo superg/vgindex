@@ -189,7 +189,7 @@ INSERT INTO systems
     ('ENHANCED-CD', '',       '',                        'Enhanced CD',                             '{cd}'),
     ('WIIU',        '',       'Nintendo',                'Wii U',                                   '{bd25wiiu}'),
     ('XBOXONE',     '',       'Microsoft',               'Xbox One',                                '{bd25,bd50}'),
-    ('PSXGS',       '',       '',                        'PlayStation GameShark Updates',           '{cd}'),
+    ('PSXGS',       '',       'Datel',                   'PlayStation Cheat Device Updates',        '{cd}'),
     ('KSITE',       '',       'Tomy',                    'Kiss-Site',                               '{cd}'),
     ('GAMEWAVE',    '',       'ZAPiT Games',             'Game Wave Family Entertainment System',   '{cd,dvd5}'),
     ('QUIZARD',     '',       'TAB-Austria',             'Quizard',                                 '{cd}'),
