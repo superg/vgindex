@@ -6,22 +6,24 @@ MediaWiki and the Rust app.
 
 ## How it works
 
-The container entrypoint automates first boot:
+The container entrypoint always performs runtime setup:
 
 1. Waits for PostgreSQL.
 2. Installs phpBB if `${PHPBB_TABLE_PREFIX}config` does not exist.
-3. Writes `config.php` from environment variables.
-4. Forces `auth_method = db`.
-5. Syncs public URL and email/SMTP settings.
-6. Disables any legacy `vgindex/oidc` phpBB extension rows if they exist.
-7. Enables `vgindex/oidcprovider`, runs its migrations, and seeds the MediaWiki
-   and Rust app OIDC clients.
-8. Generates one RSA signing key in the persisted phpBB `store` volume if it is
+3. Writes `config.php` from environment variables so phpBB can reach the
+   database after container recreation.
+4. Removes the bundled `/install` directory.
+5. Generates one RSA signing key in the persisted phpBB `store` volume if it is
    missing.
-9. Starts Apache.
+6. Starts Apache.
 
-Subsequent restarts skip install and regenerate runtime config so container
-recreation stays predictable.
+On a fresh phpBB database install, the entrypoint also bootstraps phpBB from
+environment variables: public URL/cookie settings, registration/password reset,
+email/SMTP, feed settings, legacy OIDC cleanup, `vgindex/oidcprovider`, and the
+MediaWiki and Rust app OIDC clients.
+
+Subsequent restarts skip that bootstrap in the default `auto` mode, so phpBB ACP
+and database settings remain the source of truth after deployment.
 
 ## Usage
 
@@ -49,6 +51,11 @@ Main variables:
 - `PHPBB_PUBLIC_URL` (canonical forum URL)
 - `PHPBB_DIRECT_PORT` (loopback-only direct phpBB access, default `18080`)
 - `PHPBB_COOKIE_DOMAIN`
+- `PHPBB_BOOTSTRAP_MODE` (`auto`, `force`, or `never`; default: `auto`)
+- `PHPBB_REQUIRE_ACTIVATION` (bootstrap default: `3`, registration disabled)
+- `PHPBB_ALLOW_PASSWORD_RESET` (bootstrap default: `true`)
+- `PHPBB_FEED_ENABLE` (bootstrap default: `true`)
+- `PHPBB_FEED_LIMIT_TOPIC` (bootstrap default: `5`)
 - `OIDC_PROVIDER_URL` (normally `${PHPBB_PUBLIC_URL}/app.php/oidc`)
 - `APP_PUBLIC_URL` / `MEDIAWIKI_PUBLIC_URL` for seeded redirect URIs
 - `APP_OIDC_CLIENT_ID` / `APP_OIDC_CLIENT_SECRET`
@@ -67,8 +74,16 @@ Email/password reset variables:
 - `PHPBB_SMTP_SECURE` (`ssl` or `tls` when the host does not already include a
   scheme)
 
-Public self-registration is disabled, but active imported users can recover
-access through phpBB password reset once email is configured.
+In the default `auto` bootstrap mode, these phpBB settings are applied only when
+the phpBB database is first created. To intentionally reapply environment
+defaults to an existing database, start phpBB once with
+`PHPBB_BOOTSTRAP_MODE=force`. Use `never` for manual recovery paths where even a
+fresh install should not receive bootstrap settings.
+
+Public self-registration is disabled by the default bootstrap values, but active
+imported users can recover access through phpBB password reset once email is
+configured. After bootstrap, registration and email settings can be changed in
+phpBB ACP and will survive container restarts.
 
 ## OpenID Connect Provider
 
