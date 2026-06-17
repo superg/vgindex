@@ -207,11 +207,6 @@ $wgOpenIDConnect_PreferredUsernameProcessor = static function (?string $username
     return $candidateTitle !== null ? $candidateTitle->getText() : 'User-' . vgiOidcCrc16Hex($checksumSource);
 };
 
-# Debug logging (disable in production)
-$wgShowExceptionDetails = true;
-$wgShowDBErrorBacktrace = true;
-$wgDebugLogFile = '/tmp/mediawiki-debug.log';
-
 # File uploads
 $wgEnableUploads = true;
 $wgFileExtensions = array_merge($wgFileExtensions, ['pdf', 'svg']);

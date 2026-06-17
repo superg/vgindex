@@ -33,6 +33,11 @@ fi
 : "${PHPBB_SMTP_PASSWORD:=}"
 : "${PHPBB_SMTP_AUTH_METHOD:=}"
 : "${PHPBB_SMTP_SECURE:=}"
+: "${PHPBB_BOOTSTRAP_MODE:=auto}"
+: "${PHPBB_REQUIRE_ACTIVATION:=3}"
+: "${PHPBB_ALLOW_PASSWORD_RESET:=true}"
+: "${PHPBB_FEED_ENABLE:=true}"
+: "${PHPBB_FEED_LIMIT_TOPIC:=5}"
 
 escape_php_single() {
     printf "%s" "$1" | sed "s/'/'\\\\''/g"
@@ -55,6 +60,31 @@ bool_word() {
     else
         printf "false"
     fi
+}
+
+validate_bootstrap_config() {
+    case "$PHPBB_BOOTSTRAP_MODE" in
+        auto|force|never) ;;
+        *)
+            echo "phpBB entrypoint: ERROR - PHPBB_BOOTSTRAP_MODE must be auto, force, or never." >&2
+            exit 1
+            ;;
+    esac
+
+    case "$PHPBB_REQUIRE_ACTIVATION" in
+        0|1|2|3) ;;
+        *)
+            echo "phpBB entrypoint: ERROR - PHPBB_REQUIRE_ACTIVATION must be 0, 1, 2, or 3." >&2
+            exit 1
+            ;;
+    esac
+
+    case "$PHPBB_FEED_LIMIT_TOPIC" in
+        ''|*[!0-9]*)
+            echo "phpBB entrypoint: ERROR - PHPBB_FEED_LIMIT_TOPIC must be a non-negative integer." >&2
+            exit 1
+            ;;
+    esac
 }
 
 url_part() {
@@ -80,6 +110,8 @@ OIDC_PROVIDER_URL="${OIDC_PROVIDER_URL%/}"
 phpbb_public_protocol="$(url_scheme_protocol "$PHPBB_PUBLIC_URL")"
 phpbb_public_host="$(url_part "$PHPBB_PUBLIC_URL" host)"
 phpbb_public_port="$(url_port_or_default "$PHPBB_PUBLIC_URL")"
+
+validate_bootstrap_config
 
 smtp_host_for_phpbb() {
     if [ -z "$PHPBB_SMTP_HOST" ]; then
@@ -219,9 +251,8 @@ sync_auth_config() {
     cd /var/www/html
 
     php bin/phpbbcli.php config:set auth_method db >/dev/null
-    # Keep public self-registration disabled; imported users recover access through password reset.
-    php bin/phpbbcli.php config:set require_activation 3 >/dev/null
-    php bin/phpbbcli.php config:set allow_password_reset 1 >/dev/null
+    php bin/phpbbcli.php config:set require_activation "$PHPBB_REQUIRE_ACTIVATION" >/dev/null
+    php bin/phpbbcli.php config:set allow_password_reset "$(bool_01 "$PHPBB_ALLOW_PASSWORD_RESET")" >/dev/null
 }
 
 sync_email_config() {
@@ -251,20 +282,8 @@ sync_feed_config() {
     echo "phpBB entrypoint: syncing feed settings..."
     cd /var/www/html
 
-    local config_table
-    config_table="${PHPBB_TABLE_PREFIX}config"
-
-    php bin/phpbbcli.php config:set feed_enable 1 >/dev/null
-    PGPASSWORD="$PHPBB_DB_PASSWORD" psql \
-        -h "$PHPBB_DB_HOST" \
-        -p "$PHPBB_DB_PORT" \
-        -U "$PHPBB_DB_USER" \
-        -d "$PHPBB_DB_NAME" \
-        -v ON_ERROR_STOP=1 \
-        -c "UPDATE ${config_table}
-            SET config_value = GREATEST(COALESCE(NULLIF(config_value, '')::int, 0), 5)::text
-            WHERE config_name = 'feed_limit_topic';" \
-        >/dev/null
+    php bin/phpbbcli.php config:set feed_enable "$(bool_01 "$PHPBB_FEED_ENABLE")" >/dev/null
+    php bin/phpbbcli.php config:set feed_limit_topic "$PHPBB_FEED_LIMIT_TOPIC" >/dev/null
 }
 
 disable_legacy_oidc_extension() {
@@ -392,6 +411,19 @@ seed_app_oidc_client() {
         >/dev/null
 }
 
+run_bootstrap() {
+    echo "phpBB entrypoint: applying bootstrap settings..."
+    disable_legacy_oidc_extension
+    sync_server_config
+    sync_auth_config
+    sync_email_config
+    sync_feed_config
+    enable_oidc_provider
+    sync_oidc_provider_config
+    seed_mediawiki_oidc_client
+    seed_app_oidc_client
+}
+
 write_install_config() {
     local cookie_secure
     cookie_secure=true
@@ -455,6 +487,7 @@ EOF
 wait_for_db
 prepare_writable_dirs
 
+installed_now=0
 if ! db_initialized; then
     echo "phpBB entrypoint: database not initialized, running CLI installer..."
     write_install_config
@@ -469,6 +502,7 @@ if ! db_initialized; then
     fi
     echo "phpBB entrypoint: install completed, removing install dir."
     rm -rf /var/www/html/install
+    installed_now=1
 fi
 
 # phpBB serves a "board unavailable" page to non-admins while /install exists.
@@ -476,16 +510,27 @@ fi
 rm -rf /var/www/html/install
 
 write_config_php
-disable_legacy_oidc_extension
-sync_server_config
-sync_auth_config
-sync_email_config
-sync_feed_config
-enable_oidc_provider
-sync_oidc_provider_config
 ensure_oidc_signing_key
-seed_mediawiki_oidc_client
-seed_app_oidc_client
+
+case "$PHPBB_BOOTSTRAP_MODE" in
+    auto)
+        if [ "$installed_now" = "1" ]; then
+            run_bootstrap
+        else
+            echo "phpBB entrypoint: skipping bootstrap settings; phpBB database already exists."
+        fi
+        ;;
+    force)
+        run_bootstrap
+        ;;
+    never)
+        echo "phpBB entrypoint: skipping bootstrap settings; PHPBB_BOOTSTRAP_MODE=never."
+        ;;
+    *)
+        echo "phpBB entrypoint: ERROR - unexpected PHPBB_BOOTSTRAP_MODE after validation." >&2
+        exit 1
+        ;;
+esac
 
 chown -R www-data:www-data /var/www/html/cache
 
