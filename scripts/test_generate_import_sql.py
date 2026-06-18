@@ -64,14 +64,14 @@ class GenerateImportSqlTests(unittest.TestCase):
         self.assertIn("test4l", sql)
         self.assertIn("Max Complexity Test System", sql)
 
-    def test_sanitize_filename_legacy_ascii_substitution_table(self):
+    def test_sanitize_filename_ascii_substitution_and_transliteration_table(self):
         cases = [
             ("é", "e"),
             ("Ś", "S"),
-            ("ä", "ae"),
-            ("ö", "oe"),
+            ("ä", "a"),
+            ("ö", "o"),
             ("ó", "o"),
-            ("ü", "ue"),
+            ("ü", "u"),
             ("ł", "l"),
             ("·", "-"),
             ("å", "a"),
@@ -91,7 +91,7 @@ class GenerateImportSqlTests(unittest.TestCase):
             ("ě", "e"),
             ("ń", "n"),
             ("ë", "e"),
-            ("Ä", "Ae"),
+            ("Ä", "A"),
             ("ą", "a"),
             ("ê", "e"),
             ("č", "c"),
@@ -106,17 +106,17 @@ class GenerateImportSqlTests(unittest.TestCase):
             ("ò", "o"),
             ("ï", "i"),
             ("õ", "o"),
-            ("Ö", "Oe"),
-            ("Ü", "Ue"),
+            ("Ö", "O"),
+            ("Ü", "U"),
             ("î", "i"),
             ("ô", "o"),
             ("ù", "u"),
-            ("Ō", "Oo"),
+            ("Ō", "O"),
             ("α", "Alpha"),
             ("û", "u"),
             ("Ú", "U"),
             ("½", "1-2"),
-            ("ū", "uu"),
+            ("ū", "u"),
             ("À", "A"),
             ("Ł", "L"),
             ("È", "E"),
@@ -131,9 +131,10 @@ class GenerateImportSqlTests(unittest.TestCase):
             ("Í", "I"),
             ("Î", "I"),
             ("ì", "i"),
-            ("ō", "oo"),
+            ("ō", "o"),
             ("Ş", "S"),
             ("ș", "s"),
+            ("#", ""),
         ]
 
         for value, expected in cases:
@@ -142,12 +143,55 @@ class GenerateImportSqlTests(unittest.TestCase):
 
     def test_sanitize_filename_anyascii_and_fallback_behavior(self):
         self.assertEqual(generate_import_sql.sanitize_filename("éßłæȘ"), "esslaeS")
-        self.assertEqual(generate_import_sql.sanitize_filename("u\u0308"), "ue")
+        self.assertEqual(generate_import_sql.sanitize_filename("u\u0308"), "u")
         self.assertEqual(generate_import_sql.sanitize_filename("Foo\ue000Bar"), "Foo-Bar")
+
+    def test_sanitize_filename_colon_spacing_and_hash(self):
+        self.assertEqual(generate_import_sql.sanitize_filename("Foo : Bar"), "Foo - Bar")
+        self.assertEqual(generate_import_sql.sanitize_filename("Game #1"), "Game 1")
 
     def test_sanitize_filename_slash_spacing(self):
         self.assertEqual(generate_import_sql.sanitize_filename("Foo / Bar"), "Foo & Bar")
         self.assertEqual(generate_import_sql.sanitize_filename("Foo/Bar"), "Foo-Bar")
+
+    def test_build_rom_base_name_sanitizes_components_before_assembly(self):
+        self.assertEqual(
+            generate_import_sql.build_rom_base_name(
+                "Active Simulation War Daiva Chronicle Re:",
+                ["Japan"],
+                [],
+                None,
+                None,
+                None,
+            ),
+            "Active Simulation War Daiva Chronicle Re- (Japan)",
+        )
+
+    def test_build_rom_base_name_sanitizes_each_parenthetical_component(self):
+        self.assertEqual(
+            generate_import_sql.build_rom_base_name(
+                "Foo: Bar",
+                ["USA / Europe"],
+                ["en", "fr"],
+                "1:",
+                "Label: Test",
+                "#Special?",
+            ),
+            "Foo - Bar (USA & Europe) (En,Fr) (Disc 1-) (Label - Test) (Special)",
+        )
+
+    def test_build_rom_base_name_omits_components_that_sanitize_empty(self):
+        self.assertEqual(
+            generate_import_sql.build_rom_base_name(
+                "Game",
+                ["#"],
+                ["en", "#"],
+                "#",
+                "?",
+                "°",
+            ),
+            "Game",
+        )
 
     def test_write_users_outputs_only_id_and_username(self):
         out = io.StringIO()
