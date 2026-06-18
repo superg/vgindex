@@ -13,8 +13,8 @@
                 <tr>
                     <th class="date-col">Date</th>
                     <th class="region-col">Region</th>
-                    <th>Title</th>
-                    <th>System</th>
+                    <th class="title-col">Title</th>
+                    <th class="system-col">System</th>
                 </tr>
             </thead>
             <tbody>
@@ -28,8 +28,8 @@
                              alt="{{ rf.name }}">
                         {% endfor %}
                     </span></td>
-                    <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
-                    <td>{{ disc.system }}</td>
+                    <td class="title-col"><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
+                    <td class="system-col">{{ disc.system }}</td>
                 </tr>
                 {% endfor %}
                 {% if recent_discs.is_empty() %}
@@ -49,8 +49,8 @@
                 <tr>
                     <th class="date-col">Modified</th>
                     <th class="region-col">Region</th>
-                    <th>Title</th>
-                    <th>System</th>
+                    <th class="title-col">Title</th>
+                    <th class="system-col">System</th>
                 </tr>
             </thead>
             <tbody>
@@ -64,8 +64,8 @@
                              alt="{{ rf.name }}">
                         {% endfor %}
                     </span></td>
-                    <td><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
-                    <td>{{ disc.system }}</td>
+                    <td class="title-col"><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
+                    <td class="system-col">{{ disc.system }}</td>
                 </tr>
                 {% endfor %}
                 {% if recent_changes.is_empty() %}

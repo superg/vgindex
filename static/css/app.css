@@ -2024,6 +2024,7 @@ nav .quick-search input[type="text"] {
 .home-recent-dumps .recent-dumps {
     margin: 0 auto;
     text-align: left;
+    table-layout: auto;
     width: 100%;
 }
 .home-recent-changes {
@@ -2069,14 +2070,14 @@ nav .quick-search input[type="text"] {
 
 /* Recent dumps table */
 .recent-dumps th {
-    padding: 0.04rem 0.5rem;
+    padding: 0.04rem 0.2rem;
     font-size: 0.9rem;
     white-space: nowrap;
     text-align: left;
     color: #565e6a;
 }
 .recent-dumps td {
-    padding: 0.04rem 0.5rem;
+    padding: 0.04rem 0.2rem;
     font-size: 0.85rem;
     vertical-align: middle;
     white-space: nowrap;
@@ -2088,13 +2089,40 @@ nav .quick-search input[type="text"] {
     color: #373c44;
 }
 .recent-dumps .date-col {
-    width: 5.6rem;
-    padding-left: 0.3rem;
-    padding-right: 0.3rem;
+    width: 5rem;
+    padding-left: 0.125rem;
+    padding-right: 0.125rem;
 }
 .recent-dumps .region-col {
     text-align: center;
     white-space: normal;
+    width: 4.35rem;
+}
+.recent-dumps .region-col .region-flags {
+    max-width: calc(3 * 1.55em);
+}
+.recent-dumps .title-col {
+    overflow: hidden;
+    min-width: 0;
+    padding-left: 0.125rem;
+}
+.recent-dumps .title-col a {
+    display: block;
+    max-width: clamp(18rem, 42vw, 46rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.recent-dumps th.title-col {
+    white-space: nowrap;
+}
+.recent-dumps td.title-col {
+    max-width: 0;
+}
+.recent-dumps .system-col {
+    padding-right: 0.45rem;
+    width: 1%;
+    white-space: nowrap;
 }
 .clickable-row {
     cursor: pointer;
