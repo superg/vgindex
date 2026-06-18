@@ -345,7 +345,7 @@ async fn discs_page(
 
     let sys_rows: Vec<SystemDropdownRow> = sqlx::query_as(
         "SELECT code, manufacturer, name FROM systems
-         ORDER BY LOWER(CONCAT(s.manufacturer, ' ', s.name))",
+         ORDER BY LOWER(CONCAT(manufacturer, ' ', name))",
     )
     .fetch_all(&state.pool)
     .await
