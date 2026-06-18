@@ -104,7 +104,7 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
     let rows: Vec<SystemDownloadRow> = sqlx::query_as(
         "SELECT s.code, s.manufacturer, s.name, s.has_key, s.has_sbi, s.media_types
          FROM systems s
-         ORDER BY LOWER(s.manufacturer), s.manufacturer, LOWER(s.name), s.name",
+         ORDER BY LOWER(s.manufacturer || ' ' || s.name)",
     )
     .fetch_all(&state.pool)
     .await
