@@ -1,5 +1,6 @@
 use sqlx::PgPool;
 use std::io::Write;
+use std::path::Path;
 use zip::write::{SimpleFileOptions, ZipWriter};
 
 use crate::db::models::*;
@@ -102,6 +103,19 @@ fn clear_cached_archive(system: &str, archive_type: &str) {
 pub fn invalidate_system_archives(system: &str) {
     for archive_type in ["dat", "cue", "key", "sbi"] {
         clear_cached_archive(system, archive_type);
+    }
+}
+
+pub fn clear_archives_cache() -> std::io::Result<bool> {
+    clear_archives_cache_at(crate::config::DATA_DIR)
+}
+
+pub(crate) fn clear_archives_cache_at(data_dir: impl AsRef<Path>) -> std::io::Result<bool> {
+    let archives_dir = data_dir.as_ref().join("archives");
+    match std::fs::remove_dir_all(&archives_dir) {
+        Ok(()) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err),
     }
 }
 
@@ -619,6 +633,41 @@ mod tests {
 
         assert!(archive_type_supported_by_system(&sys, "cue", true).unwrap());
         assert!(!archive_type_supported_by_system(&sys, "cue", false).unwrap());
+    }
+
+    #[test]
+    fn clear_archives_cache_removes_only_archives_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "vgindex-archive-cache-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let archives = root.join("archives").join("SYS-dat-v2");
+        std::fs::create_dir_all(&archives).unwrap();
+        std::fs::write(archives.join("cached.zip"), b"zip").unwrap();
+        std::fs::write(root.join("keep.txt"), b"keep").unwrap();
+
+        let removed = clear_archives_cache_at(&root).unwrap();
+
+        assert!(removed);
+        assert!(!root.join("archives").exists());
+        assert_eq!(std::fs::read(root.join("keep.txt")).unwrap(), b"keep");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn clear_archives_cache_is_ok_when_cache_is_absent() {
+        let root = std::env::temp_dir().join(format!(
+            "vgindex-archive-cache-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+
+        let removed = clear_archives_cache_at(&root).unwrap();
+
+        assert!(!removed);
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     fn rom_entry(name: &str, is_cue: bool) -> RomEntry {

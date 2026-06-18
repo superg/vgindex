@@ -1419,6 +1419,325 @@ pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> 
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CueRebuildSummary {
+    pub total: usize,
+    pub active: usize,
+    pub updated_cues: usize,
+    pub upserted_file_entries: usize,
+    pub deleted_file_entries: usize,
+    pub skipped: usize,
+}
+
+#[derive(sqlx::FromRow)]
+struct CueRebuildDisc {
+    id: i32,
+    title: String,
+    disc_number: Option<String>,
+    disc_title: Option<String>,
+    filename_suffix: Option<String>,
+    cue: String,
+    media_type_code: String,
+    rom_extension: String,
+    system_media_types: Vec<String>,
+    region_names: Vec<String>,
+    language_codes: Vec<String>,
+    cue_file_size: Option<i64>,
+    cue_file_crc32: Option<String>,
+    cue_file_md5: Option<String>,
+    cue_file_sha1: Option<String>,
+}
+
+struct CueFileWrite {
+    disc_id: i32,
+    size: i64,
+    crc32: String,
+    md5: String,
+    sha1: String,
+}
+
+const CUE_REBUILD_WRITE_CHUNK_SIZE: usize = 500;
+
+pub async fn regenerate_all_cue_entries(pool: &PgPool) -> AppResult<CueRebuildSummary> {
+    let started = Instant::now();
+    let load_started = Instant::now();
+    let discs: Vec<CueRebuildDisc> = sqlx::query_as(
+        "SELECT d.id,
+                d.title,
+                d.disc_number,
+                d.disc_title,
+                d.filename_suffix,
+                d.cue,
+                d.media_type_code,
+                mt.rom_extension,
+                s.media_types AS system_media_types,
+                COALESCE(region_names.region_names, ARRAY[]::TEXT[]) AS region_names,
+                COALESCE(language_codes.language_codes, ARRAY[]::TEXT[]) AS language_codes,
+                f.size AS cue_file_size,
+                f.crc32 AS cue_file_crc32,
+                f.md5 AS cue_file_md5,
+                f.sha1 AS cue_file_sha1
+         FROM discs d
+         JOIN media_types mt ON mt.code = d.media_type_code
+         JOIN systems s ON s.code = d.system_code
+         LEFT JOIN LATERAL (
+             SELECT ARRAY_AGG(r.name::TEXT ORDER BY r.sort_order) AS region_names
+             FROM disc_regions dr
+             JOIN regions r ON r.code = dr.region_code
+             WHERE dr.disc_id = d.id
+         ) region_names ON TRUE
+         LEFT JOIN LATERAL (
+             SELECT ARRAY_AGG(l.code::TEXT ORDER BY l.sort_order) AS language_codes
+             FROM disc_languages dl
+             JOIN languages l ON l.code = dl.language_code
+             WHERE dl.disc_id = d.id
+         ) language_codes ON TRUE
+         LEFT JOIN files f ON f.disc_id = d.id AND f.track_number IS NULL
+         WHERE d.cue IS NOT NULL AND d.cue <> ''
+         ORDER BY d.id",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let load_elapsed = load_started.elapsed();
+    tracing::info!(
+        count = discs.len(),
+        elapsed_ms = load_elapsed.as_millis(),
+        "Loaded cue rebuild input"
+    );
+
+    let compute_started = Instant::now();
+    let mut summary = CueRebuildSummary {
+        total: discs.len(),
+        ..CueRebuildSummary::default()
+    };
+    let mut cue_updates: Vec<(i32, String)> = Vec::new();
+    let mut file_upserts: Vec<CueFileWrite> = Vec::new();
+    let mut cue_file_deletes: Vec<i32> = Vec::new();
+
+    for (idx, disc) in discs.iter().enumerate() {
+        if idx > 0 && idx % 1000 == 0 {
+            tracing::info!(
+                processed = idx,
+                total = discs.len(),
+                elapsed_ms = compute_started.elapsed().as_millis(),
+                "Computed cue rebuild progress"
+            );
+        }
+
+        if !disc.has_active_cue() {
+            if disc.cue_file_size.is_some() {
+                cue_file_deletes.push(disc.id);
+            }
+            continue;
+        }
+
+        summary.active += 1;
+
+        let base_name = build_rom_base_name(
+            &disc.title,
+            &disc.region_names,
+            &disc.language_codes,
+            disc.disc_number.as_deref(),
+            disc.disc_title.as_deref(),
+            disc.filename_suffix.as_deref(),
+        );
+        let finalized = finalize_cue(&disc.cue, &base_name, &disc.rom_extension);
+        let finalized_crlf = to_crlf_newlines(&finalized);
+        let (size, crc32, md5, sha1) = compute_file_hashes(finalized_crlf.as_bytes());
+
+        if finalized_crlf != disc.cue {
+            cue_updates.push((disc.id, finalized_crlf));
+        }
+
+        if !disc.cue_file_matches(size, &crc32, &md5, &sha1) {
+            file_upserts.push(CueFileWrite {
+                disc_id: disc.id,
+                size,
+                crc32,
+                md5,
+                sha1,
+            });
+        }
+
+        if cue_updates.last().is_some_and(|(id, _)| *id == disc.id)
+            || file_upserts
+                .last()
+                .is_some_and(|write| write.disc_id == disc.id)
+        {
+            continue;
+        }
+
+        summary.skipped += 1;
+    }
+
+    let compute_elapsed = compute_started.elapsed();
+    tracing::info!(
+        total = summary.total,
+        active = summary.active,
+        cue_updates = cue_updates.len(),
+        file_upserts = file_upserts.len(),
+        file_deletes = cue_file_deletes.len(),
+        skipped = summary.skipped,
+        elapsed_ms = compute_elapsed.as_millis(),
+        "Computed cue rebuild output"
+    );
+
+    let write_started = Instant::now();
+    summary.updated_cues = update_cues_in_chunks(pool, &cue_updates).await?;
+    summary.upserted_file_entries = upsert_cue_files_in_chunks(pool, &file_upserts).await?;
+    summary.deleted_file_entries = delete_cue_files_in_chunks(pool, &cue_file_deletes).await?;
+
+    tracing::info!(
+        total = summary.total,
+        active = summary.active,
+        updated_cues = summary.updated_cues,
+        upserted_file_entries = summary.upserted_file_entries,
+        deleted_file_entries = summary.deleted_file_entries,
+        skipped = summary.skipped,
+        load_ms = load_elapsed.as_millis(),
+        compute_ms = compute_elapsed.as_millis(),
+        write_ms = write_started.elapsed().as_millis(),
+        total_ms = started.elapsed().as_millis(),
+        "Finished cue rebuild"
+    );
+
+    Ok(summary)
+}
+
+impl CueRebuildDisc {
+    fn has_active_cue(&self) -> bool {
+        is_cd_rom_extension(&self.rom_extension)
+            && self
+                .system_media_types
+                .iter()
+                .any(|code| code.eq_ignore_ascii_case(&self.media_type_code))
+    }
+
+    fn cue_file_matches(&self, size: i64, crc32: &str, md5: &str, sha1: &str) -> bool {
+        self.cue_file_size == Some(size)
+            && self.cue_file_crc32.as_deref() == Some(crc32)
+            && self.cue_file_md5.as_deref() == Some(md5)
+            && self.cue_file_sha1.as_deref() == Some(sha1)
+    }
+}
+
+async fn update_cues_in_chunks(pool: &PgPool, updates: &[(i32, String)]) -> AppResult<usize> {
+    let mut updated = 0usize;
+    for chunk in updates.chunks(CUE_REBUILD_WRITE_CHUNK_SIZE) {
+        let ids: Vec<i32> = chunk.iter().map(|(id, _)| *id).collect();
+        let cues: Vec<String> = chunk.iter().map(|(_, cue)| cue.clone()).collect();
+        let result = sqlx::query(
+            "UPDATE discs d
+             SET cue = u.cue
+             FROM UNNEST($1::INT[], $2::TEXT[]) AS u(id, cue)
+             WHERE d.id = u.id",
+        )
+        .bind(&ids)
+        .bind(&cues)
+        .execute(pool)
+        .await?;
+        updated += result.rows_affected() as usize;
+    }
+    Ok(updated)
+}
+
+async fn upsert_cue_files_in_chunks(pool: &PgPool, writes: &[CueFileWrite]) -> AppResult<usize> {
+    let mut upserted = 0usize;
+    for chunk in writes.chunks(CUE_REBUILD_WRITE_CHUNK_SIZE) {
+        let ids: Vec<i32> = chunk.iter().map(|write| write.disc_id).collect();
+        let sizes: Vec<i64> = chunk.iter().map(|write| write.size).collect();
+        let crc32s: Vec<String> = chunk.iter().map(|write| write.crc32.clone()).collect();
+        let md5s: Vec<String> = chunk.iter().map(|write| write.md5.clone()).collect();
+        let sha1s: Vec<String> = chunk.iter().map(|write| write.sha1.clone()).collect();
+        let result = sqlx::query(
+            "INSERT INTO files (disc_id, track_number, size, crc32, md5, sha1)
+             SELECT u.disc_id, NULL::VARCHAR(16), u.size, u.crc32, u.md5, u.sha1
+             FROM UNNEST($1::INT[], $2::BIGINT[], $3::TEXT[], $4::TEXT[], $5::TEXT[])
+                  AS u(disc_id, size, crc32, md5, sha1)
+             ON CONFLICT (disc_id) WHERE track_number IS NULL
+             DO UPDATE SET size = EXCLUDED.size,
+                           crc32 = EXCLUDED.crc32,
+                           md5 = EXCLUDED.md5,
+                           sha1 = EXCLUDED.sha1",
+        )
+        .bind(&ids)
+        .bind(&sizes)
+        .bind(&crc32s)
+        .bind(&md5s)
+        .bind(&sha1s)
+        .execute(pool)
+        .await?;
+        upserted += result.rows_affected() as usize;
+    }
+    Ok(upserted)
+}
+
+async fn delete_cue_files_in_chunks(pool: &PgPool, disc_ids: &[i32]) -> AppResult<usize> {
+    let mut deleted = 0usize;
+    for chunk in disc_ids.chunks(CUE_REBUILD_WRITE_CHUNK_SIZE) {
+        let ids: Vec<i32> = chunk.to_vec();
+        let result =
+            sqlx::query("DELETE FROM files WHERE track_number IS NULL AND disc_id = ANY($1)")
+                .bind(&ids)
+                .execute(pool)
+                .await?;
+        deleted += result.rows_affected() as usize;
+    }
+    Ok(deleted)
+}
+
+#[cfg(test)]
+mod cue_rebuild_tests {
+    use super::*;
+
+    fn cue_rebuild_disc(media_type_code: &str, rom_extension: &str) -> CueRebuildDisc {
+        CueRebuildDisc {
+            id: 1,
+            title: "Game".to_string(),
+            disc_number: None,
+            disc_title: None,
+            filename_suffix: None,
+            cue: String::new(),
+            media_type_code: media_type_code.to_string(),
+            rom_extension: rom_extension.to_string(),
+            system_media_types: vec!["cd".to_string(), "gdrom".to_string()],
+            region_names: Vec::new(),
+            language_codes: Vec::new(),
+            cue_file_size: Some(10),
+            cue_file_crc32: Some("aaaaaaaa".to_string()),
+            cue_file_md5: Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()),
+            cue_file_sha1: Some("cccccccccccccccccccccccccccccccccccccccc".to_string()),
+        }
+    }
+
+    #[test]
+    fn bulk_cue_rebuild_uses_same_active_cue_rule() {
+        assert!(cue_rebuild_disc("cd", "bin").has_active_cue());
+        assert!(cue_rebuild_disc("gdrom", "BIN").has_active_cue());
+        assert!(!cue_rebuild_disc("dvd5", "iso").has_active_cue());
+        assert!(!cue_rebuild_disc("other", "bin").has_active_cue());
+    }
+
+    #[test]
+    fn bulk_cue_rebuild_detects_matching_file_metadata() {
+        let disc = cue_rebuild_disc("cd", "bin");
+
+        assert!(disc.cue_file_matches(
+            10,
+            "aaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cccccccccccccccccccccccccccccccccccccccc"
+        ));
+        assert!(!disc.cue_file_matches(
+            11,
+            "aaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "cccccccccccccccccccccccccccccccccccccccc"
+        ));
+    }
+}
+
 async fn delete_cue_file_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> {
     sqlx::query("DELETE FROM files WHERE disc_id = $1 AND track_number IS NULL")
         .bind(disc_id)

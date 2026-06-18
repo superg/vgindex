@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Maintenance{% endblock %}
+
+{% block content %}
+<h3 class="maintenance-page-title">Maintenance</h3>
+
+{% if !status_message.is_empty() %}
+<div class="validation-result validation-result-verification" role="status">{{ status_message }}</div>
+{% endif %}
+
+{% if !error_message.is_empty() %}
+<div class="validation-errors" role="alert">
+    <strong>{{ error_message }}</strong>
+</div>
+{% endif %}
+
+<div class="maintenance-actions">
+    <section class="maintenance-action">
+        <form method="post" action="/maintenance/rebuild-cue">
+            <button type="submit">Rebuild CUE</button>
+        </form>
+        <p class="maintenance-action-note">Updates CUE sheets and hashes. Run after changing filename character substitution rules.</p>
+    </section>
+
+    <section class="maintenance-action">
+        <form method="post" action="/maintenance/clear-archives-cache">
+            <button type="submit">Clear Archives Cache</button>
+        </form>
+        <p class="maintenance-action-note">Deletes all cached download archives. Archives are recreated per system either on DB change or on first download.</p>
+    </section>
+</div>
+{% endblock %}

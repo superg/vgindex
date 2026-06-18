@@ -6,6 +6,7 @@ pub mod disc_view;
 pub mod discs;
 pub mod downloads;
 pub mod main_page;
+pub mod maintenance;
 pub mod queue;
 
 use crate::error::{AppError, AppResult};
@@ -29,6 +30,7 @@ pub fn build_router() -> Router<AppState> {
         .merge(downloads::routes())
         .merge(queue::routes())
         .merge(api::routes())
+        .merge(maintenance::routes())
         .merge(about::routes())
 }
 
@@ -139,13 +141,16 @@ fn canonical_route_segment(segment: &str) -> Option<&'static str> {
         "keys" => Some("keys"),
         "login" => Some("login"),
         "logout" => Some("logout"),
+        "maintenance" => Some("maintenance"),
         "oidc" => Some("oidc"),
         "online" => Some("online"),
         "online-html" => Some("online-html"),
         "queue" => Some("queue"),
         "review" => Some("review"),
+        "rebuild-cue" => Some("rebuild-cue"),
         "sbi" => Some("sbi"),
         "submit" => Some("submit"),
+        "clear-archives-cache" => Some("clear-archives-cache"),
         "transliterate" => Some("transliterate"),
         _ => None,
     }
@@ -236,6 +241,7 @@ mod tests {
             include_str!("../../templates/disc_edit.html"),
             include_str!("../../templates/disc_view.html"),
             include_str!("../../templates/discs.html"),
+            include_str!("../../templates/maintenance.html"),
             include_str!("../../templates/main.html"),
             include_str!("../../templates/queue.html"),
             include_str!("../../templates/queue_detail.html"),
@@ -247,8 +253,11 @@ mod tests {
                 "href=\"/disc/submit/\"",
                 "href=\"/discs/\"",
                 "href=\"/downloads/\"",
+                "href=\"/maintenance/\"",
                 "href=\"/queue/\"",
                 "action=\"/discs/\"",
+                "action=\"/maintenance/rebuild-cue/\"",
+                "action=\"/maintenance/clear-archives-cache/\"",
                 "action=\"/queue/\"",
                 "data-href=\"/discs/\"",
                 "data-href=\"/queue/\"",
