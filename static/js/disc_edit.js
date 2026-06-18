@@ -609,9 +609,26 @@ function filterMediaTypes(forceDefault) {
     var allowed = SYSTEMS_MEDIA[sysSel.value];
     if (!allowed) return;
     var currentVal = mediaSel.value;
-    var opts = mediaSel.options;
+    var opts = Array.prototype.slice.call(mediaSel.options);
+    var byValue = {};
+    var allowedLookup = {};
     for (var i = 0; i < opts.length; i++) {
-        opts[i].hidden = allowed.indexOf(opts[i].value) === -1;
+        byValue[opts[i].value] = opts[i];
+    }
+    for (var j = 0; j < allowed.length; j++) {
+        allowedLookup[allowed[j]] = true;
+        if (byValue[allowed[j]]) {
+            mediaSel.appendChild(byValue[allowed[j]]);
+        }
+    }
+    for (var k = 0; k < opts.length; k++) {
+        if (!allowedLookup[opts[k].value]) {
+            mediaSel.appendChild(opts[k]);
+        }
+    }
+    opts = mediaSel.options;
+    for (var l = 0; l < opts.length; l++) {
+        opts[l].hidden = allowed.indexOf(opts[l].value) === -1;
     }
     if ((forceDefault || allowed.indexOf(currentVal) === -1) && allowed.length > 0) {
         mediaSel.value = allowed[0];
