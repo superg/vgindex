@@ -145,15 +145,16 @@ INSERT INTO languages
 
 -- Systems: Redump `code`; `ecd` vs `audio-cd` for PK.
 -- has_* = OR over scraped discs: has_exe_date=d_date, has_sbi=d_libcrypt|d_securom, has_pvd=d_pvd, has_edc=d_edc (non-empty).
+-- media_types is ordered by preference; the first code is the default selected when changing systems.
 INSERT INTO systems
     (code,          type,     manufacturer,              name,                                      media_types) VALUES
     ('PSX',         '',       'Sony',                    'PlayStation',                             '{cd}'),
-    ('PS2',         '',       'Sony',                    'PlayStation 2',                           '{cd,dvd5,dvd9}'),
+    ('PS2',         '',       'Sony',                    'PlayStation 2',                           '{dvd5,dvd9,cd}'),
     ('DVD-VIDEO',   '',       '',                        'DVD-Video',                               '{dvd5,dvd9}'),
-    ('PSP',         '',       'Sony',                    'PlayStation Portable',                    '{dvd5,dvd9,umd1,umd2}'),
+    ('PSP',         '',       'Sony',                    'PlayStation Portable',                    '{umd1,umd2,dvd5,dvd9}'),
     ('MCD',         '',       'Sega',                    'Mega CD & Sega CD',                       '{cd}'),
     ('GC',          '',       'Nintendo',                'GameCube',                                '{dvd5gc}'),
-    ('DC',          '',       'Sega',                    'Dreamcast',                               '{cd,gdrom}'),
+    ('DC',          '',       'Sega',                    'Dreamcast',                               '{gdrom,cd}'),
     ('WII',         '',       'Nintendo',                'Wii',                                     '{dvd5wii,dvd9wii}'),
     ('SS',          '',       'Sega',                    'Saturn',                                  '{cd}'),
     ('3DO',         '',       '',                        '3DO Interactive Multiplayer',             '{cd}'),
@@ -166,9 +167,9 @@ INSERT INTO systems
     ('QIS',         '',       'Bandai',                  'Playdia Quick Interactive System',        '{cd}'),
     ('PIPPIN',      '',       'Apple',                   'Pippin',                                  '{cd}'),
     ('PC-98',       '',       'NEC',                     'PC-98 series',                            '{cd}'),
-    ('PS3',         '',       'Sony',                    'PlayStation 3',                           '{cd,dvd5,dvd9,bd25,bd50}'),
-    ('XBOX',        '',       'Microsoft',               'Xbox',                                    '{cd,dvd5,dvd9}'),
-    ('XBOX360',     '',       'Microsoft',               'Xbox 360',                                '{cd,dvd5,dvd9}'),
+    ('PS3',         '',       'Sony',                    'PlayStation 3',                           '{bd25,bd50,dvd5,dvd9,cd}'),
+    ('XBOX',        '',       'Microsoft',               'Xbox',                                    '{dvd5,dvd9,cd}'),
+    ('XBOX360',     '',       'Microsoft',               'Xbox 360',                                '{dvd5,dvd9,cd}'),
     ('MAC',         '',       'Apple',                   'Macintosh',                               '{cd,dvd5,dvd9}'),
     ('FMT',         '',       'Fujitsu',                 'FM Towns series',                         '{cd}'),
     ('HS',          '',       'Mattel',                  'HyperScan',                               '{cd}'),
@@ -191,10 +192,10 @@ INSERT INTO systems
     ('XBOXONE',     '',       'Microsoft',               'Xbox One',                                '{bd25,bd50}'),
     ('PSXGS',       '',       'Datel',                   'PlayStation Cheat Device Updates',        '{cd}'),
     ('KSITE',       '',       'Tomy',                    'Kiss-Site',                               '{cd}'),
-    ('GAMEWAVE',    '',       'ZAPiT Games',             'Game Wave Family Entertainment System',   '{cd,dvd5}'),
+    ('GAMEWAVE',    '',       'ZAPiT Games',             'Game Wave Family Entertainment System',   '{dvd5,cd}'),
     ('QUIZARD',     '',       'TAB-Austria',             'Quizard',                                 '{cd}'),
     ('NAOMI2',      'Arcade', 'Sega',                    'Naomi 2',                                 '{gdrom}'),
-    ('NS246',       'Arcade', 'Namco',                   'System 246',                              '{cd,dvd5}'),
+    ('NS246',       'Arcade', 'Namco',                   'System 246',                              '{dvd5,cd}'),
     ('KSGV',        'Arcade', 'Konami',                  'System GV',                               '{cd}'),
     ('NUON',        '',       'VM Labs',                 'NUON',                                    '{dvd5}'),
     ('SRE2',        'Arcade', 'Sega',                    'RingEdge 2',                              '{dvd5,dvd9}'),
@@ -218,6 +219,7 @@ INSERT INTO systems
     ('PPC',         '',       'Microsoft',               'Pocket PC',                               '{cd,dvd5,dvd9}'),
     ('HDDVD-VIDEO', '',       '',                        'HD DVD-Video',                            '{hdvd15,hdvd30}'),
     ('X68K',        '',       'Sharp',                   'X68000',                                  '{cd,dvd5,dvd9}'),
+    ('IKTV',        '',       'Tao',                     'iKTV',                                    '{cd}'),
     ('KS573',       'Arcade', 'Konami',                  'System 573',                              '{cd}'),
     ('XBOXSX',      '',       'Microsoft',               'Xbox Series X',                           '{bd25,bd50}'),
     ('PS5',         '',       'Sony',                    'PlayStation 5',                           '{bd66,bd100}');

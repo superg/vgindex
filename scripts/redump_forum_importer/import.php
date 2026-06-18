@@ -57,7 +57,7 @@ function table_name(string $constant, string $suffix): string
 function usage(): void
 {
     echo "Usage:\n";
-    echo "  redump-forum-import --forum-data /import/redump/forum --users-dir /import/redump/users [--source-timezone UTC] [--target-domain localhost] [--dry-run]\n";
+    echo "  redump-forum-import --forum-data /import/redump/forum --users-dir /import/redump/users [--source-timezone UTC] [--target-domain localhost] [--test-users-file FILE] [--dry-run]\n";
     echo "  redump-forum-import --finalize-only\n";
 }
 
@@ -68,6 +68,7 @@ function parse_args(array $argv): array
         'users-dir:',
         'source-timezone:',
         'target-domain:',
+        'test-users-file:',
         'dry-run',
         'finalize-only',
         'help',
@@ -84,12 +85,16 @@ function parse_args(array $argv): array
     $source_timezone = isset($opts['source-timezone']) ? (string) $opts['source-timezone'] : 'UTC';
     $target_domain = normalize_target_domain(isset($opts['target-domain']) ? (string) $opts['target-domain'] : 'localhost');
     $finalize_only = isset($opts['finalize-only']);
-    $test_users_file = $users_dir !== '' ? $users_dir . '/test_users.json' : '';
+    $test_users_file = isset($opts['test-users-file']) ? (string) $opts['test-users-file'] : '';
 
     if (!$finalize_only && ($forum_data === '' || $users_dir === ''))
     {
         usage();
         throw new RuntimeException('--forum-data and --users-dir are required.');
+    }
+    if (!$finalize_only && $test_users_file !== '' && !is_file($test_users_file))
+    {
+        throw new RuntimeException("Test users file not found: {$test_users_file}");
     }
 
     try
@@ -3060,7 +3065,7 @@ function main(array $argv): int
     echo "Importing users...\n";
     $user_ids = create_or_update_users($scan['users_by_name'], $scan['users_by_id'], $args['users_dir'], $args['source_timezone'], $args['target_domain']);
     $test_user_ids = [];
-    if (is_file($args['test_users_file']))
+    if ($args['test_users_file'] !== '')
     {
         echo "Seeding test users from {$args['test_users_file']}...\n";
         $test_user_ids = seed_test_users($args['test_users_file'], $args['source_timezone'], $args['target_domain']);
@@ -3071,7 +3076,7 @@ function main(array $argv): int
     }
     else
     {
-        echo "No test users file found at {$args['test_users_file']}; skipping test users.\n";
+        echo "No test users file specified; skipping test users.\n";
     }
 
     echo "Importing forums...\n";
