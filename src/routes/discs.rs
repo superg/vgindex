@@ -14,9 +14,7 @@ use crate::services::disc_service;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/discs", get(discs_page))
-        .route("/discs/", get(discs_page))
+    Router::new().route("/discs", get(discs_page))
 }
 
 fn empty_string_as_none<'de, D, T>(de: D) -> Result<Option<T>, D::Error>
@@ -169,12 +167,58 @@ fn display_title_sort_sql() -> &'static str {
 }
 
 fn normalize_status_filter(status: Option<&str>, can_view_disabled_discs: bool) -> String {
-    match status.unwrap_or_default() {
-        "All Statuses" | "Disabled" if !can_view_disabled_discs => String::new(),
-        "All Statuses" | "Disabled" | "Questionable" | "Verified" | "Unverified" => {
-            status.unwrap_or_default().to_string()
-        }
+    match status
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "all statuses" | "disabled" if !can_view_disabled_discs => String::new(),
+        "all statuses" => "All Statuses".to_string(),
+        "disabled" => "Disabled".to_string(),
+        "questionable" => "Questionable".to_string(),
+        "verified" => "Verified".to_string(),
+        "unverified" => "Unverified".to_string(),
         _ => String::new(),
+    }
+}
+
+fn normalize_system_filter(system: Option<&str>) -> String {
+    system.unwrap_or_default().trim().to_ascii_uppercase()
+}
+
+fn normalize_region_filter(region: Option<&str>) -> String {
+    region.unwrap_or_default().trim().to_ascii_lowercase()
+}
+
+fn normalize_letter_filter(letter: Option<&str>) -> String {
+    let letter = letter.unwrap_or_default().trim();
+    if letter == "#" {
+        "#".to_string()
+    } else if letter.len() == 1 && letter.chars().next().unwrap().is_ascii_alphabetic() {
+        letter.to_ascii_uppercase()
+    } else {
+        letter.to_string()
+    }
+}
+
+fn normalize_disc_sort(sort: Option<&str>) -> String {
+    match sort.unwrap_or("title").trim().to_ascii_lowercase().as_str() {
+        "region" | "title" | "system" | "version" | "edition" | "language" | "serial"
+        | "status" | "added" | "updated" => sort.unwrap_or("title").trim().to_ascii_lowercase(),
+        _ => "title".to_string(),
+    }
+}
+
+fn normalize_sort_order(order: Option<&str>) -> String {
+    if order
+        .unwrap_or_default()
+        .trim()
+        .eq_ignore_ascii_case("desc")
+    {
+        "desc".to_string()
+    } else {
+        "asc".to_string()
     }
 }
 
@@ -293,10 +337,10 @@ async fn discs_page(
     let offset = (page - 1) * PAGE_SIZE;
     let can_view_disabled_discs = user.can_view_disabled_discs();
 
-    let filter_system = query.system.clone().unwrap_or_default();
-    let filter_region = query.region.clone().unwrap_or_default();
+    let filter_system = normalize_system_filter(query.system.as_deref());
+    let filter_region = normalize_region_filter(query.region.as_deref());
     let filter_status = normalize_status_filter(query.status.as_deref(), can_view_disabled_discs);
-    let filter_letter = query.letter.clone().unwrap_or_default();
+    let filter_letter = normalize_letter_filter(query.letter.as_deref());
     let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
     let quick_search_terms = quick_search_terms(&filter_q);
     let filter_edition_q = query
@@ -459,8 +503,8 @@ async fn discs_page(
         "FALSE".to_string()
     };
 
-    let sort_column = query.sort.clone().unwrap_or_else(|| "title".to_string());
-    let sort_order_str = query.order.clone().unwrap_or_else(|| "asc".to_string());
+    let sort_column = normalize_disc_sort(query.sort.as_deref());
+    let sort_order_str = normalize_sort_order(query.order.as_deref());
 
     // "updated" (Modification date) uses the shared genuine-change logic so it
     // matches the home "Recent Changes" list (excludes the initial add, empty
@@ -485,9 +529,10 @@ async fn discs_page(
         "updated" => modification_sql.as_str(),
         _ => display_title_sort_sql(),
     };
-    let sort_dir = match query.order.as_deref() {
-        Some("desc") => "DESC",
-        _ => "ASC",
+    let sort_dir = if sort_order_str == "desc" {
+        "DESC"
+    } else {
+        "ASC"
     };
     // Date sorts derive from submission timestamps; discs with no submissions
     // yield NULL and would otherwise sort first on DESC. Keep them last.
@@ -564,7 +609,7 @@ async fn discs_page(
 
     if !quick_search_terms.is_empty() && total_count == 1 {
         if let Some(row) = raw_rows.first() {
-            return Redirect::to(&format!("/disc/{}/", row.id)).into_response();
+            return Redirect::to(&format!("/disc/{}", row.id)).into_response();
         }
     }
 
@@ -789,6 +834,7 @@ mod tests {
         assert_eq!(normalize_status_filter(None, false), "");
         assert_eq!(normalize_status_filter(Some(""), false), "");
         assert_eq!(normalize_status_filter(Some("Verified"), false), "Verified");
+        assert_eq!(normalize_status_filter(Some("verified"), false), "Verified");
         assert_eq!(
             normalize_status_filter(Some("Unverified"), false),
             "Unverified"
@@ -805,10 +851,25 @@ mod tests {
     #[test]
     fn status_filter_preserves_disabled_choices_with_permission() {
         assert_eq!(normalize_status_filter(Some("Disabled"), true), "Disabled");
+        assert_eq!(normalize_status_filter(Some("disabled"), true), "Disabled");
         assert_eq!(
             normalize_status_filter(Some("All Statuses"), true),
             "All Statuses"
         );
+        assert_eq!(
+            normalize_status_filter(Some("all statuses"), true),
+            "All Statuses"
+        );
+    }
+
+    #[test]
+    fn url_filters_are_case_insensitive() {
+        assert_eq!(normalize_system_filter(Some("ps3")), "PS3");
+        assert_eq!(normalize_system_filter(Some("pc-98")), "PC-98");
+        assert_eq!(normalize_region_filter(Some("US")), "us");
+        assert_eq!(normalize_letter_filter(Some("b")), "B");
+        assert_eq!(normalize_disc_sort(Some("STATUS")), "status");
+        assert_eq!(normalize_sort_order(Some("DESC")), "desc");
     }
 
     #[test]

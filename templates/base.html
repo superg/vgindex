@@ -24,7 +24,7 @@
                 <a class="site-banner" href="/" aria-label="Home">
                     <img src="/static/images/branding/logo_v2.png" alt="{{ self.site_name() }}">
                 </a>
-                <form class="quick-search" method="get" action="/discs/">
+                <form class="quick-search" method="get" action="/discs">
                     <input type="text" name="q" placeholder="Search discs..." aria-label="Search">
                 </form>
                 <ul class="site-nav-auth">
@@ -44,9 +44,9 @@
                             <span class="user-menu-username">{{ user.username }}</span>
                         </button>
                         <ul class="submenu user-submenu">
-                            <li><a href="/disc/submit/">Add Disc</a></li>
-                            <li><a href="/discs/?dumper={{ self.url_encode(user.username) }}">My Discs</a></li>
-                            <li><a href="/queue/?submitter={{ self.url_encode(user.username) }}">My Submissions</a></li>
+                            <li><a href="/disc/submit">Add Disc</a></li>
+                            <li><a href="/discs?dumper={{ self.url_encode(user.username) }}">My Discs</a></li>
+                            <li><a href="/queue?submitter={{ self.url_encode(user.username) }}">My Submissions</a></li>
                             <li><span class="submenu-disabled">Settings</span></li>
                             <li>
                                 <form class="submenu-form" method="post" action="/logout">
@@ -63,14 +63,14 @@
             </div>
             <ul class="site-nav-links">
                 <li><a href="/">Home</a></li>
-                <li><a href="/discs/">Discs</a></li>
-                <li><a href="/downloads/">Downloads</a></li>
+                <li><a href="/discs">Discs</a></li>
+                <li><a href="/downloads">Downloads</a></li>
                 {% if current_user.is_some() %}
-                <li><a href="/queue/">Queue</a></li>
+                <li><a href="/queue">Queue</a></li>
                 {% endif %}
                 <li><a href="{{ self.forum_url() }}">Forum</a></li>
                 <li><a href="{{ self.wiki_url() }}">Wiki</a></li>
-                <li><a href="/about/">About</a></li>
+                <li><a href="/about">About</a></li>
             </ul>
         </nav>
     </header>
@@ -167,13 +167,13 @@
                 if (path === '/') {
                     activeHref = '/';
                 } else if (path.indexOf('/disc') === 0) {
-                    activeHref = '/discs/';
+                    activeHref = '/discs';
                 } else if (path.indexOf('/downloads') === 0) {
-                    activeHref = '/downloads/';
+                    activeHref = '/downloads';
                 } else if (path.indexOf('/queue') === 0) {
-                    activeHref = '/queue/';
+                    activeHref = '/queue';
                 } else if (path.indexOf('/about') === 0) {
-                    activeHref = '/about/';
+                    activeHref = '/about';
                 }
                 if (!activeHref) return;
                 document.querySelectorAll('.site-nav-links a').forEach(function(link) {

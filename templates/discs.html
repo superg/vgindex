@@ -11,7 +11,7 @@
 
 <details class="filter-details" open>
     <summary>Filters</summary>
-    <form method="get" action="/discs/" id="filter-form" class="{% if advanced_open %}advanced-search-visible{% endif %}">
+    <form method="get" action="/discs" id="filter-form" class="{% if advanced_open %}advanced-search-visible{% endif %}">
         <button type="button" class="advanced-search-toggle" aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}" aria-controls="advanced-search-panel">
             <span>Advanced Search</span><span class="advanced-search-icon" aria-hidden="true"></span>
         </button>
@@ -86,10 +86,10 @@
     </form>
 
     <div class="letter-picker">
-        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
-        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter=%23{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
+        <a href="/discs?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
+        <a href="/discs?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter=%23{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
         {% for c in letters %}
-        <a href="/discs/?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ c.0 }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
+        <a href="/discs?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ c.0 }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
         {% endfor %}
     </div>
 </details>
@@ -101,10 +101,10 @@
     <nav aria-label="Pagination">
         <ul>
             {% if page > 1 %}
-            <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">&laquo; Previous</a></li>
+            <li><a href="/discs?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">&laquo; Previous</a></li>
             {% endif %}
             <li>
-                <form method="get" action="/discs/" class="page-jump-form">
+                <form method="get" action="/discs" class="page-jump-form">
                     Page <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}" class="page-jump-input"> of {{ total_pages }}
                     <input type="hidden" name="system" value="{{ filter_system }}">
                     <input type="hidden" name="region" value="{{ filter_region }}">
@@ -123,7 +123,7 @@
                 </form>
             </li>
             {% if page < total_pages %}
-            <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Next &raquo;</a></li>
+            <li><a href="/discs?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Next &raquo;</a></li>
             {% endif %}
         </ul>
     </nav>
@@ -136,25 +136,25 @@
                 {% if current_user.is_some() %}
                 <th class="dumped-by-me-col" title="Dumped by me">👤</th>
                 {% endif %}
-                <th class="region-col"><a href="/discs/?sort=region&amp;order={{ next_region_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="title-col"><a href="/discs/?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="system-col"><a href="/discs/?sort=system&amp;order={{ next_system_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=version&amp;order={{ next_version_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Version{% if sort_column == "version" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=edition&amp;order={{ next_edition_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Edition{% if sort_column == "edition" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="language-col"><a href="/discs/?sort=language&amp;order={{ next_language_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/discs/?sort=serial&amp;order={{ next_serial_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Serial{% if sort_column == "serial" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="status-col"><a href="/discs/?sort=status&amp;order={{ next_status_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="region-col"><a href="/discs?sort=region&amp;order={{ next_region_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="title-col"><a href="/discs?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="system-col"><a href="/discs?sort=system&amp;order={{ next_system_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs?sort=version&amp;order={{ next_version_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Version{% if sort_column == "version" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs?sort=edition&amp;order={{ next_edition_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Edition{% if sort_column == "edition" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="language-col"><a href="/discs?sort=language&amp;order={{ next_language_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th><a href="/discs?sort=serial&amp;order={{ next_serial_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Serial{% if sort_column == "serial" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="status-col"><a href="/discs?sort=status&amp;order={{ next_status_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
             </tr>
         </thead>
         <tbody>
             {% for disc in discs %}
-            <tr class="clickable-row" data-href="/disc/{{ disc.id }}/" tabindex="0" role="link">
+            <tr class="clickable-row" data-href="/disc/{{ disc.id }}" tabindex="0" role="link">
                 {% if current_user.is_some() %}
                 <td class="dumped-by-me-col" title="Dumped by me">{% if disc.dumped_by_me %}<span class="dumped-by-me-yes">✔</span>{% else %}<span class="dumped-by-me-no">✘</span>{% endif %}</td>
                 {% endif %}
                 <td class="region-col"><span class="region-flags">{% for rf in disc.region_flags %}<img class="flag-icon" src="/static/flags/{{ rf.code }}.svg" title="{{ rf.name }}" alt="{{ rf.name }}">{% endfor %}</span></td>
                 <td class="title-col">
-                    <a href="/disc/{{ disc.id }}/">{{ disc.title }}</a>
+                    <a href="/disc/{{ disc.id }}">{{ disc.title }}</a>
                     {% if !disc.title_foreign.is_empty() %}
                     <div class="foreign-title">{{ disc.title_foreign }}</div>
                     {% endif %}
@@ -178,10 +178,10 @@
     <nav aria-label="Pagination">
         <ul>
             {% if page > 1 %}
-            <li><a href="/discs/?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">&laquo; Previous</a></li>
+            <li><a href="/discs?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">&laquo; Previous</a></li>
             {% endif %}
             <li>
-                <form method="get" action="/discs/" class="page-jump-form">
+                <form method="get" action="/discs" class="page-jump-form">
                     Page <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}" class="page-jump-input"> of {{ total_pages }}
                     <input type="hidden" name="system" value="{{ filter_system }}">
                     <input type="hidden" name="region" value="{{ filter_region }}">
@@ -200,7 +200,7 @@
                 </form>
             </li>
             {% if page < total_pages %}
-            <li><a href="/discs/?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Next &raquo;</a></li>
+            <li><a href="/discs?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Next &raquo;</a></li>
             {% endif %}
         </ul>
     </nav>

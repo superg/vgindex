@@ -16,7 +16,6 @@ use crate::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/downloads", get(downloads_page))
-        .route("/downloads/", get(downloads_page))
         .route("/datfile/{system}", get(download_dat))
         .route("/cues/{system}", get(download_cue))
         .route("/keys/{system}", get(download_key))
@@ -165,9 +164,14 @@ struct MediaTypeCdRow {
     rom_extension: String,
 }
 
+fn normalize_archive_system_code(system: &str) -> String {
+    system.trim().to_ascii_uppercase()
+}
+
 async fn serve_archive(state: &AppState, system: &str, archive_type: &str) -> Response {
     let metadata = archive_service::ArchiveMetadata::from_site_url(&state.config.site_url);
-    match archive_service::get_or_generate_archive(&state.pool, &metadata, system, archive_type)
+    let system = normalize_archive_system_code(system);
+    match archive_service::get_or_generate_archive(&state.pool, &metadata, &system, archive_type)
         .await
     {
         Ok(result) => (
@@ -333,6 +337,12 @@ mod tests {
         assert!(html.contains(
             r#"/static/bios/Sony%20-%20PlayStation%202%20-%20BIOS%20Datfile%20%28140%29%20%282026-06-16%29.dat"#
         ));
+    }
+
+    #[test]
+    fn archive_download_system_path_is_case_insensitive() {
+        assert_eq!(normalize_archive_system_code("ps3"), "PS3");
+        assert_eq!(normalize_archive_system_code("Pc-98"), "PC-98");
     }
 
     #[tokio::test]

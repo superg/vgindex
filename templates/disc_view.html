@@ -13,10 +13,10 @@
 </div>
 <div class="disc-title-actions">
     {% if can_edit %}
-    <a href="/disc/{{ disc_id }}/edit/" role="button">Edit</a>
+    <a href="/disc/{{ disc_id }}/edit" role="button">Edit</a>
     {% endif %}
     {% if can_view_history %}
-    <a href="/queue/?disc_id={{ disc_id }}" role="button">History</a>
+    <a href="/queue?disc_id={{ disc_id }}" role="button">History</a>
     {% endif %}
 </div>
 </div>
@@ -25,13 +25,13 @@
     <section class="disc-info-section">
         <h3>Disc</h3>
         <table class="table-compact disc-info-table">
-            <tr><td><strong>System</strong></td><td><a href="/discs/?system={{ system_code }}">{{ system_name }}</a></td></tr>
+            <tr><td><strong>System</strong></td><td><a href="/discs?system={{ system_code }}">{{ system_name }}</a></td></tr>
             <tr><td><strong>Media</strong></td><td>{{ media_type }}</td></tr>
             <tr><td><strong>Category</strong></td><td>{{ category }}</td></tr>
             {% if !regions.is_empty() %}
             <tr><td><strong>{% if regions.len() == 1 %}Region{% else %}Regions{% endif %}</strong></td><td class="flags-inline flags-region">
                 {% for r in regions %}
-                <a href="/discs/?region={{ r.region_code }}"><img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}"></a>
+                <a href="/discs?region={{ r.region_code }}"><img class="flag-icon" src="/static/flags/{{ r.code }}.svg" title="{{ r.name }}" alt="{{ r.name }}"></a>
                 {% endfor %}
             </td></tr>
             {% endif %}
@@ -415,10 +415,10 @@
 
 <div class="disc-bottom-actions">
     {% if can_edit %}
-    <a href="/disc/{{ disc_id }}/edit/" role="button">Edit</a>
+    <a href="/disc/{{ disc_id }}/edit" role="button">Edit</a>
     {% endif %}
     {% if can_view_history %}
-    <a href="/queue/?disc_id={{ disc_id }}" role="button">History</a>
+    <a href="/queue?disc_id={{ disc_id }}" role="button">History</a>
     {% endif %}
 </div>
 

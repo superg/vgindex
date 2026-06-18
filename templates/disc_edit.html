@@ -24,7 +24,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
 {% block content %}
 {% if !validation_result.is_empty() %}
 <div class="validation-result {% if validation_result_disc_id > 0 %}validation-result-verification{% else %}validation-result-new{% endif %}" role="status">
-    {{ validation_result }}{% if validation_result_disc_id > 0 %} <a href="/disc/{{ validation_result_disc_id }}/" target="_blank" rel="noopener noreferrer">{{ validation_result_disc_title }}</a>{{ validation_result_suffix }}{% endif %}
+    {{ validation_result }}{% if validation_result_disc_id > 0 %} <a href="/disc/{{ validation_result_disc_id }}" target="_blank" rel="noopener noreferrer">{{ validation_result_disc_title }}</a>{{ validation_result_suffix }}{% endif %}
 </div>
 {% endif %}
 {% if !validation_errors.is_empty() || !linked_validation_errors.is_empty() %}
@@ -35,7 +35,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <li>{{ err }}</li>
     {% endfor %}
     {% for err in linked_validation_errors %}
-        <li>{{ err.text }} <a href="/disc/{{ err.disc_id }}/" target="_blank" rel="noopener noreferrer">{{ err.disc_title }}</a></li>
+        <li>{{ err.text }} <a href="/disc/{{ err.disc_id }}" target="_blank" rel="noopener noreferrer">{{ err.disc_title }}</a></li>
     {% endfor %}
     </ul>
 </div>
@@ -45,16 +45,16 @@ const IS_ADD_MODE = {{ is_add_mode }};
 <div class="submission-info">
     <table class="table-compact table-fit-section">
         <tr><td><strong>Submission Type</strong></td><td>{{ submission_type_display }}</td></tr>
-        <tr><td><strong>Submitter</strong></td><td><a href="/discs/?dumper={{ self.url_encode(submitter_name) }}">{{ submitter_name }}</a></td></tr>
+        <tr><td><strong>Submitter</strong></td><td><a href="/discs?dumper={{ self.url_encode(submitter_name) }}">{{ submitter_name }}</a></td></tr>
         {% if disc_id > 0 %}
-        <tr><td><strong>Disc ID</strong></td><td><a href="/disc/{{ disc_id }}/">{{ disc_id }}</a></td></tr>
+        <tr><td><strong>Disc ID</strong></td><td><a href="/disc/{{ disc_id }}">{{ disc_id }}</a></td></tr>
         {% endif %}
         {% if !extra_upload_url_display.is_empty() %}
         <tr><td><strong>Logs Archive URL</strong></td><td><a href="{{ extra_upload_url_display }}" target="_blank">{{ extra_upload_url_display }}</a></td></tr>
         {% endif %}
         <tr><td><strong>Status</strong></td><td>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</td></tr>
         {% if !reviewer_name.is_empty() %}
-        <tr><td><strong>Reviewer</strong></td><td><a href="/discs/?dumper={{ self.url_encode(reviewer_name) }}">{{ reviewer_name }}</a></td></tr>
+        <tr><td><strong>Reviewer</strong></td><td><a href="/discs?dumper={{ self.url_encode(reviewer_name) }}">{{ reviewer_name }}</a></td></tr>
         {% endif %}
         <tr><td><strong>Created</strong></td><td>{{ created_at_display }}</td></tr>
         {% if !reviewed_at_display.is_empty() %}
@@ -94,7 +94,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
 {% endif %}
 {% endif %}
 
-<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review/{% else if is_add_mode %}/disc/submit/{% else %}/disc/{{ disc_id }}/edit/{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}" novalidate>
+<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review{% else if is_add_mode %}/disc/submit{% else %}/disc/{{ disc_id }}/edit{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}" novalidate>
 
     <div class="disc-form-section disc-form-section-meta" aria-label="Disc identity">
     <div class="disc-meta-fields">

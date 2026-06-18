@@ -19,7 +19,7 @@
             </thead>
             <tbody>
                 {% for disc in recent_discs %}
-                <tr class="clickable-row" data-href="/disc/{{ disc.id }}/" tabindex="0" role="link">
+                <tr class="clickable-row" data-href="/disc/{{ disc.id }}" tabindex="0" role="link">
                     <td class="date-col">{{ disc.created_at }}</td>
                     <td class="region-col"><span class="region-flags">
                         {% for rf in disc.region_flags %}
@@ -28,7 +28,7 @@
                              alt="{{ rf.name }}">
                         {% endfor %}
                     </span></td>
-                    <td class="title-col"><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
+                    <td class="title-col"><a href="/disc/{{ disc.id }}">{{ disc.title }}</a></td>
                     <td class="system-col">{{ disc.system }}</td>
                 </tr>
                 {% endfor %}
@@ -38,7 +38,7 @@
             </tbody>
         </table>
         </div>
-        <p><a href="/discs/?sort=added&amp;order=desc">More...</a></p>
+        <p><a href="/discs?sort=added&amp;order=desc">More...</a></p>
     </section>
 
     <section class="home-recent-changes">
@@ -55,7 +55,7 @@
             </thead>
             <tbody>
                 {% for disc in recent_changes %}
-                <tr class="clickable-row" data-href="/disc/{{ disc.id }}/" tabindex="0" role="link">
+                <tr class="clickable-row" data-href="/disc/{{ disc.id }}" tabindex="0" role="link">
                     <td class="date-col">{{ disc.modified_at }}</td>
                     <td class="region-col"><span class="region-flags">
                         {% for rf in disc.region_flags %}
@@ -64,7 +64,7 @@
                              alt="{{ rf.name }}">
                         {% endfor %}
                     </span></td>
-                    <td class="title-col"><a href="/disc/{{ disc.id }}/">{{ disc.title }}</a></td>
+                    <td class="title-col"><a href="/disc/{{ disc.id }}">{{ disc.title }}</a></td>
                     <td class="system-col">{{ disc.system }}</td>
                 </tr>
                 {% endfor %}
@@ -74,7 +74,7 @@
             </tbody>
         </table>
         </div>
-        <p><a href="/discs/?sort=updated&amp;order=desc">More...</a></p>
+        <p><a href="/discs?sort=updated&amp;order=desc">More...</a></p>
     </section>
     </div>
 

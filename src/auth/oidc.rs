@@ -430,7 +430,7 @@ fn sanitize_return_to(return_to: Option<&str>) -> String {
         && !return_to.contains('\r')
         && !return_to.contains('\n')
     {
-        return return_to.to_string();
+        return crate::routes::canonicalize_root_relative_url(return_to);
     }
     "/".to_string()
 }
@@ -458,8 +458,12 @@ mod tests {
     #[test]
     fn sanitize_return_to_accepts_root_relative_paths() {
         assert_eq!(
-            sanitize_return_to(Some("/queue/?status=Pending")),
-            "/queue/?status=Pending"
+            sanitize_return_to(Some("/queue?status=Pending")),
+            "/queue?status=Pending"
+        );
+        assert_eq!(
+            sanitize_return_to(Some("/DISCS/?System=PS3")),
+            "/discs?System=PS3"
         );
     }
 

@@ -37,7 +37,6 @@ fn ring_tab_replace(s: &str) -> String {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/disc/{id}", get(disc_view))
-        .route("/disc/{id}/", get(disc_view))
         .route("/disc/{id}/cue", get(disc_cue_download))
         .route("/disc/{id}/sbi", get(disc_sbi_download))
 }
@@ -741,7 +740,7 @@ async fn disc_view(
                     .iter()
                     .map(|d| {
                         format!(
-                            "<a href=\"/discs/?dumper={}\">{}</a>",
+                            "<a href=\"/discs?dumper={}\">{}</a>",
                             urlencoding::encode(&d.username),
                             d.username
                                 .replace('&', "&amp;")
@@ -1761,7 +1760,7 @@ mod tests {
         let html = disc_view_template(false, false, "", "").render().unwrap();
 
         assert!(!html.contains("History"));
-        assert!(!html.contains("/queue/?disc_id=1"));
+        assert!(!html.contains("/queue?disc_id=1"));
     }
 
     #[test]
@@ -1772,7 +1771,7 @@ mod tests {
 
         let html = template.render().unwrap();
 
-        assert!(html.contains(r#"<a href="/queue/?disc_id=1" role="button">History</a>"#));
+        assert!(html.contains(r#"<a href="/queue?disc_id=1" role="button">History</a>"#));
     }
 
     #[test]
