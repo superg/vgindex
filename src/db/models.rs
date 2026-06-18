@@ -248,6 +248,51 @@ impl std::fmt::Display for SubmissionType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SubmissionDisplayKind {
+    Edit,
+    NewDisc,
+    Verification,
+}
+
+impl SubmissionDisplayKind {
+    pub fn from_parts(submission_type: SubmissionType, has_dat_add: bool) -> Self {
+        match submission_type {
+            SubmissionType::Edit => Self::Edit,
+            SubmissionType::Disc if has_dat_add => Self::NewDisc,
+            SubmissionType::Disc => Self::Verification,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Edit => "Edit",
+            Self::NewDisc => "New Disc",
+            Self::Verification => "Verification",
+        }
+    }
+}
+
+impl std::fmt::Display for SubmissionDisplayKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
+pub fn submission_changes_have_dat_add(changes: &serde_json::Value) -> bool {
+    changes
+        .get("dat")
+        .and_then(|dat| dat.as_object())
+        .is_some_and(|dat| dat.contains_key("add"))
+}
+
+pub fn submission_display_kind(
+    submission_type: SubmissionType,
+    changes: &serde_json::Value,
+) -> SubmissionDisplayKind {
+    SubmissionDisplayKind::from_parts(submission_type, submission_changes_have_dat_add(changes))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "submission_status_enum", rename_all = "PascalCase")]
 pub enum SubmissionStatus {
@@ -442,6 +487,12 @@ pub struct DiscSubmission {
     pub review_comment: Option<String>,
     pub created_at: DateTime<Utc>,
     pub reviewed_at: Option<DateTime<Utc>>,
+}
+
+impl DiscSubmission {
+    pub fn display_kind(&self) -> SubmissionDisplayKind {
+        submission_display_kind(self.submission_type, &self.changes)
+    }
 }
 
 // --- Composite/view structs for rendering ---
@@ -979,6 +1030,7 @@ pub fn compute_file_hashes(data: &[u8]) -> (i64, String, String, String) {
 pub struct SubmissionListRow {
     pub id: i32,
     pub submission_type: SubmissionType,
+    pub display_kind: SubmissionDisplayKind,
     pub title: String,
     pub system_code: String,
     pub system_display: String,

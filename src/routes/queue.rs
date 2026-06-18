@@ -104,34 +104,35 @@ impl QueueTemplate {
     }
 
     fn type_icon_label(&self, entry: &SubmissionListRow) -> &'static str {
-        match entry.submission_type {
-            SubmissionType::Disc if entry.target_disc_id.is_some() => "Verification",
-            SubmissionType::Disc => "New Disc",
-            SubmissionType::Edit => "Edit",
-        }
+        queue_type_icon_label(entry)
     }
 
     fn type_icon_class(&self, entry: &SubmissionListRow) -> &'static str {
-        match (
-            entry.submission_type,
-            entry.status,
-            entry.target_disc_id.is_some(),
-        ) {
-            (SubmissionType::Disc, SubmissionStatus::Pending, true) => {
-                "submission-type-icon submission-type-icon-disc submission-type-icon-verification"
-            }
-            (SubmissionType::Disc, SubmissionStatus::Pending, false) => {
-                "submission-type-icon submission-type-icon-disc submission-type-icon-new-disc"
-            }
-            (SubmissionType::Disc, _, _) => {
-                "submission-type-icon submission-type-icon-disc submission-type-icon-processed"
-            }
-            (SubmissionType::Edit, SubmissionStatus::Pending, _) => {
-                "submission-type-icon submission-type-icon-edit submission-type-icon-edit-pending"
-            }
-            (SubmissionType::Edit, _, _) => {
-                "submission-type-icon submission-type-icon-edit submission-type-icon-processed"
-            }
+        queue_type_icon_class(entry)
+    }
+}
+
+fn queue_type_icon_label(entry: &SubmissionListRow) -> &'static str {
+    entry.display_kind.label()
+}
+
+fn queue_type_icon_class(entry: &SubmissionListRow) -> &'static str {
+    match (entry.display_kind, entry.status) {
+        (SubmissionDisplayKind::Edit, SubmissionStatus::Legacy) => {
+            "submission-type-icon submission-type-icon-edit submission-type-icon-processed"
+        }
+        (
+            SubmissionDisplayKind::NewDisc | SubmissionDisplayKind::Verification,
+            SubmissionStatus::Legacy,
+        ) => "submission-type-icon submission-type-icon-disc submission-type-icon-processed",
+        (SubmissionDisplayKind::Edit, _) => {
+            "submission-type-icon submission-type-icon-edit submission-type-icon-edit-pending"
+        }
+        (SubmissionDisplayKind::NewDisc, _) => {
+            "submission-type-icon submission-type-icon-disc submission-type-icon-new-disc"
+        }
+        (SubmissionDisplayKind::Verification, _) => {
+            "submission-type-icon submission-type-icon-disc submission-type-icon-verification"
         }
     }
 }
@@ -739,7 +740,7 @@ fn build_review_template(
         review_annotations: vec![],
         review_old_multiline: vec![],
         submission_id: sub.id,
-        submission_type_display: sub.submission_type.to_string(),
+        submission_type_display: sub.display_kind().to_string(),
         submitter_id: sub.submitter_id,
         submitter_name: submitter_name.to_string(),
         submission_comment: sub.submission_comment.clone().unwrap_or_default(),
@@ -1264,7 +1265,7 @@ async fn render_readonly_detail(
     let template = QueueDetailTemplate {
         current_user,
         submission_id: sub.id,
-        submission_type_display: sub.submission_type.to_string(),
+        submission_type_display: sub.display_kind().to_string(),
         submitter_id: sub.submitter_id,
         submitter_name: submitter_name.to_string(),
         submission_comment: sub.submission_comment.clone().unwrap_or_default(),
@@ -2090,6 +2091,34 @@ mod tests {
         }
     }
 
+    fn queue_row(
+        display_kind: SubmissionDisplayKind,
+        status: SubmissionStatus,
+    ) -> SubmissionListRow {
+        let submission_type = match display_kind {
+            SubmissionDisplayKind::Edit => SubmissionType::Edit,
+            SubmissionDisplayKind::NewDisc | SubmissionDisplayKind::Verification => {
+                SubmissionType::Disc
+            }
+        };
+
+        SubmissionListRow {
+            id: 42,
+            submission_type,
+            display_kind,
+            title: "Test Game".to_string(),
+            system_code: "DVD".to_string(),
+            system_display: "DVD".to_string(),
+            submitter: "submitter".to_string(),
+            submitter_id: 7,
+            reviewer: Some("moderator".to_string()),
+            reviewer_id: Some(8),
+            status,
+            target_disc_id: Some(123),
+            created_at: chrono::Utc::now(),
+        }
+    }
+
     fn annotation_values(template: &DiscEditTemplate, field: &str, label: &str) -> Vec<String> {
         template
             .review_annotations
@@ -2143,6 +2172,91 @@ mod tests {
         assert_eq!(normalize_queue_sort(Some("DISC_ID")), "disc_id");
         assert_eq!(normalize_queue_order(Some("ASC")), "asc");
         assert_eq!(normalize_queue_order(Some("DESC")), "desc");
+    }
+
+    #[tokio::test]
+    async fn approved_disc_submission_with_dat_add_displays_as_new_disc() {
+        let mut sub = test_submission();
+        sub.submission_type = SubmissionType::Disc;
+        sub.target_disc_id = Some(123);
+        sub.status = SubmissionStatus::Approved;
+        sub.changes = serde_json::json!({
+            "dat": { "add": { "new": "<rom name=\"Track.iso\" />" } }
+        });
+
+        assert_eq!(sub.display_kind(), SubmissionDisplayKind::NewDisc);
+
+        let Html(html) = render_readonly_detail(
+            Some(auth_user(8, UserRole::Moderator)),
+            &sub,
+            "submitter",
+            "moderator",
+        )
+        .await
+        .unwrap();
+
+        assert!(html.contains("<td><strong>Submission Type</strong></td><td>New Disc</td>"));
+    }
+
+    #[tokio::test]
+    async fn disc_submission_without_dat_add_displays_as_verification() {
+        let mut sub = test_submission();
+        sub.submission_type = SubmissionType::Disc;
+        sub.target_disc_id = Some(123);
+        sub.status = SubmissionStatus::Approved;
+        sub.changes = serde_json::json!({
+            "title": { "add": { "new": "Test Game" } }
+        });
+
+        assert_eq!(sub.display_kind(), SubmissionDisplayKind::Verification);
+
+        let Html(html) = render_readonly_detail(
+            Some(auth_user(8, UserRole::Moderator)),
+            &sub,
+            "submitter",
+            "moderator",
+        )
+        .await
+        .unwrap();
+
+        assert!(html.contains("<td><strong>Submission Type</strong></td><td>Verification</td>"));
+    }
+
+    #[test]
+    fn queue_type_icon_classes_keep_type_colors_except_legacy() {
+        let approved_new_disc =
+            queue_row(SubmissionDisplayKind::NewDisc, SubmissionStatus::Approved);
+        assert_eq!(queue_type_icon_label(&approved_new_disc), "New Disc");
+        assert_eq!(
+            queue_type_icon_class(&approved_new_disc),
+            "submission-type-icon submission-type-icon-disc submission-type-icon-new-disc"
+        );
+
+        let rejected_verification = queue_row(
+            SubmissionDisplayKind::Verification,
+            SubmissionStatus::Rejected,
+        );
+        assert_eq!(
+            queue_type_icon_label(&rejected_verification),
+            "Verification"
+        );
+        assert_eq!(
+            queue_type_icon_class(&rejected_verification),
+            "submission-type-icon submission-type-icon-disc submission-type-icon-verification"
+        );
+
+        let approved_edit = queue_row(SubmissionDisplayKind::Edit, SubmissionStatus::Approved);
+        assert_eq!(queue_type_icon_label(&approved_edit), "Edit");
+        assert_eq!(
+            queue_type_icon_class(&approved_edit),
+            "submission-type-icon submission-type-icon-edit submission-type-icon-edit-pending"
+        );
+
+        let legacy_new_disc = queue_row(SubmissionDisplayKind::NewDisc, SubmissionStatus::Legacy);
+        assert_eq!(
+            queue_type_icon_class(&legacy_new_disc),
+            "submission-type-icon submission-type-icon-disc submission-type-icon-processed"
+        );
     }
 
     fn auth_user(id: i32, role: UserRole) -> AuthenticatedUser {
@@ -2457,6 +2571,8 @@ mod tests {
 impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
     fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
         use sqlx::Row;
+        let submission_type: SubmissionType = row.try_get("submission_type")?;
+        let submission_has_dat_add: bool = row.try_get("submission_has_dat_add")?;
         let system_code: String = row.try_get("system_code")?;
         let system_short_name: Option<String> = row.try_get("system_short_name").ok();
         let system_display = crate::db::models::short_system_display(
@@ -2465,7 +2581,11 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
         );
         Ok(Self {
             id: row.try_get("id")?,
-            submission_type: row.try_get("submission_type")?,
+            submission_type,
+            display_kind: SubmissionDisplayKind::from_parts(
+                submission_type,
+                submission_has_dat_add,
+            ),
             title: row.try_get("title")?,
             system_code,
             system_display,

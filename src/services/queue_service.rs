@@ -895,11 +895,27 @@ pub async fn get_submission(pool: &PgPool, id: i32) -> AppResult<DiscSubmission>
         .ok_or(AppError::NotFound)
 }
 
-fn submission_type_filter_condition(type_filter: Option<&str>) -> Option<&'static str> {
+const DISC_SUBMISSION_HAS_DAT_ADD_SQL: &str = "COALESCE((ds.changes->'dat') ? 'add', false)";
+
+fn submission_display_kind_sql() -> String {
+    format!(
+        "CASE \
+         WHEN ds.submission_type = 'Edit' THEN 'Edit' \
+         WHEN {DISC_SUBMISSION_HAS_DAT_ADD_SQL} THEN 'New Disc' \
+         ELSE 'Verification' \
+         END"
+    )
+}
+
+fn submission_type_filter_condition(type_filter: Option<&str>) -> Option<String> {
     match type_filter.unwrap_or_default() {
-        "Edit" => Some("ds.submission_type = 'Edit'"),
-        "New Disc" => Some("ds.submission_type = 'Disc' AND ds.target_disc_id IS NULL"),
-        "Verification" => Some("ds.submission_type = 'Disc' AND ds.target_disc_id IS NOT NULL"),
+        "Edit" => Some("ds.submission_type = 'Edit'".to_string()),
+        "New Disc" => Some(format!(
+            "ds.submission_type = 'Disc' AND {DISC_SUBMISSION_HAS_DAT_ADD_SQL}"
+        )),
+        "Verification" => Some(format!(
+            "ds.submission_type = 'Disc' AND NOT ({DISC_SUBMISSION_HAS_DAT_ADD_SQL})"
+        )),
         _ => None,
     }
 }
@@ -942,7 +958,7 @@ pub async fn list_submissions(
         conditions.push(format!("ds.status::text = ${idx}"));
     }
     if let Some(condition) = submission_type_filter_condition(type_filter) {
-        conditions.push(condition.to_string());
+        conditions.push(condition);
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -958,6 +974,7 @@ pub async fn list_submissions(
                       NULLIF(d.title, ''), 'Untitled')";
     let system_expr = "CONCAT_WS(' ', NULLIF(s.manufacturer, ''), \
                        COALESCE(s.name, d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', ''))";
+    let type_expr = submission_display_kind_sql();
     let sort_col = match sort_column {
         "date" => "ds.created_at".to_string(),
         "title" => format!("LOWER({title_expr})"),
@@ -965,7 +982,7 @@ pub async fn list_submissions(
         "system" => format!("LOWER({system_expr})"),
         "submitter" => "LOWER(u.username)".to_string(),
         "reviewer" => "LOWER(COALESCE(ur.username, ''))".to_string(),
-        "type" => "ds.submission_type".to_string(),
+        "type" => type_expr.clone(),
         "status" => "ds.status".to_string(),
         _ => "ds.created_at".to_string(),
     };
@@ -978,6 +995,7 @@ pub async fn list_submissions(
 
     let sql = format!(
         "SELECT ds.id, ds.submission_type,
+                {dat_add_expr} AS submission_has_dat_add,
                 {title_expr} AS title,
                 COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', '') AS system_code,
                 COALESCE(s.short_name, '') AS system_short_name,
@@ -997,7 +1015,8 @@ pub async fn list_submissions(
          WHERE {}
          ORDER BY {sort_col} {sort_dir}{nulls_order}
          LIMIT {page_size} OFFSET {offset}",
-        conditions.join(" AND ")
+        conditions.join(" AND "),
+        dat_add_expr = DISC_SUBMISSION_HAS_DAT_ADD_SQL
     );
 
     let mut query = sqlx::query_as::<_, SubmissionListRow>(&sql);
@@ -1059,7 +1078,7 @@ pub async fn count_submissions(
         conditions.push(format!("ds.status::text = ${idx}"));
     }
     if let Some(condition) = submission_type_filter_condition(type_filter) {
-        conditions.push(condition.to_string());
+        conditions.push(condition);
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -1174,20 +1193,24 @@ mod tests {
     }
 
     #[test]
-    fn submission_type_filter_conditions_split_disc_submissions_by_target() {
+    fn submission_type_filter_conditions_split_disc_submissions_by_dat_add() {
         assert_eq!(submission_type_filter_condition(None), None);
         assert_eq!(submission_type_filter_condition(Some("")), None);
         assert_eq!(
             submission_type_filter_condition(Some("Edit")),
-            Some("ds.submission_type = 'Edit'")
+            Some("ds.submission_type = 'Edit'".to_string())
         );
         assert_eq!(
             submission_type_filter_condition(Some("New Disc")),
-            Some("ds.submission_type = 'Disc' AND ds.target_disc_id IS NULL")
+            Some(format!(
+                "ds.submission_type = 'Disc' AND {DISC_SUBMISSION_HAS_DAT_ADD_SQL}"
+            ))
         );
         assert_eq!(
             submission_type_filter_condition(Some("Verification")),
-            Some("ds.submission_type = 'Disc' AND ds.target_disc_id IS NOT NULL")
+            Some(format!(
+                "ds.submission_type = 'Disc' AND NOT ({DISC_SUBMISSION_HAS_DAT_ADD_SQL})"
+            ))
         );
         assert_eq!(submission_type_filter_condition(Some("Disc")), None);
         assert_eq!(submission_type_filter_condition(Some("Unknown")), None);
