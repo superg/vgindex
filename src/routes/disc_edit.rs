@@ -46,13 +46,11 @@ where
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/disc/{id}/edit", get(edit_page).post(edit_submit))
-        .route("/disc/{id}/edit/", get(edit_page).post(edit_submit))
         .route("/disc/submit", get(add_page).post(add_submit))
-        .route("/disc/submit/", get(add_page).post(add_submit))
 }
 
 fn user_queue_url(username: &str) -> String {
-    format!("/queue/?submitter={}", urlencoding::encode(username))
+    format!("/queue?submitter={}", urlencoding::encode(username))
 }
 
 #[derive(Template)]
@@ -1880,7 +1878,7 @@ async fn edit_submit(
         .ok_or(AppError::Internal(
             "submission was already processed".into(),
         ))?;
-        Ok(Redirect::to(&format!("/disc/{disc_id}/")).into_response())
+        Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
     } else {
         Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
     }
@@ -2135,7 +2133,7 @@ async fn add_submit(
         .ok_or(AppError::Internal(
             "submission was already processed".into(),
         ))?;
-        Ok(Redirect::to(&format!("/disc/{disc_id}/")).into_response())
+        Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
     } else {
         Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
     }
@@ -3724,7 +3722,7 @@ mod operation_delta_tests {
             r#"<textarea name="submission_comment" rows="2" class="auto-expand fixed-80""#
         ));
         assert!(template.contains(
-            r#"<li>{{ err.text }} <a href="/disc/{{ err.disc_id }}/" target="_blank" rel="noopener noreferrer">{{ err.disc_title }}</a></li>"#
+            r#"<li>{{ err.text }} <a href="/disc/{{ err.disc_id }}" target="_blank" rel="noopener noreferrer">{{ err.disc_title }}</a></li>"#
         ));
         assert!(!template.contains(
             r#"<textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80">"#

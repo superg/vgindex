@@ -32,11 +32,8 @@ fn normalize_newlines(s: &str) -> String {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/queue", get(queue_list))
-        .route("/queue/", get(queue_list))
         .route("/queue/{id}", get(submission_detail))
-        .route("/queue/{id}/", get(submission_detail))
         .route("/queue/{id}/review", post(review_submit))
-        .route("/queue/{id}/review/", post(review_submit))
 }
 
 #[derive(Deserialize, Default)]
@@ -155,9 +152,54 @@ fn normalize_queue_type_filter(sub_type: Option<&str>, is_disc_history: bool) ->
         return String::new();
     }
 
-    match sub_type.unwrap_or_default() {
-        "" | "Edit" | "New Disc" | "Verification" => sub_type.unwrap_or_default().to_string(),
+    match sub_type
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "" => String::new(),
+        "edit" => "Edit".to_string(),
+        "new disc" => "New Disc".to_string(),
+        "verification" => "Verification".to_string(),
         _ => String::new(),
+    }
+}
+
+fn normalize_queue_status_filter(status: Option<&str>, is_disc_history: bool) -> String {
+    if is_disc_history {
+        return "All Visible".to_string();
+    }
+
+    match status
+        .unwrap_or("Pending")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "all statuses" => "All Statuses".to_string(),
+        "pending" => "Pending".to_string(),
+        "approved" => "Approved".to_string(),
+        "rejected" => "Rejected".to_string(),
+        "legacy" => "Legacy".to_string(),
+        _ => "Pending".to_string(),
+    }
+}
+
+fn normalize_queue_sort(sort: Option<&str>) -> String {
+    match sort.unwrap_or("date").trim().to_ascii_lowercase().as_str() {
+        "date" | "title" | "disc_id" | "system" | "submitter" | "reviewer" | "type" | "status" => {
+            sort.unwrap_or("date").trim().to_ascii_lowercase()
+        }
+        _ => "date".to_string(),
+    }
+}
+
+fn normalize_queue_order(order: Option<&str>) -> String {
+    if order.unwrap_or("desc").trim().eq_ignore_ascii_case("asc") {
+        "asc".to_string()
+    } else {
+        "desc".to_string()
     }
 }
 
@@ -181,23 +223,17 @@ async fn queue_list(
     }
 
     let page = query.page.unwrap_or(1).max(1);
-    let requested_status = query
-        .status
-        .clone()
-        .unwrap_or_else(|| "Pending".to_string());
-    let filter_status = if is_disc_history {
-        "All Visible".to_string()
-    } else {
-        match requested_status.as_str() {
-            "All Statuses" | "Pending" | "Approved" | "Rejected" | "Legacy" => requested_status,
-            _ => "Pending".to_string(),
-        }
-    };
+    let filter_status = normalize_queue_status_filter(query.status.as_deref(), is_disc_history);
     let filter_type = normalize_queue_type_filter(query.sub_type.as_deref(), is_disc_history);
     let filter_system = if is_disc_history {
         String::new()
     } else {
-        query.system.clone().unwrap_or_default()
+        query
+            .system
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_uppercase()
     };
     let filter_submitter = if is_logged_in && !is_disc_history {
         query.submitter.clone().unwrap_or_default()
@@ -206,8 +242,8 @@ async fn queue_list(
     };
     let filter_type_url = urlencoding::encode(&filter_type).into_owned();
     let filter_submitter_url = urlencoding::encode(&filter_submitter).into_owned();
-    let sort_column = query.sort.clone().unwrap_or_else(|| "date".to_string());
-    let sort_order = query.order.clone().unwrap_or_else(|| "desc".to_string());
+    let sort_column = normalize_queue_sort(query.sort.as_deref());
+    let sort_order = normalize_queue_order(query.order.as_deref());
 
     let status_for_query = if is_disc_history || filter_status == "All Statuses" {
         None
@@ -1639,7 +1675,7 @@ async fn review_submit(
     let sub = queue_service::get_submission(&state.pool, id).await?;
 
     if sub.status != SubmissionStatus::Pending {
-        return Ok(Redirect::to(&format!("/queue/{id}/")).into_response());
+        return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
     }
 
     let review_comment = form
@@ -1655,9 +1691,9 @@ async fn review_submit(
                 .await?;
 
         if !rejected {
-            return Ok(Redirect::to(&format!("/queue/{id}/")).into_response());
+            return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
         }
-        return Ok(Redirect::to("/queue/").into_response());
+        return Ok(Redirect::to("/queue").into_response());
     }
     if form.action != "approve" {
         return Err(AppError::BadRequest("unknown review action".into()));
@@ -1766,8 +1802,8 @@ async fn review_submit(
     .await?;
 
     match approved {
-        Some(_) => Ok(Redirect::to("/queue/").into_response()),
-        None => Ok(Redirect::to(&format!("/queue/{id}/")).into_response()),
+        Some(_) => Ok(Redirect::to("/queue").into_response()),
+        None => Ok(Redirect::to(&format!("/queue/{id}")).into_response()),
     }
 }
 
@@ -1821,7 +1857,7 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri("/queue/?disc_id=1")
+                    .uri("/queue?disc_id=1")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1837,7 +1873,7 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri("/queue/42/")
+                    .uri("/queue/42")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -2057,17 +2093,45 @@ mod tests {
         assert_eq!(normalize_queue_type_filter(None, false), "");
         assert_eq!(normalize_queue_type_filter(Some(""), false), "");
         assert_eq!(normalize_queue_type_filter(Some("Edit"), false), "Edit");
+        assert_eq!(normalize_queue_type_filter(Some("edit"), false), "Edit");
         assert_eq!(
             normalize_queue_type_filter(Some("New Disc"), false),
+            "New Disc"
+        );
+        assert_eq!(
+            normalize_queue_type_filter(Some("new disc"), false),
             "New Disc"
         );
         assert_eq!(
             normalize_queue_type_filter(Some("Verification"), false),
             "Verification"
         );
+        assert_eq!(
+            normalize_queue_type_filter(Some("verification"), false),
+            "Verification"
+        );
         assert_eq!(normalize_queue_type_filter(Some("Disc"), false), "");
         assert_eq!(normalize_queue_type_filter(Some("Unknown"), false), "");
         assert_eq!(normalize_queue_type_filter(Some("Verification"), true), "");
+    }
+
+    #[test]
+    fn queue_url_filters_are_case_insensitive() {
+        assert_eq!(
+            normalize_queue_status_filter(Some("approved"), false),
+            "Approved"
+        );
+        assert_eq!(
+            normalize_queue_status_filter(Some("ALL STATUSES"), false),
+            "All Statuses"
+        );
+        assert_eq!(
+            normalize_queue_status_filter(Some("approved"), true),
+            "All Visible"
+        );
+        assert_eq!(normalize_queue_sort(Some("DISC_ID")), "disc_id");
+        assert_eq!(normalize_queue_order(Some("ASC")), "asc");
+        assert_eq!(normalize_queue_order(Some("DESC")), "desc");
     }
 
     fn selected_system(template: &DiscEditTemplate) -> String {

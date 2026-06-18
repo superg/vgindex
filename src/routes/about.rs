@@ -6,7 +6,7 @@ use crate::config::SiteConfig;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/about/", get(about_page))
+    Router::new().route("/about", get(about_page))
 }
 
 #[derive(Template)]

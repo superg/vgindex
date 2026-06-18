@@ -89,6 +89,7 @@ async fn main() {
             state.clone(),
             auth::middleware::guest_session_layer,
         ))
+        .layer(middleware::from_fn(routes::canonical_url_middleware))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
