@@ -57,22 +57,22 @@ const BIOS_DOWNLOADS: &[BiosDownloadSpec] = &[
     BiosDownloadSpec {
         code: "XBOX",
         fallback_name: "Microsoft Xbox",
-        href: "/static/bios/Microsoft%20-%20Xbox%20-%20BIOS%20Images%20%28DoM%20Version%29%20%289%29%20%282024-03-26%29.dat",
+        href: "/static/bios/Microsoft%20-%20Xbox%20-%20BIOS%20Images%20%289%29%20%282026-06-16%29.dat",
     },
     BiosDownloadSpec {
         code: "GC",
         fallback_name: "Nintendo GameCube",
-        href: "/static/bios/Nintendo%20-%20GameCube%20-%20BIOS%20Images%20%28DoM%20Version%29%20%2817%29%20%282024-03-26%29.dat",
+        href: "/static/bios/Nintendo%20-%20GameCube%20-%20BIOS%20Images%20%2817%29%20%282026-06-16%29.dat",
     },
     BiosDownloadSpec {
         code: "PSX",
         fallback_name: "Sony PlayStation",
-        href: "/static/bios/Sony%20-%20PlayStation%20-%20BIOS%20Images%20%28DoM%20Version%29%20%2824%29%20%282024-03-26%29.dat",
+        href: "/static/bios/Sony%20-%20PlayStation%20-%20BIOS%20Images%20%2824%29%20%282026-06-16%29.dat",
     },
     BiosDownloadSpec {
         code: "PS2",
         fallback_name: "Sony PlayStation 2",
-        href: "/static/bios/Sony%20-%20PlayStation%202%20-%20BIOS%20Datfile%20%28140%29%20%282025-12-04%29.dat",
+        href: "/static/bios/Sony%20-%20PlayStation%202%20-%20BIOS%20Datfile%20%28140%29%20%282026-06-16%29.dat",
     },
 ];
 
