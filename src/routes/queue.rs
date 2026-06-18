@@ -1813,7 +1813,7 @@ async fn review_submit(
     .await?;
 
     match approved {
-        Some(_) => Ok(Redirect::to("/queue").into_response()),
+        Some(disc_id) => Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response()),
         None => Ok(Redirect::to(&format!("/queue/{id}")).into_response()),
     }
 }
