@@ -606,14 +606,30 @@ function filterMediaTypes(forceDefault) {
     var sysSel = document.getElementById('system-select');
     var mediaSel = document.getElementById('media-select');
     if (!sysSel || !mediaSel || typeof SYSTEMS_MEDIA === 'undefined') return;
-    var allowed = SYSTEMS_MEDIA[sysSel.value];
-    if (!allowed) return;
+    var systemValue = sysSel.value || '';
     var currentVal = mediaSel.value;
     var opts = Array.prototype.slice.call(mediaSel.options);
     var byValue = {};
     var allowedLookup = {};
     for (var i = 0; i < opts.length; i++) {
         byValue[opts[i].value] = opts[i];
+    }
+
+    if (!systemValue) {
+        if (byValue['']) {
+            mediaSel.insertBefore(byValue[''], mediaSel.firstChild);
+        }
+        for (var blankIdx = 0; blankIdx < opts.length; blankIdx++) {
+            opts[blankIdx].hidden = opts[blankIdx].value !== '';
+        }
+        mediaSel.value = '';
+        return;
+    }
+
+    var allowed = SYSTEMS_MEDIA[systemValue] || [];
+    if (byValue['']) {
+        mediaSel.insertBefore(byValue[''], mediaSel.firstChild);
+        byValue[''].hidden = true;
     }
     for (var j = 0; j < allowed.length; j++) {
         allowedLookup[allowed[j]] = true;
@@ -628,9 +644,9 @@ function filterMediaTypes(forceDefault) {
     }
     opts = mediaSel.options;
     for (var l = 0; l < opts.length; l++) {
-        opts[l].hidden = allowed.indexOf(opts[l].value) === -1;
+        opts[l].hidden = opts[l].value === '' || allowed.indexOf(opts[l].value) === -1;
     }
-    if ((forceDefault || allowed.indexOf(currentVal) === -1) && allowed.length > 0) {
+    if ((forceDefault || currentVal === '' || allowed.indexOf(currentVal) === -1) && allowed.length > 0) {
         mediaSel.value = allowed[0];
     }
 }

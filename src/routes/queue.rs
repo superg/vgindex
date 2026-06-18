@@ -8,7 +8,7 @@ use axum::{
 use axum_extra::extract::Form;
 use serde::Deserialize;
 
-use crate::auth::middleware::{AuthenticatedUser, CurrentUser, RequireModerator};
+use crate::auth::middleware::{AuthenticatedUser, CurrentUser, RequireAuth};
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
@@ -146,6 +146,14 @@ struct SysRow {
 const PAGE_SIZE: i64 = 50;
 pub(crate) const COMMENTS_REVIEW_DELIMITER: &str =
     "--- REVIEW NEW COMMENTS BELOW - REMOVE THIS LINE BEFORE APPROVING ---";
+
+fn can_review_submission(user: &AuthenticatedUser, sub: &DiscSubmission) -> bool {
+    user.role.can_moderate()
+        || (user.role.can_edit_directly()
+            && sub.submission_type == SubmissionType::Disc
+            && sub.target_disc_id.is_some()
+            && sub.submitter_id == user.id)
+}
 
 fn normalize_queue_type_filter(sub_type: Option<&str>, is_disc_history: bool) -> String {
     if is_disc_history {
@@ -407,7 +415,6 @@ async fn submission_detail(
 
     let sub = queue_service::get_submission(&state.pool, id).await?;
 
-    let is_mod = current.is_some_and(|u| u.role.can_moderate());
     if let Some(disc_id) = sub.target_disc_id {
         disc_service::ensure_disc_id_visible(&state.pool, disc_id, user.can_view_disabled_discs())
             .await?;
@@ -430,7 +437,7 @@ async fn submission_detail(
     };
 
     let is_pending = sub.status == SubmissionStatus::Pending;
-    let show_review_form = is_mod && is_pending;
+    let show_review_form = current.is_some_and(|u| can_review_submission(u, &sub)) && is_pending;
 
     if !show_review_form {
         return render_readonly_detail(current.cloned(), &sub, &submitter_name, &reviewer_name)
@@ -1668,11 +1675,15 @@ pub struct ReviewForm {
 
 async fn review_submit(
     State(state): State<AppState>,
-    RequireModerator(user): RequireModerator,
+    RequireAuth(user): RequireAuth,
     Path(id): Path<i32>,
     Form(form): Form<ReviewForm>,
 ) -> AppResult<Response> {
     let sub = queue_service::get_submission(&state.pool, id).await?;
+
+    if !can_review_submission(&user, &sub) {
+        return Err(AppError::Forbidden);
+    }
 
     if sub.status != SubmissionStatus::Pending {
         return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
@@ -2132,6 +2143,51 @@ mod tests {
         assert_eq!(normalize_queue_sort(Some("DISC_ID")), "disc_id");
         assert_eq!(normalize_queue_order(Some("ASC")), "asc");
         assert_eq!(normalize_queue_order(Some("DESC")), "desc");
+    }
+
+    fn auth_user(id: i32, role: UserRole) -> AuthenticatedUser {
+        AuthenticatedUser {
+            id,
+            username: format!("user{id}"),
+            role,
+            avatar_url: None,
+        }
+    }
+
+    #[test]
+    fn review_permission_allows_moderators_and_own_user_plus_verification_only() {
+        let mut sub = test_submission();
+        sub.submission_type = SubmissionType::Disc;
+        sub.target_disc_id = Some(1);
+        sub.submitter_id = 7;
+
+        assert!(can_review_submission(
+            &auth_user(7, UserRole::UserPlus),
+            &sub
+        ));
+        assert!(!can_review_submission(
+            &auth_user(8, UserRole::UserPlus),
+            &sub
+        ));
+        assert!(!can_review_submission(&auth_user(7, UserRole::User), &sub));
+        assert!(can_review_submission(
+            &auth_user(8, UserRole::Moderator),
+            &sub
+        ));
+        assert!(can_review_submission(&auth_user(8, UserRole::Admin), &sub));
+
+        sub.target_disc_id = None;
+        assert!(!can_review_submission(
+            &auth_user(7, UserRole::UserPlus),
+            &sub
+        ));
+
+        sub.target_disc_id = Some(1);
+        sub.submission_type = SubmissionType::Edit;
+        assert!(!can_review_submission(
+            &auth_user(7, UserRole::UserPlus),
+            &sub
+        ));
     }
 
     fn selected_system(template: &DiscEditTemplate) -> String {

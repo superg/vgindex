@@ -118,7 +118,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <span class="disc-meta-label">Media:</span>
             <select name="media_type" id="media-select">
                 {% for mt in media_types_all %}
-                <option value="{{ mt.code }}" {% if mt.selected %}selected{% endif %}>{{ mt.name }}</option>
+                <option value="{{ mt.code }}" {% if mt.selected %}selected{% endif %}{% if mt.hidden %} hidden{% endif %}>{{ mt.name }}</option>
                 {% endfor %}
             </select>
             {% for ann in self.annotations_for("media_type") %}

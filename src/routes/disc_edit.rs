@@ -229,6 +229,7 @@ pub(crate) struct MediaTypeOption {
     pub code: String,
     pub name: String,
     pub selected: bool,
+    pub hidden: bool,
 }
 
 pub(crate) struct SelectOption {
@@ -636,6 +637,19 @@ pub(crate) fn build_system_options(all_systems: &[System], selected: &str) -> Ve
     systems
 }
 
+fn build_add_system_options(all_systems: &[System], selected: &str) -> Vec<SystemOption> {
+    let mut systems = build_system_options(all_systems, selected);
+    systems.insert(
+        0,
+        SystemOption {
+            code: String::new(),
+            name: String::new(),
+            selected: selected.trim().is_empty(),
+        },
+    );
+    systems
+}
+
 pub(crate) fn build_media_options(
     all_media_types: &[EditMediaTypeRow],
     selected: &str,
@@ -646,8 +660,31 @@ pub(crate) fn build_media_options(
             code: m.code.clone(),
             name: m.name.clone(),
             selected: m.code == selected,
+            hidden: false,
         })
         .collect()
+}
+
+fn build_add_media_options(
+    all_media_types: &[EditMediaTypeRow],
+    selected_system: &str,
+    selected_media: &str,
+) -> Vec<MediaTypeOption> {
+    let system_is_blank = selected_system.trim().is_empty();
+    let mut options = Vec::with_capacity(all_media_types.len() + 1);
+    options.push(MediaTypeOption {
+        code: String::new(),
+        name: String::new(),
+        selected: selected_media.trim().is_empty(),
+        hidden: !system_is_blank,
+    });
+    options.extend(all_media_types.iter().map(|m| MediaTypeOption {
+        code: m.code.clone(),
+        name: m.name.clone(),
+        selected: m.code == selected_media,
+        hidden: system_is_blank,
+    }));
+    options
 }
 
 pub(crate) fn build_category_options(
@@ -662,6 +699,17 @@ pub(crate) fn build_category_options(
             selected: selected == c.name,
         })
         .collect()
+}
+
+fn build_add_category_options(all_categories: &[CategoryRow], selected: &str) -> Vec<SelectOption> {
+    let mut categories = Vec::with_capacity(all_categories.len() + 1);
+    categories.push(SelectOption {
+        value: String::new(),
+        name: String::new(),
+        selected: selected.trim().is_empty(),
+    });
+    categories.extend(build_category_options(all_categories, selected));
+    categories
 }
 
 pub(crate) fn build_check_options(all: &[Region], selected_codes: &[String]) -> Vec<CheckOption> {
@@ -1157,6 +1205,9 @@ struct DuplicateNameDiscRow {
 
 #[derive(Clone, Copy)]
 struct FormValidationOptions {
+    require_system: bool,
+    require_media: bool,
+    require_category: bool,
     require_title: bool,
     require_regions: bool,
 }
@@ -1164,6 +1215,9 @@ struct FormValidationOptions {
 impl FormValidationOptions {
     const fn strict() -> Self {
         Self {
+            require_system: true,
+            require_media: true,
+            require_category: true,
             require_title: true,
             require_regions: true,
         }
@@ -1171,6 +1225,9 @@ impl FormValidationOptions {
 
     const fn add_submission(is_verification: bool) -> Self {
         Self {
+            require_system: !is_verification,
+            require_media: !is_verification,
+            require_category: !is_verification,
             require_title: !is_verification,
             require_regions: !is_verification,
         }
@@ -1184,9 +1241,32 @@ fn validate_form_with_options(
     options: FormValidationOptions,
 ) -> Vec<String> {
     let mut errors = Vec::new();
+    let system_code = form.system_code.trim();
+    let media_code = form.media_type.trim();
+    let category = form.category.trim();
 
-    if form.system_code.trim().is_empty() {
+    if options.require_system && system_code.is_empty() {
         errors.push("System: must be selected".into());
+    }
+
+    if system_code.is_empty() {
+        if media_code.is_empty() {
+            if options.require_media {
+                errors.push("Media: must be selected".into());
+            }
+        } else {
+            errors.push("Media: select a system first".into());
+        }
+    } else if media_code.is_empty() {
+        errors.push("Media: must be selected".into());
+    } else if let Some(system) = all_systems.iter().find(|s| s.code == system_code) {
+        if !system.media_types.iter().any(|code| code == media_code) {
+            errors.push("Media: must be valid for the selected system".into());
+        }
+    }
+
+    if options.require_category && category.is_empty() {
+        errors.push("Category: must be selected".into());
     }
 
     if options.require_title && form.title.trim().is_empty() {
@@ -1309,7 +1389,7 @@ fn validate_form_with_options(
 
     let is_cd_media = all_media_types
         .iter()
-        .find(|m| m.code == form.media_type)
+        .find(|m| m.code == media_code)
         .map_or(false, |m| is_cd_rom_extension(&m.rom_extension));
 
     if is_cd_media {
@@ -1323,9 +1403,11 @@ fn validate_form_with_options(
                 }
             }
         }
-    } else if let Some(ref text) = form.cue {
-        if !text.trim().is_empty() {
-            errors.push("Cuesheet: not applicable for this media type".into());
+    } else if !media_code.is_empty() {
+        if let Some(ref text) = form.cue {
+            if !text.trim().is_empty() {
+                errors.push("Cuesheet: not applicable for this media type".into());
+            }
         }
     }
 
@@ -1422,9 +1504,25 @@ async fn render_form_with_errors(
         disc_id: id,
         page_title,
 
-        systems: build_system_options(&ref_data.all_systems, &form.system_code),
-        media_types_all: build_media_options(&ref_data.all_media_types, &form.media_type),
-        categories: build_category_options(&ref_data.all_categories, &form.category),
+        systems: if is_add_mode {
+            build_add_system_options(&ref_data.all_systems, &form.system_code)
+        } else {
+            build_system_options(&ref_data.all_systems, &form.system_code)
+        },
+        media_types_all: if is_add_mode {
+            build_add_media_options(
+                &ref_data.all_media_types,
+                &form.system_code,
+                &form.media_type,
+            )
+        } else {
+            build_media_options(&ref_data.all_media_types, &form.media_type)
+        },
+        categories: if is_add_mode {
+            build_add_category_options(&ref_data.all_categories, &form.category)
+        } else {
+            build_category_options(&ref_data.all_categories, &form.category)
+        },
         regions: build_check_options(&ref_data.all_regions, &form.regions),
         languages: build_lang_check_options(&ref_data.all_languages, &form.languages),
 
@@ -1537,7 +1635,9 @@ async fn render_form_with_errors(
         show_submit_as: is_add_mode && can_moderate,
         submit_as_username: submit_as_username_for_form(&current_user.username, form, can_moderate),
 
-        submit_button_text: if can_edit_directly {
+        submit_button_text: if is_add_mode {
+            "Submit".into()
+        } else if can_edit_directly {
             "Save".into()
         } else {
             "Submit".into()
@@ -1952,20 +2052,12 @@ async fn add_page(
     } else {
         "[]".to_string()
     };
-    let default_system = ref_data.all_systems.iter().find(|s| s.code == "PC");
-    let default_media_type_code = default_system
-        .and_then(|s| s.media_types.first())
-        .cloned()
-        .unwrap_or_default();
-    let has_sys = |f: fn(&System) -> bool| default_system.map_or(true, f);
-    let max_layers = max_layers_for_media(&ref_data.all_media_types, &default_media_type_code);
-    let show_error_count =
-        media_shows_error_count(&ref_data.all_media_types, &default_media_type_code);
-    let show_pic = ref_data
-        .all_media_types
-        .iter()
-        .find(|m| m.code == default_media_type_code)
-        .map_or(false, |m| m.pic);
+    let system_code = String::new();
+    let media_type_code = String::new();
+    let has_sys = |_f: fn(&System) -> bool| true;
+    let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
+    let show_error_count = media_shows_error_count(&ref_data.all_media_types, &media_type_code);
+    let show_pic = false;
 
     Ok(Html(
         DiscEditTemplate {
@@ -1973,17 +2065,18 @@ async fn add_page(
             disc_id: 0,
             page_title: String::new(),
 
-            systems: build_system_options(&ref_data.all_systems, "PC"),
-            media_types_all: build_media_options(
+            systems: build_add_system_options(&ref_data.all_systems, &system_code),
+            media_types_all: build_add_media_options(
                 &ref_data.all_media_types,
-                &default_media_type_code,
+                &system_code,
+                &media_type_code,
             ),
-            categories: build_category_options(&ref_data.all_categories, "Games"),
+            categories: build_add_category_options(&ref_data.all_categories, ""),
             regions: build_check_options(&ref_data.all_regions, &[]),
             languages: build_lang_check_options(&ref_data.all_languages, &[]),
 
-            system_code: "PC".to_string(),
-            media_type_code: default_media_type_code,
+            system_code,
+            media_type_code,
             max_layers,
             media_layers_json,
             systems_media_json,
@@ -2064,11 +2157,7 @@ async fn add_page(
                 String::new()
             },
 
-            submit_button_text: if user.role.can_edit_directly() {
-                "Save".into()
-            } else {
-                "Submit".into()
-            },
+            submit_button_text: "Submit".into(),
             validation_errors: vec![],
             linked_validation_errors: vec![],
             validation_result: String::new(),
@@ -2190,7 +2279,9 @@ async fn add_submit(
     )
     .await?;
 
-    if user.role.can_edit_directly() {
+    if user.role.can_edit_directly() && is_verification {
+        Ok(Redirect::to(&format!("/queue/{}", sub.id)).into_response())
+    } else if user.role.can_edit_directly() {
         let disc_id = queue_service::approve_submission(
             &state.pool,
             &sub,
@@ -3073,52 +3164,104 @@ mod operation_delta_tests {
     fn validate_form_reports_missing_required_fields_in_red_box_errors() {
         let mut form = new_disc_form();
         form.system_code = String::new();
+        form.media_type = String::new();
+        form.category = String::new();
         form.title = String::new();
         form.regions = vec![];
 
         let errors = validate_form(&form, &media_rows(), &systems_with_edc(true));
 
         assert!(errors.contains(&"System: must be selected".to_string()));
+        assert!(errors.contains(&"Media: must be selected".to_string()));
+        assert!(errors.contains(&"Category: must be selected".to_string()));
         assert!(errors.contains(&"Title: cannot be empty".to_string()));
         assert!(errors.contains(&"Regions: at least one region must be selected".to_string()));
     }
 
     #[test]
-    fn validate_add_submission_form_requires_title_and_regions_for_new_disc() {
+    fn validate_add_submission_form_requires_metadata_for_new_disc() {
         let mut form = new_disc_form();
+        form.system_code = String::new();
+        form.media_type = String::new();
+        form.category = String::new();
         form.title = String::new();
         form.regions = vec![];
 
         let errors =
             validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), false);
 
+        assert!(errors.contains(&"System: must be selected".to_string()));
+        assert!(errors.contains(&"Media: must be selected".to_string()));
+        assert!(errors.contains(&"Category: must be selected".to_string()));
         assert!(errors.contains(&"Title: cannot be empty".to_string()));
         assert!(errors.contains(&"Regions: at least one region must be selected".to_string()));
     }
 
     #[test]
     fn validate_add_submission_form_allows_blank_metadata_for_verification() {
-        for (title, regions) in [
-            ("", vec!["Europe".to_string()]),
-            ("New Game", Vec::new()),
-            ("", Vec::new()),
-        ] {
-            let mut form = new_disc_form();
-            form.title = title.to_string();
-            form.regions = regions;
+        let mut form = new_disc_form();
+        form.system_code = String::new();
+        form.media_type = String::new();
+        form.category = String::new();
+        form.title = String::new();
+        form.regions = Vec::new();
 
-            let errors =
-                validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+        let errors =
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
 
-            assert!(
-                !errors.contains(&"Title: cannot be empty".to_string()),
-                "verification title error should be skipped for title {title:?}"
-            );
-            assert!(
-                !errors.contains(&"Regions: at least one region must be selected".to_string()),
-                "verification regions error should be skipped for title {title:?}"
-            );
-        }
+        assert!(!errors.contains(&"System: must be selected".to_string()));
+        assert!(!errors.contains(&"Media: must be selected".to_string()));
+        assert!(!errors.contains(&"Category: must be selected".to_string()));
+        assert!(!errors.contains(&"Title: cannot be empty".to_string()));
+        assert!(!errors.contains(&"Regions: at least one region must be selected".to_string()));
+    }
+
+    #[test]
+    fn validate_add_submission_form_couples_system_and_media_for_verification() {
+        let mut form = new_disc_form();
+        form.system_code = String::new();
+        form.media_type = "DVD".to_string();
+
+        let errors =
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+        assert!(errors.contains(&"Media: select a system first".to_string()));
+
+        form.system_code = "SYS".to_string();
+        form.media_type = String::new();
+        let errors =
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+        assert!(errors.contains(&"Media: must be selected".to_string()));
+
+        form.media_type = "BAD".to_string();
+        let errors =
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+        assert!(errors.contains(&"Media: must be valid for the selected system".to_string()));
+    }
+
+    #[test]
+    fn add_disc_select_options_start_blank_and_restrict_media_until_system_selected() {
+        let systems = build_add_system_options(&[test_system()], "");
+        assert_eq!(systems.first().unwrap().code, "");
+        assert!(systems.first().unwrap().selected);
+
+        let media = build_add_media_options(&media_rows(), "", "");
+        assert_eq!(media.first().unwrap().code, "");
+        assert!(media.first().unwrap().selected);
+        assert!(media.iter().skip(1).all(|option| option.hidden));
+
+        let media = build_add_media_options(&media_rows(), "SYS", "DVD");
+        assert!(media.first().unwrap().hidden);
+        assert!(media.iter().skip(1).all(|option| !option.hidden));
+
+        let categories = build_add_category_options(
+            &[CategoryRow {
+                id: 1,
+                name: "Games".to_string(),
+            }],
+            "",
+        );
+        assert_eq!(categories.first().unwrap().value, "");
+        assert!(categories.first().unwrap().selected);
     }
 
     #[test]
@@ -3434,12 +3577,18 @@ mod operation_delta_tests {
     #[test]
     fn build_add_submission_changes_omits_blank_metadata_for_verification() {
         let mut form = new_disc_form();
+        form.system_code = String::new();
+        form.media_type = String::new();
+        form.category = String::new();
         form.title = String::new();
         form.regions = vec![];
 
         let verification_changes = build_add_submission_changes(&form, &media_rows(), Some(1));
 
         assert!(verification_changes.get("dat").is_none());
+        assert!(verification_changes.get("system_code").is_none());
+        assert!(verification_changes.get("media_type").is_none());
+        assert!(verification_changes.get("category").is_none());
         assert!(verification_changes.get("title").is_none());
         assert!(verification_changes.get("regions").is_none());
     }
