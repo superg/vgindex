@@ -47,6 +47,7 @@ pub fn routes() -> Router<AppState> {
 struct DiscViewTemplate {
     current_user: Option<AuthenticatedUser>,
     can_edit: bool,
+    can_view_history: bool,
     disc_id: i32,
     title: String,
     system_name: String,
@@ -640,6 +641,7 @@ async fn disc_view(
         DiscViewTemplate {
             current_user: user.user().cloned(),
             can_edit,
+            can_view_history: user.is_logged_in(),
             disc_id: id,
             title: format_display_title(
                 &detail.disc.title,
@@ -1668,6 +1670,7 @@ mod tests {
         DiscViewTemplate {
             current_user: None,
             can_edit: false,
+            can_view_history: false,
             disc_id: 1,
             title: "Example Disc".to_string(),
             system_name: "Sony - PlayStation 3".to_string(),
@@ -1751,6 +1754,25 @@ mod tests {
             bca_rows: Vec::new(),
             show_bca: false,
         }
+    }
+
+    #[test]
+    fn disc_view_hides_history_link_when_user_cannot_view_history() {
+        let html = disc_view_template(false, false, "", "").render().unwrap();
+
+        assert!(!html.contains("History"));
+        assert!(!html.contains("/queue/?disc_id=1"));
+    }
+
+    #[test]
+    fn disc_view_shows_history_link_when_user_can_view_history() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.current_user = Some(AuthenticatedUser::template_only("user"));
+        template.can_view_history = true;
+
+        let html = template.render().unwrap();
+
+        assert!(html.contains(r#"<a href="/queue/?disc_id=1" role="button">History</a>"#));
     }
 
     #[test]

@@ -1256,12 +1256,15 @@ details + p small {
 }
 
 .disc-title-row {
-    --disc-title-actions-space: 4.5rem;
+    --disc-title-actions-space: 0rem;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
     gap: 0.5rem;
     margin-bottom: 2.5rem;
+}
+.disc-title-row.has-title-action {
+    --disc-title-actions-space: 4.5rem;
 }
 .disc-title-row.has-edit-action {
     --disc-title-actions-space: 8.5rem;

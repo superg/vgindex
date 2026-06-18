@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="disc-view">
-<div class="disc-title-row{% if can_edit %} has-edit-action{% endif %}">
+<div class="disc-title-row{% if can_edit || can_view_history %} has-title-action{% endif %}{% if can_edit && can_view_history %} has-edit-action{% endif %}">
 <div class="disc-title-box">
 <h2>{{ title }}</h2>
 {% if show_title_foreign && !title_foreign.is_empty() %}
@@ -15,7 +15,9 @@
     {% if can_edit %}
     <a href="/disc/{{ disc_id }}/edit/" role="button">Edit</a>
     {% endif %}
+    {% if can_view_history %}
     <a href="/queue/?disc_id={{ disc_id }}" role="button">History</a>
+    {% endif %}
 </div>
 </div>
 
@@ -415,7 +417,9 @@
     {% if can_edit %}
     <a href="/disc/{{ disc_id }}/edit/" role="button">Edit</a>
     {% endif %}
+    {% if can_view_history %}
     <a href="/queue/?disc_id={{ disc_id }}" role="button">History</a>
+    {% endif %}
 </div>
 
 </div>
