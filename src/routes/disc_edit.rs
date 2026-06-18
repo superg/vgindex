@@ -1155,10 +1155,33 @@ struct DuplicateNameDiscRow {
     language_codes: Vec<String>,
 }
 
-pub(crate) fn validate_form(
+#[derive(Clone, Copy)]
+struct FormValidationOptions {
+    require_title: bool,
+    require_regions: bool,
+}
+
+impl FormValidationOptions {
+    const fn strict() -> Self {
+        Self {
+            require_title: true,
+            require_regions: true,
+        }
+    }
+
+    const fn add_submission(is_verification: bool) -> Self {
+        Self {
+            require_title: !is_verification,
+            require_regions: !is_verification,
+        }
+    }
+}
+
+fn validate_form_with_options(
     form: &DiscEditForm,
     all_media_types: &[EditMediaTypeRow],
     all_systems: &[System],
+    options: FormValidationOptions,
 ) -> Vec<String> {
     let mut errors = Vec::new();
 
@@ -1166,11 +1189,11 @@ pub(crate) fn validate_form(
         errors.push("System: must be selected".into());
     }
 
-    if form.title.trim().is_empty() {
+    if options.require_title && form.title.trim().is_empty() {
         errors.push("Title: cannot be empty".into());
     }
 
-    if form.regions.is_empty() {
+    if options.require_regions && form.regions.is_empty() {
         errors.push("Regions: at least one region must be selected".into());
     }
 
@@ -1320,6 +1343,33 @@ pub(crate) fn validate_form(
     }
 
     errors
+}
+
+pub(crate) fn validate_form(
+    form: &DiscEditForm,
+    all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
+) -> Vec<String> {
+    validate_form_with_options(
+        form,
+        all_media_types,
+        all_systems,
+        FormValidationOptions::strict(),
+    )
+}
+
+fn validate_add_submission_form(
+    form: &DiscEditForm,
+    all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
+    is_verification: bool,
+) -> Vec<String> {
+    validate_form_with_options(
+        form,
+        all_media_types,
+        all_systems,
+        FormValidationOptions::add_submission(is_verification),
+    )
 }
 
 async fn render_form_with_errors(
@@ -1903,8 +1953,19 @@ async fn add_page(
         "[]".to_string()
     };
     let default_system = ref_data.all_systems.iter().find(|s| s.code == "PC");
+    let default_media_type_code = default_system
+        .and_then(|s| s.media_types.first())
+        .cloned()
+        .unwrap_or_default();
     let has_sys = |f: fn(&System) -> bool| default_system.map_or(true, f);
-    let show_error_count = false;
+    let max_layers = max_layers_for_media(&ref_data.all_media_types, &default_media_type_code);
+    let show_error_count =
+        media_shows_error_count(&ref_data.all_media_types, &default_media_type_code);
+    let show_pic = ref_data
+        .all_media_types
+        .iter()
+        .find(|m| m.code == default_media_type_code)
+        .map_or(false, |m| m.pic);
 
     Ok(Html(
         DiscEditTemplate {
@@ -1913,14 +1974,17 @@ async fn add_page(
             page_title: String::new(),
 
             systems: build_system_options(&ref_data.all_systems, "PC"),
-            media_types_all: build_media_options(&ref_data.all_media_types, ""),
+            media_types_all: build_media_options(
+                &ref_data.all_media_types,
+                &default_media_type_code,
+            ),
             categories: build_category_options(&ref_data.all_categories, "Games"),
             regions: build_check_options(&ref_data.all_regions, &[]),
             languages: build_lang_check_options(&ref_data.all_languages, &[]),
 
             system_code: "PC".to_string(),
-            media_type_code: String::new(),
-            max_layers: 1,
+            media_type_code: default_media_type_code,
+            max_layers,
             media_layers_json,
             systems_media_json,
             systems_has_flags_json,
@@ -1962,7 +2026,7 @@ async fn add_page(
             layerbreaks: vec![],
             show_pvd: has_sys(|s| s.has_pvd),
             pvd_hex: String::new(),
-            show_pic: false,
+            show_pic,
             media_has_pic_json,
             pic_hex: String::new(),
             show_bca: has_sys(|s| s.has_bca),
@@ -2044,7 +2108,16 @@ async fn add_submit(
 ) -> AppResult<Response> {
     let form = post.disc;
     let ref_data = fetch_ref_data(&state.pool).await?;
-    let mut errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
+    let add_match =
+        find_add_disc_match(&state.pool, &form, user.role.can_view_disabled_discs()).await;
+    let target_disc_id = add_match.map(AddDiscMatch::target_disc_id);
+    let is_verification = target_disc_id.is_some();
+    let mut errors = validate_add_submission_form(
+        &form,
+        &ref_data.all_media_types,
+        &ref_data.all_systems,
+        is_verification,
+    );
     let can_submit_as = user.role.can_moderate();
     errors.extend(validate_submit_as_for_add(&form, can_submit_as));
     errors.extend(validate_add_submission_logs(
@@ -2052,9 +2125,6 @@ async fn add_submit(
         user.role.can_moderate(),
     ));
 
-    let add_match =
-        find_add_disc_match(&state.pool, &form, user.role.can_view_disabled_discs()).await;
-    let target_disc_id = add_match.map(AddDiscMatch::target_disc_id);
     let linked_validation_errors =
         validate_generated_name_unique(&state.pool, &form, target_disc_id, true).await?;
 
@@ -3014,6 +3084,44 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn validate_add_submission_form_requires_title_and_regions_for_new_disc() {
+        let mut form = new_disc_form();
+        form.title = String::new();
+        form.regions = vec![];
+
+        let errors =
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), false);
+
+        assert!(errors.contains(&"Title: cannot be empty".to_string()));
+        assert!(errors.contains(&"Regions: at least one region must be selected".to_string()));
+    }
+
+    #[test]
+    fn validate_add_submission_form_allows_blank_metadata_for_verification() {
+        for (title, regions) in [
+            ("", vec!["Europe".to_string()]),
+            ("New Game", Vec::new()),
+            ("", Vec::new()),
+        ] {
+            let mut form = new_disc_form();
+            form.title = title.to_string();
+            form.regions = regions;
+
+            let errors =
+                validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+
+            assert!(
+                !errors.contains(&"Title: cannot be empty".to_string()),
+                "verification title error should be skipped for title {title:?}"
+            );
+            assert!(
+                !errors.contains(&"Regions: at least one region must be selected".to_string()),
+                "verification regions error should be skipped for title {title:?}"
+            );
+        }
+    }
+
+    #[test]
     fn validate_form_requires_edc_choice_for_edc_systems() {
         let mut form = new_disc_form();
         form.edc = vec![];
@@ -3324,6 +3432,19 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn build_add_submission_changes_omits_blank_metadata_for_verification() {
+        let mut form = new_disc_form();
+        form.title = String::new();
+        form.regions = vec![];
+
+        let verification_changes = build_add_submission_changes(&form, &media_rows(), Some(1));
+
+        assert!(verification_changes.get("dat").is_none());
+        assert!(verification_changes.get("title").is_none());
+        assert!(verification_changes.get("regions").is_none());
+    }
+
+    #[test]
     fn generated_add_disc_delta_resolves_against_empty_or_existing_snapshot() {
         let changes = build_new_disc_changes(&new_disc_form(), &media_rows());
 
@@ -3361,6 +3482,28 @@ mod operation_delta_tests {
             verification["barcode"],
             serde_json::json!(["1234567890123"])
         );
+    }
+
+    #[test]
+    fn verification_delta_without_metadata_preserves_existing_title_and_regions() {
+        let mut form = new_disc_form();
+        form.title = String::new();
+        form.regions = vec![];
+        let changes = build_add_submission_changes(&form, &media_rows(), Some(1));
+        let existing = serde_json::json!({
+            "title": "Existing Game",
+            "regions": ["Europe"],
+            "languages": ["en"],
+            "serial": [],
+            "edition": [],
+            "barcode": [],
+            "ring_codes": []
+        });
+
+        let verification = queue_service::resolve_submission_snapshot(&existing, &changes).unwrap();
+
+        assert_eq!(verification["title"], serde_json::json!("Existing Game"));
+        assert_eq!(verification["regions"], serde_json::json!(["Europe"]));
     }
 
     #[test]
