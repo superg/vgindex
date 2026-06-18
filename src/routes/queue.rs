@@ -266,7 +266,7 @@ async fn queue_list(
 
     let sys_rows: Vec<SysRow> = sqlx::query_as(
         "SELECT code, manufacturer, name FROM systems
-         ORDER BY LOWER(manufacturer), manufacturer, LOWER(name), name",
+         ORDER BY LOWER(CONCAT_WS(' ', NULLIF(manufacturer, ''), name))",
     )
     .fetch_all(&state.pool)
     .await
