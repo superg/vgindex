@@ -68,7 +68,7 @@ struct QueueTemplate {
     current_user: Option<AuthenticatedUser>,
     current_user_id: Option<i32>,
     page_title: String,
-    is_public_history: bool,
+    is_disc_history: bool,
     can_view_all_statuses: bool,
     entries: Vec<SubmissionListRow>,
     systems: Vec<SystemOption>,
@@ -171,10 +171,9 @@ async fn queue_list(
     let can_view_disabled_discs = user.can_view_disabled_discs();
     let disc_id_filter = query.disc_id;
     let is_disc_history = disc_id_filter.is_some();
-    let is_public_history = is_disc_history;
     let can_view_all_statuses = is_logged_in && !is_disc_history;
 
-    if disc_id_filter.is_none() && !is_logged_in {
+    if !is_logged_in {
         return Err(AppError::Unauthorized);
     }
     if let Some(disc_id) = disc_id_filter {
@@ -323,7 +322,7 @@ async fn queue_list(
             page_title: disc_id_filter
                 .map(|disc_id| format!("History: Disc #{disc_id}"))
                 .unwrap_or_else(|| "Queue".to_string()),
-            is_public_history,
+            is_disc_history,
             can_view_all_statuses,
             entries,
             systems,
@@ -365,21 +364,17 @@ async fn submission_detail(
     user: CurrentUser,
     Path(id): Path<i32>,
 ) -> AppResult<Html<String>> {
+    let current = user.user();
+    if current.is_none() {
+        return Err(AppError::Unauthorized);
+    }
+
     let sub = queue_service::get_submission(&state.pool, id).await?;
 
-    let current = user.user();
     let is_mod = current.is_some_and(|u| u.role.can_moderate());
-    let is_public_status = matches!(
-        sub.status,
-        SubmissionStatus::Approved | SubmissionStatus::Legacy
-    );
     if let Some(disc_id) = sub.target_disc_id {
         disc_service::ensure_disc_id_visible(&state.pool, disc_id, user.can_view_disabled_discs())
             .await?;
-    }
-
-    if !(current.is_some() || is_public_status) {
-        return Err(AppError::Forbidden);
     }
 
     let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
@@ -1779,6 +1774,78 @@ async fn review_submit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tower::ServiceExt;
+
+    fn test_state() -> AppState {
+        let (archive_tx, _archive_rx) = tokio::sync::mpsc::unbounded_channel();
+        let database_url = "postgres://postgres:postgres@localhost/postgres".to_string();
+
+        AppState {
+            pool: sqlx::postgres::PgPoolOptions::new()
+                .connect_lazy(&database_url)
+                .unwrap(),
+            config: Arc::new(crate::config::Config {
+                site_name: "localhost".to_string(),
+                database_url,
+                site_url: "http://localhost".to_string(),
+                base_url: "http://localhost".to_string(),
+                wiki_url: "#".to_string(),
+                forum_url: "#".to_string(),
+                news_feed_url: "#".to_string(),
+                port: 0,
+                oidc_provider_url: "#".to_string(),
+                oidc_client_id: "test".to_string(),
+                oidc_client_secret: "test".to_string(),
+            }),
+            http: reqwest::Client::new(),
+            archive_tx,
+            edition_suggestions: crate::services::disc_service::EditionSuggestionsCache::new(
+                Duration::from_secs(60),
+            ),
+            news_cache: crate::services::news_service::NewsCache::new(Duration::from_secs(
+                crate::services::news_service::NEWS_FEED_TTL_SECONDS,
+            )),
+            transliteration: Arc::new(
+                crate::transliteration::TransliterationRegistry::new().unwrap(),
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn guest_disc_history_returns_unauthorized() {
+        let app = routes().with_state(test_state());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/queue/?disc_id=1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn guest_submission_detail_returns_unauthorized_without_db_lookup() {
+        let app = routes().with_state(test_state());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/queue/42/")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
 
     fn test_system(code: &str, name: &str) -> System {
         System {

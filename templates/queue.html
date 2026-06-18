@@ -4,8 +4,8 @@
 
 {% block content %}
 <h3 class="downloads-page-title">{{ page_title }}</h3>
-{% if is_public_history %}
-<p><small>Public history only shows approved and legacy submissions.</small></p>
+{% if is_disc_history %}
+<p><small>Disc history only shows approved and legacy submissions.</small></p>
 {% endif %}
 
 {% if filter_disc_id.is_empty() %}
