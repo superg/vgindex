@@ -199,22 +199,14 @@ LANG2_SORT_ORDER = {
 
 MEDIA_CODE_TO_ROM_EXT = {"cd": "bin", "gdrom": "bin", "test4l": "bin"}
 
-_LEGACY_ASCII_FILENAME_REPLACEMENTS = [
-    ("ä", "ae"),
-    ("ö", "oe"),
-    ("ü", "ue"),
+_ASCII_FILENAME_REPLACEMENTS = [
     ("²", "^2"),
-    ("Ä", "Ae"),
     ("³", "^3"),
-    ("Ö", "Oe"),
-    ("Ü", "Ue"),
-    ("Ō", "Oo"),
     ("α", "Alpha"),
     ("½", "1-2"),
-    ("ū", "uu"),
     ("Δ", "Delta"),
     ("μ", "Mu"),
-    ("ō", "oo"),
+    ("#", ""),
     ("¡", ""),
     ("¿", ""),
     ("°", ""),
@@ -222,6 +214,7 @@ _LEGACY_ASCII_FILENAME_REPLACEMENTS = [
 
 _FILESYSTEM_FILENAME_REPLACEMENTS = [
     # Longer multi-char replacements first (order matters before single-char fallbacks).
+    (" : ", " - "),
     (": ", " - "),
     (" / ", " & "),
     (":", "-"),
@@ -249,7 +242,7 @@ def sanitize_filename(s):
     at runtime.
     """
     s = unicodedata.normalize("NFC", s)
-    for old, new in _LEGACY_ASCII_FILENAME_REPLACEMENTS:
+    for old, new in _ASCII_FILENAME_REPLACEMENTS:
         s = s.replace(old, new)
     s = _transliterate_non_ascii(s)
     for replacements in (
@@ -301,6 +294,19 @@ def build_dat_system_name(system_type, manufacturer, name):
     return sanitize_filename(joined)
 
 
+def _sanitize_filename_component(value):
+    sanitized = sanitize_filename(value)
+    return sanitized if sanitized else None
+
+
+def _append_parenthetical(name, value):
+    if not value:
+        return name
+    if name:
+        return "{} ({})".format(name, value)
+    return "({})".format(value)
+
+
 # Lightweight self-checks (no formal test harness in this script). These run
 # on import so any regression in the naming/sanitization rules is loud.
 assert build_system_name("Sony", "PlayStation") == "Sony PlayStation"
@@ -328,21 +334,37 @@ def build_rom_base_name(title, region_names, lang2_codes, disc_number, disc_labe
       * regions use ", " (comma + space)
       * languages use "," (comma only)
     """
-    name = title
+    name = sanitize_filename(title)
     sorted_regions = sorted(region_names, key=lambda r: REGION_SORT_ORDER.get(r, 9999))
-    if sorted_regions:
-        name += " ({})".format(", ".join(sorted_regions))
+    sanitized_regions = [
+        region
+        for region in (_sanitize_filename_component(r) for r in sorted_regions)
+        if region
+    ]
+    if sanitized_regions:
+        name = _append_parenthetical(name, ", ".join(sanitized_regions))
     sorted_langs = sorted(lang2_codes, key=lambda c: LANG2_SORT_ORDER.get(c, 9999))
-    if len(sorted_langs) > 1:
-        capitalized = [c[0].upper() + c[1:] for c in sorted_langs]
-        name += " ({})".format(",".join(capitalized))
+    sanitized_langs = [
+        code
+        for code in (_sanitize_filename_component(c) for c in sorted_langs)
+        if code
+    ]
+    if len(sanitized_langs) > 1:
+        capitalized = [c[0].upper() + c[1:] for c in sanitized_langs]
+        name = _append_parenthetical(name, ",".join(capitalized))
     if disc_number:
-        name += " (Disc {})".format(disc_number)
+        sanitized_disc_number = _sanitize_filename_component(disc_number)
+        if sanitized_disc_number:
+            name = _append_parenthetical(name, "Disc {}".format(sanitized_disc_number))
     if disc_label:
-        name += " ({})".format(disc_label)
+        sanitized_disc_label = _sanitize_filename_component(disc_label)
+        if sanitized_disc_label:
+            name = _append_parenthetical(name, sanitized_disc_label)
     if filename_suffix:
-        name += " ({})".format(filename_suffix)
-    return sanitize_filename(name)
+        sanitized_filename_suffix = _sanitize_filename_component(filename_suffix)
+        if sanitized_filename_suffix:
+            name = _append_parenthetical(name, sanitized_filename_suffix)
+    return name
 
 
 # Parity self-checks for the ROM-name delimiter rules. These guard the exact
@@ -355,6 +377,8 @@ assert build_rom_base_name("Game", [], ["en", "fr"], None, None, None) \
     == "Game (En,Fr)"
 assert build_rom_base_name("Game", ["USA", "Europe"], ["en", "fr"], None, None, None) \
     == "Game (USA, Europe) (En,Fr)"
+assert build_rom_base_name("Active Simulation War Daiva Chronicle Re:", ["Japan"], [], None, None, None) \
+    == "Active Simulation War Daiva Chronicle Re- (Japan)"
 
 
 def build_rom_name(base_name, track_number, total_tracks, extension):

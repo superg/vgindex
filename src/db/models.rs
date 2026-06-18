@@ -530,28 +530,21 @@ pub fn format_display_title(
 }
 
 pub fn sanitize_filename(s: &str) -> String {
-    const LEGACY_ASCII_REPLACEMENTS: &[(&str, &str)] = &[
-        ("ä", "ae"),
-        ("ö", "oe"),
-        ("ü", "ue"),
+    const ASCII_REPLACEMENTS: &[(&str, &str)] = &[
         ("²", "^2"),
-        ("Ä", "Ae"),
         ("³", "^3"),
-        ("Ö", "Oe"),
-        ("Ü", "Ue"),
-        ("Ō", "Oo"),
         ("α", "Alpha"),
         ("½", "1-2"),
-        ("ū", "uu"),
         ("Δ", "Delta"),
         ("μ", "Mu"),
-        ("ō", "oo"),
+        ("#", ""),
         ("¡", ""),
         ("¿", ""),
         ("°", ""),
     ];
     // Longer multi-char replacements first (order matters before single-char fallbacks).
     const FILESYSTEM_REPLACEMENTS: &[(&str, &str)] = &[
+        (" : ", " - "),
         (": ", " - "),
         (" / ", " & "),
         (":", "-"),
@@ -567,7 +560,7 @@ pub fn sanitize_filename(s: &str) -> String {
     const STYLE_REPLACEMENTS: &[(&str, &str)] = &[];
 
     let mut result: String = s.nfc().collect();
-    for &(from, to) in LEGACY_ASCII_REPLACEMENTS {
+    for &(from, to) in ASCII_REPLACEMENTS {
         result = result.replace(from, to);
     }
     result = transliterate_non_ascii(&result);
@@ -663,42 +656,58 @@ pub fn build_rom_base_name(
     disc_title: Option<&str>,
     filename_suffix: Option<&str>,
 ) -> String {
-    let mut name = title.to_string();
-    if !region_names.is_empty() {
-        name.push_str(&format!(" ({})", region_names.join(", ")));
+    let mut name = sanitize_filename(title);
+    let regions: Vec<String> = region_names
+        .iter()
+        .filter_map(|r| sanitize_filename_component(r))
+        .collect();
+    if !regions.is_empty() {
+        push_parenthetical(&mut name, &regions.join(", "));
     }
-    if language_codes.len() > 1 {
-        let capitalized: Vec<String> = language_codes
-            .iter()
-            .map(|c| {
-                let mut chars = c.chars();
-                match chars.next() {
-                    Some(first) => {
-                        let upper: String = first.to_uppercase().collect();
-                        format!("{upper}{}", chars.as_str())
-                    }
-                    None => String::new(),
+    let languages: Vec<String> = language_codes
+        .iter()
+        .filter_map(|c| sanitize_filename_component(c))
+        .map(|c| {
+            let mut chars = c.chars();
+            match chars.next() {
+                Some(first) => {
+                    let upper: String = first.to_uppercase().collect();
+                    format!("{upper}{}", chars.as_str())
                 }
-            })
-            .collect();
-        name.push_str(&format!(" ({})", capitalized.join(",")));
+                None => String::new(),
+            }
+        })
+        .collect();
+    if languages.len() > 1 {
+        push_parenthetical(&mut name, &languages.join(","));
     }
-    if let Some(n) = disc_number {
-        if !n.is_empty() {
-            name.push_str(&format!(" (Disc {n})"));
-        }
+    if let Some(n) = disc_number.and_then(sanitize_filename_component) {
+        push_parenthetical(&mut name, &format!("Disc {n}"));
     }
-    if let Some(d) = disc_title {
-        if !d.is_empty() {
-            name.push_str(&format!(" ({d})"));
-        }
+    if let Some(d) = disc_title.and_then(sanitize_filename_component) {
+        push_parenthetical(&mut name, &d);
     }
-    if let Some(s) = filename_suffix {
-        if !s.is_empty() {
-            name.push_str(&format!(" ({s})"));
-        }
+    if let Some(s) = filename_suffix.and_then(sanitize_filename_component) {
+        push_parenthetical(&mut name, &s);
     }
-    sanitize_filename(&name)
+    name
+}
+
+fn sanitize_filename_component(s: &str) -> Option<String> {
+    let sanitized = sanitize_filename(s);
+    if sanitized.is_empty() {
+        None
+    } else {
+        Some(sanitized)
+    }
+}
+
+fn push_parenthetical(name: &mut String, value: &str) {
+    if name.is_empty() {
+        name.push_str(&format!("({value})"));
+    } else {
+        name.push_str(&format!(" ({value})"));
+    }
 }
 
 pub fn build_rom_name(
@@ -1027,6 +1036,10 @@ mod tests {
         }
     }
 
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
     #[test]
     fn disabled_disc_visibility_starts_at_user_plus() {
         assert!(!UserRole::User.can_view_disabled_discs());
@@ -1206,14 +1219,65 @@ FILE \"Track 2.bin\" BINARY\n\
     }
 
     #[test]
-    fn dat_system_name_legacy_ascii_substitution_table() {
+    fn sanitize_filename_spacing_and_hash_replacements() {
+        assert_eq!(sanitize_filename("Foo : Bar"), "Foo - Bar");
+        assert_eq!(sanitize_filename("Game #1"), "Game 1");
+    }
+
+    #[test]
+    fn rom_base_name_sanitizes_components_before_assembly() {
+        assert_eq!(
+            build_rom_base_name(
+                "Active Simulation War Daiva Chronicle Re:",
+                &strings(&["Japan"]),
+                &[],
+                None,
+                None,
+                None,
+            ),
+            "Active Simulation War Daiva Chronicle Re- (Japan)"
+        );
+    }
+
+    #[test]
+    fn rom_base_name_sanitizes_each_parenthetical_component() {
+        assert_eq!(
+            build_rom_base_name(
+                "Foo: Bar",
+                &strings(&["USA / Europe"]),
+                &strings(&["en", "fr"]),
+                Some("1:"),
+                Some("Label: Test"),
+                Some("#Special?"),
+            ),
+            "Foo - Bar (USA & Europe) (En,Fr) (Disc 1-) (Label - Test) (Special)"
+        );
+    }
+
+    #[test]
+    fn rom_base_name_omits_components_that_sanitize_empty() {
+        assert_eq!(
+            build_rom_base_name(
+                "Game",
+                &strings(&["#"]),
+                &strings(&["en", "#"]),
+                Some("#"),
+                Some("?"),
+                Some("°"),
+            ),
+            "Game"
+        );
+    }
+
+    #[test]
+    fn dat_system_name_ascii_substitution_and_transliteration_table() {
         let cases = [
             ('é', "e"),
             ('Ś', "S"),
-            ('ä', "ae"),
-            ('ö', "oe"),
+            ('ä', "a"),
+            ('ö', "o"),
             ('ó', "o"),
-            ('ü', "ue"),
+            ('ü', "u"),
             ('ł', "l"),
             ('·', "-"),
             ('å', "a"),
@@ -1233,7 +1297,7 @@ FILE \"Track 2.bin\" BINARY\n\
             ('ě', "e"),
             ('ń', "n"),
             ('ë', "e"),
-            ('Ä', "Ae"),
+            ('Ä', "A"),
             ('ą', "a"),
             ('ê', "e"),
             ('č', "c"),
@@ -1248,17 +1312,17 @@ FILE \"Track 2.bin\" BINARY\n\
             ('ò', "o"),
             ('ï', "i"),
             ('õ', "o"),
-            ('Ö', "Oe"),
-            ('Ü', "Ue"),
+            ('Ö', "O"),
+            ('Ü', "U"),
             ('î', "i"),
             ('ô', "o"),
             ('ù', "u"),
-            ('Ō', "Oo"),
+            ('Ō', "O"),
             ('α', "Alpha"),
             ('û', "u"),
             ('Ú', "U"),
             ('½', "1-2"),
-            ('ū', "uu"),
+            ('ū', "u"),
             ('À', "A"),
             ('Ł', "L"),
             ('È', "E"),
@@ -1273,9 +1337,10 @@ FILE \"Track 2.bin\" BINARY\n\
             ('Í', "I"),
             ('Î', "I"),
             ('ì', "i"),
-            ('ō', "oo"),
+            ('ō', "o"),
             ('Ş', "S"),
             ('ș', "s"),
+            ('#', ""),
         ];
 
         for (input, expected) in cases {
@@ -1286,7 +1351,7 @@ FILE \"Track 2.bin\" BINARY\n\
     #[test]
     fn dat_system_name_any_ascii_and_fallback_behavior() {
         assert_eq!(sanitize_filename("éßłæȘ"), "esslaeS");
-        assert_eq!(sanitize_filename("u\u{308}"), "ue");
+        assert_eq!(sanitize_filename("u\u{308}"), "u");
         assert_eq!(sanitize_filename("Foo\u{e000}Bar"), "Foo-Bar");
     }
 
