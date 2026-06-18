@@ -553,7 +553,7 @@ pub fn sort_ring_codes_json(entries: &mut [serde_json::Value], max_layers: usize
 pub async fn get_all_systems(pool: &PgPool) -> AppResult<Vec<System>> {
     Ok(sqlx::query_as(
         "SELECT * FROM systems
-         ORDER BY LOWER(manufacturer), manufacturer, LOWER(name), name",
+         ORDER BY LOWER(CONCAT(manufacturer, ' ', name))",
     )
     .fetch_all(pool)
     .await?)
