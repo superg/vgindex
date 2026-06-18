@@ -2965,6 +2965,23 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn build_systems_json_preserves_media_type_preference_order() {
+        let mut system = test_system();
+        system.media_types = vec!["bd50".to_string(), "cd".to_string(), "dvd9".to_string()];
+
+        let (systems_media_json, _) = build_systems_json(&[system]);
+        let systems_media: serde_json::Value = serde_json::from_str(&systems_media_json).unwrap();
+        let media_codes: Vec<_> = systems_media["SYS"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|code| code.as_str().unwrap())
+            .collect();
+
+        assert_eq!(media_codes, vec!["bd50", "cd", "dvd9"]);
+    }
+
+    #[test]
     fn ring_layers_adds_label_side_layer() {
         assert_eq!(ring_layers(1), 2);
         assert_eq!(ring_layers(2), 3);

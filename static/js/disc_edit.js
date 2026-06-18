@@ -602,7 +602,7 @@ function refreshMediaDependentUi() {
 }
 
 // System <-> media type filtering
-function filterMediaTypes() {
+function filterMediaTypes(forceDefault) {
     var sysSel = document.getElementById('system-select');
     var mediaSel = document.getElementById('media-select');
     if (!sysSel || !mediaSel || typeof SYSTEMS_MEDIA === 'undefined') return;
@@ -613,7 +613,7 @@ function filterMediaTypes() {
     for (var i = 0; i < opts.length; i++) {
         opts[i].hidden = allowed.indexOf(opts[i].value) === -1;
     }
-    if (allowed.indexOf(currentVal) === -1 && allowed.length > 0) {
+    if ((forceDefault || allowed.indexOf(currentVal) === -1) && allowed.length > 0) {
         mediaSel.value = allowed[0];
     }
 }
@@ -992,7 +992,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var sysSel = document.getElementById('system-select');
     if (sysSel) {
         sysSel.addEventListener('change', function () {
-            filterMediaTypes();
+            filterMediaTypes(true);
             applySystemFieldVisibility();
             refreshEditionSelectors();
             refreshMediaDependentUi();

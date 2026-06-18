@@ -3,12 +3,13 @@
 
 Usage:
     python scripts/generate_import_sql.py [--data-dir DIR] [--output FILE]
+        [--include-max-complexity-disc]
 
 Reads JSON files from data/redump/db/ and produces a single .sql file
 that can be imported via: psql -f import.sql
 
-Disc id 1 is reserved for a synthetic max-complexity entry (disabled)
-built from global maxima observed across all scraped records.
+Pass --include-max-complexity-disc to replace disc id 1 with a synthetic
+max-complexity entry built from global maxima observed across scraped records.
 """
 
 import argparse
@@ -1434,15 +1435,22 @@ def disc_id_from_filename(fname):
     return int(base.lstrip("0") or "0")
 
 
-def process_all(data_dir, output_path, max_disc_id=None, reset=True):
-    # Pass 1: collect all usernames, load all disc data, accumulate max-stats
+def process_all(
+    data_dir,
+    output_path,
+    max_disc_id=None,
+    reset=True,
+    include_max_complexity_disc=False,
+):
+    # Pass 1: collect all usernames, load all disc data, and optionally
+    # accumulate max-stats for the synthetic debug disc.
     filenames = sorted(f for f in os.listdir(data_dir) if f.endswith(".json"))
     total = len(filenames)
     print(f"[scan] Scanning {total} JSON files in {data_dir} ...", file=sys.stderr)
 
     all_usernames = set()
     disc_files = []
-    stats = MaxStats()
+    stats = MaxStats() if include_max_complexity_disc else None
     loaded = 0
     empty = 0
 
@@ -1461,7 +1469,8 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True):
         disc_files.append((fname, data))
         loaded += 1
 
-        stats.ingest(data)
+        if stats is not None:
+            stats.ingest(data)
 
         for name in merge_dumpers(data):
             all_usernames.add(name)
@@ -1478,18 +1487,19 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True):
     print(f"[scan] Done: {loaded} loaded, {empty} empty, "
           f"{len(all_usernames)} unique users", file=sys.stderr)
 
-    # Build synthetic max-complexity entry for disc 1
-    print(f"[synth] Building synthetic max-complexity entry for disc "
-          f"{SYNTHETIC_DISC_ID} ...", file=sys.stderr)
-    synthetic_data = _build_synthetic_disc_data(stats)
-    injected = False
-    for i, (fname, data) in enumerate(disc_files):
-        if disc_id_from_filename(fname) == SYNTHETIC_DISC_ID:
-            disc_files[i] = (fname, synthetic_data)
-            injected = True
-            break
-    if not injected:
-        disc_files.insert(0, ("000001.json", synthetic_data))
+    if include_max_complexity_disc:
+        # Build synthetic max-complexity entry for disc 1.
+        print(f"[synth] Building synthetic max-complexity entry for disc "
+              f"{SYNTHETIC_DISC_ID} ...", file=sys.stderr)
+        synthetic_data = _build_synthetic_disc_data(stats)
+        injected = False
+        for i, (fname, data) in enumerate(disc_files):
+            if disc_id_from_filename(fname) == SYNTHETIC_DISC_ID:
+                disc_files[i] = (fname, synthetic_data)
+                injected = True
+                break
+        if not injected:
+            disc_files.insert(0, ("000001.json", synthetic_data))
 
     # Assign user IDs
     user_id_map = {}
@@ -1518,8 +1528,8 @@ def process_all(data_dir, output_path, max_disc_id=None, reset=True):
             out.write("    users\n")
             out.write("RESTART IDENTITY CASCADE;\n\n")
 
-        # Synthetic system/media type prerequisites
-        _write_synthetic_prereqs(out)
+        if include_max_complexity_disc:
+            _write_synthetic_prereqs(out)
 
         # Users
         _write_users(out, user_id_map)
@@ -2117,6 +2127,9 @@ def main():
                         default=True,
                         help="Do not emit the leading TRUNCATE block; assume "
                              "the target database is already empty")
+    parser.add_argument("--include-max-complexity-disc", action="store_true",
+                        help="Replace disc id 1 with the synthetic max-complexity "
+                             "debug entry and emit its system/media definitions")
     args = parser.parse_args()
 
     if not os.path.isdir(args.data_dir):
@@ -2124,7 +2137,8 @@ def main():
         sys.exit(1)
 
     process_all(args.data_dir, args.output, max_disc_id=args.max_id,
-                reset=args.reset)
+                reset=args.reset,
+                include_max_complexity_disc=args.include_max_complexity_disc)
 
 
 if __name__ == "__main__":

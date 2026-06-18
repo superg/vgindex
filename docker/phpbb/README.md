@@ -144,10 +144,8 @@ whatever host you use to browse the board. Imported user emails under
 `redump.org` or `*.redump.org` are also rewritten to the same target domain,
 with any `--target-domain` port stripped for email addresses.
 
-The importer looks for optional local test users at
-`/import/redump/users/test_users.json`, which maps to
-`data/redump/users/test_users.json` on the host. If the file does not exist,
-test-user seeding is skipped.
+Local test users are opt-in. Pass `--test-users-file /path/to/test_users.json`
+when you want to seed them; otherwise test-user seeding is skipped.
 
 ## News Category
 
