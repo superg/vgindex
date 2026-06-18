@@ -1924,6 +1924,11 @@ nav .quick-search input[type="text"] {
     font-size: 1.22rem;
     font-weight: 600;
 }
+@media (max-width: 768px) {
+    .home-recent-dumps h3 {
+        margin-bottom: 0.35rem;
+    }
+}
 .home-sections p {
     margin-bottom: 0.29rem;
     font-size: 0.9rem;
@@ -2129,7 +2134,7 @@ nav .quick-search input[type="text"] {
 }
 @media (max-width: 768px) {
     .home-recent-dumps .recent-dumps {
-        table-layout: fixed;
+        table-layout: auto;
     }
     .recent-dumps th {
         padding: 0.025rem 0.09rem;
@@ -2145,7 +2150,15 @@ nav .quick-search input[type="text"] {
         padding-right: 0.05rem;
     }
     .recent-dumps .region-col {
-        width: 3rem;
+        width: 2.15rem;
+    }
+    .recent-dumps th.date-col,
+    .recent-dumps th.region-col,
+    .recent-dumps th.title-col,
+    .recent-dumps th.system-col {
+        color: transparent;
+        font-size: 0;
+        line-height: 0;
     }
     .recent-dumps th.region-col {
         white-space: nowrap;
@@ -2161,7 +2174,8 @@ nav .quick-search input[type="text"] {
     }
     .recent-dumps .system-col {
         padding-right: 0.08rem;
-        width: 3.35rem;
+        width: 1%;
+        white-space: nowrap;
     }
 }
 .clickable-row {
