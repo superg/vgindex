@@ -2127,6 +2127,43 @@ nav .quick-search input[type="text"] {
     width: 1%;
     white-space: nowrap;
 }
+@media (max-width: 768px) {
+    .home-recent-dumps .recent-dumps {
+        table-layout: fixed;
+    }
+    .recent-dumps th {
+        padding: 0.025rem 0.09rem;
+        font-size: 0.66rem;
+    }
+    .recent-dumps td {
+        padding: 0.025rem 0.09rem;
+        font-size: 0.62rem;
+    }
+    .recent-dumps .date-col {
+        width: 3.85rem;
+        padding-left: 0.05rem;
+        padding-right: 0.05rem;
+    }
+    .recent-dumps .region-col {
+        width: 3rem;
+    }
+    .recent-dumps th.region-col {
+        white-space: nowrap;
+    }
+    .recent-dumps .region-col .region-flags {
+        max-width: calc(2 * 1.55em);
+    }
+    .recent-dumps .title-col {
+        padding-left: 0.08rem;
+    }
+    .recent-dumps .title-col a {
+        max-width: 100%;
+    }
+    .recent-dumps .system-col {
+        padding-right: 0.08rem;
+        width: 3.35rem;
+    }
+}
 .clickable-row {
     cursor: pointer;
 }
