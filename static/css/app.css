@@ -3101,6 +3101,45 @@ textarea.full-width-textarea {
     margin-bottom: 0.15rem;
 }
 
+.maintenance-actions {
+    display: grid;
+    gap: 0.9rem;
+    max-width: 52rem;
+    margin: 0 auto;
+    justify-items: center;
+    text-align: center;
+}
+
+.maintenance-action {
+    border-top: 1px solid var(--pico-muted-border-color);
+    padding-top: 0.8rem;
+    width: 100%;
+}
+
+.maintenance-page-title {
+    text-align: center;
+}
+
+.maintenance-action form {
+    display: flex;
+    justify-content: center;
+    margin: 0;
+}
+
+.maintenance-action button {
+    width: auto;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.maintenance-action-note {
+    margin: 0.45rem auto 0;
+    max-width: 100%;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
 .disc-edit .form-actions,
 .disc-view .form-actions {
     display: flex;

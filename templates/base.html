@@ -47,7 +47,9 @@
                             <li><a href="/disc/submit">Add Disc</a></li>
                             <li><a href="/discs?dumper={{ self.url_encode(user.username) }}">My Discs</a></li>
                             <li><a href="/queue?submitter={{ self.url_encode(user.username) }}">My Submissions</a></li>
-                            <li><span class="submenu-disabled">Settings</span></li>
+                            {% if user.role.can_moderate() %}
+                            <li><a href="/maintenance">Maintenance</a></li>
+                            {% endif %}
                             <li>
                                 <form class="submenu-form" method="post" action="/logout">
                                     <button class="submenu-button" type="submit">Logout</button>
