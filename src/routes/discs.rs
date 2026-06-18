@@ -345,7 +345,7 @@ async fn discs_page(
 
     let sys_rows: Vec<SystemDropdownRow> = sqlx::query_as(
         "SELECT code, manufacturer, name FROM systems
-         ORDER BY LOWER(CONCAT(manufacturer, ' ', name))",
+         ORDER BY LOWER(COALESCE(NULLIF(manufacturer, ''), name)), LOWER(name)",
     )
     .fetch_all(&state.pool)
     .await
@@ -471,7 +471,7 @@ async fn discs_page(
             "(SELECT MIN(r.sort_order) FROM disc_regions dr JOIN regions r ON r.code = dr.region_code WHERE dr.disc_id = d.id)"
         }
         "title" => display_title_sort_sql(),
-        "system" => "LOWER(CONCAT(s.manufacturer, ' ', s.name))",
+        "system" => "LOWER(COALESCE(NULLIF(s.manufacturer, ''), s.name)), LOWER(s.name)",
         "version" => "LOWER(d.version)",
         "edition" => "LOWER(array_to_string(d.edition, ', '))",
         "language" => {
