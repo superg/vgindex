@@ -2145,9 +2145,9 @@ nav .quick-search input[type="text"] {
         font-size: 0.62rem;
     }
     .recent-dumps .date-col {
-        width: 3.85rem;
+        width: 3.65rem;
         padding-left: 0.05rem;
-        padding-right: 0.05rem;
+        padding-right: 0.02rem;
     }
     .recent-dumps .region-col {
         width: 2.15rem;
@@ -2167,7 +2167,7 @@ nav .quick-search input[type="text"] {
         max-width: calc(2 * 1.55em);
     }
     .recent-dumps .title-col {
-        padding-left: 0.08rem;
+        padding-left: 0.14rem;
     }
     .recent-dumps .title-col a {
         max-width: 100%;
