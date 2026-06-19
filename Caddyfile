@@ -4,11 +4,21 @@
 	https_port {$CADDY_HTTPS_PORT}
 }
 
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "frame-ancestors 'none'"
+	}
+}
+
 {$APP_WWW_URL} {
 	redir {$APP_PUBLIC_URL}{uri} permanent
 }
 
 {$APP_PUBLIC_URL} {
+	import security_headers
 	reverse_proxy {$APP_UPSTREAM_HOST}:{$APP_UPSTREAM_PORT}
 }
 

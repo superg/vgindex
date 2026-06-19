@@ -1,11 +1,15 @@
 use axum::{
     extract::State,
+    http::HeaderMap,
     response::Html,
     routing::{get, post},
     Json, Router,
 };
 
-use crate::auth::middleware::{CurrentUser, RequireAuth};
+use crate::auth::{
+    csrf,
+    middleware::{CurrentUser, RequireAuth},
+};
 use crate::error::AppError;
 use crate::transliteration::{Script, TransliterationError};
 use crate::AppState;
@@ -25,9 +29,12 @@ pub fn routes() -> Router<AppState> {
 /// field. Auth-gated: it's an editor helper.
 async fn transliterate(
     State(state): State<AppState>,
-    _user: RequireAuth,
+    RequireAuth(user): RequireAuth,
+    headers: HeaderMap,
     Json(req): Json<TransliterateRequest>,
 ) -> Result<Json<TransliterateResponse>, AppError> {
+    csrf::verify_headers(&user, &headers)?;
+
     let result = state
         .transliteration
         .transliterate(&req.text, req.script)

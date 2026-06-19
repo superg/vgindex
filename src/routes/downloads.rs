@@ -239,6 +239,7 @@ mod tests {
                 id: 1,
                 username: "tester".to_string(),
                 role: UserRole::User,
+                csrf_token: "test-csrf-token".to_string(),
                 avatar_url: None,
             }),
             can_download_keys,

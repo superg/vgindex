@@ -9,7 +9,10 @@ use axum::{
 use axum_extra::extract::Form;
 use serde::Deserialize;
 
-use crate::auth::middleware::{AuthenticatedUser, RequireAuth};
+use crate::auth::{
+    csrf,
+    middleware::{AuthenticatedUser, RequireAuth},
+};
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
@@ -1161,6 +1164,8 @@ pub struct DiscEditForm {
 
 #[derive(Deserialize)]
 pub struct DiscEditPostForm {
+    #[serde(default, rename = "_csrf")]
+    pub csrf_token: String,
     #[serde(default)]
     pub action: String,
     #[serde(flatten)]
@@ -1964,6 +1969,8 @@ async fn edit_submit(
     id: Result<Path<i32>, PathRejection>,
     Form(post): Form<DiscEditPostForm>,
 ) -> AppResult<Response> {
+    csrf::verify_token(&user, &post.csrf_token)?;
+
     let id = crate::routes::path_i32(id)?;
     let mut form = post.disc;
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
@@ -2195,6 +2202,8 @@ async fn add_submit(
     RequireAuth(user): RequireAuth,
     Form(post): Form<DiscEditPostForm>,
 ) -> AppResult<Response> {
+    csrf::verify_token(&user, &post.csrf_token)?;
+
     let form = post.disc;
     let ref_data = fetch_ref_data(&state.pool).await?;
     let add_match =

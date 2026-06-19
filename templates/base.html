@@ -8,6 +8,11 @@
     <link rel="shortcut icon" href="/static/favicon.ico">
     <link rel="stylesheet" href="/static/css/pico.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
+    {% match current_user %}
+    {% when Some with (user) %}
+    <meta name="csrf-token" content="{{ user.csrf_token }}">
+    {% when None %}
+    {% endmatch %}
     <script>
         (function() {
             var t = localStorage.getItem('theme');
@@ -52,6 +57,7 @@
                             {% endif %}
                             <li>
                                 <form class="submenu-form" method="post" action="/logout">
+                                    <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
                                     <button class="submenu-button" type="submit">Logout</button>
                                 </form>
                             </li>

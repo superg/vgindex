@@ -50,7 +50,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <tr><td><strong>Disc ID</strong></td><td><a href="/disc/{{ disc_id }}">{{ disc_id }}</a></td></tr>
         {% endif %}
         {% if !extra_upload_url_display.is_empty() %}
-        <tr><td><strong>Logs Archive URL</strong></td><td><a href="{{ extra_upload_url_display }}" target="_blank">{{ extra_upload_url_display }}</a></td></tr>
+        <tr><td><strong>Logs Archive URL</strong></td><td><a href="{{ extra_upload_url_display }}" target="_blank" rel="noopener noreferrer">{{ extra_upload_url_display }}</a></td></tr>
         {% endif %}
         <tr><td><strong>Status</strong></td><td>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</td></tr>
         {% if !reviewer_name.is_empty() %}
@@ -95,6 +95,11 @@ const IS_ADD_MODE = {{ is_add_mode }};
 {% endif %}
 
 <form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review{% else if is_add_mode %}/disc/submit{% else %}/disc/{{ disc_id }}/edit{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}" novalidate>
+    {% match current_user %}
+    {% when Some with (user) %}
+    <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+    {% when None %}
+    {% endmatch %}
 
     <div class="disc-form-section disc-form-section-meta" aria-label="Disc identity">
     <div class="disc-meta-fields">

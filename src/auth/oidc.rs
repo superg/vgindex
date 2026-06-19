@@ -200,11 +200,7 @@ async fn callback(
     )
     .await?;
 
-    let cookie = format!(
-        "{}={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
-        session::SESSION_COOKIE_NAME,
-        14 * 86400
-    );
+    let cookie = session::login_session_cookie(&sid, &state.config);
     let mut response = Redirect::to(&login_state.return_to).into_response();
     response
         .headers_mut()

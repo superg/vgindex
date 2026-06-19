@@ -396,6 +396,7 @@ pub struct Session {
     pub id: String,
     pub user_id: Option<i32>,
     pub role: Option<UserRole>,
+    pub csrf_token: Option<String>,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
     pub created_at: DateTime<Utc>,

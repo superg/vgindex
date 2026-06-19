@@ -5,9 +5,13 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum_extra::extract::Form;
 use serde::Deserialize;
 
-use crate::auth::middleware::{AuthenticatedUser, RequireModerator};
+use crate::auth::{
+    csrf::{self, CsrfForm},
+    middleware::{AuthenticatedUser, RequireModerator},
+};
 use crate::config::SiteConfig;
 use crate::services::{archive_service, disc_service};
 use crate::AppState;
@@ -52,8 +56,14 @@ async fn maintenance_page(
     )
 }
 
-async fn rebuild_cue(State(state): State<AppState>, _user: RequireModerator) -> Response {
-    match disc_service::regenerate_all_cue_entries(&state.pool).await {
+async fn rebuild_cue(
+    State(state): State<AppState>,
+    RequireModerator(user): RequireModerator,
+    Form(form): Form<CsrfForm>,
+) -> crate::error::AppResult<Response> {
+    csrf::verify_form(&user, &form)?;
+
+    Ok(match disc_service::regenerate_all_cue_entries(&state.pool).await {
         Ok(summary) => redirect_with_message(
             "status",
             &format!(
@@ -70,18 +80,23 @@ async fn rebuild_cue(State(state): State<AppState>, _user: RequireModerator) -> 
             tracing::error!("Failed to rebuild database cue: {err}");
             redirect_with_message("error", "Failed to rebuild database cue.")
         }
-    }
+    })
 }
 
-async fn clear_archives_cache(_user: RequireModerator) -> Response {
-    match archive_service::clear_archives_cache() {
+async fn clear_archives_cache(
+    RequireModerator(user): RequireModerator,
+    Form(form): Form<CsrfForm>,
+) -> crate::error::AppResult<Response> {
+    csrf::verify_form(&user, &form)?;
+
+    Ok(match archive_service::clear_archives_cache() {
         Ok(true) => redirect_with_message("status", "Cleared archives cache."),
         Ok(false) => redirect_with_message("status", "Archives cache was already empty."),
         Err(err) => {
             tracing::error!("Failed to clear archives cache: {err}");
             redirect_with_message("error", "Failed to clear archives cache.")
         }
-    }
+    })
 }
 
 fn redirect_with_message(param: &str, message: &str) -> Response {
@@ -115,6 +130,7 @@ mod tests {
             id: 1,
             username: "tester".to_string(),
             role,
+            csrf_token: "test-csrf-token".to_string(),
             avatar_url: None,
         }
     }
@@ -197,6 +213,33 @@ mod tests {
         let logout_pos = html.find(r#"action="/logout""#).unwrap();
 
         assert!(maintenance_pos < logout_pos);
+    }
+
+    #[test]
+    fn logged_in_base_template_emits_csrf_meta_and_logout_field() {
+        let html = render_menu(UserRole::User);
+
+        assert!(html.contains(r#"<meta name="csrf-token" content="test-csrf-token">"#));
+        assert!(html.contains(r#"<input type="hidden" name="_csrf" value="test-csrf-token">"#));
+    }
+
+    #[test]
+    fn maintenance_forms_include_csrf_fields() {
+        let html = MaintenanceTemplate {
+            current_user: Some(auth_user(UserRole::Moderator)),
+            status_message: String::new(),
+            error_message: String::new(),
+        }
+        .render()
+        .unwrap();
+
+        assert_eq!(
+            html.matches(r#"name="_csrf" value="test-csrf-token""#)
+                .count(),
+            3
+        );
+        assert!(html.contains(r#"action="/maintenance/rebuild-cue""#));
+        assert!(html.contains(r#"action="/maintenance/clear-archives-cache""#));
     }
 
     #[tokio::test]

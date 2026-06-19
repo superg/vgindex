@@ -8,7 +8,10 @@ use axum::{
 use axum_extra::extract::Form;
 use serde::Deserialize;
 
-use crate::auth::middleware::{AuthenticatedUser, CurrentUser, RequireAuth};
+use crate::auth::{
+    csrf,
+    middleware::{AuthenticatedUser, CurrentUser, RequireAuth},
+};
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
@@ -1668,6 +1671,8 @@ fn apply_highlights(template: &mut DiscEditTemplate, highlights: FieldHighlights
 
 #[derive(Deserialize)]
 pub struct ReviewForm {
+    #[serde(default, rename = "_csrf")]
+    pub csrf_token: String,
     pub action: String,
     pub review_comment: Option<String>,
     #[serde(flatten)]
@@ -1680,6 +1685,8 @@ async fn review_submit(
     Path(id): Path<i32>,
     Form(form): Form<ReviewForm>,
 ) -> AppResult<Response> {
+    csrf::verify_token(&user, &form.csrf_token)?;
+
     let sub = queue_service::get_submission(&state.pool, id).await?;
 
     if !can_review_submission(&user, &sub) {
@@ -2264,6 +2271,7 @@ mod tests {
             id,
             username: format!("user{id}"),
             role,
+            csrf_token: "test-csrf-token".to_string(),
             avatar_url: None,
         }
     }
@@ -2361,6 +2369,7 @@ mod tests {
                 id: 42,
                 username: "moderator".to_string(),
                 role: UserRole::Moderator,
+                csrf_token: "test-csrf-token".to_string(),
                 avatar_url: Some("https://example.test/avatar.png".to_string()),
             }),
             submission_id: 1,
@@ -2383,6 +2392,14 @@ mod tests {
         let html = template.render().unwrap();
 
         assert!(html.contains(r#"src="https://example.test/avatar.png""#));
+    }
+
+    #[test]
+    fn review_disc_edit_form_includes_csrf_field() {
+        let html = build_template(&submitted_snapshot()).render().unwrap();
+
+        assert!(html.contains(r#"<form method="post" action="/queue/42/review""#));
+        assert!(html.contains(r#"<input type="hidden" name="_csrf" value="test-csrf-token">"#));
     }
 
     #[test]

@@ -978,9 +978,15 @@ function initTransliterate() {
         btn.textContent = '…';
         setTransliterateNote(note, '');
 
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        var csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+
         fetch('/api/transliterate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken || ''
+            },
             body: JSON.stringify({ text: text, script: script })
         }).then(function (resp) {
             if (!resp.ok) {

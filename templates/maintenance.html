@@ -18,6 +18,11 @@
 <div class="maintenance-actions">
     <section class="maintenance-action">
         <form method="post" action="/maintenance/rebuild-cue">
+            {% match current_user %}
+            {% when Some with (user) %}
+            <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+            {% when None %}
+            {% endmatch %}
             <button type="submit">Rebuild CUE</button>
         </form>
         <p class="maintenance-action-note">Updates CUE sheets and hashes. Run after changing filename character substitution rules.</p>
@@ -25,6 +30,11 @@
 
     <section class="maintenance-action">
         <form method="post" action="/maintenance/clear-archives-cache">
+            {% match current_user %}
+            {% when Some with (user) %}
+            <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+            {% when None %}
+            {% endmatch %}
             <button type="submit">Clear Archives Cache</button>
         </form>
         <p class="maintenance-action-note">Deletes all cached download archives. Archives are recreated per system either on DB change or on first download.</p>

@@ -19,6 +19,7 @@ pub struct AuthenticatedUser {
     pub id: i32,
     pub username: String,
     pub role: UserRole,
+    pub csrf_token: String,
     pub avatar_url: Option<String>,
 }
 
@@ -28,6 +29,7 @@ impl AuthenticatedUser {
             id: 0,
             username: username.into(),
             role: UserRole::User,
+            csrf_token: "test-csrf-token".to_string(),
             avatar_url: None,
         }
     }
@@ -79,6 +81,7 @@ where
                                 id: u.id,
                                 username: u.username,
                                 role,
+                                csrf_token: session.csrf_token.unwrap_or_default(),
                                 avatar_url: u.avatar_url,
                             })));
                         }
@@ -204,10 +207,7 @@ pub async fn guest_session_layer(
         if already_set {
             let _ = session::delete_session(&state.pool, &sid).await;
         } else {
-            let cookie = format!(
-                "{}={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400",
-                session::SESSION_COOKIE_NAME
-            );
+            let cookie = session::guest_session_cookie(&sid, &state.config);
             if let Ok(val) = cookie.parse() {
                 response.headers_mut().append(header::SET_COOKIE, val);
             }
