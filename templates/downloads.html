@@ -4,7 +4,7 @@
 
 {% block content %}
 <h3 class="downloads-page-title">Downloads</h3>
-<p class="downloads-page-desc">Download datfiles, cuesheets, keys, and SBI archives for each system.</p>
+<p class="downloads-page-desc">Download datfiles, cuesheets, {% if can_download_keys %}keys, {% endif %}and SBI archives for each system.</p>
 
 <div class="downloads-table-scaler">
 <table class="striped downloads-table" data-downloads-width-source>
