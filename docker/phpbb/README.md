@@ -56,6 +56,8 @@ Main variables:
 - `PHPBB_ALLOW_PASSWORD_RESET` (bootstrap default: `true`)
 - `PHPBB_FEED_ENABLE` (bootstrap default: `true`)
 - `PHPBB_FEED_LIMIT_TOPIC` (bootstrap default: `5`)
+- `PHPBB_REMOTE_IP_INTERNAL_PROXIES` (comma-separated internal proxy IPs/CIDRs
+  trusted for `X-Forwarded-For`; default covers Docker RFC1918 networks)
 - `OIDC_PROVIDER_URL` (normally `${PHPBB_PUBLIC_URL}/app.php/oidc`)
 - `APP_PUBLIC_URL` / `MEDIAWIKI_PUBLIC_URL` for seeded redirect URIs
 - `APP_OIDC_CLIENT_ID` / `APP_OIDC_CLIENT_SECRET`
@@ -84,6 +86,35 @@ Public self-registration is disabled by the default bootstrap values, but active
 imported users can recover access through phpBB password reset once email is
 configured. After bootstrap, registration and email settings can be changed in
 phpBB ACP and will survive container restarts.
+
+## Real Client IPs Behind Caddy
+
+Caddy forwards the client IP in `X-Forwarded-For`. The phpBB image enables
+Apache `mod_remoteip` so Apache rewrites `REMOTE_ADDR` before phpBB reads it.
+That makes phpBB logs, bans, and sessions use the external visitor IP instead of
+the internal Docker proxy address, such as `172.18.0.6`.
+
+By default, Apache trusts forwarded IPs only from private Docker/LAN ranges:
+
+```text
+10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+```
+
+For production, you can tighten this to the exact Compose subnet or proxy
+container address:
+
+```env
+PHPBB_REMOTE_IP_INTERNAL_PROXIES=172.18.0.0/16
+```
+
+Recreate the phpBB container after changing it:
+
+```bash
+docker compose up -d --build phpbb
+```
+
+If another proxy sits in front of Caddy, configure that proxy to pass
+`X-Forwarded-For` to Caddy as well.
 
 ## OpenID Connect Provider
 

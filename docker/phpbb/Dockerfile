@@ -24,7 +24,7 @@ RUN set -eux; \
         pgsql \
         xml \
         zip; \
-    a2enmod rewrite; \
+    a2enmod rewrite remoteip; \
     printf '%s\n' 'SetEnvIfNoCase Authorization "^(.*)$" HTTP_AUTHORIZATION=$1' \
         > /etc/apache2/conf-available/auth-headers.conf; \
     a2enconf auth-headers; \

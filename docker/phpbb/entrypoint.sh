@@ -38,6 +38,7 @@ fi
 : "${PHPBB_ALLOW_PASSWORD_RESET:=true}"
 : "${PHPBB_FEED_ENABLE:=true}"
 : "${PHPBB_FEED_LIMIT_TOPIC:=5}"
+: "${PHPBB_REMOTE_IP_INTERNAL_PROXIES:=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}"
 
 escape_php_single() {
     printf "%s" "$1" | sed "s/'/'\\\\''/g"
@@ -189,6 +190,26 @@ prepare_writable_dirs() {
         /var/www/html/files \
         /var/www/html/store \
         /var/www/html/images/avatars/upload
+}
+
+configure_remote_ip() {
+    local proxy proxy_list
+    proxy_list="$(printf "%s" "$PHPBB_REMOTE_IP_INTERNAL_PROXIES" | tr ',' ' ')"
+    set -- $proxy_list
+
+    if [ "$#" -eq 0 ]; then
+        a2disconf remoteip >/dev/null 2>&1 || true
+        return
+    fi
+
+    {
+        printf "%s\n" "RemoteIPHeader X-Forwarded-For"
+        for proxy in "$@"; do
+            printf "RemoteIPInternalProxy %s\n" "$proxy"
+        done
+    } >/etc/apache2/conf-available/remoteip.conf
+
+    a2enconf remoteip >/dev/null
 }
 
 write_config_php() {
@@ -485,6 +506,7 @@ EOF
 }
 
 wait_for_db
+configure_remote_ip
 prepare_writable_dirs
 
 installed_now=0
