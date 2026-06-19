@@ -34,6 +34,17 @@ fn ring_tab_replace(s: &str) -> String {
     )
 }
 
+fn join_sorted_identifier_values(values: &[String]) -> String {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| {
+        a.trim()
+            .to_lowercase()
+            .cmp(&b.trim().to_lowercase())
+            .then_with(|| a.cmp(b))
+    });
+    sorted.join("<br>")
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/disc/{id}", get(disc_view))
@@ -684,17 +695,17 @@ async fn disc_view(
             disc_number: detail.disc.disc_number.clone().unwrap_or_default(),
             show_serial: detail.system.has_serial,
             serial_count: detail.disc.serial.len(),
-            serial: detail.disc.serial.join("<br>"),
+            serial: join_sorted_identifier_values(&detail.disc.serial),
             show_exe_date: detail.system.has_exe_date,
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
             show_version: detail.system.has_version,
             version: detail.disc.version.clone().unwrap_or_default(),
             show_edition: detail.system.has_edition,
             edition_count: detail.disc.edition.len(),
-            edition: detail.disc.edition.join("<br>"),
+            edition: join_sorted_identifier_values(&detail.disc.edition),
             show_barcode: detail.system.has_barcode,
             barcode_count: detail.disc.barcode.len(),
-            barcode: detail.disc.barcode.join("<br>"),
+            barcode: join_sorted_identifier_values(&detail.disc.barcode),
             layerbreaks: detail
                 .disc
                 .layerbreaks
@@ -1753,6 +1764,42 @@ mod tests {
             bca_rows: Vec::new(),
             show_bca: false,
         }
+    }
+
+    #[test]
+    fn disc_identifier_fields_render_sorted_for_display() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.show_serial = true;
+        template.serial_count = 4;
+        template.serial = join_sorted_identifier_values(&[
+            "beta-002".to_string(),
+            "abc".to_string(),
+            "ABC".to_string(),
+            "Alpha-001".to_string(),
+        ]);
+        template.show_edition = true;
+        template.edition_count = 3;
+        template.edition = join_sorted_identifier_values(&[
+            "Limited".to_string(),
+            "original".to_string(),
+            "Original".to_string(),
+        ]);
+        template.show_barcode = true;
+        template.barcode_count = 3;
+        template.barcode = join_sorted_identifier_values(&[
+            "9 999999 999999".to_string(),
+            "0 123456 789012".to_string(),
+            "0 123456 123456".to_string(),
+        ]);
+
+        let html = template.render().unwrap();
+
+        assert!(html.contains("<strong>Disc Serials</strong>"));
+        assert!(html.contains("ABC<br>abc<br>Alpha-001<br>beta-002"));
+        assert!(html.contains("<strong>Editions</strong>"));
+        assert!(html.contains("Limited<br>Original<br>original"));
+        assert!(html.contains("<strong>Barcodes</strong>"));
+        assert!(html.contains("0 123456 123456<br>0 123456 789012<br>9 999999 999999"));
     }
 
     #[test]
