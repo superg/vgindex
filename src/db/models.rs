@@ -621,7 +621,6 @@ pub fn sanitize_filename(s: &str) -> String {
         }
     }
     result.retain(|c| !matches!(c as u32, 0x00..=0x1F | 0x7F));
-    result = result.trim_end_matches([' ', '.']).to_string();
     result
 }
 
@@ -1260,9 +1259,15 @@ FILE \"Track 2.bin\" BINARY\n\
     #[test]
     fn dat_system_name_control_and_trailing_characters() {
         assert_eq!(
-            build_dat_system_name("", "", "Foo\tBar\nBaz\u{7f} ."),
+            build_dat_system_name("", "", "Foo\tBar\nBaz\u{7f}"),
             "FooBarBaz"
         );
+    }
+
+    #[test]
+    fn sanitize_filename_preserves_trailing_dots_and_spaces() {
+        assert_eq!(sanitize_filename("Game."), "Game.");
+        assert_eq!(sanitize_filename("Game.. "), "Game.. ");
     }
 
     #[test]

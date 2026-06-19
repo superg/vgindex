@@ -252,7 +252,6 @@ def sanitize_filename(s):
         for old, new in replacements:
             s = s.replace(old, new)
     s = "".join(ch for ch in s if not (ord(ch) <= 0x1F or ord(ch) == 0x7F))
-    s = s.rstrip(" .")
     return s
 
 
@@ -322,7 +321,8 @@ assert build_dat_system_name("", "", "Foo:Bar") == "Foo-Bar"
 assert build_dat_system_name("", "", "Foo / Bar") == "Foo & Bar"
 assert build_dat_system_name("", "", "Foo/Bar") == "Foo-Bar"
 assert build_dat_system_name("", "", r"Foo\Bar<Baz>Qux|Zap") == "Foo-Bar_Baz_Qux+Zap"
-assert build_dat_system_name("", "", "Foo\tBar\nBaz\x7f .") == "FooBarBaz"
+assert build_dat_system_name("", "", "Foo\tBar\nBaz\x7f") == "FooBarBaz"
+assert build_dat_system_name("", "", "Foo.") == "Foo."
 assert build_dat_system_name("", "", "¡Foo¿ 360°") == "Foo 360"
 
 

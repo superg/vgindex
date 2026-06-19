@@ -154,6 +154,10 @@ class GenerateImportSqlTests(unittest.TestCase):
         self.assertEqual(generate_import_sql.sanitize_filename("Foo / Bar"), "Foo & Bar")
         self.assertEqual(generate_import_sql.sanitize_filename("Foo/Bar"), "Foo-Bar")
 
+    def test_sanitize_filename_preserves_trailing_dots_and_spaces(self):
+        self.assertEqual(generate_import_sql.sanitize_filename("Game."), "Game.")
+        self.assertEqual(generate_import_sql.sanitize_filename("Game.. "), "Game.. ")
+
     def test_build_rom_base_name_sanitizes_components_before_assembly(self):
         self.assertEqual(
             generate_import_sql.build_rom_base_name(
