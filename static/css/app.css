@@ -1139,7 +1139,6 @@ details + p small {
     font-size: 0.85rem;
 }
 .disc-view .section-collapsible .pre-wrap {
-    width: max-content;
     max-width: min(100%, var(--disc-aux-max-width));
     margin-inline: auto;
     text-align: left;
