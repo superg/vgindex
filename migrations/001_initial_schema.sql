@@ -233,6 +233,7 @@ CREATE TABLE disc_submissions (
     submitter_id INT NOT NULL REFERENCES users(id),
     submission_comment TEXT,
     target_disc_id INT REFERENCES discs(id),
+    changes_original JSONB,
     changes JSONB NOT NULL,
     dump_log TEXT,
     extra_upload_url VARCHAR(512),

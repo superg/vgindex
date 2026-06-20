@@ -2087,6 +2087,7 @@ mod tests {
             submitter_id: 7,
             submission_comment: None,
             target_disc_id: Some(1),
+            changes_original: None,
             changes: serde_json::json!({}),
             dump_log: None,
             extra_upload_url: None,

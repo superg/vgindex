@@ -480,6 +480,7 @@ pub struct DiscSubmission {
     pub submitter_id: i32,
     pub submission_comment: Option<String>,
     pub target_disc_id: Option<i32>,
+    pub changes_original: Option<serde_json::Value>,
     pub changes: serde_json::Value,
     pub dump_log: Option<String>,
     pub extra_upload_url: Option<String>,

@@ -817,7 +817,7 @@ pub async fn approve_submission(
 
     let claim = sqlx::query(
         "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1,
-         review_comment = $2, reviewed_at = NOW(), changes = $3
+         review_comment = $2, reviewed_at = NOW(), changes_original = changes, changes = $3
          WHERE id = $4 AND status = 'Pending'",
     )
     .bind(reviewer_id)
@@ -1181,6 +1181,7 @@ mod tests {
             submitter_id: 1,
             submission_comment: None,
             target_disc_id,
+            changes_original: None,
             changes,
             dump_log: None,
             extra_upload_url: None,
