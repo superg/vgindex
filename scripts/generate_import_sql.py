@@ -143,11 +143,11 @@ REGION_NAME_TO_CODE = {
     "Czech": "cz", "Germany": "de", "Denmark": "dk", "Estonia": "ee",
     "Finland": "fi", "Greece": "gr", "Croatia": "hr", "Hungary": "hu",
     "Ireland": "ie", "Israel": "il", "India": "in", "Iceland": "is",
-    "Italy": "it", "Korea": "kr", "Lithuania": "lt", "Netherlands": "nl",
-    "Norway": "no", "New Zealand": "nz", "Poland": "pl", "Portugal": "pt",
-    "Romania": "ro", "Serbia": "rs", "Russia": "ru", "Sweden": "se",
-    "Singapore": "sg", "Slovakia": "sk", "Thailand": "th", "Turkey": "tr",
-    "Taiwan": "tw", "Ukraine": "ua", "Latin America": "xl",
+    "Italy": "it", "Korea": "kr", "Lithuania": "lt", "Mexico": "mx",
+    "Netherlands": "nl", "Norway": "no", "New Zealand": "nz", "Poland": "pl",
+    "Portugal": "pt", "Romania": "ro", "Serbia": "rs", "Russia": "ru",
+    "Sweden": "se", "Singapore": "sg", "Slovakia": "sk", "Thailand": "th",
+    "Turkey": "tr", "Taiwan": "tw", "Ukraine": "ua", "Latin America": "xl",
     "Export": "xp", "Scandinavia": "xs", "World": "xw", "South Africa": "za",
 }
 
@@ -178,12 +178,12 @@ REGION_SORT_ORDER = {
     "Czech": 19, "Germany": 20, "Denmark": 21, "Estonia": 22,
     "Finland": 23, "Greece": 24, "Croatia": 25, "Hungary": 26,
     "Ireland": 27, "Israel": 28, "India": 29, "Iceland": 30,
-    "Italy": 31, "Korea": 32, "Lithuania": 33, "Netherlands": 34,
-    "Norway": 35, "New Zealand": 36, "Poland": 37, "Portugal": 38,
-    "Romania": 39, "Serbia": 40, "Russia": 41, "Sweden": 42,
-    "Singapore": 43, "Slovakia": 44, "Thailand": 45, "Turkey": 46,
-    "Taiwan": 47, "Ukraine": 48, "Latin America": 49, "Export": 50,
-    "Scandinavia": 51, "World": 52, "South Africa": 53,
+    "Italy": 31, "Korea": 32, "Lithuania": 33, "Mexico": 34,
+    "Netherlands": 35, "Norway": 36, "New Zealand": 37, "Poland": 38,
+    "Portugal": 39, "Romania": 40, "Serbia": 41, "Russia": 42,
+    "Sweden": 43, "Singapore": 44, "Slovakia": 45, "Thailand": 46,
+    "Turkey": 47, "Taiwan": 48, "Ukraine": 49, "Latin America": 50,
+    "Export": 51, "Scandinavia": 52, "World": 53, "South Africa": 54,
 }
 
 LANG2_SORT_ORDER = {
