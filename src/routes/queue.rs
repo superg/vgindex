@@ -507,7 +507,14 @@ async fn submission_detail(
     );
 
     if let Some(db_snapshot) = db_snapshot {
-        apply_review_diff_context(&mut template, &snapshot, &db_snapshot, &ref_data, true);
+        apply_review_diff_context(
+            &mut template,
+            &snapshot,
+            &db_snapshot,
+            &ref_data,
+            sub.submission_type,
+            true,
+        );
         let highlights = compute_field_highlights(&snapshot, &db_snapshot);
         apply_highlights(&mut template, highlights);
     }
@@ -987,12 +994,43 @@ fn comments_text_contains_review_delimiter(comments: Option<&str>) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReviewIdentityMode {
+    PreferOld,
+    PreferSubmitted,
+}
+
+impl ReviewIdentityMode {
+    fn from_submission_type(submission_type: SubmissionType) -> Self {
+        match submission_type {
+            SubmissionType::Disc => Self::PreferOld,
+            SubmissionType::Edit => Self::PreferSubmitted,
+        }
+    }
+
+    fn annotation_label(self) -> &'static str {
+        match self {
+            Self::PreferOld => "Changed to",
+            Self::PreferSubmitted => "Changed from",
+        }
+    }
+
+    fn annotation_kind(self) -> &'static str {
+        match self {
+            Self::PreferOld => "added",
+            Self::PreferSubmitted => "removed",
+        }
+    }
+}
+
 fn build_review_diff_context(
     submitted_snapshot: &serde_json::Value,
     db_snapshot: &serde_json::Value,
     ref_data: &disc_edit::EditRefData,
+    submission_type: SubmissionType,
 ) -> ReviewDiffContext {
     let mut context = ReviewDiffContext::default();
+    let identity_mode = ReviewIdentityMode::from_submission_type(submission_type);
 
     for field in ["system_code", "media_type", "category"] {
         let old = &db_snapshot[field];
@@ -1000,16 +1038,19 @@ fn build_review_diff_context(
         if !review_value_changed(old, new) {
             continue;
         }
-        let new_display = review_named_value(field, new, ref_data);
+        let annotation_value = match identity_mode {
+            ReviewIdentityMode::PreferOld => review_named_value(field, new, ref_data),
+            ReviewIdentityMode::PreferSubmitted => review_named_value(field, old, ref_data),
+        };
         add_single_annotation(
             &mut context,
             field,
-            "Changed to",
-            "added",
-            if new_display.trim().is_empty() {
+            identity_mode.annotation_label(),
+            identity_mode.annotation_kind(),
+            if annotation_value.trim().is_empty() {
                 "(empty)".to_string()
             } else {
-                new_display
+                annotation_value
             },
         );
     }
@@ -1024,12 +1065,16 @@ fn build_review_diff_context(
         let old = &db_snapshot[field];
         let new = &submitted_snapshot[field];
         if review_value_changed(old, new) {
+            let annotation_value = match identity_mode {
+                ReviewIdentityMode::PreferOld => review_annotation_value(new),
+                ReviewIdentityMode::PreferSubmitted => review_annotation_value(old),
+            };
             add_single_annotation(
                 &mut context,
                 field,
-                "Changed to",
-                "added",
-                review_annotation_value(new),
+                identity_mode.annotation_label(),
+                identity_mode.annotation_kind(),
+                annotation_value,
             );
         }
     }
@@ -1139,9 +1184,11 @@ fn apply_review_diff_context(
     submitted_snapshot: &serde_json::Value,
     db_snapshot: &serde_json::Value,
     ref_data: &disc_edit::EditRefData,
+    submission_type: SubmissionType,
     apply_initial_values: bool,
 ) {
-    let context = build_review_diff_context(submitted_snapshot, db_snapshot, ref_data);
+    let context =
+        build_review_diff_context(submitted_snapshot, db_snapshot, ref_data, submission_type);
     template.review_annotations = context.annotations;
     template.review_old_multiline = context.old_multiline;
 
@@ -1149,83 +1196,86 @@ fn apply_review_diff_context(
         return;
     }
 
-    if review_value_changed(
-        &db_snapshot["system_code"],
-        &submitted_snapshot["system_code"],
-    ) {
-        let old_system_code = review_display_value(&db_snapshot["system_code"]);
-        template.system_code = old_system_code.clone();
-        template.systems = build_system_options(&ref_data.all_systems, &old_system_code);
-        if let Some(system) = ref_data
-            .all_systems
-            .iter()
-            .find(|system| system.code == old_system_code)
-        {
-            template.show_title_foreign = system.has_title_foreign;
-            template.show_disc_number = system.has_disc_number;
-            template.show_disc_title = system.has_disc_title;
-            template.show_serial = system.has_serial;
-            template.show_version = system.has_version;
-            template.show_edition = system.has_edition;
-            template.show_barcode = system.has_barcode;
-            template.show_exe_date = system.has_exe_date;
-            template.show_edc = system.has_edc;
-            template.show_disc_id = system.has_disc_id;
-            template.show_key = system.has_key;
-            template.show_universal_hash = system.has_universal_hash;
-            template.show_protection = system.has_protection;
-            template.show_sector_ranges = system.has_sector_ranges;
-            template.show_sbi = system.has_sbi;
-            template.show_pvd = system.has_pvd;
-            template.show_bca = system.has_bca;
-            template.show_header = system.has_header;
-            template.has_sample_start = system.has_sample_start;
+    if ReviewIdentityMode::from_submission_type(submission_type) == ReviewIdentityMode::PreferOld {
+        if review_value_changed(
+            &db_snapshot["system_code"],
+            &submitted_snapshot["system_code"],
+        ) {
+            let old_system_code = review_display_value(&db_snapshot["system_code"]);
+            template.system_code = old_system_code.clone();
+            template.systems = build_system_options(&ref_data.all_systems, &old_system_code);
+            if let Some(system) = ref_data
+                .all_systems
+                .iter()
+                .find(|system| system.code == old_system_code)
+            {
+                template.show_title_foreign = system.has_title_foreign;
+                template.show_disc_number = system.has_disc_number;
+                template.show_disc_title = system.has_disc_title;
+                template.show_serial = system.has_serial;
+                template.show_version = system.has_version;
+                template.show_edition = system.has_edition;
+                template.show_barcode = system.has_barcode;
+                template.show_exe_date = system.has_exe_date;
+                template.show_edc = system.has_edc;
+                template.show_disc_id = system.has_disc_id;
+                template.show_key = system.has_key;
+                template.show_universal_hash = system.has_universal_hash;
+                template.show_protection = system.has_protection;
+                template.show_sector_ranges = system.has_sector_ranges;
+                template.show_sbi = system.has_sbi;
+                template.show_pvd = system.has_pvd;
+                template.show_bca = system.has_bca;
+                template.show_header = system.has_header;
+                template.has_sample_start = system.has_sample_start;
+            }
         }
-    }
 
-    if review_value_changed(
-        &db_snapshot["media_type"],
-        &submitted_snapshot["media_type"],
-    ) {
-        let old_media_type = review_display_value(&db_snapshot["media_type"]);
-        template.media_type_code = old_media_type.clone();
-        template.media_types_all = build_media_options(&ref_data.all_media_types, &old_media_type);
-        template.max_layers = max_layers_for_media(&ref_data.all_media_types, &old_media_type);
-        template.show_error_count = ref_data
-            .all_media_types
-            .iter()
-            .find(|media| media.code == old_media_type)
-            .map_or(false, |media| is_cd_rom_extension(&media.rom_extension));
-        template.show_pic = ref_data
-            .all_media_types
-            .iter()
-            .find(|media| media.code == old_media_type)
-            .map_or(false, |media| media.pic);
-    }
-
-    if review_value_changed(&db_snapshot["category"], &submitted_snapshot["category"]) {
-        let old_category = review_display_value(&db_snapshot["category"]);
-        template.categories = build_category_options(&ref_data.all_categories, &old_category);
-    }
-
-    for field in [
-        "title",
-        "title_foreign",
-        "disc_number",
-        "disc_title",
-        "filename_suffix",
-    ] {
-        if !review_value_changed(&db_snapshot[field], &submitted_snapshot[field]) {
-            continue;
+        if review_value_changed(
+            &db_snapshot["media_type"],
+            &submitted_snapshot["media_type"],
+        ) {
+            let old_media_type = review_display_value(&db_snapshot["media_type"]);
+            template.media_type_code = old_media_type.clone();
+            template.media_types_all =
+                build_media_options(&ref_data.all_media_types, &old_media_type);
+            template.max_layers = max_layers_for_media(&ref_data.all_media_types, &old_media_type);
+            template.show_error_count = ref_data
+                .all_media_types
+                .iter()
+                .find(|media| media.code == old_media_type)
+                .map_or(false, |media| is_cd_rom_extension(&media.rom_extension));
+            template.show_pic = ref_data
+                .all_media_types
+                .iter()
+                .find(|media| media.code == old_media_type)
+                .map_or(false, |media| media.pic);
         }
-        let old_value = review_display_value(&db_snapshot[field]);
-        match field {
-            "title" => template.title = old_value,
-            "title_foreign" => template.title_foreign = old_value,
-            "disc_number" => template.disc_number = old_value,
-            "disc_title" => template.disc_title = old_value,
-            "filename_suffix" => template.filename_suffix = old_value,
-            _ => {}
+
+        if review_value_changed(&db_snapshot["category"], &submitted_snapshot["category"]) {
+            let old_category = review_display_value(&db_snapshot["category"]);
+            template.categories = build_category_options(&ref_data.all_categories, &old_category);
+        }
+
+        for field in [
+            "title",
+            "title_foreign",
+            "disc_number",
+            "disc_title",
+            "filename_suffix",
+        ] {
+            if !review_value_changed(&db_snapshot[field], &submitted_snapshot[field]) {
+                continue;
+            }
+            let old_value = review_display_value(&db_snapshot[field]);
+            match field {
+                "title" => template.title = old_value,
+                "title_foreign" => template.title_foreign = old_value,
+                "disc_number" => template.disc_number = old_value,
+                "disc_title" => template.disc_title = old_value,
+                "filename_suffix" => template.filename_suffix = old_value,
+                _ => {}
+            }
         }
     }
 
@@ -1789,6 +1839,7 @@ async fn review_submit(
                 &submitted_snapshot,
                 &db_snapshot,
                 &ref_data,
+                sub.submission_type,
                 false,
             );
             let highlights = compute_field_highlights(&submitted_snapshot, &db_snapshot);
@@ -2404,13 +2455,20 @@ mod tests {
     }
 
     #[test]
-    fn review_initial_values_prefer_old_title_fields_and_annotate_submitted_values() {
+    fn review_disc_initial_values_prefer_old_identity_fields_and_annotate_submitted_values() {
         let db = old_snapshot();
         let submitted = submitted_snapshot();
         let ref_data = ref_data();
         let mut template = build_template(&submitted);
 
-        apply_review_diff_context(&mut template, &submitted, &db, &ref_data, true);
+        apply_review_diff_context(
+            &mut template,
+            &submitted,
+            &db,
+            &ref_data,
+            SubmissionType::Disc,
+            true,
+        );
 
         assert_eq!(template.system_code, "OLD");
         assert_eq!(template.media_type_code, "DVD");
@@ -2441,13 +2499,64 @@ mod tests {
     }
 
     #[test]
+    fn review_edit_initial_values_keep_submitted_identity_fields_and_annotate_old_values() {
+        let db = old_snapshot();
+        let submitted = submitted_snapshot();
+        let ref_data = ref_data();
+        let mut template = build_template(&submitted);
+
+        apply_review_diff_context(
+            &mut template,
+            &submitted,
+            &db,
+            &ref_data,
+            SubmissionType::Edit,
+            true,
+        );
+
+        assert_eq!(template.system_code, "NEW");
+        assert_eq!(template.media_type_code, "BD");
+        assert_eq!(selected_system(&template), "NEW");
+        assert_eq!(selected_media(&template), "BD");
+        assert_eq!(selected_category(&template), "Demos");
+        assert_eq!(template.title, "New Game");
+        assert_eq!(template.title_foreign, "New Foreign");
+        assert_eq!(template.disc_number, "2");
+        assert_eq!(template.disc_title, "New Disc");
+        assert_eq!(template.filename_suffix, "New Suffix");
+        assert_eq!(
+            annotation_values(&template, "title", "Changed from"),
+            vec!["Old Game".to_string()]
+        );
+        assert_eq!(
+            annotation_values(&template, "system_code", "Changed from"),
+            vec!["Test Old System".to_string()]
+        );
+        assert_eq!(
+            annotation_values(&template, "media_type", "Changed from"),
+            vec!["DVD-ROM".to_string()]
+        );
+        assert_eq!(
+            annotation_values(&template, "category", "Changed from"),
+            vec!["Games".to_string()]
+        );
+    }
+
+    #[test]
     fn review_annotations_include_added_removed_sets_and_old_multiline_sidecars() {
         let db = old_snapshot();
         let submitted = submitted_snapshot();
         let ref_data = ref_data();
         let mut template = build_template(&submitted);
 
-        apply_review_diff_context(&mut template, &submitted, &db, &ref_data, true);
+        apply_review_diff_context(
+            &mut template,
+            &submitted,
+            &db,
+            &ref_data,
+            SubmissionType::Disc,
+            true,
+        );
 
         assert_eq!(
             annotation_values(&template, "regions", "Removed"),
@@ -2494,7 +2603,14 @@ mod tests {
         let ref_data = ref_data();
         let mut template = build_template(&submitted);
 
-        apply_review_diff_context(&mut template, &submitted, &db, &ref_data, true);
+        apply_review_diff_context(
+            &mut template,
+            &submitted,
+            &db,
+            &ref_data,
+            SubmissionType::Disc,
+            true,
+        );
 
         assert_eq!(
             template.comments,
@@ -2505,7 +2621,14 @@ mod tests {
         posted["title"] = serde_json::json!("Moderator Title");
         posted["comments"] = serde_json::json!("moderator edited comments");
         let mut posted_template = build_template(&posted);
-        apply_review_diff_context(&mut posted_template, &submitted, &db, &ref_data, false);
+        apply_review_diff_context(
+            &mut posted_template,
+            &submitted,
+            &db,
+            &ref_data,
+            SubmissionType::Edit,
+            false,
+        );
 
         assert_eq!(posted_template.title, "Moderator Title");
         assert_eq!(posted_template.comments, "moderator edited comments");
