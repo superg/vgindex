@@ -179,7 +179,8 @@ fn can_show_disc_view_protection(
     has_protection: bool,
     is_logged_in: bool,
 ) -> bool {
-    has_protection && (is_logged_in || system_code.trim() != "BD-VIDEO")
+    has_protection
+        && (is_logged_in || !matches!(system_code.trim(), "BD-VIDEO" | "HDDVD-VIDEO"))
 }
 
 impl RingColVis {
@@ -1830,11 +1831,14 @@ mod tests {
     }
 
     #[test]
-    fn bd_video_protection_is_hidden_from_disc_view_guests() {
+    fn video_protection_is_hidden_from_disc_view_guests() {
         assert!(!can_show_disc_view_protection("BD-VIDEO", true, false));
+        assert!(!can_show_disc_view_protection("HDDVD-VIDEO", true, false));
         assert!(can_show_disc_view_protection("BD-VIDEO", true, true));
+        assert!(can_show_disc_view_protection("HDDVD-VIDEO", true, true));
         assert!(can_show_disc_view_protection("DVD-VIDEO", true, false));
         assert!(!can_show_disc_view_protection("BD-VIDEO", false, true));
+        assert!(!can_show_disc_view_protection("HDDVD-VIDEO", false, true));
     }
 
     #[test]
