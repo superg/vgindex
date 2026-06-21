@@ -8,7 +8,6 @@ use crate::db::models::{Session, UserRole};
 
 pub const SESSION_COOKIE_NAME: &str = "session_id";
 const SESSION_DURATION_DAYS: i64 = 14;
-const GUEST_SESSION_DURATION_SECS: i64 = 86400;
 const AUTH_SESSION_DURATION_SECS: i64 = SESSION_DURATION_DAYS * 86400;
 
 pub fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
@@ -77,14 +76,6 @@ pub fn login_session_cookie(sid: &str, config: &Config) -> String {
     )
 }
 
-pub fn guest_session_cookie(sid: &str, config: &Config) -> String {
-    session_cookie(
-        sid,
-        GUEST_SESSION_DURATION_SECS,
-        cookies_should_be_secure(config),
-    )
-}
-
 pub fn expired_session_cookie(config: &Config) -> String {
     session_cookie("", 0, cookies_should_be_secure(config))
 }
@@ -107,30 +98,6 @@ pub async fn create_session(
     .bind(&id)
     .bind(user_id)
     .bind(role)
-    .bind(csrf_token)
-    .bind(ip)
-    .bind(ua)
-    .bind(expires)
-    .execute(pool)
-    .await?;
-
-    Ok(id)
-}
-
-pub async fn create_guest_session(
-    pool: &PgPool,
-    ip: Option<&str>,
-    ua: Option<&str>,
-) -> Result<String, sqlx::Error> {
-    let id = generate_session_id();
-    let csrf_token = generate_csrf_token();
-    let expires = Utc::now() + Duration::days(1);
-
-    sqlx::query(
-        "INSERT INTO sessions (id, user_id, role, csrf_token, ip_address, user_agent, expires_at)
-         VALUES ($1, NULL, NULL, $2, $3, $4, $5)",
-    )
-    .bind(&id)
     .bind(csrf_token)
     .bind(ip)
     .bind(ua)

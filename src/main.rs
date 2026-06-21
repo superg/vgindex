@@ -85,10 +85,6 @@ async fn main() {
     let app = Router::new()
         .merge(routes::build_router())
         .nest_service("/static", ServeDir::new("static"))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth::middleware::guest_session_layer,
-        ))
         .layer(middleware::from_fn(routes::canonical_url_middleware))
         .layer(TraceLayer::new_for_http())
         .with_state(state);

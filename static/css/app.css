@@ -2309,14 +2309,6 @@ pre code {
     overflow-y: auto;
 }
 
-/* Footer online users */
-#online-users a {
-    text-decoration: none;
-}
-#online-users a:hover {
-    text-decoration: underline;
-}
-
 /* HTMX loading indicator */
 .htmx-indicator {
     display: none;

@@ -1,9 +1,4 @@
-use axum::{
-    extract::{FromRequestParts, Request, State},
-    http::{header, request::Parts},
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::FromRequestParts, http::request::Parts};
 
 use crate::auth::session;
 use crate::db::models::UserRole;
@@ -149,70 +144,4 @@ impl FromRef<AppState> for AppState {
     fn from_ref(input: &AppState) -> Self {
         input.clone()
     }
-}
-
-pub async fn guest_session_layer(
-    State(state): State<AppState>,
-    request: Request,
-    next: Next,
-) -> Response {
-    let session_id = session::extract_session_cookie(request.headers());
-    let has_valid_session = if let Some(ref sid) = session_id {
-        session::validate_session(&state.pool, sid)
-            .await
-            .ok()
-            .flatten()
-            .is_some()
-    } else {
-        false
-    };
-    let is_static = request.uri().path().starts_with("/static/");
-
-    let (ip, ua) = if !has_valid_session && !is_static {
-        let ip = session::extract_client_ip(request.headers());
-        let ua = request
-            .headers()
-            .get(header::USER_AGENT)
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
-        (ip, ua)
-    } else {
-        (None, None)
-    };
-
-    // Create a guest session before handling the request so its IP can
-    // participate in online stats.
-    let created_guest_sid = if !has_valid_session && !is_static {
-        session::create_guest_session(&state.pool, ip.as_deref(), ua.as_deref())
-            .await
-            .ok()
-    } else {
-        None
-    };
-
-    let mut response = next.run(request).await;
-
-    if let Some(sid) = created_guest_sid {
-        let session_cookie_prefix = format!("{}=", session::SESSION_COOKIE_NAME);
-        let already_set = response
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .any(|v| {
-                v.to_str()
-                    .map(|s| s.starts_with(&session_cookie_prefix))
-                    .unwrap_or(false)
-            });
-
-        if already_set {
-            let _ = session::delete_session(&state.pool, &sid).await;
-        } else {
-            let cookie = session::guest_session_cookie(&sid, &state.config);
-            if let Ok(val) = cookie.parse() {
-                response.headers_mut().append(header::SET_COOKIE, val);
-            }
-        }
-    }
-
-    response
 }
