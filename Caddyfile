@@ -13,19 +13,46 @@
 	}
 }
 
+(access_log) {
+	log {
+		output stdout
+		format filter {
+			request>uri query {
+				replace code REDACTED
+				replace state REDACTED
+				replace token REDACTED
+				replace access_token REDACTED
+				replace refresh_token REDACTED
+				replace id_token REDACTED
+				replace client_secret REDACTED
+				replace password REDACTED
+				replace pass REDACTED
+				replace sid REDACTED
+				replace activation_key REDACTED
+				replace confirm_key REDACTED
+			}
+			wrap json
+		}
+	}
+}
+
 {$APP_WWW_URL} {
+	import access_log
 	redir {$APP_PUBLIC_URL}{uri} permanent
 }
 
 {$APP_PUBLIC_URL} {
+	import access_log
 	import security_headers
 	reverse_proxy {$APP_UPSTREAM_HOST}:{$APP_UPSTREAM_PORT}
 }
 
 {$PHPBB_PUBLIC_URL} {
+	import access_log
 	reverse_proxy phpbb:80
 }
 
 {$MEDIAWIKI_PUBLIC_URL} {
+	import access_log
 	reverse_proxy mediawiki:80
 }

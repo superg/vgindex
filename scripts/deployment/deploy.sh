@@ -27,6 +27,10 @@ fi
 
 cd "$APP_DIR"
 
+echo "Validating Caddy configuration..."
+docker compose --env-file "$ENV_FILE" run --rm --no-deps caddy \
+    caddy adapt --config /etc/caddy/Caddyfile --validate >/dev/null
+
 # ── Save previous tag for rollback ──────────────────────────────────
 PREV_TAG=""
 if [[ -f "$RELEASE_FILE" ]]; then
@@ -47,6 +51,14 @@ docker compose --env-file "$ENV_FILE" pull app phpbb mediawiki
 
 # ── Bring up new containers ─────────────────────────────────────────
 docker compose --env-file "$ENV_FILE" up -d --no-build --remove-orphans
+
+echo "Reloading Caddy configuration..."
+RELOAD_OK=true
+if ! docker compose --env-file "$ENV_FILE" exec -T caddy \
+    caddy reload --config /etc/caddy/Caddyfile; then
+    echo "ERROR: Caddy reload failed" >&2
+    RELOAD_OK=false
+fi
 
 # ── Health checks (retry up to 60s) ────────────────────────────────
 SERVICES=(app postgres caddy phpbb mediawiki)
@@ -80,6 +92,10 @@ for svc in "${SERVICES[@]}"; do
         HEALTHY=false
     fi
 done
+
+if [[ "$RELOAD_OK" != "true" ]]; then
+    HEALTHY=false
+fi
 
 if [[ "$HEALTHY" == "true" ]]; then
     echo "$IMAGE_TAG" > "$RELEASE_FILE"
