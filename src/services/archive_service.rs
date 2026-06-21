@@ -195,8 +195,8 @@ pub async fn regenerate_system_archives(
     let result = generate_datfile_archive(pool, metadata, &sys.code).await?;
     store_archive(&sys.code, "dat", &result).map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let has_cue_media = system_has_bin_media(pool, &sys.media_types).await;
-    if archive_type_supported_by_system(&sys, "cue", has_cue_media).unwrap_or(false) {
+    let has_bin_media = system_has_bin_media(pool, &sys.media_types).await;
+    if archive_type_supported_by_system(&sys, "cue", has_bin_media).unwrap_or(false) {
         let result = generate_cuesheet_archive(pool, &sys.code).await?;
         store_archive(&sys.code, "cue", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
@@ -206,7 +206,7 @@ pub async fn regenerate_system_archives(
         store_archive(&sys.code, "key", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    if archive_type_supported_by_system(&sys, "sbi", false).unwrap_or(false) {
+    if archive_type_supported_by_system(&sys, "sbi", has_bin_media).unwrap_or(false) {
         let result = generate_sbi_archive(pool, &sys.code).await?;
         store_archive(&sys.code, "sbi", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
@@ -248,13 +248,13 @@ pub async fn run_archive_worker(pool: PgPool, metadata: ArchiveMetadata) {
 fn archive_type_supported_by_system(
     sys: &System,
     archive_type: &str,
-    has_cue_media: bool,
+    has_bin_media: bool,
 ) -> AppResult<bool> {
     match archive_type {
         "dat" => Ok(true),
-        "cue" => Ok(has_cue_media),
+        "cue" => Ok(has_bin_media),
         "key" => Ok(sys.has_key),
-        "sbi" => Ok(sys.has_sbi),
+        "sbi" => Ok(sys.has_sbi && has_bin_media),
         _ => Err(AppError::NotFound),
     }
 }
@@ -274,13 +274,13 @@ async fn archive_type_is_available(
         .await?
         .ok_or(AppError::NotFound)?;
 
-    let has_cue_media = if archive_type == "cue" {
+    let has_bin_media = if matches!(archive_type, "cue" | "sbi") {
         system_has_bin_media(pool, &sys.media_types).await
     } else {
         false
     };
 
-    archive_type_supported_by_system(&sys, archive_type, has_cue_media)
+    archive_type_supported_by_system(&sys, archive_type, has_bin_media)
 }
 
 async fn system_has_bin_media(pool: &PgPool, media_type_codes: &[String]) -> bool {
@@ -655,7 +655,8 @@ mod tests {
 
         assert!(archive_type_supported_by_system(&key_system, "key", false).unwrap());
         assert!(!archive_type_supported_by_system(&plain_system, "key", false).unwrap());
-        assert!(archive_type_supported_by_system(&sbi_system, "sbi", false).unwrap());
+        assert!(archive_type_supported_by_system(&sbi_system, "sbi", true).unwrap());
+        assert!(!archive_type_supported_by_system(&sbi_system, "sbi", false).unwrap());
         assert!(!archive_type_supported_by_system(&plain_system, "sbi", false).unwrap());
     }
 
@@ -941,14 +942,16 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveR
         .await?
         .ok_or(AppError::NotFound)?;
 
-    if !sys.has_sbi {
+    if !sys.has_sbi || !system_has_bin_media(pool, &sys.media_types).await {
         return Err(AppError::NotFound);
     }
 
     let discs: Vec<SbiArchiveDisc> = sqlx::query_as(
         "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.sbi
          FROM discs d
+         JOIN media_types mt ON mt.code = d.media_type_code
          WHERE d.system_code = $1 AND d.sbi IS NOT NULL AND d.sbi != ''
+               AND LOWER(mt.rom_extension) = 'bin'
                AND d.status NOT IN ('Disabled', 'Questionable')
          ORDER BY d.title",
     )

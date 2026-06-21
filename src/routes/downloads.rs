@@ -132,7 +132,10 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
                     .iter()
                     .any(|code| cd_media_codes.contains(code)),
                 has_key: r.has_key,
-                has_sbi: r.has_sbi,
+                has_sbi: r.has_sbi
+                    && r.media_types
+                        .iter()
+                        .any(|code| cd_media_codes.contains(code)),
             })
             .collect();
 

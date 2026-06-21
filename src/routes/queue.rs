@@ -718,7 +718,12 @@ fn build_review_template(
         protection: json_opt_str("protection"),
         show_sector_ranges: has_sys(|s| s.has_sector_ranges),
         sector_ranges_text,
-        show_sbi: has_sys(|s| s.has_sbi),
+        show_sbi: disc_edit::sbi_available_for_selection(
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            system_code,
+            media_type_code,
+        ),
         sbi: json_opt_str("sbi"),
         protection_key_disc_key,
         universal_hash,
@@ -1223,7 +1228,6 @@ fn apply_review_diff_context(
                 template.show_universal_hash = system.has_universal_hash;
                 template.show_protection = system.has_protection;
                 template.show_sector_ranges = system.has_sector_ranges;
-                template.show_sbi = system.has_sbi;
                 template.show_pvd = system.has_pvd;
                 template.show_bca = system.has_bca;
                 template.show_header = system.has_header;
@@ -1251,6 +1255,13 @@ fn apply_review_diff_context(
                 .find(|media| media.code == old_media_type)
                 .map_or(false, |media| media.pic);
         }
+
+        template.show_sbi = disc_edit::sbi_available_for_selection(
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            &template.system_code,
+            &template.media_type_code,
+        );
 
         if review_value_changed(&db_snapshot["category"], &submitted_snapshot["category"]) {
             let old_category = review_display_value(&db_snapshot["category"]);
@@ -1797,7 +1808,8 @@ async fn review_submit(
         let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
         let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
         let edition_suggestions_json = disc_edit::build_edition_suggestions_json(&state).await?;
-        let snapshot = build_flat_changes(&form.disc, &ref_data.all_media_types);
+        let snapshot =
+            build_flat_changes(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
         let system_code = form.disc.system_code.clone();
         let media_type_code = form.disc.media_type.clone();
         let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
@@ -1851,14 +1863,19 @@ async fn review_submit(
 
     let form_snapshot = if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
-        build_sparse_edit_changes(&form.disc, &detail, &ref_data.all_media_types)
+        build_sparse_edit_changes(
+            &form.disc,
+            &detail,
+            &ref_data.all_media_types,
+            &ref_data.all_systems,
+        )
     } else {
         if sub.submission_type != SubmissionType::Disc {
             return Err(AppError::BadRequest(
                 "edit submission is missing a target disc".into(),
             ));
         }
-        build_new_disc_changes(&form.disc, &ref_data.all_media_types)
+        build_new_disc_changes(&form.disc, &ref_data.all_media_types, &ref_data.all_systems)
     };
 
     let approved = queue_service::approve_submission(

@@ -179,8 +179,7 @@ fn can_show_disc_view_protection(
     has_protection: bool,
     is_logged_in: bool,
 ) -> bool {
-    has_protection
-        && (is_logged_in || !matches!(system_code.trim(), "BD-VIDEO" | "HDDVD-VIDEO"))
+    has_protection && (is_logged_in || !matches!(system_code.trim(), "BD-VIDEO" | "HDDVD-VIDEO"))
 }
 
 impl RingColVis {
@@ -561,7 +560,10 @@ async fn disc_view(
     };
     let track_col_vis = compute_track_col_vis(&track_rows);
 
-    let sbi_rows = if detail.system.has_sbi {
+    let show_sbi = detail
+        .system
+        .has_sbi_for_media_type(&detail.disc.media_type);
+    let sbi_rows = if show_sbi {
         detail
             .disc
             .sbi
@@ -775,7 +777,7 @@ async fn disc_view(
             track_col_vis,
             files,
             sbi_rows,
-            show_sbi: detail.system.has_sbi,
+            show_sbi,
             pvd_rows,
             show_pvd: detail.system.has_pvd,
             pic_rows,
@@ -1521,7 +1523,10 @@ async fn disc_sbi_download(
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
 
-    if !detail.system.has_sbi {
+    if !detail
+        .system
+        .has_sbi_for_media_type(&detail.disc.media_type)
+    {
         return Err(AppError::NotFound);
     }
 

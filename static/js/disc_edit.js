@@ -317,6 +317,10 @@ function mediaIsCd() {
     return !!MEDIA_IS_CD[sel.value];
 }
 
+function sbiAppliesToCurrentSelection() {
+    return systemHasFlag('has_sbi') && mediaIsCd();
+}
+
 function emptyLayer() {
     return { mastering_code: '', mastering_sid: '', toolstamps: '', mould_sids: '', additional_moulds: '' };
 }
@@ -515,6 +519,22 @@ function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function setFormFieldVisible(el, show) {
+    var wasHidden = el.style.display === 'none';
+    el.style.display = show ? '' : 'none';
+    el.querySelectorAll('input, select, textarea').forEach(function (ctrl) {
+        ctrl.disabled = !show;
+    });
+    if (show && wasHidden) {
+        el.querySelectorAll('textarea.auto-expand').forEach(function (ta) {
+            autoExpand(ta);
+        });
+        el.querySelectorAll('.inline-field-values').forEach(function (c) {
+            fitInlineGroup(c);
+        });
+    }
+}
+
 function applySystemFieldVisibility() {
     var sysSel = document.getElementById('system-select');
     if (!sysSel || typeof SYSTEMS_HAS_FLAGS === 'undefined') return;
@@ -523,19 +543,10 @@ function applySystemFieldVisibility() {
     document.querySelectorAll('[data-field-flag]').forEach(function (el) {
         var flag = el.getAttribute('data-field-flag');
         var show = flags[flag] !== undefined ? !!flags[flag] : true;
-        var wasHidden = el.style.display === 'none';
-        el.style.display = show ? '' : 'none';
-        el.querySelectorAll('input, select, textarea').forEach(function (ctrl) {
-            ctrl.disabled = !show;
-        });
-        if (show && wasHidden) {
-            el.querySelectorAll('textarea.auto-expand').forEach(function (ta) {
-                autoExpand(ta);
-            });
-            el.querySelectorAll('.inline-field-values').forEach(function (c) {
-                fitInlineGroup(c);
-            });
+        if (flag === 'has_sbi') {
+            show = show && mediaIsCd();
         }
+        setFormFieldVisible(el, show);
     });
 }
 
@@ -574,6 +585,9 @@ function applyMediaFieldVisibility() {
             });
         }
     }
+    document.querySelectorAll('[data-field-flag="has_sbi"]').forEach(function (el) {
+        setFormFieldVisible(el, sbiAppliesToCurrentSelection());
+    });
 }
 
 function applyCueRules() {

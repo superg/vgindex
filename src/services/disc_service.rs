@@ -699,6 +699,36 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     })
 }
 
+#[derive(sqlx::FromRow)]
+struct SbiApplicabilityRow {
+    has_sbi: bool,
+    rom_extension: String,
+}
+
+async fn disc_data_allows_sbi(
+    pool: &PgPool,
+    disc_id: i32,
+    system_code: Option<&str>,
+    media_type: Option<&str>,
+) -> AppResult<bool> {
+    let row: Option<SbiApplicabilityRow> = sqlx::query_as(
+        "SELECT s.has_sbi, mt.rom_extension
+         FROM discs d
+         JOIN systems s ON s.code = COALESCE($2, d.system_code)
+         JOIN media_types mt ON mt.code = COALESCE($3, d.media_type_code)
+         WHERE d.id = $1",
+    )
+    .bind(disc_id)
+    .bind(system_code)
+    .bind(media_type)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map_or(false, |row| {
+        row.has_sbi && is_cd_rom_extension(&row.rom_extension)
+    }))
+}
+
 pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) -> AppResult<()> {
     let title = data["title"].as_str().unwrap_or_default();
     let system_code = data["system_code"].as_str();
@@ -724,10 +754,21 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         .as_str()
         .map(normalize_newlines)
         .filter(|s| !s.is_empty());
-    let sbi = data["sbi"]
-        .as_str()
-        .map(normalize_newlines)
-        .filter(|s| !s.is_empty());
+    let sbi_allowed = disc_data_allows_sbi(
+        pool,
+        disc_id,
+        system_code.filter(|s| !s.trim().is_empty()),
+        media_type.filter(|s| !s.trim().is_empty()),
+    )
+    .await?;
+    let sbi = if sbi_allowed {
+        data["sbi"]
+            .as_str()
+            .map(normalize_newlines)
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
     let disc_id_text = data["disc_id"]
         .as_str()
         .map(|s| s.trim().to_string())

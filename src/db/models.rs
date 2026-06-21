@@ -368,6 +368,10 @@ impl System {
     pub fn has_cue_for_media_type(&self, media_type: &MediaType) -> bool {
         media_type.is_cd() && self.supports_media_type(media_type)
     }
+
+    pub fn has_sbi_for_media_type(&self, media_type: &MediaType) -> bool {
+        self.has_sbi && media_type.is_cd() && self.supports_media_type(media_type)
+    }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize)]

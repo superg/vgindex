@@ -401,7 +401,7 @@ fn validate_add_submission_logs(form: &DiscEditForm, logs_optional: bool) -> Vec
     let dump_log = trimmed_nonempty(form.dump_log.as_deref());
     let logs_url = trimmed_nonempty(form.extra_upload_url.as_deref());
     let is_logless_system = matches!(
-        Some(form.system_code.as_str()), 
+        Some(form.system_code.as_str()),
         Some("WIIU") | Some("GC") | Some("WII")
     );
 
@@ -629,6 +629,28 @@ fn media_shows_error_count(all_media_types: &[EditMediaTypeRow], media_code: &st
         .iter()
         .find(|m| m.code == media_code)
         .map_or(false, |m| is_cd_rom_extension(&m.rom_extension))
+}
+
+pub(crate) fn media_code_is_cd(all_media_types: &[EditMediaTypeRow], media_code: &str) -> bool {
+    all_media_types
+        .iter()
+        .find(|m| m.code == media_code)
+        .map_or(false, |m| is_cd_rom_extension(&m.rom_extension))
+}
+
+pub(crate) fn sbi_available_for_selection(
+    all_systems: &[System],
+    all_media_types: &[EditMediaTypeRow],
+    system_code: &str,
+    media_code: &str,
+) -> bool {
+    let Some(system) = all_systems.iter().find(|s| s.code == system_code) else {
+        return false;
+    };
+
+    system.has_sbi
+        && system.media_types.iter().any(|code| code == media_code)
+        && media_code_is_cd(all_media_types, media_code)
 }
 
 pub(crate) fn build_system_options(all_systems: &[System], selected: &str) -> Vec<SystemOption> {
@@ -1032,7 +1054,9 @@ async fn edit_page(
             protection: detail.disc.protection.clone().unwrap_or_default(),
             show_sector_ranges: detail.system.has_sector_ranges,
             sector_ranges_text,
-            show_sbi: detail.system.has_sbi,
+            show_sbi: detail
+                .system
+                .has_sbi_for_media_type(&detail.disc.media_type),
             sbi: detail.disc.sbi.clone().unwrap_or_default(),
             has_sample_start: detail.system.has_sample_start,
             protection_key_disc_key: detail
@@ -1321,11 +1345,15 @@ fn validate_form_with_options(
         }
     }
 
-    if let Some(ref text) = form.sbi {
-        let text = text.trim();
-        if !text.is_empty() {
-            if let Err(e) = validation::validate_sbi(text) {
-                errors.push(format!("SBI: {}", e));
+    let sbi_applies =
+        sbi_available_for_selection(all_systems, all_media_types, system_code, media_code);
+    if sbi_applies {
+        if let Some(ref text) = form.sbi {
+            let text = text.trim();
+            if !text.is_empty() {
+                if let Err(e) = validation::validate_sbi(text) {
+                    errors.push(format!("SBI: {}", e));
+                }
             }
         }
     }
@@ -1500,6 +1528,12 @@ async fn render_form_with_errors(
         .find(|m| m.code == form.media_type)
         .map_or(false, |m| m.pic);
     let show_error_count = media_shows_error_count(&ref_data.all_media_types, &form.media_type);
+    let show_sbi = sbi_available_for_selection(
+        &ref_data.all_systems,
+        &ref_data.all_media_types,
+        &form.system_code,
+        &form.media_type,
+    );
 
     let page_title = format_display_title(
         &form.title,
@@ -1621,7 +1655,7 @@ async fn render_form_with_errors(
         protection: form.protection.clone().unwrap_or_default(),
         show_sector_ranges: has_sys(|s| s.has_sector_ranges),
         sector_ranges_text: form.sector_ranges.clone().unwrap_or_default(),
-        show_sbi: has_sys(|s| s.has_sbi),
+        show_sbi,
         sbi: form.sbi.clone().unwrap_or_default(),
         has_sample_start: has_sys(|s| s.has_sample_start),
         protection_key_disc_key: form.protection_key_disc_key.clone().unwrap_or_default(),
@@ -2005,7 +2039,12 @@ async fn edit_submit(
         .await;
     }
 
-    let changes = build_sparse_edit_changes(&form, &detail, &ref_data.all_media_types);
+    let changes = build_sparse_edit_changes(
+        &form,
+        &detail,
+        &ref_data.all_media_types,
+        &ref_data.all_systems,
+    );
 
     let submission_comment = form
         .submission_comment
@@ -2139,7 +2178,7 @@ async fn add_page(
             protection: String::new(),
             show_sector_ranges: has_sys(|s| s.has_sector_ranges),
             sector_ranges_text: String::new(),
-            show_sbi: has_sys(|s| s.has_sbi),
+            show_sbi: false,
             sbi: String::new(),
             protection_key_disc_key: String::new(),
             universal_hash: String::new(),
@@ -2258,7 +2297,12 @@ async fn add_submit(
         .await;
     }
 
-    let changes = build_add_submission_changes(&form, &ref_data.all_media_types, target_disc_id);
+    let changes = build_add_submission_changes(
+        &form,
+        &ref_data.all_media_types,
+        &ref_data.all_systems,
+        target_disc_id,
+    );
     let submitter_id = if can_submit_as {
         let submit_as_username = normalize_submit_as_username(form.submit_as.as_deref())
             .map_err(|message| AppError::BadRequest(format!("Submit As: {message}")))?;
@@ -2304,6 +2348,7 @@ async fn add_submit(
 pub(crate) fn build_flat_changes(
     form: &DiscEditForm,
     all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
 ) -> serde_json::Value {
     let new_edc = form_edc_bool(form);
     let new_error_count: serde_json::Value = form
@@ -2351,6 +2396,16 @@ pub(crate) fn build_flat_changes(
         .map(|m| m.rom_extension.as_str())
         .unwrap_or("");
     let new_cue = norm_opt_multiline_str(form.cue.as_deref()).map(|c| simplify_cue(&c, rom_ext));
+    let new_sbi = if sbi_available_for_selection(
+        all_systems,
+        all_media_types,
+        &form.system_code,
+        &form.media_type,
+    ) {
+        norm_opt_multiline_str(form.sbi.as_deref())
+    } else {
+        None
+    };
 
     serde_json::json!({
         "system_code": form.system_code.trim(),
@@ -2376,7 +2431,7 @@ pub(crate) fn build_flat_changes(
         "bca": norm_opt_multiline_str(form.bca.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
         "header": norm_opt_multiline_str(form.header.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
         "protection": norm_opt_multiline_str(form.protection.as_deref()),
-        "sbi": norm_opt_multiline_str(form.sbi.as_deref()),
+        "sbi": new_sbi,
         "disc_id": new_disc_id,
         "disc_key": new_disc_key,
         "universal_hash": new_universal_hash,
@@ -2713,11 +2768,12 @@ fn build_history_changes(
     form: &DiscEditForm,
     detail: Option<&DiscDetail>,
     all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
 ) -> serde_json::Value {
     let db_snapshot = detail
         .map(disc_service::build_snapshot_from_disc)
         .unwrap_or_else(|| serde_json::json!({}));
-    let form_snapshot = build_flat_changes(form, all_media_types);
+    let form_snapshot = build_flat_changes(form, all_media_types, all_systems);
 
     let Some(db_obj) = db_snapshot.as_object() else {
         return serde_json::json!({});
@@ -2812,23 +2868,26 @@ pub(crate) fn build_sparse_edit_changes(
     form: &DiscEditForm,
     detail: &DiscDetail,
     all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
 ) -> serde_json::Value {
-    build_history_changes(form, Some(detail), all_media_types)
+    build_history_changes(form, Some(detail), all_media_types, all_systems)
 }
 
 pub(crate) fn build_new_disc_changes(
     form: &DiscEditForm,
     all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
 ) -> serde_json::Value {
-    build_history_changes(form, None, all_media_types)
+    build_history_changes(form, None, all_media_types, all_systems)
 }
 
 fn build_add_submission_changes(
     form: &DiscEditForm,
     all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
     target_disc_id: Option<i32>,
 ) -> serde_json::Value {
-    let mut changes = build_new_disc_changes(form, all_media_types);
+    let mut changes = build_new_disc_changes(form, all_media_types, all_systems);
     if target_disc_id.is_some() {
         if let Some(obj) = changes.as_object_mut() {
             obj.remove("dat");
@@ -2964,7 +3023,7 @@ mod operation_delta_tests {
                 edc: true,
                 layerbreaks: Some(vec![10, 20]),
                 protection: Some("old protection".to_string()),
-                sbi: Some("old sbi".to_string()),
+                sbi: None,
                 disc_id: Some("old-disc-id".to_string()),
                 disc_key: Some(vec![0x12, 0x34]),
                 universal_hash: Some(vec![0xaa; 20]),
@@ -3122,6 +3181,25 @@ mod operation_delta_tests {
     fn systems_with_edc(has_edc: bool) -> Vec<System> {
         let mut system = test_system();
         system.has_edc = has_edc;
+        vec![system]
+    }
+
+    fn media_rows_with_cd() -> Vec<EditMediaTypeRow> {
+        let mut rows = media_rows();
+        rows.push(EditMediaTypeRow {
+            code: "CD".to_string(),
+            name: "CD-ROM".to_string(),
+            layer_count: 1,
+            pic: false,
+            rom_extension: "bin".to_string(),
+        });
+        rows
+    }
+
+    fn systems_with_sbi_media(has_sbi: bool, media_types: &[&str]) -> Vec<System> {
+        let mut system = test_system();
+        system.has_sbi = has_sbi;
+        system.media_types = media_types.iter().map(|code| code.to_string()).collect();
         vec![system]
     }
 
@@ -3304,6 +3382,102 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn sbi_availability_requires_system_flag_and_cd_media() {
+        let media = media_rows_with_cd();
+
+        assert!(!sbi_available_for_selection(
+            &systems_with_sbi_media(true, &["DVD", "CD"]),
+            &media,
+            "SYS",
+            "DVD"
+        ));
+        assert!(sbi_available_for_selection(
+            &systems_with_sbi_media(true, &["DVD", "CD"]),
+            &media,
+            "SYS",
+            "CD"
+        ));
+        assert!(!sbi_available_for_selection(
+            &systems_with_sbi_media(false, &["DVD", "CD"]),
+            &media,
+            "SYS",
+            "CD"
+        ));
+        assert!(!sbi_available_for_selection(
+            &systems_with_sbi_media(true, &["DVD"]),
+            &media,
+            "SYS",
+            "CD"
+        ));
+    }
+
+    #[test]
+    fn validate_form_ignores_sbi_when_media_is_not_cd() {
+        let mut form = new_disc_form();
+        form.sbi = Some("not sbi data".to_string());
+
+        let errors = validate_form(
+            &form,
+            &media_rows(),
+            &systems_with_sbi_media(true, &["DVD"]),
+        );
+
+        assert!(!errors.iter().any(|error| error.starts_with("SBI:")));
+    }
+
+    #[test]
+    fn build_flat_changes_gates_sbi_by_media_and_system_flag() {
+        let valid_sbi = "MSF: 02:03:04 Q-Data: 410102 03:04:05 00 06:07:08 ABCD";
+        let media = media_rows_with_cd();
+
+        let mut dvd_form = new_disc_form();
+        dvd_form.sbi = Some(valid_sbi.to_string());
+        let dvd_snapshot = build_flat_changes(
+            &dvd_form,
+            &media,
+            &systems_with_sbi_media(true, &["DVD", "CD"]),
+        );
+        assert!(dvd_snapshot["sbi"].is_null());
+
+        let mut cd_form = new_disc_form();
+        cd_form.media_type = "CD".to_string();
+        cd_form.sbi = Some(valid_sbi.to_string());
+        let cd_snapshot = build_flat_changes(
+            &cd_form,
+            &media,
+            &systems_with_sbi_media(true, &["DVD", "CD"]),
+        );
+        assert_eq!(cd_snapshot["sbi"], serde_json::json!(valid_sbi));
+
+        let no_flag_snapshot = build_flat_changes(
+            &cd_form,
+            &media,
+            &systems_with_sbi_media(false, &["DVD", "CD"]),
+        );
+        assert!(no_flag_snapshot["sbi"].is_null());
+    }
+
+    #[test]
+    fn build_sparse_edit_changes_removes_legacy_non_cd_sbi_on_edit() {
+        let mut detail = base_detail();
+        detail.disc.sbi =
+            Some("MSF: 02:03:04 Q-Data: 410102 03:04:05 00 06:07:08 ABCD".to_string());
+        let form = form_from_detail(&detail);
+
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+
+        assert_eq!(
+            changes["sbi"],
+            serde_json::json!({
+                "remove": {
+                    "old": "MSF: 02:03:04 Q-Data: 410102 03:04:05 00 06:07:08 ABCD"
+                }
+            })
+        );
+    }
+
+    #[test]
     fn validate_form_requires_universal_hash_to_be_sha1_hex() {
         let mut form = new_disc_form();
 
@@ -3418,7 +3592,7 @@ mod operation_delta_tests {
         form.bca = Some("01020304".to_string());
         form.pic = Some("01 02 03 04".to_string());
 
-        let snapshot = build_flat_changes(&form, &media_rows());
+        let snapshot = build_flat_changes(&form, &media_rows(), &systems_with_edc(true));
         let expected = format_header_hex_dump(&[0x01, 0x02, 0x03, 0x04]);
         let expected_pvd = format_pvd_hex_dump(&pvd_bytes[..82]);
 
@@ -3500,7 +3674,7 @@ mod operation_delta_tests {
     fn build_new_disc_changes_writes_explicit_add_delta_without_db_dedup() {
         let form = new_disc_form();
 
-        let changes = build_new_disc_changes(&form, &media_rows());
+        let changes = build_new_disc_changes(&form, &media_rows(), &systems_with_edc(true));
 
         assert_eq!(
             changes["title"],
@@ -3561,8 +3735,10 @@ mod operation_delta_tests {
     fn build_add_submission_changes_omits_dat_for_verification() {
         let form = new_disc_form();
 
-        let new_disc_changes = build_add_submission_changes(&form, &media_rows(), None);
-        let verification_changes = build_add_submission_changes(&form, &media_rows(), Some(1));
+        let new_disc_changes =
+            build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), None);
+        let verification_changes =
+            build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), Some(1));
 
         assert!(new_disc_changes.get("dat").is_some());
         assert!(verification_changes.get("dat").is_none());
@@ -3585,7 +3761,8 @@ mod operation_delta_tests {
         form.title = String::new();
         form.regions = vec![];
 
-        let verification_changes = build_add_submission_changes(&form, &media_rows(), Some(1));
+        let verification_changes =
+            build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), Some(1));
 
         assert!(verification_changes.get("dat").is_none());
         assert!(verification_changes.get("system_code").is_none());
@@ -3597,7 +3774,8 @@ mod operation_delta_tests {
 
     #[test]
     fn generated_add_disc_delta_resolves_against_empty_or_existing_snapshot() {
-        let changes = build_new_disc_changes(&new_disc_form(), &media_rows());
+        let changes =
+            build_new_disc_changes(&new_disc_form(), &media_rows(), &systems_with_edc(true));
 
         let new_disc =
             queue_service::resolve_submission_snapshot(&serde_json::json!({}), &changes).unwrap();
@@ -3640,7 +3818,8 @@ mod operation_delta_tests {
         let mut form = new_disc_form();
         form.title = String::new();
         form.regions = vec![];
-        let changes = build_add_submission_changes(&form, &media_rows(), Some(1));
+        let changes =
+            build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), Some(1));
         let existing = serde_json::json!({
             "title": "Existing Game",
             "regions": ["Europe"],
@@ -3662,7 +3841,8 @@ mod operation_delta_tests {
         let detail = base_detail();
         let form = form_from_detail(&detail);
 
-        let changes = build_sparse_edit_changes(&form, &detail, &media_rows());
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
 
         assert_eq!(changes, serde_json::json!({}));
     }
@@ -3677,7 +3857,8 @@ mod operation_delta_tests {
 
         assert_eq!(form.status, "Unverified");
         assert!(form_status_is_active(&form));
-        let changes = build_sparse_edit_changes(&form, &detail, &media_rows());
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
         assert!(changes.get("status").is_none());
     }
 
@@ -3691,7 +3872,8 @@ mod operation_delta_tests {
 
         assert_eq!(form.status, "Disabled");
         assert!(!form_status_is_active(&form));
-        let changes = build_sparse_edit_changes(&form, &detail, &media_rows());
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
         assert_eq!(
             changes["status"],
             serde_json::json!({ "modify": { "old": "Unverified", "new": "Disabled" } })
@@ -3715,7 +3897,8 @@ mod operation_delta_tests {
         form.barcode = vec![];
         form.universal_hash = Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string());
 
-        let changes = build_sparse_edit_changes(&form, &detail, &media_rows());
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
 
         assert_eq!(
             changes["title"],
@@ -4069,7 +4252,8 @@ mod operation_delta_tests {
             .to_string(),
         );
 
-        let changes = build_sparse_edit_changes(&form, &detail, &media_rows());
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
         let rings = changes["ring_codes"].as_array().unwrap();
 
         let modified = rings
