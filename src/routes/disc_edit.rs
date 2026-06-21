@@ -142,6 +142,7 @@ pub(crate) struct DiscEditTemplate {
     pub status: String,
 
     pub is_add_mode: bool,
+    pub add_requires_system_media: bool,
     pub dump_log: String,
     pub dump_log_required: bool,
     pub extra_upload_url: String,
@@ -822,6 +823,10 @@ pub(crate) fn ring_layers(media_layers: u32) -> u32 {
     media_layers + 1
 }
 
+fn add_requires_system_media(is_add_mode: bool, system_code: &str, media_type: &str) -> bool {
+    is_add_mode && (system_code.trim().is_empty() || media_type.trim().is_empty())
+}
+
 async fn edit_page(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
@@ -1095,6 +1100,7 @@ async fn edit_page(
             status: detail.disc.status.to_string(),
 
             is_add_mode: false,
+            add_requires_system_media: false,
             dump_log: String::new(),
             dump_log_required: false,
             extra_upload_url: String::new(),
@@ -1138,15 +1144,19 @@ async fn edit_page(
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct DiscEditForm {
+    #[serde(default)]
     pub system_code: String,
+    #[serde(default)]
     pub media_type: String,
+    #[serde(default)]
     pub title: String,
     pub title_foreign: Option<String>,
     pub disc_number: Option<String>,
     pub disc_title: Option<String>,
     pub filename_suffix: Option<String>,
+    #[serde(default)]
     pub category: String,
     #[serde(default, deserialize_with = "one_or_many_strings")]
     pub regions: Vec<String>,
@@ -1672,6 +1682,11 @@ async fn render_form_with_errors(
         status: normalized_disc_status(&form.status),
 
         is_add_mode,
+        add_requires_system_media: add_requires_system_media(
+            is_add_mode,
+            &form.system_code,
+            &form.media_type,
+        ),
         dump_log: form.dump_log.clone().unwrap_or_default(),
         dump_log_required: is_add_mode && !can_moderate,
         extra_upload_url: form.extra_upload_url.clone().unwrap_or_default(),
@@ -1746,32 +1761,69 @@ enum AddDiscMatchSource {
     Dat,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AddDiscMatchTarget {
+    disc_id: i32,
+    system_code: String,
+    media_type: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct AddDiscMatch {
     disc_id: i32,
     source: AddDiscMatchSource,
+    system_code: String,
+    media_type: String,
 }
 
 impl AddDiscMatch {
-    fn target_disc_id(self) -> i32 {
+    fn target_disc_id(&self) -> i32 {
         self.disc_id
     }
 }
 
 fn resolve_add_disc_match(
-    universal_hash_match: Option<i32>,
-    dat_match: Option<i32>,
+    universal_hash_match: Option<AddDiscMatchTarget>,
+    dat_match: Option<AddDiscMatchTarget>,
 ) -> Option<AddDiscMatch> {
-    if let Some(disc_id) = universal_hash_match {
+    if let Some(target) = universal_hash_match {
         return Some(AddDiscMatch {
-            disc_id,
+            disc_id: target.disc_id,
             source: AddDiscMatchSource::UniversalHash,
+            system_code: target.system_code,
+            media_type: target.media_type,
         });
     }
-    dat_match.map(|disc_id| AddDiscMatch {
-        disc_id,
+    dat_match.map(|target| AddDiscMatch {
+        disc_id: target.disc_id,
         source: AddDiscMatchSource::Dat,
+        system_code: target.system_code,
+        media_type: target.media_type,
     })
+}
+
+async fn fetch_add_disc_match_target(
+    pool: &sqlx::PgPool,
+    disc_id: i32,
+) -> Option<AddDiscMatchTarget> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i32,
+        system_code: String,
+        media_type_code: String,
+    }
+
+    sqlx::query_as::<_, Row>("SELECT id, system_code, media_type_code FROM discs WHERE id = $1")
+        .bind(disc_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|row| AddDiscMatchTarget {
+            disc_id: row.id,
+            system_code: row.system_code,
+            media_type: row.media_type_code,
+        })
 }
 
 async fn find_add_disc_match(
@@ -1790,8 +1842,9 @@ async fn find_add_disc_match(
         }
         None => None,
     };
-    if universal_hash_match.is_some() {
-        return resolve_add_disc_match(universal_hash_match, None);
+    if let Some(disc_id) = universal_hash_match {
+        let target = fetch_add_disc_match_target(pool, disc_id).await;
+        return resolve_add_disc_match(target, None);
     }
 
     let dat_match = match valid_dat_for_matching(form) {
@@ -1800,12 +1853,25 @@ async fn find_add_disc_match(
         }
         None => None,
     };
-    resolve_add_disc_match(None, dat_match)
+    let dat_target = match dat_match {
+        Some(disc_id) => fetch_add_disc_match_target(pool, disc_id).await,
+        None => None,
+    };
+    resolve_add_disc_match(None, dat_target)
+}
+
+fn add_form_for_render(form: &DiscEditForm, add_match: Option<&AddDiscMatch>) -> DiscEditForm {
+    let mut render_form = form.clone();
+    if let Some(add_match) = add_match {
+        render_form.system_code = add_match.system_code.clone();
+        render_form.media_type = add_match.media_type.clone();
+    }
+    render_form
 }
 
 async fn build_add_validation_result_for_target(
     pool: &sqlx::PgPool,
-    add_match: Option<AddDiscMatch>,
+    add_match: Option<&AddDiscMatch>,
     has_match_input: bool,
 ) -> AppResult<ValidationResultMessage> {
     if !has_match_input {
@@ -2098,6 +2164,7 @@ async fn add_page(
     };
     let system_code = String::new();
     let media_type_code = String::new();
+    let add_requires_system_media = add_requires_system_media(true, &system_code, &media_type_code);
     let has_sys = |_f: fn(&System) -> bool| true;
     let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
     let show_error_count = media_shows_error_count(&ref_data.all_media_types, &media_type_code);
@@ -2191,6 +2258,7 @@ async fn add_page(
             status: "Unverified".to_string(),
 
             is_add_mode: true,
+            add_requires_system_media,
             dump_log: String::new(),
             dump_log_required: !user.role.can_moderate(),
             extra_upload_url: String::new(),
@@ -2245,7 +2313,7 @@ async fn add_submit(
     let ref_data = fetch_ref_data(&state.pool).await?;
     let add_match =
         find_add_disc_match(&state.pool, &form, user.role.can_view_disabled_discs()).await;
-    let target_disc_id = add_match.map(AddDiscMatch::target_disc_id);
+    let target_disc_id = add_match.as_ref().map(AddDiscMatch::target_disc_id);
     let is_verification = target_disc_id.is_some();
     let mut errors = validate_add_submission_form(
         &form,
@@ -2272,7 +2340,7 @@ async fn add_submit(
     {
         build_add_validation_result_for_target(
             &state.pool,
-            add_match,
+            add_match.as_ref(),
             valid_universal_hash_for_matching(&form).is_some()
                 || valid_dat_for_matching(&form).is_some(),
         )
@@ -2282,11 +2350,12 @@ async fn add_submit(
     };
 
     if post.action == "validate" || !errors.is_empty() || !linked_validation_errors.is_empty() {
+        let render_form = add_form_for_render(&form, add_match.as_ref());
         return render_form_with_errors(
             &state,
             0,
             user.clone(),
-            &form,
+            &render_form,
             errors,
             linked_validation_errors,
             validation_result,
@@ -2301,7 +2370,7 @@ async fn add_submit(
         &form,
         &ref_data.all_media_types,
         &ref_data.all_systems,
-        target_disc_id,
+        add_match.as_ref(),
     );
     let submitter_id = if can_submit_as {
         let submit_as_username = normalize_submit_as_username(form.submit_as.as_deref())
@@ -2885,15 +2954,33 @@ fn build_add_submission_changes(
     form: &DiscEditForm,
     all_media_types: &[EditMediaTypeRow],
     all_systems: &[System],
-    target_disc_id: Option<i32>,
+    add_match: Option<&AddDiscMatch>,
 ) -> serde_json::Value {
     let mut changes = build_new_disc_changes(form, all_media_types, all_systems);
-    if target_disc_id.is_some() {
+    if let Some(add_match) = add_match {
         if let Some(obj) = changes.as_object_mut() {
             obj.remove("dat");
+            remove_matching_add_change(obj, "system_code", &add_match.system_code);
+            remove_matching_add_change(obj, "media_type", &add_match.media_type);
         }
     }
     changes
+}
+
+fn remove_matching_add_change(
+    changes: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    target_value: &str,
+) {
+    let matches_target = changes
+        .get(key)
+        .and_then(|value| value.get("add"))
+        .and_then(|value| value.get("new"))
+        .and_then(|value| value.as_str())
+        .map_or(false, |new_value| new_value == target_value);
+    if matches_target {
+        changes.remove(key);
+    }
 }
 
 #[cfg(test)]
@@ -2919,6 +3006,28 @@ mod operation_delta_tests {
             rom_extension: "iso".to_string(),
         }
         .into()
+    }
+
+    fn add_match_target(disc_id: i32, system_code: &str, media_type: &str) -> AddDiscMatchTarget {
+        AddDiscMatchTarget {
+            disc_id,
+            system_code: system_code.to_string(),
+            media_type: media_type.to_string(),
+        }
+    }
+
+    fn add_match(
+        disc_id: i32,
+        source: AddDiscMatchSource,
+        system_code: &str,
+        media_type: &str,
+    ) -> AddDiscMatch {
+        AddDiscMatch {
+            disc_id,
+            source,
+            system_code: system_code.to_string(),
+            media_type: media_type.to_string(),
+        }
     }
 
     fn test_system() -> System {
@@ -3345,6 +3454,15 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn add_minimal_mode_requires_complete_system_media_selection() {
+        assert!(add_requires_system_media(true, "", ""));
+        assert!(add_requires_system_media(true, "SYS", ""));
+        assert!(add_requires_system_media(true, "", "DVD"));
+        assert!(!add_requires_system_media(true, "SYS", "DVD"));
+        assert!(!add_requires_system_media(false, "", ""));
+    }
+
+    #[test]
     fn validate_form_requires_edc_choice_for_edc_systems() {
         let mut form = new_disc_form();
         form.edc = vec![];
@@ -3514,20 +3632,37 @@ mod operation_delta_tests {
     #[test]
     fn add_disc_match_prefers_universal_hash_over_dat() {
         assert_eq!(
-            resolve_add_disc_match(Some(10), Some(20)),
-            Some(AddDiscMatch {
-                disc_id: 10,
-                source: AddDiscMatchSource::UniversalHash,
-            })
+            resolve_add_disc_match(
+                Some(add_match_target(10, "AUDIO-CD", "cd")),
+                Some(add_match_target(20, "SYS", "DVD")),
+            ),
+            Some(add_match(
+                10,
+                AddDiscMatchSource::UniversalHash,
+                "AUDIO-CD",
+                "cd",
+            ))
         );
         assert_eq!(
-            resolve_add_disc_match(None, Some(20)),
-            Some(AddDiscMatch {
-                disc_id: 20,
-                source: AddDiscMatchSource::Dat,
-            })
+            resolve_add_disc_match(None, Some(add_match_target(20, "SYS", "DVD"))),
+            Some(add_match(20, AddDiscMatchSource::Dat, "SYS", "DVD"))
         );
         assert_eq!(resolve_add_disc_match(None, None), None);
+    }
+
+    #[test]
+    fn add_form_for_render_uses_matched_disc_system_media() {
+        let mut form = new_disc_form();
+        form.system_code = "WRONG".to_string();
+        form.media_type = "BAD".to_string();
+        let matched = add_match(44, AddDiscMatchSource::Dat, "SYS", "DVD");
+
+        let render_form = add_form_for_render(&form, Some(&matched));
+
+        assert_eq!(render_form.system_code, "SYS");
+        assert_eq!(render_form.media_type, "DVD");
+        assert_eq!(form.system_code, "WRONG");
+        assert_eq!(form.media_type, "BAD");
     }
 
     #[test]
@@ -3734,14 +3869,21 @@ mod operation_delta_tests {
     #[test]
     fn build_add_submission_changes_omits_dat_for_verification() {
         let form = new_disc_form();
+        let matched = add_match(1, AddDiscMatchSource::Dat, "SYS", "DVD");
 
         let new_disc_changes =
             build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), None);
-        let verification_changes =
-            build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), Some(1));
+        let verification_changes = build_add_submission_changes(
+            &form,
+            &media_rows(),
+            &systems_with_edc(true),
+            Some(&matched),
+        );
 
         assert!(new_disc_changes.get("dat").is_some());
         assert!(verification_changes.get("dat").is_none());
+        assert!(verification_changes.get("system_code").is_none());
+        assert!(verification_changes.get("media_type").is_none());
         assert_eq!(
             verification_changes["title"],
             serde_json::json!({ "add": { "new": "New Game" } })
@@ -3760,9 +3902,14 @@ mod operation_delta_tests {
         form.category = String::new();
         form.title = String::new();
         form.regions = vec![];
+        let matched = add_match(1, AddDiscMatchSource::Dat, "SYS", "DVD");
 
-        let verification_changes =
-            build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), Some(1));
+        let verification_changes = build_add_submission_changes(
+            &form,
+            &media_rows(),
+            &systems_with_edc(true),
+            Some(&matched),
+        );
 
         assert!(verification_changes.get("dat").is_none());
         assert!(verification_changes.get("system_code").is_none());
@@ -3818,8 +3965,13 @@ mod operation_delta_tests {
         let mut form = new_disc_form();
         form.title = String::new();
         form.regions = vec![];
-        let changes =
-            build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), Some(1));
+        let matched = add_match(1, AddDiscMatchSource::Dat, "SYS", "DVD");
+        let changes = build_add_submission_changes(
+            &form,
+            &media_rows(),
+            &systems_with_edc(true),
+            Some(&matched),
+        );
         let existing = serde_json::json!({
             "title": "Existing Game",
             "regions": ["Europe"],
@@ -4003,6 +4155,37 @@ mod operation_delta_tests {
         assert!(template.contains(
             "{% if !is_add_mode %}\n        <button type=\"button\" class=\"outline secondary array-add-btn\" onclick=\"addInlineEntry('barcode-list','barcode')\">+</button>\n        {% endif %}"
         ));
+    }
+
+    #[test]
+    fn add_disc_minimal_mode_marks_only_non_minimal_fields() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let script = include_str!("../../static/js/disc_edit.js");
+        let css = include_str!("../../static/css/app.css");
+
+        assert!(template.contains("disc-add-minimal"));
+        assert!(template.contains("data-add-requires-system-media data-field-flag=\"has_serial\""));
+        assert!(template
+            .contains("aria-label=\"Regions and languages\" data-add-requires-system-media"));
+        assert!(template.contains("aria-label=\"Ring codes\" data-add-requires-system-media"));
+        assert!(template.contains("id=\"cue-field\" data-add-requires-system-media"));
+        assert!(template.contains("textarea name=\"dat\""));
+        assert!(script.contains("function addNeedsSystemMediaSelection()"));
+        assert!(script.contains("function enforceAddMinimalMode()"));
+        assert!(script.contains("refreshSelectionDependentUi()"));
+        assert!(css.contains(".disc-edit.disc-add-minimal [data-add-requires-system-media]"));
+
+        let universal_hash_line = template
+            .lines()
+            .find(|line| line.contains("data-field-flag=\"has_universal_hash\""))
+            .unwrap();
+        assert!(!universal_hash_line.contains("data-add-requires-system-media"));
+
+        let dat_line = template
+            .lines()
+            .find(|line| line.contains("highlight_class(\"files_xml\")"))
+            .unwrap();
+        assert!(!dat_line.contains("data-add-requires-system-media"));
     }
 
     #[test]

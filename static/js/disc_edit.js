@@ -535,6 +535,37 @@ function setFormFieldVisible(el, show) {
     }
 }
 
+function addNeedsSystemMediaSelection() {
+    if (!isAddMode()) return false;
+    var sysSel = document.getElementById('system-select');
+    var mediaSel = document.getElementById('media-select');
+    return !sysSel || !mediaSel || !(sysSel.value || '').trim() || !(mediaSel.value || '').trim();
+}
+
+function releaseAddMinimalMode() {
+    if (!isAddMode()) return;
+    var form = document.getElementById('disc-edit-form');
+    if (form) form.classList.remove('disc-add-minimal');
+    document.querySelectorAll('[data-add-requires-system-media]').forEach(function (el) {
+        setFormFieldVisible(el, true);
+    });
+}
+
+function enforceAddMinimalMode() {
+    if (!isAddMode()) return;
+    var minimal = addNeedsSystemMediaSelection();
+    var form = document.getElementById('disc-edit-form');
+    if (form) form.classList.toggle('disc-add-minimal', minimal);
+    if (!minimal) return;
+
+    document.querySelectorAll('[data-add-requires-system-media]').forEach(function (el) {
+        setFormFieldVisible(el, false);
+    });
+    document.querySelectorAll('[data-field-flag="has_universal_hash"]').forEach(function (el) {
+        setFormFieldVisible(el, true);
+    });
+}
+
 function applySystemFieldVisibility() {
     var sysSel = document.getElementById('system-select');
     if (!sysSel || typeof SYSTEMS_HAS_FLAGS === 'undefined') return;
@@ -613,6 +644,13 @@ function refreshMediaDependentUi() {
     fitRingColumns();
     renderLayerbreaks();
     fitAllInlineGroups();
+}
+
+function refreshSelectionDependentUi() {
+    releaseAddMinimalMode();
+    applySystemFieldVisibility();
+    refreshMediaDependentUi();
+    enforceAddMinimalMode();
 }
 
 // System <-> media type filtering
@@ -1028,10 +1066,10 @@ function initTransliterate() {
 // Init
 document.addEventListener('DOMContentLoaded', function () {
     filterMediaTypes();
-    applySystemFieldVisibility();
-    refreshMediaDependentUi();
+    refreshSelectionDependentUi();
     initRingEditor();
     renderLayerbreaks();
+    enforceAddMinimalMode();
     initAutoExpand();
     initEditionSelectors();
     initSubmitAsSelector();
@@ -1046,16 +1084,15 @@ document.addEventListener('DOMContentLoaded', function () {
     if (sysSel) {
         sysSel.addEventListener('change', function () {
             filterMediaTypes(true);
-            applySystemFieldVisibility();
             refreshEditionSelectors();
-            refreshMediaDependentUi();
+            refreshSelectionDependentUi();
             fitDiscMetaFields();
         });
     }
     var mediaSel = document.getElementById('media-select');
     if (mediaSel) {
         mediaSel.addEventListener('change', function () {
-            refreshMediaDependentUi();
+            refreshSelectionDependentUi();
             fitDiscMetaFields();
         });
     }

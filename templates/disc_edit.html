@@ -94,7 +94,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
 {% endif %}
 {% endif %}
 
-<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review{% else if is_add_mode %}/disc/submit{% else %}/disc/{{ disc_id }}/edit{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}" novalidate>
+<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review{% else if is_add_mode %}/disc/submit{% else %}/disc/{{ disc_id }}/edit{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}{% if add_requires_system_media %} disc-add-minimal{% endif %}" novalidate>
     {% match current_user %}
     {% when Some with (user) %}
     <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
@@ -135,7 +135,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-        <label class="disc-meta-row{% if !self.highlight_class("category").is_empty() %} {{ self.highlight_class("category") }}{% endif %}">
+        <label class="disc-meta-row{% if !self.highlight_class("category").is_empty() %} {{ self.highlight_class("category") }}{% endif %}" data-add-requires-system-media>
             <span class="disc-meta-label">Category:</span>
             <select name="category">
                 {% for cat in categories %}
@@ -152,7 +152,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             {% endfor %}
         </label>
 
-        <label class="disc-meta-row{% if !self.highlight_class("title").is_empty() %} {{ self.highlight_class("title") }}{% endif %}">
+        <label class="disc-meta-row{% if !self.highlight_class("title").is_empty() %} {{ self.highlight_class("title") }}{% endif %}" data-add-requires-system-media>
             <span class="disc-meta-label">Title:</span>
             <input type="text" name="title" value="{{ title }}">
             {% for ann in self.annotations_for("title") %}
@@ -164,7 +164,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-        <label class="disc-meta-row{% if !self.highlight_class("title_foreign").is_empty() %} {{ self.highlight_class("title_foreign") }}{% endif %}" data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}>
+        <label class="disc-meta-row{% if !self.highlight_class("title_foreign").is_empty() %} {{ self.highlight_class("title_foreign") }}{% endif %}" data-add-requires-system-media data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}>
             <span class="disc-meta-label">Foreign Title:</span>
             <input type="text" name="title_foreign" value="{{ title_foreign }}">
             <button type="button" id="transliterate-btn" class="outline secondary transliterate-btn" data-target="title" title="Romanize the Foreign Title into the Title field (draft — review the result)">Transliterate</button>
@@ -179,7 +179,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <small class="transliterate-note" id="transliterate-note" role="status" aria-live="polite" style="display:none"></small>
         </label>
 
-        <label class="disc-meta-row{% if !self.highlight_class("disc_number").is_empty() %} {{ self.highlight_class("disc_number") }}{% endif %}" data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}>
+        <label class="disc-meta-row{% if !self.highlight_class("disc_number").is_empty() %} {{ self.highlight_class("disc_number") }}{% endif %}" data-add-requires-system-media data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}>
             <span class="disc-meta-label">Disc Number:</span>
             <input type="text" name="disc_number" value="{{ disc_number }}">
             {% for ann in self.annotations_for("disc_number") %}
@@ -191,7 +191,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-        <label class="disc-meta-row{% if !self.highlight_class("disc_title").is_empty() %} {{ self.highlight_class("disc_title") }}{% endif %}" data-field-flag="has_disc_title"{% if !show_disc_title %} style="display:none"{% endif %}>
+        <label class="disc-meta-row{% if !self.highlight_class("disc_title").is_empty() %} {{ self.highlight_class("disc_title") }}{% endif %}" data-add-requires-system-media data-field-flag="has_disc_title"{% if !show_disc_title %} style="display:none"{% endif %}>
             <span class="disc-meta-label">Disc Title:</span>
             <input type="text" name="disc_title" value="{{ disc_title }}">
             {% for ann in self.annotations_for("disc_title") %}
@@ -203,7 +203,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             </div>
             {% endfor %}
         </label>
-        <label class="disc-meta-row{% if !self.highlight_class("filename_suffix").is_empty() %} {{ self.highlight_class("filename_suffix") }}{% endif %}">
+        <label class="disc-meta-row{% if !self.highlight_class("filename_suffix").is_empty() %} {{ self.highlight_class("filename_suffix") }}{% endif %}" data-add-requires-system-media>
             <span class="disc-meta-label">Filename Suffix:</span>
             <input type="text" name="filename_suffix" value="{{ filename_suffix }}">
             {% for ann in self.annotations_for("filename_suffix") %}
@@ -229,7 +229,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
     </div>
     </div>
 
-    <div class="disc-form-section" aria-label="Regions and languages">
+    <div class="disc-form-section" aria-label="Regions and languages" data-add-requires-system-media>
     {% if is_add_mode %}
     <div class="flag-list-controls">
         <button type="button" id="flag-list-toggle" class="outline secondary flag-list-toggle" aria-expanded="false" data-show-all-label="Show all regions and languages" data-show-common-label="Show popular regions and languages">Show all regions and languages</button>
@@ -288,7 +288,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
     </div>
 
     <div class="disc-form-section disc-form-section-inline" aria-label="Disc identifiers">
-    <div class="inline-field repeatable-inline-field{% if !self.highlight_class("serial").is_empty() %} {{ self.highlight_class("serial") }}{% endif %}" data-field-flag="has_serial"{% if !show_serial %} style="display:none"{% endif %}>
+    <div class="inline-field repeatable-inline-field{% if !self.highlight_class("serial").is_empty() %} {{ self.highlight_class("serial") }}{% endif %}" data-add-requires-system-media data-field-flag="has_serial"{% if !show_serial %} style="display:none"{% endif %}>
         <span class="inline-field-label">Disc Serials</span>
         <div id="serial-list" class="inline-field-values repeatable-inline-values">
             {% for s in serials %}
@@ -309,7 +309,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('serial-list','serial')">+</button>
     </div>
 
-    <div class="inline-field repeatable-inline-field{% if !self.highlight_class("edition").is_empty() %} {{ self.highlight_class("edition") }}{% endif %}" data-field-flag="has_edition"{% if !show_edition %} style="display:none"{% endif %}>
+    <div class="inline-field repeatable-inline-field{% if !self.highlight_class("edition").is_empty() %} {{ self.highlight_class("edition") }}{% endif %}" data-add-requires-system-media data-field-flag="has_edition"{% if !show_edition %} style="display:none"{% endif %}>
         <span class="inline-field-label">Editions</span>
         <div id="edition-list" class="inline-field-values repeatable-inline-values">
             {% if is_add_mode %}
@@ -344,7 +344,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="inline-field repeatable-inline-field{% if !self.highlight_class("barcode").is_empty() %} {{ self.highlight_class("barcode") }}{% endif %}" data-field-flag="has_barcode"{% if !show_barcode %} style="display:none"{% endif %}>
+    <div class="inline-field repeatable-inline-field{% if !self.highlight_class("barcode").is_empty() %} {{ self.highlight_class("barcode") }}{% endif %}" data-add-requires-system-media data-field-flag="has_barcode"{% if !show_barcode %} style="display:none"{% endif %}>
         <span class="inline-field-label">Barcodes</span>
         <div id="barcode-list" class="inline-field-values repeatable-inline-values">
             {% if is_add_mode %}
@@ -379,7 +379,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("version").is_empty() %} {{ self.highlight_class("version") }}{% endif %}" data-field-flag="has_version"{% if !show_version %} style="display:none"{% endif %}>
+    <div class="inline-field{% if !self.highlight_class("version").is_empty() %} {{ self.highlight_class("version") }}{% endif %}" data-add-requires-system-media data-field-flag="has_version"{% if !show_version %} style="display:none"{% endif %}>
         <span class="inline-field-label">Version</span>
         <div class="inline-field-values">
             <input type="text" name="version" class="short-code-input" value="{{ version }}">
@@ -394,7 +394,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         </div>
     </div>
 
-    <div id="error-count-field" class="inline-field{% if !self.highlight_class("error_count").is_empty() %} {{ self.highlight_class("error_count") }}{% endif %}"{% if !show_error_count %} style="display:none"{% endif %}>
+    <div id="error-count-field" class="inline-field{% if !self.highlight_class("error_count").is_empty() %} {{ self.highlight_class("error_count") }}{% endif %}" data-add-requires-system-media{% if !show_error_count %} style="display:none"{% endif %}>
         <span class="inline-field-label">Error Count</span>
         <div class="inline-field-values">
             <input type="number" name="error_count" class="short-code-input" value="{{ error_count }}">
@@ -409,7 +409,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         </div>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("exe_date").is_empty() %} {{ self.highlight_class("exe_date") }}{% endif %}" data-field-flag="has_exe_date"{% if !show_exe_date %} style="display:none"{% endif %}>
+    <div class="inline-field{% if !self.highlight_class("exe_date").is_empty() %} {{ self.highlight_class("exe_date") }}{% endif %}" data-add-requires-system-media data-field-flag="has_exe_date"{% if !show_exe_date %} style="display:none"{% endif %}>
         <span class="inline-field-label">EXE Date</span>
         <div class="inline-field-values">
             <input type="text" name="exe_date" value="{{ exe_date }}" placeholder="YYYY-MM-DD">
@@ -424,7 +424,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         </div>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("edc").is_empty() %} {{ self.highlight_class("edc") }}{% endif %}" data-field-flag="has_edc"{% if !show_edc %} style="display:none"{% endif %}>
+    <div class="inline-field{% if !self.highlight_class("edc").is_empty() %} {{ self.highlight_class("edc") }}{% endif %}" data-add-requires-system-media data-field-flag="has_edc"{% if !show_edc %} style="display:none"{% endif %}>
         <span class="inline-field-label">EDC</span>
         <div class="inline-field-values inline-radios">
             <label><input type="radio" name="edc" value="true" {% if edc_value == "true" %}checked{% endif %}> Yes</label>
@@ -432,7 +432,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         </div>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("layerbreaks").is_empty() %} {{ self.highlight_class("layerbreaks") }}{% endif %}" id="layerbreak-row" style="display:none">
+    <div class="inline-field{% if !self.highlight_class("layerbreaks").is_empty() %} {{ self.highlight_class("layerbreaks") }}{% endif %}" id="layerbreak-row" data-add-requires-system-media style="display:none">
         <span class="inline-field-label">Layerbreaks</span>
         <div class="inline-field-values inline-field-values-stacked">
             <div id="layerbreak-list" class="inline-field-values"></div>
@@ -447,7 +447,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         </div>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("disc_id").is_empty() %} {{ self.highlight_class("disc_id") }}{% endif %}" data-field-flag="has_disc_id"{% if !show_disc_id %} style="display:none"{% endif %}>
+    <div class="inline-field{% if !self.highlight_class("disc_id").is_empty() %} {{ self.highlight_class("disc_id") }}{% endif %}" data-add-requires-system-media data-field-flag="has_disc_id"{% if !show_disc_id %} style="display:none"{% endif %}>
         <span class="inline-field-label">Disc ID</span>
         <div class="inline-field-values">
             <input type="text" name="protection_key_disc_id" value="{{ protection_key_disc_id }}">
@@ -462,7 +462,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         </div>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("disc_key").is_empty() %} {{ self.highlight_class("disc_key") }}{% endif %}" data-field-flag="has_key"{% if !show_key %} style="display:none"{% endif %}>
+    <div class="inline-field{% if !self.highlight_class("disc_key").is_empty() %} {{ self.highlight_class("disc_key") }}{% endif %}" data-add-requires-system-media data-field-flag="has_key"{% if !show_key %} style="display:none"{% endif %}>
         <span class="inline-field-label">Disc Key</span>
         <div class="inline-field-values">
             <input type="text" name="protection_key_disc_key" value="{{ protection_key_disc_key }}">
@@ -493,7 +493,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
     </div>
     </div>
 
-    <div class="disc-form-section" aria-label="Ring codes">
+    <div class="disc-form-section" aria-label="Ring codes" data-add-requires-system-media>
     <div{% if !self.highlight_class("ring_codes").is_empty() %} class="{{ self.highlight_class("ring_codes") }}"{% endif %}>
     <fieldset>
         <legend>Ring Codes</legend>
@@ -512,11 +512,11 @@ const IS_ADD_MODE = {{ is_add_mode }};
     </div>
 
     <div class="disc-form-section disc-form-section-multiline" aria-label="Dump metadata">
-    <label{% if !self.highlight_class("comments").is_empty() %} class="{{ self.highlight_class("comments") }}"{% endif %}>Comments
+    <label data-add-requires-system-media{% if !self.highlight_class("comments").is_empty() %} class="{{ self.highlight_class("comments") }}"{% endif %}>Comments
         <textarea name="comments" rows="5" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
     </label>
 
-    <div class="multiline-review-field{% if !self.highlight_class("contents").is_empty() %} {{ self.highlight_class("contents") }}{% endif %}">
+    <div class="multiline-review-field{% if !self.highlight_class("contents").is_empty() %} {{ self.highlight_class("contents") }}{% endif %}" data-add-requires-system-media>
         <label>Contents
             <textarea name="contents" rows="5" class="hex-dump-input auto-expand fixed-80">{{ contents }}</textarea>
         </label>
@@ -527,7 +527,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="multiline-review-field{% if !self.highlight_class("protection").is_empty() %} {{ self.highlight_class("protection") }}{% endif %}" data-field-flag="has_protection"{% if !show_protection %} style="display:none"{% endif %}>
+    <div class="multiline-review-field{% if !self.highlight_class("protection").is_empty() %} {{ self.highlight_class("protection") }}{% endif %}" data-add-requires-system-media data-field-flag="has_protection"{% if !show_protection %} style="display:none"{% endif %}>
         <label>Protection
             <textarea name="protection" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ protection }}</textarea>
         </label>
@@ -538,7 +538,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="multiline-review-field{% if !self.highlight_class("sector_ranges").is_empty() %} {{ self.highlight_class("sector_ranges") }}{% endif %}" data-field-flag="has_sector_ranges"{% if !show_sector_ranges %} style="display:none"{% endif %}>
+    <div class="multiline-review-field{% if !self.highlight_class("sector_ranges").is_empty() %} {{ self.highlight_class("sector_ranges") }}{% endif %}" data-add-requires-system-media data-field-flag="has_sector_ranges"{% if !show_sector_ranges %} style="display:none"{% endif %}>
         <label>Sector Ranges
             <textarea name="sector_ranges" rows="5" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sector_ranges_text }}</textarea>
         </label>
@@ -549,7 +549,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="multiline-review-field{% if !self.highlight_class("sbi").is_empty() %} {{ self.highlight_class("sbi") }}{% endif %}" data-field-flag="has_sbi"{% if !show_sbi %} style="display:none"{% endif %}>
+    <div class="multiline-review-field{% if !self.highlight_class("sbi").is_empty() %} {{ self.highlight_class("sbi") }}{% endif %}" data-add-requires-system-media data-field-flag="has_sbi"{% if !show_sbi %} style="display:none"{% endif %}>
         <label>SBI
             <textarea name="sbi" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ sbi }}</textarea>
         </label>
@@ -560,7 +560,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="multiline-review-field{% if !self.highlight_class("pvd").is_empty() %} {{ self.highlight_class("pvd") }}{% endif %}" data-field-flag="has_pvd"{% if !show_pvd %} style="display:none"{% endif %}>
+    <div class="multiline-review-field{% if !self.highlight_class("pvd").is_empty() %} {{ self.highlight_class("pvd") }}{% endif %}" data-add-requires-system-media data-field-flag="has_pvd"{% if !show_pvd %} style="display:none"{% endif %}>
         <label>PVD
             <textarea name="pvd" rows="6" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pvd_hex }}</textarea>
         </label>
@@ -571,7 +571,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="multiline-review-field{% if !self.highlight_class("header").is_empty() %} {{ self.highlight_class("header") }}{% endif %}" data-field-flag="has_header"{% if !show_header %} style="display:none"{% endif %}>
+    <div class="multiline-review-field{% if !self.highlight_class("header").is_empty() %} {{ self.highlight_class("header") }}{% endif %}" data-add-requires-system-media data-field-flag="has_header"{% if !show_header %} style="display:none"{% endif %}>
         <label>Header
             <textarea name="header" rows="16" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ header_hex }}</textarea>
         </label>
@@ -582,7 +582,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="multiline-review-field{% if !self.highlight_class("bca").is_empty() %} {{ self.highlight_class("bca") }}{% endif %}" data-field-flag="has_bca"{% if !show_bca %} style="display:none"{% endif %}>
+    <div class="multiline-review-field{% if !self.highlight_class("bca").is_empty() %} {{ self.highlight_class("bca") }}{% endif %}" data-add-requires-system-media data-field-flag="has_bca"{% if !show_bca %} style="display:none"{% endif %}>
         <label>BCA
             <textarea name="bca" rows="4" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ bca_hex }}</textarea>
         </label>
@@ -593,7 +593,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="multiline-review-field{% if !self.highlight_class("pic").is_empty() %} {{ self.highlight_class("pic") }}{% endif %}" data-media-flag="has_pic"{% if !show_pic %} style="display:none"{% endif %}>
+    <div class="multiline-review-field{% if !self.highlight_class("pic").is_empty() %} {{ self.highlight_class("pic") }}{% endif %}" data-add-requires-system-media data-media-flag="has_pic"{% if !show_pic %} style="display:none"{% endif %}>
         <label>PIC
             <textarea name="pic" rows="9" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>
         </label>
@@ -604,7 +604,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </div>
 
-    <div class="multiline-review-field{% if !self.highlight_class("cue").is_empty() %} {{ self.highlight_class("cue") }}{% endif %}" id="cue-field">
+    <div class="multiline-review-field{% if !self.highlight_class("cue").is_empty() %} {{ self.highlight_class("cue") }}{% endif %}" id="cue-field" data-add-requires-system-media>
         <label>Cuesheet
             <textarea name="cuesheet" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80">{{ cue }}</textarea>
         </label>

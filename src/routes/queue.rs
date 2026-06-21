@@ -736,6 +736,7 @@ fn build_review_template(
         status,
 
         is_add_mode: false,
+        add_requires_system_media: false,
         dump_log: String::new(),
         dump_log_required: false,
         extra_upload_url: String::new(),

@@ -2321,6 +2321,9 @@ pre code {
 .disc-edit {
     font-size: 0.75rem;
 }
+.disc-edit.disc-add-minimal [data-add-requires-system-media] {
+    display: none !important;
+}
 .visually-hidden {
     position: absolute !important;
     width: 1px !important;
