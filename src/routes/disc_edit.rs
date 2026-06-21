@@ -401,7 +401,7 @@ fn validate_add_submission_logs(form: &DiscEditForm, logs_optional: bool) -> Vec
     let dump_log = trimmed_nonempty(form.dump_log.as_deref());
     let logs_url = trimmed_nonempty(form.extra_upload_url.as_deref());
     let is_logless_system = matches!(
-        form.system_code.as_deref(), 
+        Some(form.system_code.as_str()), 
         Some("WIIU") | Some("GC") | Some("WII")
     );
 
