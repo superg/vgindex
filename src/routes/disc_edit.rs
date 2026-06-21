@@ -400,12 +400,16 @@ fn is_valid_http_url(value: &str) -> bool {
 fn validate_add_submission_logs(form: &DiscEditForm, logs_optional: bool) -> Vec<String> {
     let dump_log = trimmed_nonempty(form.dump_log.as_deref());
     let logs_url = trimmed_nonempty(form.extra_upload_url.as_deref());
+    let is_logless_system = matches!(
+        form.system_code.as_deref(), 
+        Some("WIIU") | Some("GC") | Some("WII")
+    );
 
     let mut errors = Vec::new();
     if !logs_optional && dump_log.is_none() {
         errors.push("Dump Log: cannot be empty".to_string());
     }
-    if !logs_optional && logs_url.is_none() {
+    if !logs_optional && !is_logless_system && logs_url.is_none() {
         errors.push("Logs Archive URL: cannot be empty".to_string());
     }
     if let Some(logs_url) = logs_url {
