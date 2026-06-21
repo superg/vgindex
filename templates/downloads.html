@@ -20,6 +20,7 @@
             <td>{{ sys.name }}</td>
             <td class="download-links-cell">
                 {% if sys.has_dat %}<a href="/datfile/{{ sys.code }}">Dat</a>{% endif %}
+                {% if sys.has_dat %}<a href="/datfile/{{ sys.code }}/serial,version">Dat + Serial/Version</a>{% endif %}
                 {% if sys.has_cue %}<a href="/cues/{{ sys.code }}">Cuesheets</a>{% endif %}
                 {% if sys.has_key && can_download_keys %}<a href="/keys/{{ sys.code }}">Keys</a>{% endif %}
                 {% if sys.has_sbi %}<a href="/sbi/{{ sys.code }}">SBI</a>{% endif %}

@@ -176,6 +176,10 @@ mod tests {
     fn canonical_url_removes_trailing_slash() {
         assert_eq!(target("/disc/1/").as_deref(), Some("/disc/1"));
         assert_eq!(target("/about/").as_deref(), Some("/about"));
+        assert_eq!(
+            target("/datfile/PS2/serial,version/").as_deref(),
+            Some("/datfile/PS2/serial,version")
+        );
     }
 
     #[test]

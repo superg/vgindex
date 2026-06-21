@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser, RequireAuth};
 use crate::config::SiteConfig;
+use crate::error::AppError;
 use crate::services::archive_service;
 use crate::AppState;
 
@@ -17,6 +18,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/downloads", get(downloads_page))
         .route("/datfile/{system}", get(download_dat))
+        .route("/datfile/{system}/{features}", get(download_dat_variant))
         .route("/cues/{system}", get(download_cue))
         .route("/keys/{system}", get(download_key))
         .route("/sbi/{system}", get(download_sbi))
@@ -171,6 +173,15 @@ fn normalize_archive_system_code(system: &str) -> String {
     system.trim().to_ascii_uppercase()
 }
 
+fn dat_archive_type_for_features(features: &str) -> Option<&'static str> {
+    match features.trim().to_ascii_lowercase().as_str() {
+        "serial" | "version" | "serial,version" | "version,serial" => {
+            Some(archive_service::DAT_SERIAL_VERSION_ARCHIVE_TYPE)
+        }
+        _ => None,
+    }
+}
+
 async fn serve_archive(state: &AppState, system: &str, archive_type: &str) -> Response {
     let system = normalize_archive_system_code(system);
     match archive_service::get_cached_archive(&state.pool, &system, archive_type).await {
@@ -191,6 +202,16 @@ async fn serve_archive(state: &AppState, system: &str, archive_type: &str) -> Re
 
 async fn download_dat(State(state): State<AppState>, Path(system): Path<String>) -> Response {
     serve_archive(&state, &system, "dat").await
+}
+
+async fn download_dat_variant(
+    State(state): State<AppState>,
+    Path((system, features)): Path<(String, String)>,
+) -> Response {
+    match dat_archive_type_for_features(&features) {
+        Some(archive_type) => serve_archive(&state, &system, archive_type).await,
+        None => AppError::NotFound.into_response(),
+    }
 }
 
 async fn download_cue(State(state): State<AppState>, Path(system): Path<String>) -> Response {
@@ -316,6 +337,14 @@ mod tests {
     }
 
     #[test]
+    fn downloads_page_shows_serial_version_dat_links() {
+        let html = template(false).render().unwrap();
+
+        assert!(html.contains(r#"/datfile/PS3/serial,version"#));
+        assert!(html.contains(">Dat + Serial/Version<"));
+    }
+
+    #[test]
     fn downloads_page_shows_bios_dat_links() {
         let html = template(false).render().unwrap();
 
@@ -344,6 +373,28 @@ mod tests {
         assert_eq!(normalize_archive_system_code("Pc-98"), "PC-98");
     }
 
+    #[test]
+    fn dat_feature_aliases_use_serial_version_archive() {
+        for features in ["serial", "version", "serial,version", "version,serial"] {
+            assert_eq!(
+                dat_archive_type_for_features(features),
+                Some(archive_service::DAT_SERIAL_VERSION_ARCHIVE_TYPE)
+            );
+        }
+
+        assert_eq!(
+            dat_archive_type_for_features("Serial,Version"),
+            Some(archive_service::DAT_SERIAL_VERSION_ARCHIVE_TYPE)
+        );
+    }
+
+    #[test]
+    fn invalid_dat_feature_aliases_are_rejected() {
+        assert_eq!(dat_archive_type_for_features("serials"), None);
+        assert_eq!(dat_archive_type_for_features("serial/version"), None);
+        assert_eq!(dat_archive_type_for_features("serial,version,extra"), None);
+    }
+
     #[tokio::test]
     async fn key_download_route_rejects_guest_direct_links() {
         let app = routes().with_state(test_state());
@@ -358,5 +409,21 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn dat_variant_route_rejects_unknown_features() {
+        let app = routes().with_state(test_state());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/datfile/PS3/serials")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
