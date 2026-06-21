@@ -1568,7 +1568,6 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state() -> AppState {
-        let (archive_tx, _archive_rx) = tokio::sync::mpsc::unbounded_channel();
         let database_url = "postgres://postgres:postgres@localhost/postgres".to_string();
 
         AppState {
@@ -1589,7 +1588,6 @@ mod tests {
                 oidc_client_secret: "test".to_string(),
             }),
             http: reqwest::Client::new(),
-            archive_tx,
             edition_suggestions: crate::services::disc_service::EditionSuggestionsCache::new(
                 Duration::from_secs(60),
             ),

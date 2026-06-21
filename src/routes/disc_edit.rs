@@ -2023,18 +2023,12 @@ async fn edit_submit(
     .await?;
 
     if can_edit_directly {
-        let disc_id = queue_service::approve_submission(
-            &state.pool,
-            &sub,
-            &sub.changes,
-            user.id,
-            None,
-            &state.archive_tx,
-        )
-        .await?
-        .ok_or(AppError::Internal(
-            "submission was already processed".into(),
-        ))?;
+        let disc_id =
+            queue_service::approve_submission(&state.pool, &sub, &sub.changes, user.id, None)
+                .await?
+                .ok_or(AppError::Internal(
+                    "submission was already processed".into(),
+                ))?;
         Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
     } else {
         Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
@@ -2291,18 +2285,12 @@ async fn add_submit(
     if user.role.can_edit_directly() && is_verification {
         Ok(Redirect::to(&format!("/queue/{}", sub.id)).into_response())
     } else if user.role.can_edit_directly() {
-        let disc_id = queue_service::approve_submission(
-            &state.pool,
-            &sub,
-            &sub.changes,
-            user.id,
-            None,
-            &state.archive_tx,
-        )
-        .await?
-        .ok_or(AppError::Internal(
-            "submission was already processed".into(),
-        ))?;
+        let disc_id =
+            queue_service::approve_submission(&state.pool, &sub, &sub.changes, user.id, None)
+                .await?
+                .ok_or(AppError::Internal(
+                    "submission was already processed".into(),
+                ))?;
         Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
     } else {
         Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
@@ -2898,6 +2886,7 @@ mod operation_delta_tests {
             has_bca: true,
             has_sample_start: true,
             has_offset_extra: true,
+            archives_dirty: false,
         }
     }
 

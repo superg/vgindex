@@ -21,8 +21,8 @@ pub fn routes() -> Router<AppState> {
         .route("/maintenance", get(maintenance_page))
         .route("/maintenance/rebuild-cue", post(rebuild_cue))
         .route(
-            "/maintenance/clear-archives-cache",
-            post(clear_archives_cache),
+            "/maintenance/trigger-archive-generation",
+            post(trigger_archive_generation),
         )
 }
 
@@ -83,20 +83,25 @@ async fn rebuild_cue(
     })
 }
 
-async fn clear_archives_cache(
+async fn trigger_archive_generation(
+    State(state): State<AppState>,
     RequireModerator(user): RequireModerator,
     Form(form): Form<CsrfForm>,
 ) -> crate::error::AppResult<Response> {
     csrf::verify_form(&user, &form)?;
 
-    Ok(match archive_service::clear_archives_cache() {
-        Ok(true) => redirect_with_message("status", "Cleared archives cache."),
-        Ok(false) => redirect_with_message("status", "Archives cache was already empty."),
-        Err(err) => {
-            tracing::error!("Failed to clear archives cache: {err}");
-            redirect_with_message("error", "Failed to clear archives cache.")
-        }
-    })
+    Ok(
+        match archive_service::mark_all_system_archives_dirty(&state.pool).await {
+            Ok(count) => redirect_with_message(
+                "status",
+                &format!("Triggered archive generation for {count} system(s)."),
+            ),
+            Err(err) => {
+                tracing::error!("Failed to trigger archive generation: {err}");
+                redirect_with_message("error", "Failed to trigger archive generation.")
+            }
+        },
+    )
 }
 
 fn redirect_with_message(param: &str, message: &str) -> Response {
@@ -144,7 +149,6 @@ mod tests {
     }
 
     fn test_state() -> AppState {
-        let (archive_tx, _archive_rx) = tokio::sync::mpsc::unbounded_channel();
         let database_url = "postgres://postgres:postgres@localhost/postgres".to_string();
 
         AppState {
@@ -165,7 +169,6 @@ mod tests {
                 oidc_client_secret: "test".to_string(),
             }),
             http: reqwest::Client::new(),
-            archive_tx,
             edition_suggestions: crate::services::disc_service::EditionSuggestionsCache::new(
                 Duration::from_secs(60),
             ),
@@ -239,7 +242,7 @@ mod tests {
             3
         );
         assert!(html.contains(r#"action="/maintenance/rebuild-cue""#));
-        assert!(html.contains(r#"action="/maintenance/clear-archives-cache""#));
+        assert!(html.contains(r#"action="/maintenance/trigger-archive-generation""#));
     }
 
     #[tokio::test]
@@ -262,7 +265,7 @@ mod tests {
     async fn maintenance_post_routes_reject_guests() {
         for uri in [
             "/maintenance/rebuild-cue",
-            "/maintenance/clear-archives-cache",
+            "/maintenance/trigger-archive-generation",
         ] {
             let response = routes()
                 .with_state(test_state())

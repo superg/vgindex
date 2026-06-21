@@ -786,7 +786,6 @@ pub async fn approve_submission(
     changes: &serde_json::Value,
     reviewer_id: i32,
     review_comment: Option<&str>,
-    archive_tx: &tokio::sync::mpsc::UnboundedSender<String>,
 ) -> AppResult<Option<i32>> {
     let mut effective_data = resolve_submission_data(pool, sub, changes).await?;
     let previous_system_code: Option<String> = if let Some(existing_id) = sub.target_disc_id {
@@ -880,8 +879,7 @@ pub async fn approve_submission(
     }
 
     for code in dirty_systems {
-        archive_service::invalidate_system_archives(&code);
-        let _ = archive_tx.send(code);
+        archive_service::mark_system_archives_dirty(pool, &code).await?;
     }
 
     Ok(Some(disc_id))

@@ -1867,7 +1867,6 @@ async fn review_submit(
         &form_snapshot,
         user.id,
         review_comment.as_deref(),
-        &state.archive_tx,
     )
     .await?;
 
@@ -1887,7 +1886,6 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state() -> AppState {
-        let (archive_tx, _archive_rx) = tokio::sync::mpsc::unbounded_channel();
         let database_url = "postgres://postgres:postgres@localhost/postgres".to_string();
 
         AppState {
@@ -1908,7 +1906,6 @@ mod tests {
                 oidc_client_secret: "test".to_string(),
             }),
             http: reqwest::Client::new(),
-            archive_tx,
             edition_suggestions: crate::services::disc_service::EditionSuggestionsCache::new(
                 Duration::from_secs(60),
             ),
@@ -1981,6 +1978,7 @@ mod tests {
             has_bca: true,
             has_sample_start: true,
             has_offset_extra: true,
+            archives_dirty: false,
         }
     }
 

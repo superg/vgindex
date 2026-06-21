@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 use zip::write::{SimpleFileOptions, ZipWriter};
 
 use crate::db::models::*;
@@ -59,51 +60,61 @@ fn archive_subdir(system: &str, archive_type: &str) -> String {
 
 fn find_cached_archive(system: &str, archive_type: &str) -> Option<ArchiveResult> {
     let dir = archive_subdir(system, archive_type);
-    let entries = std::fs::read_dir(&dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("zip") {
-            let filename = path.file_name()?.to_str()?.to_string();
-            let data = std::fs::read(&path).ok()?;
-            return Some(ArchiveResult { data, filename });
-        }
-    }
-    None
+    find_cached_archive_in_dir(Path::new(&dir))
 }
 
-fn store_archive(system: &str, archive_type: &str, result: &ArchiveResult) {
+fn find_cached_archive_in_dir(dir: &Path) -> Option<ArchiveResult> {
+    newest_zip_path(dir).and_then(|path| {
+        let filename = path.file_name()?.to_str()?.to_string();
+        let data = std::fs::read(&path).ok()?;
+        Some(ArchiveResult { data, filename })
+    })
+}
+
+fn newest_zip_path(dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("zip"))
+        .max_by_key(|path| {
+            path.metadata()
+                .and_then(|meta| meta.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+        })
+}
+
+fn store_archive(system: &str, archive_type: &str, result: &ArchiveResult) -> std::io::Result<()> {
     let dir = archive_subdir(system, archive_type);
-    std::fs::create_dir_all(&dir).ok();
-    let new_path = format!("{}/{}", dir, result.filename);
-    std::fs::write(&new_path, &result.data).ok();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
+    store_archive_in_dir(Path::new(&dir), result)
+}
+
+fn store_archive_in_dir(dir: &Path, result: &ArchiveResult) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let final_path = dir.join(&result.filename);
+    let tmp_path = dir.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
+
+    match std::fs::write(&tmp_path, &result.data)
+        .and_then(|_| std::fs::rename(&tmp_path, &final_path))
+    {
+        Ok(()) => {}
+        Err(err) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(err);
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("zip")
-                && path.file_name().and_then(|n| n.to_str()) != Some(&result.filename)
+                && path.file_name().and_then(|n| n.to_str()) != Some(result.filename.as_str())
             {
                 std::fs::remove_file(&path).ok();
             }
         }
     }
-}
-
-fn clear_cached_archive(system: &str, archive_type: &str) {
-    let dir = archive_subdir(system, archive_type);
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("zip") {
-                std::fs::remove_file(&path).ok();
-            }
-        }
-    }
-}
-
-pub fn invalidate_system_archives(system: &str) {
-    for archive_type in ["dat", "cue", "key", "sbi"] {
-        clear_cached_archive(system, archive_type);
-    }
+    Ok(())
 }
 
 pub fn clear_archives_cache() -> std::io::Result<bool> {
@@ -123,14 +134,12 @@ pub(crate) fn clear_archives_cache_at(data_dir: impl AsRef<Path>) -> std::io::Re
 // Public API
 // ---------------------------------------------------------------------------
 
-pub async fn get_or_generate_archive(
+pub async fn get_cached_archive(
     pool: &PgPool,
-    metadata: &ArchiveMetadata,
     system: &str,
     archive_type: &str,
 ) -> AppResult<ArchiveResult> {
     if !archive_type_is_available(pool, system, archive_type).await? {
-        clear_cached_archive(system, archive_type);
         return Err(AppError::NotFound);
     }
 
@@ -138,74 +147,96 @@ pub async fn get_or_generate_archive(
         return Ok(result);
     }
 
-    let result = match archive_type {
-        "dat" => generate_datfile_archive(pool, metadata, system).await?,
-        "cue" => generate_cuesheet_archive(pool, system).await?,
-        "key" => generate_key_archive(pool, system).await?,
-        "sbi" => generate_sbi_archive(pool, system).await?,
-        _ => return Err(AppError::NotFound),
-    };
-
-    store_archive(system, archive_type, &result);
-    Ok(result)
+    Err(AppError::NotFound)
 }
 
-pub async fn regenerate_system_archives(pool: &PgPool, metadata: &ArchiveMetadata, system: &str) {
+pub async fn mark_system_archives_dirty(pool: &PgPool, system: &str) -> AppResult<()> {
+    sqlx::query("UPDATE systems SET archives_dirty = TRUE WHERE code = $1")
+        .bind(system)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn mark_all_system_archives_dirty(pool: &PgPool) -> AppResult<u64> {
+    let result = sqlx::query("UPDATE systems SET archives_dirty = TRUE")
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn claim_dirty_archive_systems(pool: &PgPool) -> AppResult<Vec<String>> {
+    sqlx::query_scalar(
+        "WITH dirty AS (
+             SELECT code FROM systems WHERE archives_dirty = TRUE ORDER BY code
+         )
+         UPDATE systems s
+         SET archives_dirty = FALSE
+         FROM dirty
+         WHERE s.code = dirty.code
+         RETURNING s.code",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::from)
+}
+
+pub async fn regenerate_system_archives(
+    pool: &PgPool,
+    metadata: &ArchiveMetadata,
+    system: &str,
+) -> AppResult<()> {
     let sys: Option<System> = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-    let Some(sys) = sys else { return };
+        .await?;
+    let Some(sys) = sys else { return Ok(()) };
 
-    if let Ok(result) = generate_datfile_archive(pool, metadata, &sys.code).await {
-        store_archive(&sys.code, "dat", &result);
-    }
+    let result = generate_datfile_archive(pool, metadata, &sys.code).await?;
+    store_archive(&sys.code, "dat", &result).map_err(|e| AppError::Internal(e.to_string()))?;
 
     let has_cue_media = system_has_bin_media(pool, &sys.media_types).await;
     if archive_type_supported_by_system(&sys, "cue", has_cue_media).unwrap_or(false) {
-        if let Ok(result) = generate_cuesheet_archive(pool, &sys.code).await {
-            store_archive(&sys.code, "cue", &result);
-        }
-    } else {
-        clear_cached_archive(&sys.code, "cue");
+        let result = generate_cuesheet_archive(pool, &sys.code).await?;
+        store_archive(&sys.code, "cue", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     if archive_type_supported_by_system(&sys, "key", false).unwrap_or(false) {
-        if let Ok(result) = generate_key_archive(pool, &sys.code).await {
-            store_archive(&sys.code, "key", &result);
-        }
-    } else {
-        clear_cached_archive(&sys.code, "key");
+        let result = generate_key_archive(pool, &sys.code).await?;
+        store_archive(&sys.code, "key", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     if archive_type_supported_by_system(&sys, "sbi", false).unwrap_or(false) {
-        if let Ok(result) = generate_sbi_archive(pool, &sys.code).await {
-            store_archive(&sys.code, "sbi", &result);
-        }
-    } else {
-        clear_cached_archive(&sys.code, "sbi");
+        let result = generate_sbi_archive(pool, &sys.code).await?;
+        store_archive(&sys.code, "sbi", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
+
+    Ok(())
 }
 
-pub async fn run_archive_worker(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<String>,
+pub async fn process_dirty_archive_systems(
     pool: PgPool,
     metadata: ArchiveMetadata,
-) {
-    loop {
-        let Some(first) = rx.recv().await else { break };
+) -> AppResult<Vec<String>> {
+    let systems = claim_dirty_archive_systems(&pool).await?;
 
-        let mut dirty = std::collections::HashSet::new();
-        dirty.insert(first);
-        while let Ok(code) = rx.try_recv() {
-            dirty.insert(code);
+    for code in &systems {
+        tracing::info!("Regenerating archives for system {code}");
+        if let Err(err) = regenerate_system_archives(&pool, &metadata, code).await {
+            tracing::error!("Failed to regenerate archives for system {code}: {err}");
+            let _ = mark_system_archives_dirty(&pool, code).await;
         }
+    }
 
-        for code in dirty {
-            tracing::info!("Regenerating archives for system {code}");
-            regenerate_system_archives(&pool, &metadata, &code).await;
+    Ok(systems)
+}
+
+pub async fn run_archive_worker(pool: PgPool, metadata: ArchiveMetadata) {
+    let mut interval = tokio::time::interval(Duration::from_secs(10 * 60));
+    loop {
+        interval.tick().await;
+        if let Err(err) = process_dirty_archive_systems(pool.clone(), metadata.clone()).await {
+            tracing::error!("Failed to process dirty archive systems: {err}");
         }
     }
 }
@@ -532,6 +563,7 @@ mod tests {
             has_bca: false,
             has_sample_start: false,
             has_offset_extra: false,
+            archives_dirty: false,
         }
     }
 
@@ -633,6 +665,50 @@ mod tests {
 
         assert!(archive_type_supported_by_system(&sys, "cue", true).unwrap());
         assert!(!archive_type_supported_by_system(&sys, "cue", false).unwrap());
+    }
+
+    #[test]
+    fn store_archive_replaces_old_zip_only_after_new_zip_is_published() {
+        let root = std::env::temp_dir().join(format!(
+            "vgindex-archive-store-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("old.zip"), b"old").unwrap();
+
+        let result = ArchiveResult {
+            filename: "new.zip".to_string(),
+            data: b"new".to_vec(),
+        };
+
+        store_archive_in_dir(&root, &result).unwrap();
+
+        assert_eq!(std::fs::read(root.join("new.zip")).unwrap(), b"new");
+        assert!(!root.join("old.zip").exists());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn store_archive_keeps_old_zip_when_publish_fails() {
+        let root = std::env::temp_dir().join(format!(
+            "vgindex-archive-store-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("old.zip"), b"old").unwrap();
+        std::fs::create_dir(root.join("new.zip")).unwrap();
+
+        let result = ArchiveResult {
+            filename: "new.zip".to_string(),
+            data: b"new".to_vec(),
+        };
+
+        store_archive_in_dir(&root, &result).unwrap_err();
+
+        assert_eq!(std::fs::read(root.join("old.zip")).unwrap(), b"old");
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

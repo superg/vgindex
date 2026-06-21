@@ -148,7 +148,7 @@ fn canonical_route_segment(segment: &str) -> Option<&'static str> {
         "rebuild-cue" => Some("rebuild-cue"),
         "sbi" => Some("sbi"),
         "submit" => Some("submit"),
-        "clear-archives-cache" => Some("clear-archives-cache"),
+        "trigger-archive-generation" => Some("trigger-archive-generation"),
         "transliterate" => Some("transliterate"),
         _ => None,
     }
@@ -255,7 +255,7 @@ mod tests {
                 "href=\"/queue/\"",
                 "action=\"/discs/\"",
                 "action=\"/maintenance/rebuild-cue/\"",
-                "action=\"/maintenance/clear-archives-cache/\"",
+                "action=\"/maintenance/trigger-archive-generation/\"",
                 "action=\"/queue/\"",
                 "data-href=\"/discs/\"",
                 "data-href=\"/queue/\"",

@@ -29,15 +29,15 @@
     </section>
 
     <section class="maintenance-action">
-        <form method="post" action="/maintenance/clear-archives-cache">
+        <form method="post" action="/maintenance/trigger-archive-generation">
             {% match current_user %}
             {% when Some with (user) %}
             <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
             {% when None %}
             {% endmatch %}
-            <button type="submit">Clear Archives Cache</button>
+            <button type="submit">Trigger Archive Generation</button>
         </form>
-        <p class="maintenance-action-note">Deletes all cached download archives. Archives are recreated per system either on DB change or on first download.</p>
+        <p class="maintenance-action-note">Marks all systems for archive generation. The background worker rebuilds pending archives on its next scheduled pass.</p>
     </section>
 </div>
 {% endblock %}

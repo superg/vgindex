@@ -1229,6 +1229,7 @@ mod tests {
                 has_bca: false,
                 has_sample_start: false,
                 has_offset_extra: false,
+                archives_dirty: false,
             },
             regions: vec![],
             languages: vec![],

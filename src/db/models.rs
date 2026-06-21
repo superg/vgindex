@@ -355,6 +355,7 @@ pub struct System {
     pub has_bca: bool,
     pub has_sample_start: bool,
     pub has_offset_extra: bool,
+    pub archives_dirty: bool,
 }
 
 impl System {
@@ -1086,6 +1087,7 @@ mod tests {
             has_bca: false,
             has_sample_start: false,
             has_offset_extra: false,
+            archives_dirty: false,
         }
     }
 

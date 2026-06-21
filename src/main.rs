@@ -22,7 +22,6 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: Arc<Config>,
     pub http: reqwest::Client,
-    pub archive_tx: tokio::sync::mpsc::UnboundedSender<String>,
     pub edition_suggestions: services::disc_service::EditionSuggestionsCache,
     pub news_cache: services::news_service::NewsCache,
     pub transliteration: Arc<transliteration::TransliterationRegistry>,
@@ -56,7 +55,6 @@ async fn main() {
             .expect("Failed to initialize transliteration registry"),
     );
 
-    let (archive_tx, archive_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let archive_metadata =
         services::archive_service::ArchiveMetadata::from_site_url(&config.site_url);
 
@@ -64,7 +62,6 @@ async fn main() {
         pool: pool.clone(),
         config: Arc::new(config.clone()),
         http: reqwest::Client::new(),
-        archive_tx,
         edition_suggestions: services::disc_service::EditionSuggestionsCache::new(
             Duration::from_secs(60 * 60 * 24),
         ),
@@ -77,7 +74,6 @@ async fn main() {
     tokio::spawn(run_session_cleanup(pool.clone()));
 
     tokio::spawn(services::archive_service::run_archive_worker(
-        archive_rx,
         pool,
         archive_metadata,
     ));

@@ -169,11 +169,8 @@ fn normalize_archive_system_code(system: &str) -> String {
 }
 
 async fn serve_archive(state: &AppState, system: &str, archive_type: &str) -> Response {
-    let metadata = archive_service::ArchiveMetadata::from_site_url(&state.config.site_url);
     let system = normalize_archive_system_code(system);
-    match archive_service::get_or_generate_archive(&state.pool, &metadata, &system, archive_type)
-        .await
-    {
+    match archive_service::get_cached_archive(&state.pool, &system, archive_type).await {
         Ok(result) => (
             [
                 (header::CONTENT_TYPE, "application/zip".to_string()),
@@ -266,7 +263,6 @@ mod tests {
     }
 
     fn test_state() -> AppState {
-        let (archive_tx, _archive_rx) = tokio::sync::mpsc::unbounded_channel();
         let database_url = "postgres://postgres:postgres@localhost/postgres".to_string();
 
         AppState {
@@ -287,7 +283,6 @@ mod tests {
                 oidc_client_secret: "test".to_string(),
             }),
             http: reqwest::Client::new(),
-            archive_tx,
             edition_suggestions: crate::services::disc_service::EditionSuggestionsCache::new(
                 Duration::from_secs(60),
             ),
