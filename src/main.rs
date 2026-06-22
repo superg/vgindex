@@ -24,6 +24,7 @@ pub struct AppState {
     pub http: reqwest::Client,
     pub edition_suggestions: services::disc_service::EditionSuggestionsCache,
     pub news_cache: services::news_service::NewsCache,
+    pub homepage_cache: routes::main_page::HomepageCache,
     pub transliteration: Arc<transliteration::TransliterationRegistry>,
 }
 
@@ -67,6 +68,9 @@ async fn main() {
         ),
         news_cache: services::news_service::NewsCache::new(Duration::from_secs(
             services::news_service::NEWS_FEED_TTL_SECONDS,
+        )),
+        homepage_cache: routes::main_page::HomepageCache::new(Duration::from_secs(
+            routes::main_page::HOMEPAGE_CACHE_TTL_SECONDS,
         )),
         transliteration,
     };

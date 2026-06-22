@@ -1599,6 +1599,7 @@ mod tests {
             news_cache: crate::services::news_service::NewsCache::new(Duration::from_secs(
                 crate::services::news_service::NEWS_FEED_TTL_SECONDS,
             )),
+            homepage_cache: crate::routes::main_page::HomepageCache::new(Duration::from_secs(60)),
             transliteration: Arc::new(
                 crate::transliteration::TransliterationRegistry::new().unwrap(),
             ),
