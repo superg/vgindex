@@ -210,3 +210,6 @@ $wgOpenIDConnect_PreferredUsernameProcessor = static function (?string $username
 # File uploads
 $wgEnableUploads = true;
 $wgFileExtensions = array_merge($wgFileExtensions, ['pdf', 'svg']);
+
+# Cookie expiry 30 days
+$wgRememberMe = 'always';
