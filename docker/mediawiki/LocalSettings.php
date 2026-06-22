@@ -139,6 +139,7 @@ if ($mediawikiEmailEnabled) {
 # Default skin
 $wgDefaultSkin = "vector-2022";
 wfLoadSkin('Vector');
+$wgDefaultUserOptions['vector-appearance-pinned'] = 1;
 
 # Disable anonymous editing and account creation
 $wgGroupPermissions['*']['edit'] = false;

@@ -161,6 +161,7 @@ const PHRASE_SEED: &[(&str, &str)] = &[
     //     co-occurrences, fragments, and titles with varying printed English
     //     (バイオハザード) were excluded. ---
     ("ファイナルファンタジー", "Final Fantasy"), // 223
+    ("アクションリプレイ", "Action Replay"),
     ("ドラマ", "Drama"),                         // 254
     ("ガンダム", "Gundam"),                      // 171
     ("サクラ", "Sakura"),                        // 135

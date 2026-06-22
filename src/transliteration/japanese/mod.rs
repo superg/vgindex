@@ -348,6 +348,7 @@ mod tests {
     fn official_romanization_override() {
         assert_eq!(tr("ファミコン"), "Famicom");
         assert_eq!(tr("ラーメン"), "Ramen");
+        assert_eq!(tr("アクションリプレイ"), "Action Replay");
     }
 
     #[test]
