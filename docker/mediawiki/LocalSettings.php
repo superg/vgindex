@@ -212,5 +212,12 @@ $wgOpenIDConnect_PreferredUsernameProcessor = static function (?string $username
 $wgEnableUploads = true;
 $wgFileExtensions = array_merge($wgFileExtensions, ['pdf', 'svg']);
 
+# Wiki logos
+$wgLogos = [
+    '1x'   => '/static/images/branding/logo_sq_135.png',
+    '2x'   => '/static/images/branding/logo_sq_270.png',
+    'icon' => '/static/images/branding/logo_sq_50.png'
+];
+
 # Cookie expiry 30 days
 $wgRememberMe = 'always';
