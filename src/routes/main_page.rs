@@ -21,14 +21,14 @@ pub const HOMEPAGE_CACHE_TTL_SECONDS: u64 = 60;
 fn home_recent_changes_sql() -> String {
     format!(
         "SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
-                MAX(ds.created_at) AS modified_at
+                MAX(COALESCE(ds.reviewed_at, ds.created_at)) AS modified_at
          FROM discs d
          JOIN systems s ON s.code = d.system_code
          JOIN disc_submissions ds ON ds.target_disc_id = d.id
          WHERE d.status != 'Disabled'
            AND {RECENT_CHANGE_PREDICATE}
          GROUP BY d.id, d.title, s.code, s.short_name
-         ORDER BY MAX(ds.created_at) DESC, d.id DESC
+         ORDER BY MAX(COALESCE(ds.reviewed_at, ds.created_at)) DESC, d.id DESC
          LIMIT $1"
     )
 }
@@ -370,6 +370,13 @@ mod tests {
     #[test]
     fn recent_changes_query_only_uses_public_history_rows() {
         assert!(home_recent_changes_sql().contains("ds.status IN ('Approved', 'Legacy')"));
+    }
+
+    #[test]
+    fn recent_changes_query_uses_review_time_with_created_fallback() {
+        let sql = home_recent_changes_sql();
+        assert!(sql.contains("MAX(COALESCE(ds.reviewed_at, ds.created_at)) AS modified_at"));
+        assert!(sql.contains("ORDER BY MAX(COALESCE(ds.reviewed_at, ds.created_at)) DESC"));
     }
 
     #[test]

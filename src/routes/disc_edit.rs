@@ -421,10 +421,12 @@ fn validate_add_submission_logs(form: &DiscEditForm, logs_optional: bool) -> Vec
     errors
 }
 
+#[cfg(test)]
 fn generated_name_key(name: &str) -> String {
     name.to_lowercase()
 }
 
+#[cfg(test)]
 fn generated_disc_name(
     title: &str,
     region_names: &[String],
@@ -443,112 +445,7 @@ fn generated_disc_name(
     )
 }
 
-async fn selected_region_names(
-    pool: &sqlx::PgPool,
-    region_codes: &[String],
-) -> AppResult<Vec<String>> {
-    let region_codes = norm_str_vec(region_codes.to_vec());
-    if region_codes.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    Ok(sqlx::query_scalar::<_, String>(
-        "SELECT name FROM regions WHERE code = ANY($1) ORDER BY sort_order",
-    )
-    .bind(&region_codes)
-    .fetch_all(pool)
-    .await?)
-}
-
-async fn selected_language_codes(
-    pool: &sqlx::PgPool,
-    language_codes: &[String],
-) -> AppResult<Vec<String>> {
-    let language_codes = norm_str_vec(language_codes.to_vec());
-    if language_codes.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    Ok(sqlx::query_scalar::<_, String>(
-        "SELECT code FROM languages WHERE code = ANY($1) ORDER BY sort_order",
-    )
-    .bind(&language_codes)
-    .fetch_all(pool)
-    .await?)
-}
-
-pub(crate) async fn validate_generated_name_unique(
-    pool: &sqlx::PgPool,
-    form: &DiscEditForm,
-    current_disc_id: Option<i32>,
-    proposed_is_active: bool,
-) -> AppResult<Vec<LinkedValidationError>> {
-    if !proposed_is_active {
-        return Ok(Vec::new());
-    }
-    let system_code = form.system_code.trim();
-    if system_code.is_empty() || form.title.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let region_names = selected_region_names(pool, &form.regions).await?;
-    let language_codes = selected_language_codes(pool, &form.languages).await?;
-    let proposed_name = generated_disc_name(
-        &form.title,
-        &region_names,
-        &language_codes,
-        form.disc_number.as_deref(),
-        form.disc_title.as_deref(),
-        form.filename_suffix.as_deref(),
-    );
-    let proposed_key = generated_name_key(&proposed_name);
-
-    let candidates: Vec<DuplicateNameDiscRow> = sqlx::query_as(
-        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
-                COALESCE((
-                    SELECT array_agg(r.name ORDER BY r.sort_order)
-                    FROM disc_regions dr
-                    JOIN regions r ON r.code = dr.region_code
-                    WHERE dr.disc_id = d.id
-                ), ARRAY[]::TEXT[]) AS region_names,
-                COALESCE((
-                    SELECT array_agg(l.code ORDER BY l.sort_order)
-                    FROM disc_languages dl
-                    JOIN languages l ON l.code = dl.language_code
-                    WHERE dl.disc_id = d.id
-                ), ARRAY[]::TEXT[]) AS language_codes
-         FROM discs d
-         WHERE d.system_code = $1
-           AND d.status != 'Disabled'
-           AND ($2::INT IS NULL OR d.id <> $2)
-         ORDER BY d.id",
-    )
-    .bind(system_code)
-    .bind(current_disc_id)
-    .fetch_all(pool)
-    .await?;
-
-    for candidate in candidates {
-        let candidate_name = generated_disc_name(
-            &candidate.title,
-            &candidate.region_names,
-            &candidate.language_codes,
-            candidate.disc_number.as_deref(),
-            candidate.disc_title.as_deref(),
-            candidate.filename_suffix.as_deref(),
-        );
-        if generated_name_key(&candidate_name) == proposed_key {
-            return Ok(vec![LinkedValidationError {
-                text: "Generated name already exists:".to_string(),
-                disc_id: candidate.id,
-                disc_title: candidate_name,
-            }]);
-        }
-    }
-
-    Ok(Vec::new())
-}
-
+#[cfg(test)]
 pub(crate) fn form_status_is_active(form: &DiscEditForm) -> bool {
     normalized_disc_status(&form.status) != "Disabled"
 }
@@ -1225,6 +1122,19 @@ pub(crate) struct LinkedValidationError {
     pub disc_title: String,
 }
 
+pub(crate) fn approval_conflicts_to_linked_validation_errors(
+    conflicts: Vec<queue_service::ApprovalConflict>,
+) -> Vec<LinkedValidationError> {
+    conflicts
+        .into_iter()
+        .map(|conflict| LinkedValidationError {
+            text: conflict.text,
+            disc_id: conflict.disc_id,
+            disc_title: conflict.disc_title,
+        })
+        .collect()
+}
+
 #[derive(sqlx::FromRow)]
 struct ValidationResultDiscTitleRow {
     title: String,
@@ -1233,17 +1143,6 @@ struct ValidationResultDiscTitleRow {
     filename_suffix: Option<String>,
     has_disc_number: bool,
     has_disc_title: bool,
-}
-
-#[derive(sqlx::FromRow)]
-struct DuplicateNameDiscRow {
-    id: i32,
-    title: String,
-    disc_number: Option<String>,
-    disc_title: Option<String>,
-    filename_suffix: Option<String>,
-    region_names: Vec<String>,
-    language_codes: Vec<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -2086,17 +1985,14 @@ async fn edit_submit(
     preserve_existing_status_for_submission(&mut form, &detail, can_edit_directly);
     let ref_data = fetch_ref_data(&state.pool).await?;
     let errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
-    let linked_validation_errors =
-        validate_generated_name_unique(&state.pool, &form, Some(id), form_status_is_active(&form))
-            .await?;
-    if !errors.is_empty() || !linked_validation_errors.is_empty() {
+    if !errors.is_empty() {
         return render_form_with_errors(
             &state,
             id,
             user.clone(),
             &form,
             errors,
-            linked_validation_errors,
+            vec![],
             ValidationResultMessage::default(),
             false,
             can_edit_directly,
@@ -2111,6 +2007,33 @@ async fn edit_submit(
         &ref_data.all_media_types,
         &ref_data.all_systems,
     );
+
+    if can_edit_directly {
+        let linked_validation_errors = approval_conflicts_to_linked_validation_errors(
+            queue_service::find_approval_conflicts(
+                &state.pool,
+                SubmissionType::Edit,
+                Some(id),
+                &changes,
+            )
+            .await?,
+        );
+        if !linked_validation_errors.is_empty() {
+            return render_form_with_errors(
+                &state,
+                id,
+                user.clone(),
+                &form,
+                vec![],
+                linked_validation_errors,
+                ValidationResultMessage::default(),
+                false,
+                can_edit_directly,
+                false,
+            )
+            .await;
+        }
+    }
 
     let submission_comment = form
         .submission_comment
@@ -2132,13 +2055,31 @@ async fn edit_submit(
     .await?;
 
     if can_edit_directly {
-        let disc_id =
-            queue_service::approve_submission(&state.pool, &sub, &sub.changes, user.id, None)
-                .await?
-                .ok_or(AppError::Internal(
-                    "submission was already processed".into(),
-                ))?;
-        Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
+        match queue_service::approve_submission(&state.pool, &sub, &sub.changes, user.id, None)
+            .await?
+        {
+            queue_service::ApprovalOutcome::Approved(disc_id) => {
+                Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
+            }
+            queue_service::ApprovalOutcome::AlreadyProcessed => Err(AppError::Internal(
+                "submission was already processed".into(),
+            )),
+            queue_service::ApprovalOutcome::Conflicts(conflicts) => {
+                render_form_with_errors(
+                    &state,
+                    id,
+                    user.clone(),
+                    &form,
+                    vec![],
+                    approval_conflicts_to_linked_validation_errors(conflicts),
+                    ValidationResultMessage::default(),
+                    false,
+                    can_edit_directly,
+                    false,
+                )
+                .await
+            }
+        }
     } else {
         Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
     }
@@ -2328,16 +2269,10 @@ async fn add_submit(
         user.role.can_moderate(),
     ));
 
-    let linked_validation_errors =
-        validate_generated_name_unique(&state.pool, &form, target_disc_id, true).await?;
-
     let dump_log_text = trimmed_nonempty(form.dump_log.as_deref());
     let extra_upload_url_text = trimmed_nonempty(form.extra_upload_url.as_deref());
 
-    let validation_result = if post.action == "validate"
-        || !errors.is_empty()
-        || !linked_validation_errors.is_empty()
-    {
+    let validation_result = if post.action == "validate" || !errors.is_empty() {
         build_add_validation_result_for_target(
             &state.pool,
             add_match.as_ref(),
@@ -2349,7 +2284,7 @@ async fn add_submit(
         ValidationResultMessage::default()
     };
 
-    if post.action == "validate" || !errors.is_empty() || !linked_validation_errors.is_empty() {
+    if post.action == "validate" || !errors.is_empty() {
         let render_form = add_form_for_render(&form, add_match.as_ref());
         return render_form_with_errors(
             &state,
@@ -2357,7 +2292,7 @@ async fn add_submit(
             user.clone(),
             &render_form,
             errors,
-            linked_validation_errors,
+            vec![],
             validation_result,
             true,
             user.role.can_edit_directly(),
@@ -2372,6 +2307,35 @@ async fn add_submit(
         &ref_data.all_systems,
         add_match.as_ref(),
     );
+
+    if user.role.can_edit_directly() && !is_verification {
+        let linked_validation_errors = approval_conflicts_to_linked_validation_errors(
+            queue_service::find_approval_conflicts(
+                &state.pool,
+                SubmissionType::Disc,
+                target_disc_id,
+                &changes,
+            )
+            .await?,
+        );
+        if !linked_validation_errors.is_empty() {
+            let render_form = add_form_for_render(&form, add_match.as_ref());
+            return render_form_with_errors(
+                &state,
+                0,
+                user.clone(),
+                &render_form,
+                vec![],
+                linked_validation_errors,
+                ValidationResultMessage::default(),
+                true,
+                user.role.can_edit_directly(),
+                user.role.can_moderate(),
+            )
+            .await;
+        }
+    }
+
     let submitter_id = if can_submit_as {
         let submit_as_username = normalize_submit_as_username(form.submit_as.as_deref())
             .map_err(|message| AppError::BadRequest(format!("Submit As: {message}")))?;
@@ -2402,13 +2366,32 @@ async fn add_submit(
     if user.role.can_edit_directly() && is_verification {
         Ok(Redirect::to(&format!("/queue/{}", sub.id)).into_response())
     } else if user.role.can_edit_directly() {
-        let disc_id =
-            queue_service::approve_submission(&state.pool, &sub, &sub.changes, user.id, None)
-                .await?
-                .ok_or(AppError::Internal(
-                    "submission was already processed".into(),
-                ))?;
-        Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
+        match queue_service::approve_submission(&state.pool, &sub, &sub.changes, user.id, None)
+            .await?
+        {
+            queue_service::ApprovalOutcome::Approved(disc_id) => {
+                Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
+            }
+            queue_service::ApprovalOutcome::AlreadyProcessed => Err(AppError::Internal(
+                "submission was already processed".into(),
+            )),
+            queue_service::ApprovalOutcome::Conflicts(conflicts) => {
+                let render_form = add_form_for_render(&form, add_match.as_ref());
+                render_form_with_errors(
+                    &state,
+                    0,
+                    user.clone(),
+                    &render_form,
+                    vec![],
+                    approval_conflicts_to_linked_validation_errors(conflicts),
+                    ValidationResultMessage::default(),
+                    true,
+                    user.role.can_edit_directly(),
+                    user.role.can_moderate(),
+                )
+                .await
+            }
+        }
     } else {
         Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
     }

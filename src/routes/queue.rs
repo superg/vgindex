@@ -19,13 +19,12 @@ use crate::services::{disc_service, queue_service};
 use crate::AppState;
 
 use super::disc_edit::{
-    self, build_category_options, build_check_options, build_flat_changes,
-    build_lang_check_options, build_media_has_pic_json, build_media_is_cd_json,
-    build_media_layers_json, build_media_options, build_media_rom_extensions_json,
-    build_new_disc_changes, build_sparse_edit_changes, build_system_options, build_systems_json,
-    fetch_ref_data, form_status_is_active, max_layers_for_media, validate_form,
-    validate_generated_name_unique, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
-    ReviewOldMultiline,
+    self, approval_conflicts_to_linked_validation_errors, build_category_options,
+    build_check_options, build_flat_changes, build_lang_check_options, build_media_has_pic_json,
+    build_media_is_cd_json, build_media_layers_json, build_media_options,
+    build_media_rom_extensions_json, build_new_disc_changes, build_sparse_edit_changes,
+    build_system_options, build_systems_json, fetch_ref_data, max_layers_for_media, validate_form,
+    DiscEditForm, DiscEditTemplate, ReviewAnnotation, ReviewOldMultiline,
 };
 
 fn normalize_newlines(s: &str) -> String {
@@ -1785,17 +1784,7 @@ async fn review_submit(
     if comments_text_contains_review_delimiter(form.disc.comments.as_deref()) {
         errors.push("Comments: remove the review delimiter before approval".to_string());
     }
-    let proposed_is_active = sub.target_disc_id.is_none()
-        || sub.submission_type == SubmissionType::Disc
-        || form_status_is_active(&form.disc);
-    let linked_validation_errors = validate_generated_name_unique(
-        &state.pool,
-        &form.disc,
-        sub.target_disc_id,
-        proposed_is_active,
-    )
-    .await?;
-    if !errors.is_empty() || !linked_validation_errors.is_empty() {
+    if !errors.is_empty() {
         let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
             .bind(sub.submitter_id)
             .fetch_one(&state.pool)
@@ -1839,7 +1828,7 @@ async fn review_submit(
             has_sys,
         );
         template.validation_errors = errors;
-        template.linked_validation_errors = linked_validation_errors;
+        template.linked_validation_errors = vec![];
         template.review_comment_input = review_comment.clone().unwrap_or_default();
 
         if let Some(disc_id) = sub.target_disc_id {
@@ -1889,8 +1878,81 @@ async fn review_submit(
     .await?;
 
     match approved {
-        Some(disc_id) => Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response()),
-        None => Ok(Redirect::to(&format!("/queue/{id}")).into_response()),
+        queue_service::ApprovalOutcome::Approved(disc_id) => {
+            Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
+        }
+        queue_service::ApprovalOutcome::AlreadyProcessed => {
+            Ok(Redirect::to(&format!("/queue/{id}")).into_response())
+        }
+        queue_service::ApprovalOutcome::Conflicts(conflicts) => {
+            let submitter_name: String =
+                sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+                    .bind(sub.submitter_id)
+                    .fetch_one(&state.pool)
+                    .await
+                    .unwrap_or_else(|_| format!("User #{}", sub.submitter_id));
+
+            let (systems_media_json, systems_has_flags_json) =
+                build_systems_json(&ref_data.all_systems);
+            let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
+            let media_rom_extensions_json =
+                build_media_rom_extensions_json(&ref_data.all_media_types);
+            let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
+            let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+            let edition_suggestions_json =
+                disc_edit::build_edition_suggestions_json(&state).await?;
+            let snapshot =
+                build_flat_changes(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
+            let system_code = form.disc.system_code.clone();
+            let media_type_code = form.disc.media_type.clone();
+            let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
+            let system = disc_service::get_system(&state.pool, &system_code)
+                .await
+                .ok();
+            let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
+
+            let mut template = build_review_template(
+                user.clone(),
+                &sub,
+                &submitter_name,
+                "",
+                &snapshot,
+                &ref_data,
+                &systems_media_json,
+                &systems_has_flags_json,
+                &edition_suggestions_json,
+                &media_layers_json,
+                &media_rom_extensions_json,
+                &media_is_cd_json,
+                &media_has_pic_json,
+                &system_code,
+                &media_type_code,
+                max_layers,
+                has_sys,
+            );
+            template.linked_validation_errors =
+                approval_conflicts_to_linked_validation_errors(conflicts);
+            template.review_comment_input = review_comment.unwrap_or_default();
+
+            if let Some(disc_id) = sub.target_disc_id {
+                let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
+                let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
+                let submitted_snapshot =
+                    queue_service::resolve_submission_snapshot_for_submission(&db_snapshot, &sub)?;
+                apply_review_diff_context(
+                    &mut template,
+                    &submitted_snapshot,
+                    &db_snapshot,
+                    &ref_data,
+                    sub.submission_type,
+                    false,
+                );
+                let highlights = compute_field_highlights(&submitted_snapshot, &db_snapshot);
+                apply_highlights(&mut template, highlights);
+            }
+
+            Ok(Html(template.render().unwrap()).into_response())
+        }
     }
 }
 

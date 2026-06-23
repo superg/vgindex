@@ -40,7 +40,7 @@ pub const RECENT_CHANGE_PREDICATE: &str = "
 /// Expects an outer disc aliased `d`.
 pub fn modification_date_sql() -> String {
     format!(
-        "(SELECT MAX(ds.created_at) FROM disc_submissions ds \
+        "(SELECT MAX(COALESCE(ds.reviewed_at, ds.created_at)) FROM disc_submissions ds \
          WHERE ds.target_disc_id = d.id AND {RECENT_CHANGE_PREDICATE})"
     )
 }
@@ -667,7 +667,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .await?;
 
     let modified_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT MAX(created_at) FROM disc_submissions
+        "SELECT MAX(COALESCE(reviewed_at, created_at)) FROM disc_submissions
          WHERE target_disc_id = $1",
     )
     .bind(disc_id)
@@ -1136,6 +1136,13 @@ mod tests {
         assert!(can_view_disc_status(DiscStatus::Disabled, true));
         assert!(ensure_disc_status_visible(DiscStatus::Disabled, false).is_err());
         assert!(ensure_disc_status_visible(DiscStatus::Disabled, true).is_ok());
+    }
+
+    #[test]
+    fn modification_date_uses_review_time_with_created_fallback() {
+        let sql = modification_date_sql();
+        assert!(sql.contains("MAX(COALESCE(ds.reviewed_at, ds.created_at))"));
+        assert!(sql.contains(RECENT_CHANGE_PREDICATE.trim()));
     }
 
     #[test]

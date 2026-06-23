@@ -6,8 +6,24 @@ use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 use crate::services::{archive_service, disc_service};
 
+const APPROVAL_CONFLICT_LOCK_KEY: i64 = 0x7667_696e_6465_7801;
+
 fn normalize_newlines(s: &str) -> String {
     s.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovalConflict {
+    pub text: String,
+    pub disc_id: i32,
+    pub disc_title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApprovalOutcome {
+    Approved(i32),
+    AlreadyProcessed,
+    Conflicts(Vec<ApprovalConflict>),
 }
 
 pub async fn create_submission(
@@ -78,25 +94,40 @@ pub async fn find_matching_disc(
     files_xml: &str,
     include_disabled_discs: bool,
 ) -> Option<i32> {
+    find_matching_disc_excluding(pool, files_xml, include_disabled_discs, None)
+        .await
+        .unwrap_or_default()
+}
+
+async fn find_matching_disc_excluding(
+    pool: &PgPool,
+    files_xml: &str,
+    include_disabled_discs: bool,
+    exclude_disc_id: Option<i32>,
+) -> AppResult<Option<i32>> {
     let submitted = parse_rom_entries(files_xml);
     if submitted.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let candidate_sql = if include_disabled_discs {
-        "SELECT DISTINCT disc_id FROM files WHERE LOWER(sha1) = LOWER($1)"
+        "SELECT DISTINCT disc_id
+         FROM files
+         WHERE LOWER(sha1) = LOWER($1)
+           AND ($2::INT IS NULL OR disc_id <> $2)"
     } else {
         "SELECT DISTINCT f.disc_id
          FROM files f
          JOIN discs d ON d.id = f.disc_id
          WHERE LOWER(f.sha1) = LOWER($1)
-           AND d.status <> 'Disabled'"
+           AND d.status <> 'Disabled'
+           AND ($2::INT IS NULL OR f.disc_id <> $2)"
     };
     let candidates: Vec<i32> = sqlx::query_scalar(candidate_sql)
         .bind(&submitted[0].sha1)
+        .bind(exclude_disc_id)
         .fetch_all(pool)
-        .await
-        .unwrap_or_default();
+        .await?;
 
     for disc_id in candidates {
         let disc_files: Vec<crate::db::models::File> = sqlx::query_as(
@@ -104,15 +135,14 @@ pub async fn find_matching_disc(
         )
         .bind(disc_id)
         .fetch_all(pool)
-        .await
-        .unwrap_or_default();
+        .await?;
 
         if files_match_submission(&disc_files, &submitted) {
-            return Some(disc_id);
+            return Ok(Some(disc_id));
         }
     }
 
-    None
+    Ok(None)
 }
 
 pub(crate) fn universal_hash_bytes_for_matching(universal_hash: Option<&str>) -> Option<Vec<u8>> {
@@ -128,11 +158,30 @@ pub async fn find_matching_disc_by_universal_hash(
     universal_hash: &str,
     include_disabled_discs: bool,
 ) -> Option<i32> {
-    let hash_bytes = universal_hash_bytes_for_matching(Some(universal_hash))?;
+    find_matching_disc_by_universal_hash_excluding(
+        pool,
+        universal_hash,
+        include_disabled_discs,
+        None,
+    )
+    .await
+    .unwrap_or_default()
+}
+
+async fn find_matching_disc_by_universal_hash_excluding(
+    pool: &PgPool,
+    universal_hash: &str,
+    include_disabled_discs: bool,
+    exclude_disc_id: Option<i32>,
+) -> AppResult<Option<i32>> {
+    let Some(hash_bytes) = universal_hash_bytes_for_matching(Some(universal_hash)) else {
+        return Ok(None);
+    };
     let sql = if include_disabled_discs {
         "SELECT id
          FROM discs
          WHERE universal_hash = $1
+           AND ($2::INT IS NULL OR id <> $2)
          ORDER BY id
          LIMIT 1"
     } else {
@@ -140,15 +189,16 @@ pub async fn find_matching_disc_by_universal_hash(
          FROM discs
          WHERE universal_hash = $1
            AND status <> 'Disabled'
+           AND ($2::INT IS NULL OR id <> $2)
          ORDER BY id
          LIMIT 1"
     };
 
-    sqlx::query_scalar(sql)
+    Ok(sqlx::query_scalar(sql)
         .bind(hash_bytes)
+        .bind(exclude_disc_id)
         .fetch_optional(pool)
-        .await
-        .unwrap_or_default()
+        .await?)
 }
 
 fn normalize_hash_attr(value: Option<String>) -> String {
@@ -737,13 +787,326 @@ async fn resolve_submission_data(
     sub: &DiscSubmission,
     changes: &serde_json::Value,
 ) -> AppResult<serde_json::Value> {
-    let db_snapshot = if let Some(disc_id) = sub.target_disc_id {
+    resolve_submission_data_for_target(pool, sub.target_disc_id, changes).await
+}
+
+async fn resolve_submission_data_for_target(
+    pool: &PgPool,
+    target_disc_id: Option<i32>,
+    changes: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    let db_snapshot = if let Some(disc_id) = target_disc_id {
         let detail = disc_service::get_disc_detail(pool, disc_id).await?;
         disc_service::build_snapshot_from_disc(&detail)
     } else {
         serde_json::json!({})
     };
     resolve_submission_snapshot(&db_snapshot, changes)
+}
+
+fn apply_approval_status(
+    data: &mut serde_json::Value,
+    submission_type: SubmissionType,
+    target_disc_id: Option<i32>,
+) {
+    let Some(obj) = data.as_object_mut() else {
+        return;
+    };
+
+    if target_disc_id.is_none() {
+        obj.insert("status".to_string(), serde_json::json!("Unverified"));
+    } else if submission_type == SubmissionType::Disc {
+        obj.insert("status".to_string(), serde_json::json!("Verified"));
+    }
+}
+
+async fn approval_effective_data(
+    pool: &PgPool,
+    submission_type: SubmissionType,
+    target_disc_id: Option<i32>,
+    changes: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    let mut effective_data =
+        resolve_submission_data_for_target(pool, target_disc_id, changes).await?;
+    apply_approval_status(&mut effective_data, submission_type, target_disc_id);
+    Ok(effective_data)
+}
+
+pub async fn find_approval_conflicts(
+    pool: &PgPool,
+    submission_type: SubmissionType,
+    target_disc_id: Option<i32>,
+    changes: &serde_json::Value,
+) -> AppResult<Vec<ApprovalConflict>> {
+    let effective_data =
+        approval_effective_data(pool, submission_type, target_disc_id, changes).await?;
+    find_approval_conflicts_for_effective_data(pool, target_disc_id, changes, &effective_data).await
+}
+
+async fn find_approval_conflicts_for_effective_data(
+    pool: &PgPool,
+    target_disc_id: Option<i32>,
+    changes: &serde_json::Value,
+    effective_data: &serde_json::Value,
+) -> AppResult<Vec<ApprovalConflict>> {
+    if !effective_disc_is_active(effective_data) {
+        return Ok(Vec::new());
+    }
+
+    let mut conflicts = Vec::new();
+
+    if let Some(conflict) =
+        find_generated_name_conflict(pool, effective_data, target_disc_id).await?
+    {
+        conflicts.push(conflict);
+    }
+
+    if let Some(files_xml) = dat_hash_conflict_input(changes, effective_data) {
+        if let Some(disc_id) =
+            find_matching_disc_excluding(pool, files_xml, false, target_disc_id).await?
+        {
+            conflicts.push(ApprovalConflict {
+                text: "DAT hashes already exist:".to_string(),
+                disc_id,
+                disc_title: fetch_approval_conflict_disc_title(pool, disc_id).await?,
+            });
+        }
+    }
+
+    if let Some(universal_hash) = universal_hash_conflict_input(changes, effective_data) {
+        if let Some(disc_id) = find_matching_disc_by_universal_hash_excluding(
+            pool,
+            universal_hash,
+            false,
+            target_disc_id,
+        )
+        .await?
+        {
+            conflicts.push(ApprovalConflict {
+                text: "Universal hash already exists:".to_string(),
+                disc_id,
+                disc_title: fetch_approval_conflict_disc_title(pool, disc_id).await?,
+            });
+        }
+    }
+
+    Ok(conflicts)
+}
+
+fn effective_disc_is_active(effective_data: &serde_json::Value) -> bool {
+    effective_data["status"].as_str() != Some("Disabled")
+}
+
+fn change_set_contains(changes: &serde_json::Value, key: &str) -> bool {
+    changes.as_object().is_some_and(|obj| obj.contains_key(key))
+}
+
+fn dat_hash_conflict_input<'a>(
+    changes: &serde_json::Value,
+    effective_data: &'a serde_json::Value,
+) -> Option<&'a str> {
+    if !change_set_contains(changes, "dat") {
+        return None;
+    }
+    effective_data["dat"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn universal_hash_conflict_input<'a>(
+    changes: &serde_json::Value,
+    effective_data: &'a serde_json::Value,
+) -> Option<&'a str> {
+    if !change_set_contains(changes, "universal_hash") {
+        return None;
+    }
+    effective_data["universal_hash"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn json_nonempty_strings(value: &serde_json::Value) -> Vec<String> {
+    json_str_vec(value)
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+async fn selected_region_names(pool: &PgPool, region_codes: &[String]) -> AppResult<Vec<String>> {
+    if region_codes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(sqlx::query_scalar::<_, String>(
+        "SELECT name FROM regions WHERE code = ANY($1) ORDER BY sort_order",
+    )
+    .bind(region_codes)
+    .fetch_all(pool)
+    .await?)
+}
+
+async fn selected_language_codes(
+    pool: &PgPool,
+    language_codes: &[String],
+) -> AppResult<Vec<String>> {
+    if language_codes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(sqlx::query_scalar::<_, String>(
+        "SELECT code FROM languages WHERE code = ANY($1) ORDER BY sort_order",
+    )
+    .bind(language_codes)
+    .fetch_all(pool)
+    .await?)
+}
+
+fn generated_name_key(name: &str) -> String {
+    name.to_lowercase()
+}
+
+fn generated_disc_name(
+    title: &str,
+    region_names: &[String],
+    language_codes: &[String],
+    disc_number: Option<&str>,
+    disc_title: Option<&str>,
+    filename_suffix: Option<&str>,
+) -> String {
+    build_rom_base_name(
+        title.trim(),
+        region_names,
+        language_codes,
+        disc_number.map(str::trim).filter(|s| !s.is_empty()),
+        disc_title.map(str::trim).filter(|s| !s.is_empty()),
+        filename_suffix.map(str::trim).filter(|s| !s.is_empty()),
+    )
+}
+
+async fn find_generated_name_conflict(
+    pool: &PgPool,
+    effective_data: &serde_json::Value,
+    exclude_disc_id: Option<i32>,
+) -> AppResult<Option<ApprovalConflict>> {
+    #[derive(sqlx::FromRow)]
+    struct DuplicateNameDiscRow {
+        id: i32,
+        title: String,
+        disc_number: Option<String>,
+        disc_title: Option<String>,
+        filename_suffix: Option<String>,
+        region_names: Vec<String>,
+        language_codes: Vec<String>,
+    }
+
+    let system_code = effective_data["system_code"].as_str().unwrap_or("").trim();
+    let title = effective_data["title"].as_str().unwrap_or("").trim();
+    if system_code.is_empty() || title.is_empty() {
+        return Ok(None);
+    }
+
+    let regions = json_nonempty_strings(&effective_data["regions"]);
+    let languages = json_nonempty_strings(&effective_data["languages"]);
+    let region_names = selected_region_names(pool, &regions).await?;
+    let language_codes = selected_language_codes(pool, &languages).await?;
+    let proposed_name = generated_disc_name(
+        title,
+        &region_names,
+        &language_codes,
+        effective_data["disc_number"].as_str(),
+        effective_data["disc_title"].as_str(),
+        effective_data["filename_suffix"].as_str(),
+    );
+    let proposed_key = generated_name_key(&proposed_name);
+
+    let candidates: Vec<DuplicateNameDiscRow> = sqlx::query_as(
+        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
+                COALESCE((
+                    SELECT array_agg(r.name ORDER BY r.sort_order)
+                    FROM disc_regions dr
+                    JOIN regions r ON r.code = dr.region_code
+                    WHERE dr.disc_id = d.id
+                ), ARRAY[]::TEXT[]) AS region_names,
+                COALESCE((
+                    SELECT array_agg(l.code ORDER BY l.sort_order)
+                    FROM disc_languages dl
+                    JOIN languages l ON l.code = dl.language_code
+                    WHERE dl.disc_id = d.id
+                ), ARRAY[]::TEXT[]) AS language_codes
+         FROM discs d
+         WHERE d.system_code = $1
+           AND d.status <> 'Disabled'
+           AND ($2::INT IS NULL OR d.id <> $2)
+         ORDER BY d.id",
+    )
+    .bind(system_code)
+    .bind(exclude_disc_id)
+    .fetch_all(pool)
+    .await?;
+
+    for candidate in candidates {
+        let candidate_name = generated_disc_name(
+            &candidate.title,
+            &candidate.region_names,
+            &candidate.language_codes,
+            candidate.disc_number.as_deref(),
+            candidate.disc_title.as_deref(),
+            candidate.filename_suffix.as_deref(),
+        );
+        if generated_name_key(&candidate_name) == proposed_key {
+            return Ok(Some(ApprovalConflict {
+                text: "Generated name already exists:".to_string(),
+                disc_id: candidate.id,
+                disc_title: candidate_name,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+async fn fetch_approval_conflict_disc_title(pool: &PgPool, disc_id: i32) -> AppResult<String> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        title: String,
+        disc_number: Option<String>,
+        disc_title: Option<String>,
+        filename_suffix: Option<String>,
+        has_disc_number: bool,
+        has_disc_title: bool,
+    }
+
+    let Some(row) = sqlx::query_as::<_, Row>(
+        "SELECT d.title, d.disc_number, d.disc_title, d.filename_suffix,
+                s.has_disc_number, s.has_disc_title
+         FROM discs d
+         JOIN systems s ON s.code = d.system_code
+         WHERE d.id = $1",
+    )
+    .bind(disc_id)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(format!("disc #{}", disc_id));
+    };
+
+    Ok(format_display_title(
+        &row.title,
+        if row.has_disc_number {
+            row.disc_number.as_deref()
+        } else {
+            None
+        },
+        if row.has_disc_title {
+            row.disc_title.as_deref()
+        } else {
+            None
+        },
+        row.filename_suffix.as_deref(),
+    ))
 }
 
 /// Atomically reject a submission.  Returns `true` if the rejection was
@@ -775,19 +1138,36 @@ pub async fn reject_submission(
 }
 
 /// Apply approval to a submission: update/create the disc, mark the
-/// submission as Approved, and return the resulting disc id.
+/// submission as Approved, and return the approval outcome.
 ///
-/// Returns `None` if the submission was already processed by another
-/// moderator (race condition).  The status is claimed atomically before
-/// any disc mutations are performed.
+/// The status is claimed atomically before any disc mutations are performed.
 pub async fn approve_submission(
     pool: &PgPool,
     sub: &DiscSubmission,
     changes: &serde_json::Value,
     reviewer_id: i32,
     review_comment: Option<&str>,
-) -> AppResult<Option<i32>> {
-    let mut effective_data = resolve_submission_data(pool, sub, changes).await?;
+) -> AppResult<ApprovalOutcome> {
+    let mut approval_lock = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(APPROVAL_CONFLICT_LOCK_KEY)
+        .execute(&mut *approval_lock)
+        .await?;
+
+    let effective_data =
+        approval_effective_data(pool, sub.submission_type, sub.target_disc_id, changes).await?;
+    let conflicts = find_approval_conflicts_for_effective_data(
+        pool,
+        sub.target_disc_id,
+        changes,
+        &effective_data,
+    )
+    .await?;
+    if !conflicts.is_empty() {
+        approval_lock.rollback().await?;
+        return Ok(ApprovalOutcome::Conflicts(conflicts));
+    }
+
     let previous_system_code: Option<String> = if let Some(existing_id) = sub.target_disc_id {
         sqlx::query_scalar("SELECT system_code FROM discs WHERE id = $1")
             .bind(existing_id)
@@ -796,14 +1176,6 @@ pub async fn approve_submission(
     } else {
         None
     };
-
-    if let Some(obj) = effective_data.as_object_mut() {
-        if sub.target_disc_id.is_none() {
-            obj.insert("status".to_string(), serde_json::json!("Unverified"));
-        } else if sub.submission_type == SubmissionType::Disc {
-            obj.insert("status".to_string(), serde_json::json!("Verified"));
-        }
-    }
     let stored_data = changes.clone();
 
     // Atomically claim the submission by setting status = 'Approved'
@@ -827,7 +1199,8 @@ pub async fn approve_submission(
     .await?;
 
     if claim.rows_affected() == 0 {
-        return Ok(None);
+        approval_lock.rollback().await?;
+        return Ok(ApprovalOutcome::AlreadyProcessed);
     }
 
     let disc_id = if let Some(existing_id) = sub.target_disc_id {
@@ -882,7 +1255,9 @@ pub async fn approve_submission(
         archive_service::mark_system_archives_dirty(pool, &code).await?;
     }
 
-    Ok(Some(disc_id))
+    approval_lock.commit().await?;
+
+    Ok(ApprovalOutcome::Approved(disc_id))
 }
 
 pub async fn get_submission(pool: &PgPool, id: i32) -> AppResult<DiscSubmission> {
@@ -1305,6 +1680,64 @@ mod tests {
         assert!(universal_hash_bytes_for_matching(Some("abc123")).is_none());
         assert!(universal_hash_bytes_for_matching(Some(&"g".repeat(40))).is_none());
         assert!(universal_hash_bytes_for_matching(Some(&"a".repeat(41))).is_none());
+    }
+
+    #[test]
+    fn dat_conflict_check_runs_only_when_dat_is_in_changes() {
+        let effective = serde_json::json!({
+            "dat": r#"<rom name="Game.iso" size="1" crc="11111111" md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" />"#
+        });
+
+        assert_eq!(
+            dat_hash_conflict_input(
+                &serde_json::json!({"dat": {"add": {"new": "x"}}}),
+                &effective
+            ),
+            effective["dat"].as_str()
+        );
+        assert_eq!(
+            dat_hash_conflict_input(
+                &serde_json::json!({"title": {"modify": {"old": "Old", "new": "New"}}}),
+                &effective
+            ),
+            None
+        );
+        assert_eq!(
+            dat_hash_conflict_input(
+                &serde_json::json!({"dat": {"remove": {"old": "x"}}}),
+                &serde_json::json!({"dat": null})
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn universal_hash_conflict_check_runs_only_when_hash_is_in_changes() {
+        let effective = serde_json::json!({
+            "universal_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        });
+
+        assert_eq!(
+            universal_hash_conflict_input(
+                &serde_json::json!({"universal_hash": {"add": {"new": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}),
+                &effective
+            ),
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        );
+        assert_eq!(
+            universal_hash_conflict_input(
+                &serde_json::json!({"comments": {"add": {"new": "metadata only"}}}),
+                &effective
+            ),
+            None
+        );
+        assert_eq!(
+            universal_hash_conflict_input(
+                &serde_json::json!({"universal_hash": {"remove": {"old": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}),
+                &serde_json::json!({"universal_hash": null})
+            ),
+            None
+        );
     }
 
     #[test]
