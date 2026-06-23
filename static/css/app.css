@@ -2217,6 +2217,30 @@ table.striped tbody tr.clickable-row.is-row-hover td {
 }
 
 /* Queue status dots */
+.queue-table-scroll {
+    width: 100%;
+    text-align: center;
+}
+
+.queue-table {
+    display: inline-table;
+    width: max-content;
+    min-width: 0;
+    table-layout: auto;
+    text-align: left;
+}
+
+.queue-table th,
+.queue-table td {
+    white-space: nowrap;
+    padding-inline-end: 0.75rem;
+}
+
+.queue-table th:last-child,
+.queue-table td:last-child {
+    padding-inline-end: 0.35rem;
+}
+
 .status-dot-pending  { background: #f39c12; }
 .status-dot-approved { background: var(--status-verified); }
 .status-dot-rejected { background: var(--status-bad); }

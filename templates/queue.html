@@ -83,7 +83,8 @@
     </nav>
     {% endif %}
 
-    <table class="disc-table striped">
+    <div class="table-scroll queue-table-scroll">
+    <table class="disc-table striped table-nowrap queue-table">
         <thead>
             <tr>
                 <th class="date-col"><a href="/queue?sort=date&amp;order={{ next_date_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Date{% if sort_column == "date" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
@@ -91,21 +92,21 @@
                 <th class="submission-title-col"><a href="/queue?sort=title&amp;order={{ next_title_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Submission Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="disc-id-col"><a href="/queue?sort=disc_id&amp;order={{ next_disc_id_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Disc ID{% if sort_column == "disc_id" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="system-col"><a href="/queue?sort=system&amp;order={{ next_system_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/queue?sort=submitter&amp;order={{ next_submitter_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Submitter{% if sort_column == "submitter" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th><a href="/queue?sort=reviewer&amp;order={{ next_reviewer_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Reviewer{% if sort_column == "reviewer" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="submitter-col"><a href="/queue?sort=submitter&amp;order={{ next_submitter_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Submitter{% if sort_column == "submitter" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="reviewer-col"><a href="/queue?sort=reviewer&amp;order={{ next_reviewer_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Reviewer{% if sort_column == "reviewer" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="status-col"><a href="/queue?sort=status&amp;order={{ next_status_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
             </tr>
         </thead>
         <tbody>
             {% for entry in entries %}
-            <tr>
+            <tr{% if self.can_open_entry(entry) %} class="clickable-row" data-href="/queue/{{ entry.id }}" tabindex="0" role="link"{% endif %}>
                 <td class="date-col">{{ entry.created_at.format("%Y-%m-%d %H:%M") }}</td>
                 <td class="type-col"><span class="{{ self.type_icon_class(entry) }}" role="img" aria-label="{{ self.type_icon_label(entry) }}" title="{{ self.type_icon_label(entry) }}"></span></td>
                 <td class="submission-title-col">{% if self.can_open_entry(entry) %}<a href="/queue/{{ entry.id }}">{{ entry.title }}</a>{% else %}{{ entry.title }}{% endif %}</td>
                 <td class="disc-id-col">{% match entry.target_disc_id %}{% when Some with (disc_id) %}<a href="/disc/{{ disc_id }}">{{ disc_id }}</a>{% when None %}{% endmatch %}</td>
                 <td class="system-col">{{ entry.system_display }}</td>
-                <td><a href="/discs?dumper={{ self.url_encode(entry.submitter) }}">{{ entry.submitter }}</a></td>
-                <td>{% match entry.reviewer_id %}{% when Some with (_) %}<a href="/discs?dumper={{ self.url_encode(entry.reviewer.as_deref().unwrap_or("")) }}">{{ entry.reviewer.as_deref().unwrap_or("") }}</a>{% when None %}{% endmatch %}</td>
+                <td class="submitter-col"><a href="/discs?dumper={{ self.url_encode(entry.submitter) }}">{{ entry.submitter }}</a></td>
+                <td class="reviewer-col">{% match entry.reviewer_id %}{% when Some with (_) %}<a href="/discs?dumper={{ self.url_encode(entry.reviewer.as_deref().unwrap_or("")) }}">{{ entry.reviewer.as_deref().unwrap_or("") }}</a>{% when None %}{% endmatch %}</td>
                 <td class="status-col" title="{{ entry.status }}">{% match entry.status %}{% when SubmissionStatus::Pending %}🟡{% when SubmissionStatus::Approved %}🟢{% when SubmissionStatus::Rejected %}🔴{% when SubmissionStatus::Legacy %}⚪{% endmatch %}</td>
             </tr>
             {% endfor %}
@@ -114,6 +115,7 @@
             {% endif %}
         </tbody>
     </table>
+    </div>
 
     {% if total_pages > 1 %}
     <nav aria-label="Pagination">
