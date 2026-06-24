@@ -214,9 +214,9 @@ $wgFileExtensions = array_merge($wgFileExtensions, ['pdf', 'svg']);
 
 # Wiki logos
 $wgLogos = [
-    '1x'   => '/static/images/branding/logo_sq_135.png',
-    '2x'   => '/static/images/branding/logo_sq_270.png',
-    'icon' => '/static/images/branding/logo_sq_50.png'
+    '1x'   => '/images/6/6e/Logo_sq_135.png',
+    '2x'   => '/images/3/39/Logo_sq_270.png',
+    'icon' => '/images/4/4f/Logo_sq_50.png'
 ];
 
 # Cookie expiry 30 days
