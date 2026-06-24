@@ -167,7 +167,7 @@ $wgGroupPermissions['sysop']['writeapi'] = true;
 $wgGroupPermissions['sysop']['upload'] = true;
 
 # Allow sysop to move users to editor and back
-$wgAddGroups['sysop'] = [ 'sysop' ];
+$wgAddGroups['sysop'] = [ 'editor' ];
 $wgRemoveGroups['sysop'] = [ 'editor' ];
 
 # PluggableAuth + OpenID Connect for SSO
