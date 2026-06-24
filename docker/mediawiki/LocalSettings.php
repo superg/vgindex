@@ -159,6 +159,10 @@ $wgGroupPermissions['editor']['createtalk'] = true;
 $wgGroupPermissions['editor']['writeapi'] = true;
 $wgGroupPermissions['editor']['upload'] = true;
 
+# Allow sysop to move users to editor and back
+$wgAddGroups['sysop'] = [ 'editor' ];
+$wgRemoveGroups['sysop'] = [ 'editor' ];
+
 # PluggableAuth + OpenID Connect for SSO
 wfLoadExtension('PluggableAuth');
 wfLoadExtension('OpenIDConnect');
