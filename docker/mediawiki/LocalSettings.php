@@ -152,12 +152,19 @@ $wgGroupPermissions['user']['edit'] = false;
 $wgGroupPermissions['user']['createpage'] = false;
 $wgGroupPermissions['user']['writeapi'] = false;
 
-# editor group: User+ / Moderator / Admin can edit wiki pages
+# editor group: trusted users can edit wiki pages
 $wgGroupPermissions['editor']['edit'] = true;
 $wgGroupPermissions['editor']['createpage'] = true;
 $wgGroupPermissions['editor']['createtalk'] = true;
 $wgGroupPermissions['editor']['writeapi'] = true;
 $wgGroupPermissions['editor']['upload'] = true;
+
+# sysop group: User+ / Moderator / Admin can edit wiki pages
+$wgGroupPermissions['sysop']['edit'] = true;
+$wgGroupPermissions['sysop']['createpage'] = true;
+$wgGroupPermissions['sysop']['createtalk'] = true;
+$wgGroupPermissions['sysop']['writeapi'] = true;
+$wgGroupPermissions['sysop']['upload'] = true;
 
 # Allow sysop to move users to editor and back
 $wgAddGroups['sysop'] = [ 'editor' ];
@@ -182,8 +189,7 @@ $wgPluggableAuth_Config['SSO'] = [
         'phpbb_roles' => [
             'type' => 'mapped',
             'map' => [
-                'editor' => ['groups' => ['User+', 'Moderator', 'Admin']],
-                'sysop' => ['groups' => 'Admin'],
+                'sysop' => ['groups' => ['User+', 'Moderator', 'Admin']],
             ],
         ],
     ],
