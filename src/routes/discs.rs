@@ -540,6 +540,11 @@ async fn discs_page(
         "added" | "updated" => " NULLS LAST",
         _ => "",
     };
+    let secondary_sort = if sort_column == "title" {
+        String::new()
+    } else {
+        format!(", {} {sort_dir}", display_title_sort_sql())
+    };
 
     let sql_count = format!(
         "SELECT COUNT(*) FROM discs d JOIN systems s ON s.code = d.system_code WHERE {where_sql}"
@@ -558,7 +563,7 @@ async fn discs_page(
          FROM discs d
          JOIN systems s ON s.code = d.system_code
          WHERE {where_sql}
-         ORDER BY {sort_col} {sort_dir}{nulls_clause} LIMIT {PAGE_SIZE} OFFSET {offset}"
+         ORDER BY {sort_col} {sort_dir}{nulls_clause}{secondary_sort} LIMIT {PAGE_SIZE} OFFSET {offset}"
     );
 
     let mut count_query = sqlx::query_scalar::<_, i64>(&sql_count);
