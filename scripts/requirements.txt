@@ -1,2 +1,0 @@
-anyascii==0.3.3
-psycopg[binary]>=3.1,<4

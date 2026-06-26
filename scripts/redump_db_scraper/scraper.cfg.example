@@ -1,5 +1,0 @@
-[scraper]
-last_known_disc_id = 133220
-cookie = redump_cookie=<BASE64_COOKIE_PART>%3D
-delay_seconds = 0.1
-workers = 4

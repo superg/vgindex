@@ -1,6 +1,0 @@
-[scraper]
-base_url = http://forum.redump.org
-cookie = <forum Cookie header>
-output_dir = data/redump/users
-delay_seconds = 0.1
-workers = 4
