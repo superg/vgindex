@@ -127,7 +127,6 @@ services:
       - phpbb_files:/var/www/html/files
       - phpbb_store:/var/www/html/store
       - phpbb_avatars:/var/www/html/images/avatars/upload
-      - ./data/redump:/import/redump:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -170,7 +169,6 @@ services:
     volumes:
       - mediawiki_uploads:/var/www/html/images
       - ./docker/mediawiki/LocalSettings.php:/etc/mediawiki/LocalSettings.php:ro
-      - ./data/redump:/import/redump:ro
     depends_on:
       postgres:
         condition: service_healthy

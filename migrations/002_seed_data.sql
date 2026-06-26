@@ -145,7 +145,7 @@ INSERT INTO languages
     ('bg', 'Bulgarian',   'bg', 48);
 
 -- Systems: Redump `code`; `ecd` vs `audio-cd` for PK.
--- has_* = OR over scraped discs: has_exe_date=d_date, has_sbi=d_libcrypt|d_securom, has_pvd=d_pvd, has_edc=d_edc (non-empty).
+-- has_* flags map to source metadata fields: has_exe_date=d_date, has_sbi=d_libcrypt|d_securom, has_pvd=d_pvd, has_edc=d_edc (non-empty).
 -- media_types is ordered by preference; the first code is the default selected when changing systems.
 INSERT INTO systems
     (code,          type,     manufacturer,              name,                                      media_types) VALUES

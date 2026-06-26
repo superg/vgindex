@@ -39,13 +39,12 @@ RUN set -eux; \
     rm -rf /tmp/phpbb.zip /tmp/phpBB3; \
     chown -R www-data:www-data /var/www/html
 
-COPY scripts/redump_forum_importer/import.php /usr/local/bin/redump-forum-import
 COPY docker/phpbb/ext/vgindex/oidcprovider /var/www/html/ext/vgindex/oidcprovider
 
 COPY docker/phpbb/entrypoint.sh /usr/local/bin/phpbb-entrypoint.sh
 RUN set -eux; \
     chown -R www-data:www-data /var/www/html/ext/vgindex; \
-    chmod +x /usr/local/bin/phpbb-entrypoint.sh /usr/local/bin/redump-forum-import
+    chmod +x /usr/local/bin/phpbb-entrypoint.sh
 
 WORKDIR /var/www/html
 
