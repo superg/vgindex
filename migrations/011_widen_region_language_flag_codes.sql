@@ -1,0 +1,5 @@
+ALTER TABLE regions
+    ALTER COLUMN flag_code TYPE VARCHAR(16) USING TRIM(flag_code)::VARCHAR(16);
+
+ALTER TABLE languages
+    ALTER COLUMN flag_code TYPE VARCHAR(16) USING TRIM(flag_code)::VARCHAR(16);

@@ -2,6 +2,10 @@
 
 {% block title %}Maintenance{% endblock %}
 
+{% block head %}
+<script src="/static/js/maintenance.js" defer></script>
+{% endblock %}
+
 {% block content %}
 <h3 class="maintenance-page-title">Maintenance</h3>
 
@@ -15,29 +19,173 @@
 </div>
 {% endif %}
 
-<div class="maintenance-actions">
-    <section class="maintenance-action">
-        <form method="post" action="/maintenance/rebuild-cue">
-            {% match current_user %}
-            {% when Some with (user) %}
-            <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
-            {% when None %}
-            {% endmatch %}
-            <button type="submit">Rebuild CUE</button>
-        </form>
-        <p class="maintenance-action-note">Updates CUE sheets and hashes. Run after changing filename character substitution rules.</p>
-    </section>
-
-    <section class="maintenance-action">
-        <form method="post" action="/maintenance/trigger-archive-generation">
-            {% match current_user %}
-            {% when Some with (user) %}
-            <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
-            {% when None %}
-            {% endmatch %}
-            <button type="submit">Trigger Archive Generation</button>
-        </form>
-        <p class="maintenance-action-note">Marks all systems for archive generation. The background worker rebuilds pending archives on its next scheduled pass.</p>
-    </section>
+{% if !maintenance_errors.is_empty() %}
+<div class="validation-errors" role="alert">
+    <strong>Please fix the following errors:</strong>
+    <ul>
+    {% for err in maintenance_errors %}
+        <li>{{ err }}</li>
+    {% endfor %}
+    </ul>
 </div>
+{% endif %}
+
+<nav class="maintenance-tabs" aria-label="Maintenance sections">
+    <a href="/maintenance?tab=systems" {% if show_systems %}class="active"{% endif %}>Systems</a>
+    <a href="/maintenance?tab=regions" {% if show_regions %}class="active"{% endif %}>Regions</a>
+    <a href="/maintenance?tab=languages" {% if show_languages %}class="active"{% endif %}>Languages</a>
+    <a href="/maintenance?tab=misc" {% if show_misc %}class="active"{% endif %}>Miscellaneous</a>
+</nav>
+
+<section id="maintenance-systems-panel" class="maintenance-panel" {% if !show_systems %}hidden{% endif %}>
+    <form method="post" action="/maintenance/systems" id="maintenance-systems-form" class="maintenance-systems-form maintenance-editor-form" data-maintenance-form data-maintenance-payload="#maintenance-systems-payload">
+        {% match current_user %}
+        {% when Some with (user) %}
+        <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+        {% when None %}
+        {% endmatch %}
+        <input type="hidden" name="systems_payload" id="maintenance-systems-payload" value="">
+
+        <div class="maintenance-system-scroll maintenance-editor-scroll">
+        <table class="maintenance-system-table maintenance-editor-table">
+        {% for row in system_rows %}
+            <tbody data-maintenance-row data-system-row data-original-code="{{ row.original_code }}">
+                <tr class="maintenance-system-text-row maintenance-editor-text-row">
+                    <td><input type="text" value="{{ row.code }}" maxlength="16" size="{{ system_input_sizes.code }}" data-maintenance-field="code" data-system-field="code" aria-label="Code" title="Code" placeholder="code"></td>
+                    <td><input type="text" value="{{ row.system_type }}" maxlength="8" size="{{ system_input_sizes.system_type }}" data-maintenance-field="type" data-system-field="type" aria-label="Type" title="Type" placeholder="type"></td>
+                    <td><input type="text" value="{{ row.manufacturer }}" maxlength="32" size="{{ system_input_sizes.manufacturer }}" data-maintenance-field="manufacturer" data-system-field="manufacturer" aria-label="Manufacturer" title="Manufacturer" placeholder="manufacturer"></td>
+                    <td><input type="text" value="{{ row.name }}" maxlength="64" size="{{ system_input_sizes.name }}" data-maintenance-field="name" data-system-field="name" aria-label="Name" title="Name" placeholder="name"></td>
+                    <td><input type="text" value="{{ row.short_name }}" maxlength="32" size="{{ system_input_sizes.short_name }}" data-maintenance-field="short_name" data-system-field="short_name" aria-label="Short Name" title="Short Name" placeholder="short_name"></td>
+                    <td><input type="text" value="{{ row.media_types_csv }}" size="{{ system_input_sizes.media_types }}" data-maintenance-field="media_types" data-system-field="media_types" aria-label="Media Types" title="Media Types" placeholder="media_types"></td>
+                </tr>
+                <tr class="maintenance-system-flags-row maintenance-editor-flags-row">
+                    <td colspan="6">
+                        <div class="maintenance-system-flag-line maintenance-editor-flag-line">
+                        {% for flag in row.flags %}
+                            <label class="maintenance-system-flag maintenance-editor-flag">
+                                <input type="checkbox" data-maintenance-flag="{{ flag.field }}" data-system-flag="{{ flag.field }}" {% if flag.checked %}checked{% endif %}>
+                                <span>{{ flag.label }}</span>
+                            </label>
+                        {% endfor %}
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        {% endfor %}
+        </table>
+        </div>
+
+        <div class="maintenance-system-save maintenance-editor-save">
+            <button type="submit">Save Systems</button>
+        </div>
+    </form>
+</section>
+
+<section id="maintenance-regions-panel" class="maintenance-panel" {% if !show_regions %}hidden{% endif %}>
+    <form method="post" action="/maintenance/regions" id="maintenance-regions-form" class="maintenance-editor-form" data-maintenance-form data-maintenance-payload="#maintenance-regions-payload">
+        {% match current_user %}
+        {% when Some with (user) %}
+        <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+        {% when None %}
+        {% endmatch %}
+        <input type="hidden" name="regions_payload" id="maintenance-regions-payload" value="">
+
+        <div class="maintenance-editor-scroll">
+        <table class="maintenance-editor-table maintenance-lookup-table">
+        {% for row in region_rows %}
+            <tbody data-maintenance-row data-original-code="{{ row.original_code }}">
+                <tr class="maintenance-simple-row">
+                    <td><input type="text" value="{{ row.code }}" maxlength="2" size="{{ region_input_sizes.code }}" data-maintenance-field="code" aria-label="Code" title="Code" placeholder="code"></td>
+                    <td><input type="text" value="{{ row.name }}" maxlength="32" size="{{ region_input_sizes.name }}" data-maintenance-field="name" aria-label="Name" title="Name" placeholder="name"></td>
+                    <td>
+                        <span class="maintenance-flag-field">
+                            <img class="maintenance-flag-preview" data-flag-preview src="{% if row.flag_code.is_empty() %}about:blank{% else %}/static/flags/{{ row.flag_code }}.svg{% endif %}" title="{{ row.flag_code }}" alt="{{ row.flag_code }}" {% if row.flag_code.is_empty() %}hidden{% endif %}>
+                            <select data-maintenance-field="flag_code" data-flag-select aria-label="Flag Code" title="Flag Code">
+                                <option value="">flag_code</option>
+                                {% for option in flag_options %}
+                                <option value="{{ option.code }}" {% if option.code == row.flag_code %}selected{% endif %}>{{ option.code }}</option>
+                                {% endfor %}
+                            </select>
+                        </span>
+                    </td>
+                    <td><input type="text" inputmode="numeric" value="{{ row.sort_order }}" maxlength="11" size="{{ region_input_sizes.sort_order }}" data-maintenance-field="sort_order" aria-label="Sort Order" title="Sort Order" placeholder="sort_order"></td>
+                </tr>
+            </tbody>
+        {% endfor %}
+        </table>
+        </div>
+
+        <div class="maintenance-editor-save">
+            <button type="submit">Save Regions</button>
+        </div>
+    </form>
+</section>
+
+<section id="maintenance-languages-panel" class="maintenance-panel" {% if !show_languages %}hidden{% endif %}>
+    <form method="post" action="/maintenance/languages" id="maintenance-languages-form" class="maintenance-editor-form" data-maintenance-form data-maintenance-payload="#maintenance-languages-payload">
+        {% match current_user %}
+        {% when Some with (user) %}
+        <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+        {% when None %}
+        {% endmatch %}
+        <input type="hidden" name="languages_payload" id="maintenance-languages-payload" value="">
+
+        <div class="maintenance-editor-scroll">
+        <table class="maintenance-editor-table maintenance-lookup-table">
+        {% for row in language_rows %}
+            <tbody data-maintenance-row data-original-code="{{ row.original_code }}">
+                <tr class="maintenance-simple-row">
+                    <td><input type="text" value="{{ row.code }}" maxlength="2" size="{{ language_input_sizes.code }}" data-maintenance-field="code" aria-label="Code" title="Code" placeholder="code"></td>
+                    <td><input type="text" value="{{ row.name }}" maxlength="16" size="{{ language_input_sizes.name }}" data-maintenance-field="name" aria-label="Name" title="Name" placeholder="name"></td>
+                    <td>
+                        <span class="maintenance-flag-field">
+                            <img class="maintenance-flag-preview" data-flag-preview src="{% if row.flag_code.is_empty() %}about:blank{% else %}/static/flags/{{ row.flag_code }}.svg{% endif %}" title="{{ row.flag_code }}" alt="{{ row.flag_code }}" {% if row.flag_code.is_empty() %}hidden{% endif %}>
+                            <select data-maintenance-field="flag_code" data-flag-select aria-label="Flag Code" title="Flag Code">
+                                <option value="">flag_code</option>
+                                {% for option in flag_options %}
+                                <option value="{{ option.code }}" {% if option.code == row.flag_code %}selected{% endif %}>{{ option.code }}</option>
+                                {% endfor %}
+                            </select>
+                        </span>
+                    </td>
+                    <td><input type="text" inputmode="numeric" value="{{ row.sort_order }}" maxlength="11" size="{{ language_input_sizes.sort_order }}" data-maintenance-field="sort_order" aria-label="Sort Order" title="Sort Order" placeholder="sort_order"></td>
+                </tr>
+            </tbody>
+        {% endfor %}
+        </table>
+        </div>
+
+        <div class="maintenance-editor-save">
+            <button type="submit">Save Languages</button>
+        </div>
+    </form>
+</section>
+
+<section id="maintenance-misc-panel" class="maintenance-panel" {% if !show_misc %}hidden{% endif %}>
+    <div class="maintenance-actions">
+        <section class="maintenance-action">
+            <form method="post" action="/maintenance/rebuild-cue">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <button type="submit">Rebuild CUE</button>
+            </form>
+            <p class="maintenance-action-note">Updates CUE sheets and hashes. Run after changing filename character substitution rules.</p>
+        </section>
+
+        <section class="maintenance-action">
+            <form method="post" action="/maintenance/trigger-archive-generation">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <button type="submit">Trigger Archive Generation</button>
+            </form>
+            <p class="maintenance-action-note">Marks all systems for archive generation. The background worker rebuilds pending archives on its next scheduled pass.</p>
+        </section>
+    </div>
+</section>
 {% endblock %}

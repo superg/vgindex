@@ -3138,6 +3138,175 @@ textarea.full-width-textarea {
     text-align: center;
 }
 
+.maintenance-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 0.35rem;
+    margin: 0 auto 0.7rem;
+    border-bottom: var(--pico-border-width) solid var(--pico-form-element-border-color);
+}
+
+.maintenance-tabs a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.7rem;
+    padding: 0.25rem 0.75rem;
+    border: var(--pico-border-width) solid transparent;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    font-size: 0.8rem;
+}
+
+.maintenance-tabs a.active {
+    border-color: var(--pico-form-element-border-color);
+    background: var(--pico-form-element-background-color);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.maintenance-panel {
+    margin: 0 auto;
+}
+
+.maintenance-systems-form,
+.maintenance-editor-form {
+    margin: 0;
+}
+
+.maintenance-system-scroll,
+.maintenance-editor-scroll {
+    overflow-x: auto;
+}
+
+.maintenance-system-table,
+.maintenance-editor-table {
+    width: max-content;
+    max-width: none;
+    margin: 0 auto;
+    border-collapse: separate;
+    border-spacing: 0 0.58rem;
+}
+
+.maintenance-system-table tbody,
+.maintenance-editor-table tbody {
+    background: linear-gradient(
+        90deg,
+        transparent 0,
+        rgba(127, 145, 164, 0.04) 1.5rem,
+        rgba(127, 145, 164, 0.04) calc(100% - 1.5rem),
+        transparent 100%
+    );
+}
+
+[data-theme="dark"] .maintenance-system-table tbody,
+[data-theme="dark"] .maintenance-editor-table tbody {
+    background: linear-gradient(
+        90deg,
+        transparent 0,
+        rgba(15, 20, 28, 0.55) 1.5rem,
+        rgba(15, 20, 28, 0.55) calc(100% - 1.5rem),
+        transparent 100%
+    );
+}
+
+.maintenance-system-table td,
+.maintenance-editor-table td {
+    padding: 0.08rem 0.15rem;
+    border-bottom: none;
+    vertical-align: middle;
+}
+
+.maintenance-system-text-row td,
+.maintenance-editor-text-row td {
+    padding-top: 0.34rem;
+}
+
+.maintenance-system-flags-row td,
+.maintenance-editor-flags-row td {
+    padding-bottom: 0.34rem;
+    border-bottom: var(--pico-border-width) solid var(--pico-form-element-border-color);
+}
+
+.maintenance-simple-row td {
+    padding-top: 0.34rem;
+    padding-bottom: 0.34rem;
+    border-bottom: var(--pico-border-width) solid var(--pico-form-element-border-color);
+}
+
+.maintenance-system-text-row input[type="text"],
+.maintenance-editor-text-row input[type="text"],
+.maintenance-simple-row input[type="text"],
+.maintenance-simple-row select {
+    width: auto;
+    min-width: 0;
+    height: auto;
+    margin: 0;
+    padding: 0.13rem 0.32rem;
+    font-size: 0.75rem;
+}
+
+.maintenance-simple-row select {
+    min-width: 6.4rem;
+    padding-right: 1.7rem;
+}
+
+.maintenance-system-flag-line,
+.maintenance-editor-flag-line {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.6rem;
+    align-items: center;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.maintenance-system-flag,
+.maintenance-editor-flag {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.22rem;
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: normal;
+    white-space: nowrap;
+}
+
+.maintenance-system-flag input,
+.maintenance-editor-flag input {
+    margin: 0;
+}
+
+.maintenance-flag-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.maintenance-flag-preview {
+    width: 1.35rem;
+    height: 0.95rem;
+    object-fit: cover;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    background: var(--pico-card-background-color);
+}
+
+.maintenance-system-save,
+.maintenance-editor-save {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.75rem;
+}
+
+.maintenance-system-save button,
+.maintenance-editor-save button {
+    width: auto;
+    margin: 0;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
 .maintenance-action form {
     display: flex;
     justify-content: center;
