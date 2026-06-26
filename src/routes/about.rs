@@ -13,6 +13,7 @@ pub fn routes() -> Router<AppState> {
 #[template(path = "about.html")]
 struct AboutTemplate {
     current_user: Option<AuthenticatedUser>,
+    site_version: &'static str,
 }
 impl SiteConfig for AboutTemplate {}
 
@@ -20,6 +21,7 @@ async fn about_page(user: CurrentUser) -> Html<String> {
     Html(
         AboutTemplate {
             current_user: user.user().cloned(),
+            site_version: env!("CARGO_PKG_VERSION"),
         }
         .render()
         .unwrap(),

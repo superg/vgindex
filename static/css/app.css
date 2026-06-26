@@ -46,6 +46,12 @@ html {
         padding-left: 1rem;
         padding-right: 1rem;
     }
+    .about-footer {
+        margin-top: 2rem;
+        text-align: center;
+        opacity: 0.45;
+        font-size: 0.75rem;
+    }
 }
 
 button,
