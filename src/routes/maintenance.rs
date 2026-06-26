@@ -54,6 +54,7 @@ struct MaintenanceTemplate {
     system_input_sizes: SystemInputSizes,
     region_input_sizes: LookupInputSizes,
     language_input_sizes: LookupInputSizes,
+    show_general: bool,
     show_systems: bool,
     show_regions: bool,
     show_languages: bool,
@@ -753,10 +754,11 @@ fn maintenance_template(
     flag_options: Vec<FlagOption>,
 ) -> MaintenanceTemplate {
     let active_tab = match query.tab.as_deref() {
+        Some("systems") => "systems",
         Some("regions") => "regions",
         Some("languages") => "languages",
         Some("misc") => "misc",
-        _ => "systems",
+        _ => "general",
     };
     let system_input_sizes = system_input_sizes(&system_rows);
     let region_input_sizes = lookup_input_sizes(&region_rows);
@@ -773,6 +775,7 @@ fn maintenance_template(
         system_input_sizes,
         region_input_sizes,
         language_input_sizes,
+        show_general: active_tab == "general",
         show_systems: active_tab == "systems",
         show_regions: active_tab == "regions",
         show_languages: active_tab == "languages",

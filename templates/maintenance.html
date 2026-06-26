@@ -31,11 +31,18 @@
 {% endif %}
 
 <nav class="maintenance-tabs" aria-label="Maintenance sections">
+    <a href="/maintenance" {% if show_general %}class="active"{% endif %}>General</a>
     <a href="/maintenance?tab=systems" {% if show_systems %}class="active"{% endif %}>Systems</a>
     <a href="/maintenance?tab=regions" {% if show_regions %}class="active"{% endif %}>Regions</a>
     <a href="/maintenance?tab=languages" {% if show_languages %}class="active"{% endif %}>Languages</a>
     <a href="/maintenance?tab=misc" {% if show_misc %}class="active"{% endif %}>Miscellaneous</a>
 </nav>
+
+<section id="maintenance-general-panel" class="maintenance-panel" {% if !show_general %}hidden{% endif %}>
+    <div class="validation-errors" role="alert">
+        <strong>Warning:</strong> Do not edit these options if you do not know what you are doing. Changes made in the maintenance panel take effect immediately and impact the live site. Please double-check all modifications before saving, avoid too many changes at once, and test the changes afterwards. Also give some time in-between changes to prevent issues.
+    </div>
+</section>
 
 <section id="maintenance-systems-panel" class="maintenance-panel" {% if !show_systems %}hidden{% endif %}>
     <form method="post" action="/maintenance/systems" id="maintenance-systems-form" class="maintenance-systems-form maintenance-editor-form" data-maintenance-form data-maintenance-payload="#maintenance-systems-payload">
