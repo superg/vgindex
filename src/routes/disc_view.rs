@@ -233,10 +233,7 @@ fn build_ring_rows(entries: &[RingEntryView], ring_display_layers: usize) -> Vec
         .flat_map(|(i, e)| {
             let offset = format_signed_offset(e.offset_value);
             let offset_extra = format_signed_offset(e.offset_extra_value);
-            let sample_data_start = e
-                .sample_data_start
-                .map(|v| v.to_string())
-                .unwrap_or_default();
+            let sample_data_start = format_signed_offset(e.sample_data_start);
             let comment = e.comment.clone().unwrap_or_default();
             let entry_num = i + 1;
             let entry_even = entry_num % 2 == 0;
@@ -1871,11 +1868,14 @@ mod tests {
 
     #[test]
     fn ring_rows_hide_empty_layers_and_shrink_rowspan() {
-        let entries = vec![ring_entry(
+        let mut entry = ring_entry(
             Some(123),
             None,
             vec![ring_layer(0, "MASTER-L0"), ring_layer(1, "")],
-        )];
+        );
+        entry.offset_extra_value = Some(4);
+        entry.sample_data_start = Some(5678);
+        let entries = vec![entry];
 
         let rows = build_ring_rows(&entries, 2);
 
@@ -1883,6 +1883,8 @@ mod tests {
         assert_eq!(rows[0].layer, "L0");
         assert_eq!(rows[0].mastering_code, "MASTER-L0");
         assert_eq!(rows[0].offset, "+123");
+        assert_eq!(rows[0].offset_extra, "+4");
+        assert_eq!(rows[0].sample_data_start, "+5678");
         assert_eq!(rows[0].entry_rowspan, 1);
     }
 
@@ -1942,7 +1944,7 @@ mod tests {
                 toolstamps: String::new(),
                 offset: "+123".to_string(),
                 offset_extra: "+4".to_string(),
-                sample_data_start: "5678".to_string(),
+                sample_data_start: "+5678".to_string(),
                 comment: "Entry comment".to_string(),
                 first_in_entry: true,
                 entry_even: false,
@@ -1958,7 +1960,7 @@ mod tests {
                 toolstamps: String::new(),
                 offset: "+123".to_string(),
                 offset_extra: "+4".to_string(),
-                sample_data_start: "5678".to_string(),
+                sample_data_start: "+5678".to_string(),
                 comment: "Entry comment".to_string(),
                 first_in_entry: false,
                 entry_even: false,
@@ -1984,11 +1986,11 @@ mod tests {
             html.contains(r#"<td class="ring-fixed-cell ring-entry-cell" rowspan="2">+123</td>"#)
         );
         assert!(html.contains(r#"<td class="ring-fixed-cell ring-entry-cell" rowspan="2">+4</td>"#));
-        assert!(html.contains(r#"<td class="ring-entry-cell" rowspan="2">5678</td>"#));
+        assert!(html.contains(r#"<td class="ring-entry-cell" rowspan="2">+5678</td>"#));
         assert!(html.contains(r#"<td class="ring-entry-cell" rowspan="2">Entry comment</td>"#));
         assert_eq!(html.matches("+123").count(), 1);
         assert_eq!(html.matches("+4").count(), 1);
-        assert_eq!(html.matches("5678").count(), 1);
+        assert_eq!(html.matches("+5678").count(), 1);
         assert_eq!(html.matches("Entry comment").count(), 1);
     }
 

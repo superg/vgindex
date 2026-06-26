@@ -854,7 +854,7 @@ FILE "Track 02.bin" BINARY
     #[test]
     fn test_ring_code_offsets() {
         let good =
-            r#"[{"offset_value":"123","offset_extra_value":"","sample_start":"-5","layers":[]}]"#;
+            r#"[{"offset_value":"+123","offset_extra_value":"1","sample_start":"-5","layers":[]}]"#;
         assert!(validate_ring_code_offsets(good).is_empty());
 
         let bad =

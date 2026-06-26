@@ -1919,6 +1919,114 @@ fn normalized_disc_status(raw: &str) -> String {
     }
 }
 
+fn is_horizontal_whitespace(ch: char) -> bool {
+    ch.is_whitespace() && ch != '\n' && ch != '\r'
+}
+
+fn normalize_ringcode_whitespace(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut run = String::new();
+
+    for ch in value.chars() {
+        if is_horizontal_whitespace(ch) {
+            run.push(ch);
+            continue;
+        }
+
+        if !run.is_empty() {
+            if run.chars().count() >= 2 {
+                out.push('\t');
+            } else {
+                out.push_str(&run);
+            }
+            run.clear();
+        }
+        out.push(ch);
+    }
+
+    if !run.is_empty() {
+        if run.chars().count() >= 2 {
+            out.push('\t');
+        } else {
+            out.push_str(&run);
+        }
+    }
+
+    out
+}
+
+fn normalize_ring_layer_whitespace(layer: &mut serde_json::Value) {
+    const RING_LAYER_TEXT_FIELDS: &[&str] = &[
+        "mastering_code",
+        "mastering_sid",
+        "toolstamps",
+        "mould_sids",
+        "additional_moulds",
+    ];
+
+    let Some(obj) = layer.as_object_mut() else {
+        return;
+    };
+
+    for field in RING_LAYER_TEXT_FIELDS {
+        let Some(value) = obj.get_mut(*field) else {
+            continue;
+        };
+        let Some(text) = value.as_str() else {
+            continue;
+        };
+        *value = serde_json::json!(normalize_ringcode_whitespace(text));
+    }
+}
+
+fn normalize_ring_integer_string(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    trimmed
+        .parse::<i32>()
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| value.to_string())
+}
+
+fn normalize_ring_entry_integer_fields(entry: &mut serde_json::Value) {
+    const RING_ENTRY_INTEGER_FIELDS: &[&str] =
+        &["offset_value", "offset_extra_value", "sample_start"];
+
+    let Some(obj) = entry.as_object_mut() else {
+        return;
+    };
+
+    for field in RING_ENTRY_INTEGER_FIELDS {
+        let Some(value) = obj.get_mut(*field) else {
+            continue;
+        };
+        let Some(text) = value.as_str() else {
+            continue;
+        };
+        *value = serde_json::json!(normalize_ring_integer_string(text));
+    }
+}
+
+fn normalize_ring_codes_for_changes(mut ring_codes: serde_json::Value) -> serde_json::Value {
+    let Some(entries) = ring_codes.as_array_mut() else {
+        return ring_codes;
+    };
+
+    for entry in entries {
+        normalize_ring_entry_integer_fields(entry);
+        let Some(layers) = entry.get_mut("layers").and_then(|v| v.as_array_mut()) else {
+            continue;
+        };
+        for layer in layers {
+            normalize_ring_layer_whitespace(layer);
+        }
+    }
+
+    ring_codes
+}
+
 /// Normalize multiline text for comparison: strip \r, trim each line's trailing whitespace,
 /// trim leading/trailing blank lines.
 fn normalize_multiline(s: Option<&str>) -> Option<String> {
@@ -2430,6 +2538,7 @@ pub(crate) fn build_flat_changes(
         .ring_codes_json
         .as_deref()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .map(normalize_ring_codes_for_changes)
         .unwrap_or(serde_json::json!([]));
     let new_sector_ranges: Vec<serde_json::Value> =
         validation::parse_sector_range_pairs(form.sector_ranges.as_deref().unwrap_or(""))
@@ -3850,6 +3959,85 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn build_new_disc_changes_normalizes_ringcode_horizontal_whitespace_runs() {
+        let mut form = new_disc_form();
+        form.ring_codes_json = Some(
+            serde_json::json!([{
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{
+                    "mastering_code": "AB  CD",
+                    "mastering_sid": "IFPI L123",
+                    "toolstamps": "TS  02, TS  01",
+                    "mould_sids": "MO \t  01",
+                    "additional_moulds": "AM  01"
+                }]
+            }])
+            .to_string(),
+        );
+
+        let changes = build_new_disc_changes(&form, &media_rows(), &systems_with_edc(true));
+        let layer = &changes["ring_codes"][0]["layers"][0];
+
+        assert_eq!(
+            layer["mastering_code"],
+            serde_json::json!({ "add": { "new": "AB\tCD" } })
+        );
+        assert_eq!(
+            layer["mastering_sid"],
+            serde_json::json!({ "add": { "new": "IFPI L123" } })
+        );
+        assert_eq!(
+            layer["toolstamps"],
+            serde_json::json!({ "add": { "new": "TS\t01, TS\t02" } })
+        );
+        assert_eq!(
+            layer["mould_sids"],
+            serde_json::json!({ "add": { "new": "MO\t01" } })
+        );
+        assert_eq!(
+            layer["additional_moulds"],
+            serde_json::json!({ "add": { "new": "AM\t01" } })
+        );
+    }
+
+    #[test]
+    fn build_new_disc_changes_normalizes_ringcode_signed_integer_fields() {
+        let mut form = new_disc_form();
+        form.ring_codes_json = Some(
+            serde_json::json!([{
+                "offset_value": "+1",
+                "offset_extra_value": "-2",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{
+                    "mastering_code": "MASTER-N",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            }])
+            .to_string(),
+        );
+
+        let changes = build_new_disc_changes(&form, &media_rows(), &systems_with_edc(true));
+        let ring = &changes["ring_codes"][0];
+
+        assert_eq!(
+            ring["offset_value"],
+            serde_json::json!({ "add": { "new": "1" } })
+        );
+        assert_eq!(
+            ring["offset_extra_value"],
+            serde_json::json!({ "add": { "new": "-2" } })
+        );
+        assert!(ring.get("sample_data_start").is_none());
+    }
+
+    #[test]
     fn build_add_submission_changes_omits_dat_for_verification() {
         let form = new_disc_form();
         let matched = add_match(1, AddDiscMatchSource::Dat, "SYS", "DVD");
@@ -3980,6 +4168,47 @@ mod operation_delta_tests {
             build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
 
         assert_eq!(changes, serde_json::json!({}));
+    }
+
+    #[test]
+    fn build_sparse_edit_changes_ignores_ringcode_space_runs_matching_stored_tabs() {
+        let mut detail = base_detail();
+        let layer = &mut detail.ring_entries[0].layers[0];
+        layer.mastering_code = Some("AB\tCD".to_string());
+        layer.mastering_sid = Some("IFPI L123".to_string());
+        layer.toolstamps = "TS\t01".to_string();
+
+        let mut form = form_from_detail(&detail);
+        let mut ring_codes: serde_json::Value =
+            serde_json::from_str(form.ring_codes_json.as_deref().unwrap()).unwrap();
+        ring_codes[0]["layers"][0]["mastering_code"] = serde_json::json!("AB  CD");
+        ring_codes[0]["layers"][0]["toolstamps"] = serde_json::json!("TS  01");
+        form.ring_codes_json = Some(ring_codes.to_string());
+
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+
+        assert!(changes.get("ring_codes").is_none());
+    }
+
+    #[test]
+    fn build_sparse_edit_changes_ignores_ringcode_plus_prefix_matching_stored_integer() {
+        let mut detail = base_detail();
+        detail.ring_entries[0].offset_value = Some(1);
+        detail.ring_entries[0].offset_extra_value = Some(1);
+        detail.ring_entries[0].sample_data_start = Some(1);
+        let mut form = form_from_detail(&detail);
+        let mut ring_codes: serde_json::Value =
+            serde_json::from_str(form.ring_codes_json.as_deref().unwrap()).unwrap();
+        ring_codes[0]["offset_value"] = serde_json::json!("+1");
+        ring_codes[0]["offset_extra_value"] = serde_json::json!("1");
+        ring_codes[0]["sample_start"] = serde_json::json!("+1");
+        form.ring_codes_json = Some(ring_codes.to_string());
+
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+
+        assert!(changes.get("ring_codes").is_none());
     }
 
     #[test]

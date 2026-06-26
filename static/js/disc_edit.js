@@ -501,11 +501,56 @@ function saveRingFromDom() {
     });
 }
 
+function normalizeRingcodeWhitespace(value) {
+    if (value === null || value === undefined) return '';
+    return String(value).replace(/[^\S\r\n]{2,}/g, '\t');
+}
+
+function normalizeRingLayerWhitespace(layer) {
+    var out = {};
+    for (var key in layer) {
+        if (Object.prototype.hasOwnProperty.call(layer, key)) out[key] = layer[key];
+    }
+    ['mastering_code', 'mastering_sid', 'toolstamps', 'mould_sids', 'additional_moulds'].forEach(function (field) {
+        out[field] = normalizeRingcodeWhitespace(out[field]);
+    });
+    return out;
+}
+
+function normalizeRingIntegerString(value) {
+    if (value === null || value === undefined) return '';
+    var text = String(value).trim();
+    if (text === '') return '';
+    if (!/^[+-]?\d+$/.test(text)) return String(value);
+
+    var number = Number(text);
+    if (!Number.isInteger(number) || number < -2147483648 || number > 2147483647) {
+        return String(value);
+    }
+    return String(number);
+}
+
+function normalizeRingEntryForSubmission(entry) {
+    var out = {};
+    for (var key in entry) {
+        if (Object.prototype.hasOwnProperty.call(entry, key) && key !== 'layers') out[key] = entry[key];
+    }
+    ['offset_value', 'offset_extra_value', 'sample_start'].forEach(function (field) {
+        out[field] = normalizeRingIntegerString(out[field]);
+    });
+    out.layers = [];
+    var layers = Array.isArray(entry.layers) ? entry.layers : [];
+    for (var i = 0; i < layers.length; i++) {
+        out.layers.push(normalizeRingLayerWhitespace(layers[i] || {}));
+    }
+    return out;
+}
+
 function collectRingCodes() {
     saveRingFromDom();
     var result = [];
     for (var i = 0; i < ringEntries.length; i++) {
-        if (!isEntryEmpty(ringEntries[i])) result.push(ringEntries[i]);
+        if (!isEntryEmpty(ringEntries[i])) result.push(normalizeRingEntryForSubmission(ringEntries[i]));
     }
     return result;
 }
