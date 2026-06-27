@@ -563,7 +563,7 @@ async fn discs_page(
          FROM discs d
          JOIN systems s ON s.code = d.system_code
          WHERE {where_sql}
-         ORDER BY {sort_col} {sort_dir}{nulls_clause}{secondary_sort} LIMIT {PAGE_SIZE} OFFSET {offset}"
+         ORDER BY {sort_col} {sort_dir}{nulls_clause}{secondary_sort}, d.id {sort_dir} LIMIT {PAGE_SIZE} OFFSET {offset}"
     );
 
     let mut count_query = sqlx::query_scalar::<_, i64>(&sql_count);
