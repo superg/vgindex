@@ -231,7 +231,7 @@
                 {% if row.entry_rowspan > 0 %}<td class="entry-num ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
                 {% if ring_vis.layer %}<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>{% endif %}
                 {% if ring_vis.mastering_code %}<td class="ring-fixed-cell">{{ row.mastering_code }}</td>{% endif %}
-                {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell">{{ row.mastering_side }}</td>{% endif %}
+                {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell">{{ row.mastering_sid }}</td>{% endif %}
                 {% if ring_vis.toolstamps %}<td class="ring-fixed-cell">{{ row.toolstamps }}</td>{% endif %}
                 {% if ring_vis.mould_sids %}<td class="ring-fixed-cell">{{ row.mould_sids }}</td>{% endif %}
                 {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell">{{ row.additional_moulds }}</td>{% endif %}
