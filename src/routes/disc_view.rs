@@ -1,7 +1,7 @@
-use askama::{Template, Html};
+use askama::Template;
 use axum::{
     extract::{rejection::PathRejection, Path, State},
-    response::{Html as AxumHtml, IntoResponse},
+    response::{Html, IntoResponse},
     routing::get,
     Router,
 };
@@ -44,7 +44,12 @@ fn join_sorted_identifier_values(values: &[String]) -> String {
     });
     sorted
         .iter()
-        .map(|v| Html::from(v.as_str()).to_string())
+        .map(|v| {
+            v.replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+        })
         .collect::<Vec<String>>()
         .join("<br>")
 }
@@ -453,7 +458,7 @@ async fn disc_view(
     State(state): State<AppState>,
     user: CurrentUser,
     id: Result<Path<i32>, PathRejection>,
-) -> AppResult<AxumHtml<String>> {
+) -> AppResult<Html<String>> {
     let id = crate::routes::path_i32(id)?;
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
@@ -651,7 +656,7 @@ async fn disc_view(
         user.is_logged_in(),
     );
 
-    Ok(AxumHtml(
+    Ok(Html(
         DiscViewTemplate {
             current_user: user.user().cloned(),
             can_edit,
