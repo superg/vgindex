@@ -2,6 +2,8 @@ use sqlx::PgPool;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
+use sha2::{Digest, Sha256};
+
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 use crate::services::{archive_service, disc_service};
@@ -23,7 +25,60 @@ pub struct ApprovalConflict {
 pub enum ApprovalOutcome {
     Approved(i32),
     AlreadyProcessed,
+    StaleDiscState,
     Conflicts(Vec<ApprovalConflict>),
+}
+
+fn canonical_json(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Array(values) => serde_json::Value::Array(
+            values
+                .iter()
+                .map(canonical_json)
+                .collect::<Vec<serde_json::Value>>(),
+        ),
+        serde_json::Value::Object(map) => {
+            let mut entries = map.iter().collect::<Vec<_>>();
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+            let mut sorted = serde_json::Map::new();
+            for (key, item) in entries {
+                sorted.insert(key.clone(), canonical_json(item));
+            }
+            serde_json::Value::Object(sorted)
+        }
+        _ => value.clone(),
+    }
+}
+
+pub fn disc_snapshot_hash(snapshot: &serde_json::Value) -> String {
+    let canonical = canonical_json(snapshot);
+    let bytes = serde_json::to_vec(&canonical)
+        .expect("serializing a serde_json::Value snapshot should not fail");
+    hex::encode(Sha256::digest(bytes))
+}
+
+pub async fn current_disc_snapshot_hash(pool: &PgPool, disc_id: i32) -> AppResult<String> {
+    let detail = disc_service::get_disc_detail(pool, disc_id).await?;
+    let snapshot = disc_service::build_snapshot_from_disc(&detail);
+    Ok(disc_snapshot_hash(&snapshot))
+}
+
+pub fn review_base_hash_is_stale(expected_hash: Option<&str>, current_hash: &str) -> bool {
+    expected_hash
+        .map(str::trim)
+        .is_some_and(|expected_hash| expected_hash != current_hash)
+}
+
+fn stale_review_approval_outcome(
+    expected_hash: Option<&str>,
+    current_hash: &str,
+) -> Option<ApprovalOutcome> {
+    if review_base_hash_is_stale(expected_hash, current_hash) {
+        Some(ApprovalOutcome::StaleDiscState)
+    } else {
+        None
+    }
 }
 
 pub async fn create_submission(
@@ -1167,12 +1222,23 @@ pub async fn approve_submission(
     changes: &serde_json::Value,
     reviewer_id: i32,
     review_comment: Option<&str>,
+    expected_review_base_hash: Option<&str>,
 ) -> AppResult<ApprovalOutcome> {
     let mut approval_lock = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
         .bind(APPROVAL_CONFLICT_LOCK_KEY)
         .execute(&mut *approval_lock)
         .await?;
+
+    if let Some(disc_id) = sub.target_disc_id {
+        let current_hash = current_disc_snapshot_hash(pool, disc_id).await?;
+        if let Some(outcome) =
+            stale_review_approval_outcome(expected_review_base_hash, &current_hash)
+        {
+            approval_lock.rollback().await?;
+            return Ok(outcome);
+        }
+    }
 
     let effective_data =
         approval_effective_data(pool, sub.submission_type, sub.target_disc_id, changes).await?;
@@ -1584,6 +1650,70 @@ mod tests {
             created_at: chrono::Utc::now(),
             reviewed_at: None,
         }
+    }
+
+    #[test]
+    fn disc_snapshot_hash_is_stable_for_object_key_order_and_changes_on_data_change() {
+        let left = serde_json::json!({
+            "title": "Game",
+            "nested": {
+                "z": 2,
+                "a": [
+                    {
+                        "right": true,
+                        "left": false
+                    }
+                ]
+            }
+        });
+        let right = serde_json::json!({
+            "nested": {
+                "a": [
+                    {
+                        "left": false,
+                        "right": true
+                    }
+                ],
+                "z": 2
+            },
+            "title": "Game"
+        });
+        let changed = serde_json::json!({
+            "nested": {
+                "a": [
+                    {
+                        "left": false,
+                        "right": true
+                    }
+                ],
+                "z": 3
+            },
+            "title": "Game"
+        });
+
+        assert_eq!(disc_snapshot_hash(&left), disc_snapshot_hash(&right));
+        assert_ne!(disc_snapshot_hash(&right), disc_snapshot_hash(&changed));
+    }
+
+    #[test]
+    fn review_base_hash_stale_decision_requires_current_hash_match_when_provided() {
+        assert!(!review_base_hash_is_stale(None, "current"));
+        assert!(!review_base_hash_is_stale(Some(" current "), "current"));
+        assert!(review_base_hash_is_stale(Some("previous"), "current"));
+        assert!(review_base_hash_is_stale(Some(""), "current"));
+    }
+
+    #[test]
+    fn stale_review_hash_maps_to_stale_approval_outcome() {
+        assert_eq!(
+            stale_review_approval_outcome(Some("previous"), "current"),
+            Some(ApprovalOutcome::StaleDiscState)
+        );
+        assert_eq!(
+            stale_review_approval_outcome(Some("current"), "current"),
+            None
+        );
+        assert_eq!(stale_review_approval_outcome(None, "current"), None);
     }
 
     #[test]

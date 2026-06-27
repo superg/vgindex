@@ -506,6 +506,7 @@ async fn submission_detail(
     );
 
     if let Some(db_snapshot) = db_snapshot {
+        template.review_base_hash = queue_service::disc_snapshot_hash(&db_snapshot);
         apply_review_diff_context(
             &mut template,
             &snapshot,
@@ -751,6 +752,7 @@ fn build_review_template(
         validation_result_suffix: String::new(),
 
         is_review_mode: true,
+        review_base_hash: String::new(),
         changed_fields: vec![],
         review_annotations: vec![],
         review_old_multiline: vec![],
@@ -1746,8 +1748,108 @@ pub struct ReviewForm {
     pub csrf_token: String,
     pub action: String,
     pub review_comment: Option<String>,
+    #[serde(default)]
+    pub review_base_hash: String,
     #[serde(flatten)]
     pub disc: DiscEditForm,
+}
+
+const STALE_REVIEW_ERROR: &str = "This disc changed after the review page loaded. The page has been refreshed with the latest data; review it again before approving.";
+
+async fn render_latest_review_with_errors(
+    state: &AppState,
+    current_user: &AuthenticatedUser,
+    sub: &DiscSubmission,
+    ref_data: &disc_edit::EditRefData,
+    validation_errors: Vec<String>,
+    review_comment: Option<&str>,
+) -> AppResult<Response> {
+    let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+        .bind(sub.submitter_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or_else(|_| format!("User #{}", sub.submitter_id));
+    let reviewer_name: String = if let Some(reviewer_id) = sub.reviewer_id {
+        sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+            .bind(reviewer_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let (systems_media_json, systems_has_flags_json) = build_systems_json(&ref_data.all_systems);
+    let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
+    let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
+    let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
+    let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let edition_suggestions_json = disc_edit::build_edition_suggestions_json(state).await?;
+
+    let snapshot: serde_json::Value;
+    let mut db_snapshot: Option<serde_json::Value> = None;
+    let mut review_base_hash = String::new();
+    if let Some(disc_id) = sub.target_disc_id {
+        let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
+        let current_db_snapshot = disc_service::build_snapshot_from_disc(&detail);
+        review_base_hash = queue_service::disc_snapshot_hash(&current_db_snapshot);
+        snapshot =
+            queue_service::resolve_submission_snapshot_for_submission(&current_db_snapshot, sub)?;
+        db_snapshot = Some(current_db_snapshot);
+    } else {
+        snapshot =
+            queue_service::resolve_submission_snapshot_for_submission(&serde_json::json!({}), sub)?;
+    }
+
+    let system_code = snapshot["system_code"].as_str().unwrap_or("").to_string();
+    let media_type_code = snapshot["media_type"].as_str().unwrap_or("cd").to_string();
+    let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
+    let system = if !system_code.is_empty() {
+        disc_service::get_system(&state.pool, &system_code)
+            .await
+            .ok()
+    } else {
+        None
+    };
+    let has_sys = |f: fn(&System) -> bool| system.as_ref().map_or(true, f);
+
+    let mut template = build_review_template(
+        current_user.clone(),
+        sub,
+        &submitter_name,
+        &reviewer_name,
+        &snapshot,
+        ref_data,
+        &systems_media_json,
+        &systems_has_flags_json,
+        &edition_suggestions_json,
+        &media_layers_json,
+        &media_rom_extensions_json,
+        &media_is_cd_json,
+        &media_has_pic_json,
+        &system_code,
+        &media_type_code,
+        max_layers,
+        has_sys,
+    );
+    template.review_base_hash = review_base_hash;
+    template.validation_errors = validation_errors;
+    template.review_comment_input = review_comment.unwrap_or_default().to_string();
+
+    if let Some(db_snapshot) = db_snapshot {
+        apply_review_diff_context(
+            &mut template,
+            &snapshot,
+            &db_snapshot,
+            ref_data,
+            sub.submission_type,
+            true,
+        );
+        let highlights = compute_field_highlights(&snapshot, &db_snapshot);
+        apply_highlights(&mut template, highlights);
+    }
+
+    Ok(Html(template.render().unwrap()).into_response())
 }
 
 async fn review_submit(
@@ -1790,6 +1892,21 @@ async fn review_submit(
     }
 
     let ref_data = fetch_ref_data(&state.pool).await?;
+    if let Some(disc_id) = sub.target_disc_id {
+        let current_hash = queue_service::current_disc_snapshot_hash(&state.pool, disc_id).await?;
+        if queue_service::review_base_hash_is_stale(Some(&form.review_base_hash), &current_hash) {
+            return render_latest_review_with_errors(
+                &state,
+                &user,
+                &sub,
+                &ref_data,
+                vec![STALE_REVIEW_ERROR.to_string()],
+                review_comment.as_deref(),
+            )
+            .await;
+        }
+    }
+
     let mut errors = validate_form(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
     if comments_text_contains_review_delimiter(form.disc.comments.as_deref()) {
         errors.push("Comments: remove the review delimiter before approval".to_string());
@@ -1844,6 +1961,7 @@ async fn review_submit(
         if let Some(disc_id) = sub.target_disc_id {
             let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
             let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
+            template.review_base_hash = form.review_base_hash.clone();
             let submitted_snapshot =
                 queue_service::resolve_submission_snapshot_for_submission(&db_snapshot, &sub)?;
             apply_review_diff_context(
@@ -1884,6 +2002,7 @@ async fn review_submit(
         &form_snapshot,
         user.id,
         review_comment.as_deref(),
+        sub.target_disc_id.map(|_| form.review_base_hash.as_str()),
     )
     .await?;
 
@@ -1893,6 +2012,17 @@ async fn review_submit(
         }
         queue_service::ApprovalOutcome::AlreadyProcessed => {
             Ok(Redirect::to(&format!("/queue/{id}")).into_response())
+        }
+        queue_service::ApprovalOutcome::StaleDiscState => {
+            render_latest_review_with_errors(
+                &state,
+                &user,
+                &sub,
+                &ref_data,
+                vec![STALE_REVIEW_ERROR.to_string()],
+                review_comment.as_deref(),
+            )
+            .await
         }
         queue_service::ApprovalOutcome::Conflicts(conflicts) => {
             let submitter_name: String =
@@ -1947,6 +2077,7 @@ async fn review_submit(
             if let Some(disc_id) = sub.target_disc_id {
                 let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
                 let db_snapshot = disc_service::build_snapshot_from_disc(&detail);
+                template.review_base_hash = form.review_base_hash.clone();
                 let submitted_snapshot =
                     queue_service::resolve_submission_snapshot_for_submission(&db_snapshot, &sub)?;
                 apply_review_diff_context(
@@ -2482,7 +2613,7 @@ mod tests {
 
     fn build_template(snapshot: &serde_json::Value) -> DiscEditTemplate {
         let ref_data = ref_data();
-        build_review_template(
+        let mut template = build_review_template(
             AuthenticatedUser::template_only("moderator"),
             &test_submission(),
             "submitter",
@@ -2500,7 +2631,9 @@ mod tests {
             snapshot["media_type"].as_str().unwrap_or(""),
             2,
             |_flag: fn(&System) -> bool| true,
-        )
+        );
+        template.review_base_hash = queue_service::disc_snapshot_hash(&old_snapshot());
+        template
     }
 
     #[test]
@@ -2587,6 +2720,44 @@ mod tests {
 
         assert!(html.contains(r#"<form method="post" action="/queue/42/review""#));
         assert!(html.contains(r#"<input type="hidden" name="_csrf" value="test-csrf-token">"#));
+    }
+
+    #[test]
+    fn review_disc_edit_form_includes_base_hash_for_target_disc() {
+        let hash = queue_service::disc_snapshot_hash(&old_snapshot());
+        let html = build_template(&submitted_snapshot()).render().unwrap();
+
+        assert!(html.contains(&format!(
+            r#"<input type="hidden" name="review_base_hash" value="{hash}">"#
+        )));
+    }
+
+    #[test]
+    fn stale_review_reload_uses_latest_db_and_stored_changes_not_posted_fields() {
+        let mut latest_db = old_snapshot();
+        latest_db["title"] = serde_json::json!("Latest DB Title");
+        let mut sub = test_submission();
+        sub.changes = serde_json::json!({
+            "title": {
+                "modify": {
+                    "old": "Historical Old Title That Does Not Match Current DB",
+                    "new": "Stored Submission Title"
+                }
+            }
+        });
+        let mut posted_snapshot =
+            queue_service::resolve_submission_snapshot_for_submission(&old_snapshot(), &sub)
+                .unwrap();
+        posted_snapshot["title"] = serde_json::json!("Moderator Posted Stale Title");
+
+        let reloaded_snapshot =
+            queue_service::resolve_submission_snapshot_for_submission(&latest_db, &sub).unwrap();
+
+        assert_eq!(
+            reloaded_snapshot["title"],
+            serde_json::json!("Stored Submission Title")
+        );
+        assert_ne!(reloaded_snapshot["title"], posted_snapshot["title"]);
     }
 
     #[test]

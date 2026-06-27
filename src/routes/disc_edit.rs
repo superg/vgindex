@@ -158,6 +158,7 @@ pub(crate) struct DiscEditTemplate {
     pub validation_result_suffix: String,
 
     pub is_review_mode: bool,
+    pub review_base_hash: String,
     pub changed_fields: Vec<String>,
     pub review_annotations: Vec<ReviewAnnotation>,
     pub review_old_multiline: Vec<ReviewOldMultiline>,
@@ -1018,6 +1019,7 @@ async fn edit_page(
             validation_result_suffix: String::new(),
 
             is_review_mode: false,
+            review_base_hash: String::new(),
             changed_fields: vec![],
             review_annotations: vec![],
             review_old_multiline: vec![],
@@ -1609,6 +1611,7 @@ async fn render_form_with_errors(
         validation_result_suffix: validation_result.suffix,
 
         is_review_mode: false,
+        review_base_hash: String::new(),
         changed_fields: vec![],
         review_annotations: vec![],
         review_old_multiline: vec![],
@@ -2166,14 +2169,24 @@ async fn edit_submit(
     .await?;
 
     if can_edit_directly {
-        match queue_service::approve_submission(&state.pool, &sub, &sub.changes, user.id, None)
-            .await?
+        match queue_service::approve_submission(
+            &state.pool,
+            &sub,
+            &sub.changes,
+            user.id,
+            None,
+            None,
+        )
+        .await?
         {
             queue_service::ApprovalOutcome::Approved(disc_id) => {
                 Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
             }
             queue_service::ApprovalOutcome::AlreadyProcessed => Err(AppError::Internal(
                 "submission was already processed".into(),
+            )),
+            queue_service::ApprovalOutcome::StaleDiscState => Err(AppError::Internal(
+                "submission target changed during approval".into(),
             )),
             queue_service::ApprovalOutcome::Conflicts(conflicts) => {
                 render_form_with_errors(
@@ -2330,6 +2343,7 @@ async fn add_page(
             validation_result_suffix: String::new(),
 
             is_review_mode: false,
+            review_base_hash: String::new(),
             changed_fields: vec![],
             review_annotations: vec![],
             review_old_multiline: vec![],
@@ -2478,14 +2492,24 @@ async fn add_submit(
     if user.role.can_edit_directly() && is_verification {
         Ok(Redirect::to(&format!("/queue/{}", sub.id)).into_response())
     } else if user.role.can_edit_directly() {
-        match queue_service::approve_submission(&state.pool, &sub, &sub.changes, user.id, None)
-            .await?
+        match queue_service::approve_submission(
+            &state.pool,
+            &sub,
+            &sub.changes,
+            user.id,
+            None,
+            None,
+        )
+        .await?
         {
             queue_service::ApprovalOutcome::Approved(disc_id) => {
                 Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
             }
             queue_service::ApprovalOutcome::AlreadyProcessed => Err(AppError::Internal(
                 "submission was already processed".into(),
+            )),
+            queue_service::ApprovalOutcome::StaleDiscState => Err(AppError::Internal(
+                "submission target changed during approval".into(),
             )),
             queue_service::ApprovalOutcome::Conflicts(conflicts) => {
                 let render_form = add_form_for_render(&form, add_match.as_ref());

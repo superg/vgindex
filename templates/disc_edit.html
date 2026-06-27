@@ -107,6 +107,9 @@ const IS_ADD_MODE = {{ is_add_mode }};
     <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
     {% when None %}
     {% endmatch %}
+    {% if is_review_mode && disc_id > 0 && !review_base_hash.is_empty() %}
+    <input type="hidden" name="review_base_hash" value="{{ review_base_hash }}">
+    {% endif %}
 
     <div class="disc-form-section disc-form-section-meta" aria-label="Disc identity">
     <div class="disc-meta-fields">
