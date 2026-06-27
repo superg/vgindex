@@ -6,7 +6,6 @@ use axum::{
     Router,
 };
 use serde::Deserialize;
-use std::sync::OnceLock;
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
@@ -91,80 +90,134 @@ fn quick_search_terms(input: &str) -> Vec<String> {
         .collect()
 }
 
-struct LatinFoldSqlMap {
-    from_chars: String,
-    to_chars: String,
-}
-
-static LATIN_FOLD_SQL_MAP: OnceLock<LatinFoldSqlMap> = OnceLock::new();
-
-fn latin_fold_sql_map() -> &'static LatinFoldSqlMap {
-    LATIN_FOLD_SQL_MAP.get_or_init(build_latin_fold_sql_map)
-}
-
-fn build_latin_fold_sql_map() -> LatinFoldSqlMap {
-    let mut mapped_chars = Vec::new();
-    let mut deleted_chars = String::new();
-
-    for ch in latin_fold_candidate_chars() {
-        let Some(lower) = single_lowercase_char(ch) else {
-            continue;
-        };
-        if lower.is_ascii() {
-            continue;
-        }
-
-        let ascii = any_ascii::any_ascii_char(lower).to_ascii_lowercase();
-        if let Some(replacement) = ascii.chars().find(|c| c.is_ascii_alphanumeric()) {
-            mapped_chars.push((lower, replacement));
-        } else if is_combining_mark(lower) {
-            deleted_chars.push(lower);
-        }
-    }
-
-    mapped_chars.sort_unstable_by_key(|(from, _)| *from);
-    mapped_chars.dedup_by_key(|(from, _)| *from);
-
-    let mut from_chars: String = mapped_chars.iter().map(|(from, _)| *from).collect();
-    let to_chars: String = mapped_chars.iter().map(|(_, to)| *to).collect();
-    from_chars.push_str(&deleted_chars);
-
-    LatinFoldSqlMap {
-        from_chars,
-        to_chars,
-    }
-}
-
-fn latin_fold_candidate_chars() -> impl Iterator<Item = char> {
-    [
-        0x00c0..=0x024f, // Latin-1 Supplement, Latin Extended-A/B
-        0x0300..=0x036f, // Combining Diacritical Marks
-        0x1e00..=0x1eff, // Latin Extended Additional
-    ]
-    .into_iter()
-    .flatten()
-    .filter_map(char::from_u32)
-}
-
-fn single_lowercase_char(ch: char) -> Option<char> {
-    let mut lower = ch.to_lowercase();
-    let first = lower.next()?;
-    if lower.next().is_none() {
-        Some(first)
-    } else {
-        None
-    }
-}
-
-fn is_combining_mark(ch: char) -> bool {
-    matches!(ch as u32, 0x0300..=0x036f)
-}
+const LATIN_FOLD_PAIRS: &[(char, char)] = &[
+    ('á', 'a'),
+    ('à', 'a'),
+    ('â', 'a'),
+    ('ã', 'a'),
+    ('ä', 'a'),
+    ('å', 'a'),
+    ('ā', 'a'),
+    ('ă', 'a'),
+    ('ą', 'a'),
+    ('ǎ', 'a'),
+    ('ạ', 'a'),
+    ('ả', 'a'),
+    ('ấ', 'a'),
+    ('ầ', 'a'),
+    ('ẩ', 'a'),
+    ('ẫ', 'a'),
+    ('ậ', 'a'),
+    ('ắ', 'a'),
+    ('ằ', 'a'),
+    ('ẳ', 'a'),
+    ('ẵ', 'a'),
+    ('ặ', 'a'),
+    ('æ', 'a'),
+    ('ç', 'c'),
+    ('ć', 'c'),
+    ('č', 'c'),
+    ('ď', 'd'),
+    ('đ', 'd'),
+    ('é', 'e'),
+    ('è', 'e'),
+    ('ê', 'e'),
+    ('ë', 'e'),
+    ('ē', 'e'),
+    ('ĕ', 'e'),
+    ('ė', 'e'),
+    ('ę', 'e'),
+    ('ě', 'e'),
+    ('ẹ', 'e'),
+    ('ẻ', 'e'),
+    ('ẽ', 'e'),
+    ('ế', 'e'),
+    ('ề', 'e'),
+    ('ể', 'e'),
+    ('ễ', 'e'),
+    ('ệ', 'e'),
+    ('í', 'i'),
+    ('ì', 'i'),
+    ('î', 'i'),
+    ('ï', 'i'),
+    ('ĩ', 'i'),
+    ('ī', 'i'),
+    ('ĭ', 'i'),
+    ('į', 'i'),
+    ('ı', 'i'),
+    ('ǐ', 'i'),
+    ('ị', 'i'),
+    ('ỉ', 'i'),
+    ('ñ', 'n'),
+    ('ń', 'n'),
+    ('ň', 'n'),
+    ('ņ', 'n'),
+    ('ó', 'o'),
+    ('ò', 'o'),
+    ('ô', 'o'),
+    ('õ', 'o'),
+    ('ö', 'o'),
+    ('ō', 'o'),
+    ('ŏ', 'o'),
+    ('ő', 'o'),
+    ('ơ', 'o'),
+    ('ǒ', 'o'),
+    ('ọ', 'o'),
+    ('ỏ', 'o'),
+    ('ố', 'o'),
+    ('ồ', 'o'),
+    ('ổ', 'o'),
+    ('ỗ', 'o'),
+    ('ộ', 'o'),
+    ('ớ', 'o'),
+    ('ờ', 'o'),
+    ('ở', 'o'),
+    ('ỡ', 'o'),
+    ('ợ', 'o'),
+    ('ø', 'o'),
+    ('œ', 'o'),
+    ('ŕ', 'r'),
+    ('ř', 'r'),
+    ('ś', 's'),
+    ('š', 's'),
+    ('ş', 's'),
+    ('ș', 's'),
+    ('ß', 's'),
+    ('ú', 'u'),
+    ('ù', 'u'),
+    ('û', 'u'),
+    ('ü', 'u'),
+    ('ũ', 'u'),
+    ('ū', 'u'),
+    ('ŭ', 'u'),
+    ('ů', 'u'),
+    ('ű', 'u'),
+    ('ų', 'u'),
+    ('ư', 'u'),
+    ('ǔ', 'u'),
+    ('ụ', 'u'),
+    ('ủ', 'u'),
+    ('ứ', 'u'),
+    ('ừ', 'u'),
+    ('ử', 'u'),
+    ('ữ', 'u'),
+    ('ự', 'u'),
+    ('ý', 'y'),
+    ('ỳ', 'y'),
+    ('ŷ', 'y'),
+    ('ÿ', 'y'),
+    ('ỹ', 'y'),
+    ('ȳ', 'y'),
+    ('ỵ', 'y'),
+    ('ỷ', 'y'),
+    ('ź', 'z'),
+    ('ż', 'z'),
+    ('ž', 'z'),
+];
 
 fn latin_fold_sql(expr: &str) -> String {
-    let LatinFoldSqlMap {
-        from_chars,
-        to_chars,
-    } = latin_fold_sql_map();
+    let from_chars: String = LATIN_FOLD_PAIRS.iter().map(|(from, _)| *from).collect();
+    let to_chars: String = LATIN_FOLD_PAIRS.iter().map(|(_, to)| *to).collect();
     format!("TRANSLATE(LOWER(COALESCE(({expr})::text, '')), '{from_chars}', '{to_chars}')")
 }
 
@@ -978,33 +1031,6 @@ mod tests {
         assert!(!clause.contains("disc_title"));
         assert!(!clause.contains("barcode"));
         assert!(!clause.contains("FROM files"));
-    }
-
-    #[test]
-    fn latin_fold_sql_map_is_generated_from_any_ascii() {
-        let map = build_latin_fold_sql_map();
-
-        assert_eq!(latin_fold_replacement(&map, 'é'), Some('e'));
-        assert_eq!(latin_fold_replacement(&map, 'ệ'), Some('e'));
-        assert_eq!(latin_fold_replacement(&map, 'ñ'), Some('n'));
-        assert_eq!(latin_fold_replacement(&map, 'ø'), Some('o'));
-        assert_eq!(latin_fold_replacement(&map, 'ß'), Some('s'));
-        assert_eq!(latin_fold_replacement(&map, 'œ'), Some('o'));
-        assert!(latin_fold_deletes(&map, '\u{0301}'));
-    }
-
-    fn latin_fold_replacement(map: &LatinFoldSqlMap, ch: char) -> Option<char> {
-        map.from_chars
-            .chars()
-            .position(|candidate| candidate == ch)
-            .and_then(|idx| map.to_chars.chars().nth(idx))
-    }
-
-    fn latin_fold_deletes(map: &LatinFoldSqlMap, ch: char) -> bool {
-        map.from_chars
-            .chars()
-            .position(|candidate| candidate == ch)
-            .is_some_and(|idx| idx >= map.to_chars.chars().count())
     }
 
     #[test]
