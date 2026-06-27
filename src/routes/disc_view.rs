@@ -1922,11 +1922,11 @@ mod tests {
         assert!(template
             .contains(r#"<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>"#));
         assert!(
-            template.contains(r#"<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>"#)
+            template.contains(r#"<td class="ring-fixed-cell">{{ row.mastering_code }}</td>"#)
         );
         assert!(!template.contains(r#"<td class="ring-layer-col ring-entry-cell""#));
         assert!(!template.contains(
-            r#"<td class="ring-fixed-cell ring-entry-cell">{{ row.mastering_code|safe }}</td>"#
+            r#"<td class="ring-fixed-cell ring-entry-cell">{{ row.mastering_code }}</td>"#
         ));
     }
 
@@ -1999,9 +1999,9 @@ mod tests {
         let template = include_str!("../../templates/disc_view.html");
         let css = include_str!("../../static/css/app.css");
 
-        assert!(template.contains("<td>{{ serial|safe }}</td>"));
-        assert!(template.contains(r#"<td class="disc-edition-cell"><span class="disc-edition-value">{{ edition|safe }}</span></td>"#));
-        assert!(template.contains("<td>{{ barcode|safe }}</td>"));
+        assert!(template.contains("<td>{{ serial }}</td>"));
+        assert!(template.contains(r#"<td class="disc-edition-cell"><span class="disc-edition-value">{{ edition }}</span></td>"#));
+        assert!(template.contains("<td>{{ barcode }}</td>"));
         assert!(!template.contains("serial_count > 6"));
         assert!(!template.contains("edition_count > 6"));
         assert!(!template.contains("barcode_count > 6"));

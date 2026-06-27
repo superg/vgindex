@@ -44,13 +44,13 @@
             </td></tr>
             {% endif %}
             {% if show_serial && !serial.is_empty() %}
-            <tr><td><strong>{% if serial_count == 1 %}Disc Serial{% else %}Disc Serials{% endif %}</strong></td><td>{{ serial|safe }}</td></tr>
+            <tr><td><strong>{% if serial_count == 1 %}Disc Serial{% else %}Disc Serials{% endif %}</strong></td><td>{{ serial }}</td></tr>
             {% endif %}
             {% if show_edition && !edition.is_empty() %}
-            <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td class="disc-edition-cell"><span class="disc-edition-value">{{ edition|safe }}</span></td></tr>
+            <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td class="disc-edition-cell"><span class="disc-edition-value">{{ edition }}</span></td></tr>
             {% endif %}
             {% if show_barcode && !barcode.is_empty() %}
-            <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{{ barcode|safe }}</td></tr>
+            <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{{ barcode }}</td></tr>
             {% endif %}
             {% if show_version && !version.is_empty() %}
             <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
@@ -95,7 +95,7 @@
                 {% endif %}
                 <tr>
                     <td><strong>{% if dumper_count <= 1 %}Dumper{% else %}Dumpers{% endif %}</strong></td>
-                    <td class="dumpers-cell">{{ dumpers_display|safe }}</td>
+                    <td class="dumpers-cell">{{ dumpers_display }}</td>
                 </tr>
             </table>
         </section>
@@ -230,11 +230,11 @@
             <tr class="{% if row.first_in_entry && row.entry_num > 1 %}ring-group-start{% endif %}{% if row.entry_even %} ring-entry-even{% endif %}">
                 {% if row.entry_rowspan > 0 %}<td class="entry-num ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
                 {% if ring_vis.layer %}<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>{% endif %}
-                {% if ring_vis.mastering_code %}<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>{% endif %}
-                {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell">{{ row.mastering_sid|safe }}</td>{% endif %}
-                {% if ring_vis.toolstamps %}<td class="ring-fixed-cell">{{ row.toolstamps|safe }}</td>{% endif %}
-                {% if ring_vis.mould_sids %}<td class="ring-fixed-cell">{{ row.mould_sids|safe }}</td>{% endif %}
-                {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell">{{ row.additional_moulds|safe }}</td>{% endif %}
+                {% if ring_vis.mastering_code %}<td class="ring-fixed-cell">{{ row.mastering_code }}</td>{% endif %}
+                {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell">{{ row.mastering_side }}</td>{% endif %}
+                {% if ring_vis.toolstamps %}<td class="ring-fixed-cell">{{ row.toolstamps }}</td>{% endif %}
+                {% if ring_vis.mould_sids %}<td class="ring-fixed-cell">{{ row.mould_sids }}</td>{% endif %}
+                {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell">{{ row.additional_moulds }}</td>{% endif %}
                 {% if ring_vis.offset %}
                 {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset }}</td>{% endif %}
                 {% endif %}
@@ -293,7 +293,7 @@
             <tr>
                 <td>{{ row.sector }}</td>
                 <td><code>{{ row.msf }}</code></td>
-                <td><code>{{ row.contents|safe }}</code></td>
+                <td><code>{{ row.contents }}</code></td>
                 <td><code>{{ row.xor }}</code></td>
             </tr>
             {% endfor %}
