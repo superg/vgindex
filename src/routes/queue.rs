@@ -139,6 +139,376 @@ fn queue_type_icon_class(entry: &SubmissionListRow) -> &'static str {
     }
 }
 
+fn change_value_is_meaningful(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::String(s) => !s.trim().is_empty(),
+        serde_json::Value::Array(values) => !values.is_empty(),
+        serde_json::Value::Object(map) => {
+            !map.is_empty() && map.values().any(change_value_is_meaningful)
+        }
+        serde_json::Value::Bool(_) | serde_json::Value::Number(_) => true,
+    }
+}
+
+fn change_field_label(field: &str) -> String {
+    match field {
+        "system_code" => "System".to_string(),
+        "media_type" => "Media".to_string(),
+        "category" => "Category".to_string(),
+        "title" => "Title".to_string(),
+        "title_foreign" => "Foreign Title".to_string(),
+        "disc_number" => "Disc Number".to_string(),
+        "disc_title" => "Disc Title".to_string(),
+        "filename_suffix" => "Filename Suffix".to_string(),
+        "regions" => "Region".to_string(),
+        "languages" => "Language".to_string(),
+        "serial" => "Serial".to_string(),
+        "version" => "Version".to_string(),
+        "edition" => "Edition".to_string(),
+        "barcode" => "Barcode".to_string(),
+        "exe_date" => "EXE Date".to_string(),
+        "error_count" => "Error Count".to_string(),
+        "edc" => "EDC".to_string(),
+        "disc_id" => "Disc ID".to_string(),
+        "disc_key" => "Disc Key".to_string(),
+        "universal_hash" => "Universal Hash".to_string(),
+        "comments" => "Comments".to_string(),
+        "protection" => "Protection".to_string(),
+        "sector_ranges" => "Sector Ranges".to_string(),
+        "sbi" => "SBI".to_string(),
+        "contents" => "Contents".to_string(),
+        "layerbreaks" => "Layerbreaks".to_string(),
+        "ring_codes" => "Rings".to_string(),
+        "pvd" => "PVD".to_string(),
+        "header" => "Header".to_string(),
+        "bca" => "BCA".to_string(),
+        "pic" => "PIC".to_string(),
+        "cuesheet" => "Cue Sheet".to_string(),
+        "dat" => "Files XML".to_string(),
+        other => other.replace('_', " "),
+    }
+}
+
+fn operation_inner<'a>(
+    operation: &'a serde_json::Value,
+    object_key: &str,
+    direct_key: &str,
+) -> Option<&'a serde_json::Value> {
+    operation
+        .get(object_key)
+        .and_then(|value| value.get(direct_key))
+        .or_else(|| operation.get(object_key))
+}
+
+fn direct_change_value<'a>(
+    operation: &'a serde_json::Value,
+    key: &str,
+) -> Option<&'a serde_json::Value> {
+    operation
+        .get(key)
+        .filter(|value| change_value_is_meaningful(value))
+}
+
+fn display_change_value(value: &serde_json::Value) -> String {
+    review_annotation_value(value)
+}
+
+fn empty_ring_change_cell() -> SubmissionRingChangeCell {
+    SubmissionRingChangeCell {
+        value: String::new(),
+        status_class: String::new(),
+    }
+}
+
+fn operation_status_value(operation: &serde_json::Value) -> Option<(&'static str, String)> {
+    if let Some(value) = operation_inner(operation, "modify", "new") {
+        return Some(("item-changed", display_change_value(value)));
+    }
+    if let Some(value) = operation_inner(operation, "add", "new") {
+        return Some(("item-added", display_change_value(value)));
+    }
+    if let Some(value) = operation_inner(operation, "remove", "old") {
+        return Some(("item-removed", display_change_value(value)));
+    }
+    if let Some(value) = direct_change_value(operation, "new") {
+        return Some(("item-added", display_change_value(value)));
+    }
+    if let Some(value) = direct_change_value(operation, "old") {
+        return Some(("item-removed", display_change_value(value)));
+    }
+    None
+}
+
+fn ring_change_cell(value: Option<&serde_json::Value>) -> SubmissionRingChangeCell {
+    value
+        .and_then(operation_status_value)
+        .map(|(status_class, value)| SubmissionRingChangeCell {
+            value,
+            status_class: status_class.to_string(),
+        })
+        .unwrap_or_else(empty_ring_change_cell)
+}
+
+fn ring_layer_label(layer_index: usize, layer_count: usize) -> String {
+    if layer_index + 1 == layer_count {
+        "LS".to_string()
+    } else {
+        format!("L{layer_index}")
+    }
+}
+
+fn submission_ring_change_rows(
+    ring_changes: &serde_json::Value,
+) -> (Vec<SubmissionRingChangeRow>, bool) {
+    let Some(entries) = ring_changes.as_array() else {
+        return (Vec::new(), false);
+    };
+
+    let show_ring_layers = entries.iter().any(|entry| {
+        entry
+            .get("layers")
+            .and_then(|layers| layers.as_array())
+            .is_some_and(|layers| !layers.is_empty())
+    });
+    let mut rows = Vec::new();
+    let mut entry_num = 0usize;
+
+    for entry in entries {
+        let Some(entry_obj) = entry.as_object() else {
+            continue;
+        };
+
+        let mut layer_changes = entry_obj
+            .get("layers")
+            .and_then(|layers| layers.as_array())
+            .cloned()
+            .unwrap_or_default();
+        layer_changes.sort_by_key(|layer| {
+            layer
+                .get("index")
+                .and_then(|index| index.as_i64())
+                .unwrap_or_default()
+        });
+
+        let layer_count = if show_ring_layers {
+            layer_changes
+                .iter()
+                .filter_map(|layer| layer.get("index").and_then(|index| index.as_u64()))
+                .max()
+                .map(|index| index as usize + 2)
+                .unwrap_or(2)
+                .max(2)
+        } else {
+            1
+        };
+
+        let row_count = layer_changes.len().max(1);
+        entry_num += 1;
+        let offset = ring_change_cell(
+            entry_obj
+                .get("offset_value")
+                .or_else(|| entry_obj.get("offset")),
+        );
+        let comment = if entry_obj
+            .get("remove")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
+            && entry_obj.len() <= 2
+        {
+            SubmissionRingChangeCell {
+                value: "(removed entry)".to_string(),
+                status_class: "item-removed".to_string(),
+            }
+        } else {
+            ring_change_cell(entry_obj.get("comment"))
+        };
+
+        if layer_changes.is_empty() {
+            rows.push(SubmissionRingChangeRow {
+                entry_num,
+                entry_rowspan: 1,
+                layer_label: if show_ring_layers {
+                    ring_layer_label(0, layer_count)
+                } else {
+                    String::new()
+                },
+                mastering_code: empty_ring_change_cell(),
+                mastering_sid: empty_ring_change_cell(),
+                toolstamps: empty_ring_change_cell(),
+                mould_sids: empty_ring_change_cell(),
+                additional_moulds: empty_ring_change_cell(),
+                offset,
+                comment,
+            });
+            continue;
+        }
+
+        for (idx, layer) in layer_changes.iter().enumerate() {
+            let layer_index = layer
+                .get("index")
+                .and_then(|index| index.as_u64())
+                .map(|index| index as usize)
+                .unwrap_or(idx);
+            rows.push(SubmissionRingChangeRow {
+                entry_num,
+                entry_rowspan: if idx == 0 { row_count } else { 0 },
+                layer_label: ring_layer_label(layer_index, layer_count),
+                mastering_code: ring_change_cell(layer.get("mastering_code")),
+                mastering_sid: ring_change_cell(layer.get("mastering_sid")),
+                toolstamps: ring_change_cell(layer.get("toolstamps")),
+                mould_sids: ring_change_cell(layer.get("mould_sids")),
+                additional_moulds: ring_change_cell(layer.get("additional_moulds")),
+                offset: if idx == 0 {
+                    offset.clone()
+                } else {
+                    empty_ring_change_cell()
+                },
+                comment: if idx == 0 {
+                    comment.clone()
+                } else {
+                    empty_ring_change_cell()
+                },
+            });
+        }
+    }
+
+    (rows, show_ring_layers)
+}
+
+fn push_change_detail(
+    details: &mut Vec<SubmissionChangeDetail>,
+    field: &str,
+    current_value: String,
+    previous_value: String,
+) {
+    push_labeled_change_detail(
+        details,
+        field,
+        current_value,
+        previous_value,
+        String::new(),
+        "Changed from".to_string(),
+        String::new(),
+        "removed".to_string(),
+    );
+}
+
+fn push_labeled_change_detail(
+    details: &mut Vec<SubmissionChangeDetail>,
+    field: &str,
+    current_value: String,
+    previous_value: String,
+    current_label: String,
+    previous_label: String,
+    current_kind: String,
+    previous_kind: String,
+) {
+    if current_value.trim().is_empty() && previous_value.trim().is_empty() {
+        return;
+    }
+    let is_multiline = current_value.contains('\n') || previous_value.contains('\n');
+    details.push(SubmissionChangeDetail {
+        label: change_field_label(field),
+        current_value,
+        previous_value,
+        is_multiline,
+        current_label,
+        previous_label,
+        current_kind,
+        previous_kind,
+        ring_rows: Vec::new(),
+        show_ring_layers: false,
+    });
+}
+
+fn submission_change_details(changes: &serde_json::Value) -> Vec<SubmissionChangeDetail> {
+    let Some(changes) = changes.as_object() else {
+        return Vec::new();
+    };
+
+    let mut details = Vec::new();
+    for (field, change) in changes {
+        if !change_value_is_meaningful(change) {
+            continue;
+        }
+
+        if field == "ring_codes" {
+            let (ring_rows, show_ring_layers) = submission_ring_change_rows(change);
+            if !ring_rows.is_empty() {
+                details.push(SubmissionChangeDetail {
+                    label: change_field_label(field),
+                    current_value: String::new(),
+                    previous_value: String::new(),
+                    is_multiline: false,
+                    current_label: String::new(),
+                    previous_label: String::new(),
+                    current_kind: String::new(),
+                    previous_kind: String::new(),
+                    ring_rows,
+                    show_ring_layers,
+                });
+                continue;
+            }
+        }
+
+        if let Some(new_value) =
+            direct_change_value(change, "new").or_else(|| operation_inner(change, "modify", "new"))
+        {
+            let previous_value = direct_change_value(change, "old")
+                .or_else(|| operation_inner(change, "modify", "old"))
+                .map(display_change_value)
+                .unwrap_or_default();
+            push_change_detail(
+                &mut details,
+                field,
+                display_change_value(new_value),
+                previous_value,
+            );
+            continue;
+        }
+
+        if let Some(old_value) = direct_change_value(change, "old") {
+            push_change_detail(
+                &mut details,
+                field,
+                "(removed)".to_string(),
+                display_change_value(old_value),
+            );
+            continue;
+        }
+
+        let added =
+            operation_inner(change, "add", "new").filter(|value| change_value_is_meaningful(value));
+        let removed = operation_inner(change, "remove", "old")
+            .filter(|value| change_value_is_meaningful(value));
+        if added.is_some() || removed.is_some() {
+            let current_value = added.map(display_change_value).unwrap_or_default();
+            let previous_value = removed.map(display_change_value).unwrap_or_default();
+            push_labeled_change_detail(
+                &mut details,
+                field,
+                current_value,
+                previous_value,
+                "Added".to_string(),
+                "Removed".to_string(),
+                "added".to_string(),
+                "removed".to_string(),
+            );
+            continue;
+        }
+
+        push_change_detail(
+            &mut details,
+            field,
+            display_change_value(change),
+            String::new(),
+        );
+    }
+
+    details
+}
+
 #[derive(sqlx::FromRow)]
 struct SysRow {
     code: String,
@@ -2386,6 +2756,8 @@ mod tests {
             submission_type,
             display_kind,
             title: "Test Game".to_string(),
+            submission_comment: String::new(),
+            change_details: Vec::new(),
             system_code: "DVD".to_string(),
             system_display: "DVD".to_string(),
             submitter: "submitter".to_string(),
@@ -2451,6 +2823,45 @@ mod tests {
         assert_eq!(normalize_queue_sort(Some("DISC_ID")), "disc_id");
         assert_eq!(normalize_queue_order(Some("ASC")), "asc");
         assert_eq!(normalize_queue_order(Some("DESC")), "desc");
+    }
+
+    #[test]
+    fn history_change_details_extract_current_and_previous_values() {
+        let details = submission_change_details(&serde_json::json!({
+            "title": { "modify": { "old": "Old", "new": "New" } },
+            "regions": { "add": ["Japan"] },
+            "serial": { "remove": ["OLD-001"], "add": ["NEW-001"] },
+            "dat": { "modify": { "old": "<old />", "new": "<new />\n<new2 />" } },
+            "custom_field": { "add": { "new": "custom" } },
+            "comments": { "old": "old comment", "new": "new comment" },
+            "ring_codes": { "new": "SLPS-02110\t1 IFPI L275" }
+        }));
+
+        let mut changes: Vec<(&str, &str, &str, bool)> = details
+            .iter()
+            .map(|change| {
+                (
+                    change.label.as_str(),
+                    change.current_value.as_str(),
+                    change.previous_value.as_str(),
+                    change.is_multiline,
+                )
+            })
+            .collect();
+        changes.sort_by_key(|change| change.0.to_string());
+
+        assert_eq!(
+            changes,
+            vec![
+                ("Comments", "new comment", "old comment", false),
+                ("Files XML", "<new />\n<new2 />", "<old />", true),
+                ("Region", "Japan", "", false),
+                ("Rings", "SLPS-02110\t1 IFPI L275", "", false),
+                ("Serial", "NEW-001", "OLD-001", false),
+                ("Title", "New", "Old", false),
+                ("custom field", "custom", "", false),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -3020,6 +3431,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
         use sqlx::Row;
         let submission_type: SubmissionType = row.try_get("submission_type")?;
         let submission_has_dat_add: bool = row.try_get("submission_has_dat_add")?;
+        let changes_summary: serde_json::Value = row.try_get("changes_summary")?;
         let system_code: String = row.try_get("system_code")?;
         let system_short_name: Option<String> = row.try_get("system_short_name").ok();
         let system_display = crate::db::models::short_system_display(
@@ -3034,6 +3446,8 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
                 submission_has_dat_add,
             ),
             title: row.try_get("title")?,
+            submission_comment: row.try_get("submission_comment")?,
+            change_details: submission_change_details(&changes_summary),
             system_code,
             system_display,
             submitter: row.try_get("submitter")?,

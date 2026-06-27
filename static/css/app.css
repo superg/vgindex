@@ -860,7 +860,7 @@ nav[aria-label="Pagination"] ul {
     justify-content: center;
     align-items: start;
     gap: 0.5rem clamp(1.5rem, 4vw, 3.5rem);
-    margin-bottom: 2.5rem;
+    margin-bottom: 2rem;
 }
 .disc-view .disc-side-stack {
     display: contents;
@@ -2285,6 +2285,132 @@ table.striped tbody tr.clickable-row.is-row-hover td {
     width: 100%;
 }
 
+.disc-history-summary {
+    text-align: center;
+}
+
+.disc-history-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    height: 1.05rem;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--pico-primary);
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    flex: 0 0 1.05rem;
+}
+
+.disc-history-toggle::before {
+    content: "▶";
+    display: block;
+}
+
+.disc-history-toggle[aria-expanded="true"]::before {
+    content: "▼";
+}
+
+.disc-history-date-cell {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+}
+
+.disc-history-changes-row > td {
+    padding: 0 0.35rem 0.55rem 2rem;
+}
+
+.disc-history-changes {
+    width: max-content;
+    min-width: 100%;
+    overflow-x: visible;
+    text-align: left;
+    white-space: normal;
+}
+
+.disc-history-submission-comment {
+    margin: 0.35rem 0;
+    padding: 0.35rem 0.5rem 0.45rem;
+    border-left: 3px solid var(--pico-primary);
+}
+
+.disc-history-submission-comment .section-text {
+    margin: 0.25rem 0 0;
+}
+
+.disc-history-change-detail {
+    display: grid;
+    grid-template-columns: 6.8rem minmax(12rem, 1fr);
+    column-gap: 0.35rem;
+    row-gap: 0.2rem;
+    align-items: flex-start;
+    margin: 0.35rem 0;
+}
+
+.disc-history-change-detail .inline-field-label {
+    padding-top: 0.2rem;
+}
+
+.disc-history-change-detail .inline-field-values {
+    min-width: 0;
+}
+
+.disc-history-change-detail input[readonly],
+.disc-history-change-detail textarea[readonly] {
+    max-width: 100%;
+    margin: 0;
+}
+
+.disc-history-change-detail input[readonly] {
+    width: min(42rem, 100%);
+}
+
+.disc-history-change-detail textarea[readonly] {
+    width: min(56rem, 100%);
+    resize: vertical;
+}
+
+.disc-history-multiline-detail {
+    margin: 0.35rem 0;
+    padding-top: 0.35rem;
+    padding-bottom: 0.45rem;
+}
+
+.disc-history-ring-detail {
+    margin: 0.35rem 0;
+    padding-top: 0.35rem;
+    padding-bottom: 0.4rem;
+}
+
+.disc-history-ring-label {
+    display: inline-block;
+    margin: 0 0 0.25rem 0.35rem;
+}
+
+.disc-history-ring-detail .table-scroll {
+    width: fit-content;
+    max-width: none;
+    margin: 0.1rem 0 0;
+    text-align: left;
+}
+
+.disc-history-ring-table input[readonly] {
+    cursor: default;
+}
+
+.disc-history-ring-table .ring-mc { width: 28ch; }
+.disc-history-ring-table .ring-ms { width: 16ch; }
+.disc-history-ring-table .ring-tools { width: 10ch; }
+.disc-history-ring-table .ring-moulds { width: 15ch; }
+.disc-history-ring-table .ring-addmoulds { width: 18ch; }
+.disc-history-ring-table .ring-offset { width: 6ch; }
+.disc-history-ring-table .ring-comment { width: 28ch; }
+
 .queue-table-scroll {
     width: 100%;
     text-align: center;
@@ -2298,10 +2424,26 @@ table.striped tbody tr.clickable-row.is-row-hover td {
     text-align: left;
 }
 
+.queue-history-table {
+    min-width: max-content;
+}
+
 .queue-table th,
 .queue-table td {
     white-space: nowrap;
     padding-inline-end: 0.75rem;
+}
+
+.queue-history-table th,
+.queue-history-table tbody > tr:not(.disc-history-changes-row) > td {
+    padding-top: 0.12rem;
+    padding-bottom: 0.12rem;
+    line-height: 1.15;
+    vertical-align: middle;
+}
+
+.queue-history-table tbody > tr:not(.disc-history-changes-row) > td {
+    height: 1.65rem;
 }
 
 .queue-table .submission-title-col {

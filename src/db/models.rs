@@ -1033,11 +1033,47 @@ pub fn compute_file_hashes(data: &[u8]) -> (i64, String, String, String) {
 }
 
 #[derive(Debug, Clone)]
+pub struct SubmissionRingChangeCell {
+    pub value: String,
+    pub status_class: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionRingChangeRow {
+    pub entry_num: usize,
+    pub entry_rowspan: usize,
+    pub layer_label: String,
+    pub mastering_code: SubmissionRingChangeCell,
+    pub mastering_sid: SubmissionRingChangeCell,
+    pub toolstamps: SubmissionRingChangeCell,
+    pub mould_sids: SubmissionRingChangeCell,
+    pub additional_moulds: SubmissionRingChangeCell,
+    pub offset: SubmissionRingChangeCell,
+    pub comment: SubmissionRingChangeCell,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionChangeDetail {
+    pub label: String,
+    pub current_value: String,
+    pub previous_value: String,
+    pub is_multiline: bool,
+    pub current_label: String,
+    pub previous_label: String,
+    pub current_kind: String,
+    pub previous_kind: String,
+    pub ring_rows: Vec<SubmissionRingChangeRow>,
+    pub show_ring_layers: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct SubmissionListRow {
     pub id: i32,
     pub submission_type: SubmissionType,
     pub display_kind: SubmissionDisplayKind,
     pub title: String,
+    pub submission_comment: String,
+    pub change_details: Vec<SubmissionChangeDetail>,
     pub system_code: String,
     pub system_display: String,
     pub submitter: String,

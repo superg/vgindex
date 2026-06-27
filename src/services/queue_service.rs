@@ -1431,6 +1431,11 @@ pub async fn list_submissions(
     let system_expr = "CONCAT_WS(' ', NULLIF(s.manufacturer, ''), \
                        COALESCE(s.name, d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', ''))";
     let type_expr = submission_display_kind_sql();
+    let changes_summary_expr = if disc_id_filter.is_some() {
+        "ds.changes"
+    } else {
+        "'{}'::jsonb"
+    };
     let sort_col = match sort_column {
         "date" => "ds.created_at".to_string(),
         "title" => format!("LOWER({title_expr})"),
@@ -1453,6 +1458,8 @@ pub async fn list_submissions(
         "SELECT ds.id, ds.submission_type,
                 {dat_add_expr} AS submission_has_dat_add,
                 {title_expr} AS title,
+                COALESCE(ds.submission_comment, '') AS submission_comment,
+                {changes_summary_expr} AS changes_summary,
                 COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', '') AS system_code,
                 COALESCE(s.short_name, '') AS system_short_name,
                 u.username AS submitter,
