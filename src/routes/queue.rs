@@ -771,6 +771,7 @@ fn build_review_template(
             .reviewed_at
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
+        changes_original_json: pretty_optional_json(sub.changes_original.as_ref()),
         changes_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
     }
 }
@@ -1316,9 +1317,17 @@ struct QueueDetailTemplate {
     created_at_display: String,
     reviewed_at_display: String,
     target_disc_id: i32,
+    changes_original_json: String,
     changes_json: String,
 }
 impl SiteConfig for QueueDetailTemplate {}
+
+fn pretty_optional_json(value: Option<&serde_json::Value>) -> String {
+    match value {
+        Some(value) if !value.is_null() => serde_json::to_string_pretty(value).unwrap_or_default(),
+        _ => String::new(),
+    }
+}
 
 async fn render_readonly_detail(
     current_user: Option<AuthenticatedUser>,
@@ -1345,6 +1354,7 @@ async fn render_readonly_detail(
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
         target_disc_id: sub.target_disc_id.unwrap_or(0),
+        changes_original_json: pretty_optional_json(sub.changes_original.as_ref()),
         changes_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
     };
 
@@ -2517,12 +2527,58 @@ mod tests {
             created_at_display: "2026-01-01 00:00 UTC".to_string(),
             reviewed_at_display: String::new(),
             target_disc_id: 3,
+            changes_original_json: String::new(),
             changes_json: "{}".to_string(),
         };
 
         let html = template.render().unwrap();
 
         assert!(html.contains(r#"src="https://example.test/avatar.png""#));
+    }
+
+    #[test]
+    fn queue_detail_template_shows_original_json_before_final_json() {
+        let template = QueueDetailTemplate {
+            current_user: None,
+            submission_id: 1,
+            submission_type_display: "Edit".to_string(),
+            submitter_id: 2,
+            submitter_name: "submitter".to_string(),
+            submission_comment: String::new(),
+            dump_log_display: String::new(),
+            extra_upload_url_display: String::new(),
+            submission_status: "Approved".to_string(),
+            reviewer_id: 42,
+            reviewer_name: "moderator".to_string(),
+            review_comment_display: String::new(),
+            created_at_display: "2026-01-01 00:00 UTC".to_string(),
+            reviewed_at_display: "2026-01-02 00:00 UTC".to_string(),
+            target_disc_id: 3,
+            changes_original_json: "{\n  \"status\": \"original\"\n}".to_string(),
+            changes_json: "{\n  \"status\": \"final\"\n}".to_string(),
+        };
+
+        let html = template.render().unwrap();
+
+        let original_pos = html.find("Original JSON").unwrap();
+        let final_pos = html.find("Final JSON").unwrap();
+        assert!(original_pos < final_pos);
+        assert!(!html.contains("Raw JSON"));
+    }
+
+    #[test]
+    fn review_template_shows_final_json_without_original_json_when_absent() {
+        let html = build_template(&submitted_snapshot()).render().unwrap();
+
+        assert!(!html.contains("Original JSON"));
+        assert!(html.contains("Final JSON"));
+        assert!(!html.contains("Raw JSON"));
+    }
+
+    #[test]
+    fn changes_original_json_hides_none_and_json_null() {
+        assert_eq!(pretty_optional_json(None), "");
+        assert_eq!(pretty_optional_json(Some(&serde_json::Value::Null)), "");
     }
 
     #[test]

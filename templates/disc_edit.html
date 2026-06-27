@@ -62,9 +62,16 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </table>
 
+    {% if !changes_original_json.is_empty() %}
+    <details>
+        <summary>Original JSON</summary>
+        <pre class="raw-json"><code>{{ changes_original_json }}</code></pre>
+    </details>
+    {% endif %}
+
     {% if !changes_json.is_empty() %}
     <details>
-        <summary>Raw JSON</summary>
+        <summary>Final JSON</summary>
         <pre class="raw-json"><code>{{ changes_json }}</code></pre>
     </details>
     {% endif %}

@@ -569,6 +569,7 @@ fn offsets_match(existing_val: &str, change_val: &str) -> bool {
 fn find_matching_ring_entry(
     rings: &[serde_json::Value],
     change: &serde_json::Value,
+    removed_ring_ids: &std::collections::HashSet<i32>,
 ) -> Option<usize> {
     let change_layers = change.get("layers").and_then(|v| v.as_array())?;
 
@@ -576,6 +577,15 @@ fn find_matching_ring_entry(
     let change_offset_extra = operation_new_str(change, "offset_extra_value");
 
     'outer: for (ring_idx, ring) in rings.iter().enumerate() {
+        if ring
+            .get("id")
+            .and_then(|v| v.as_i64())
+            .map(|v| removed_ring_ids.contains(&(v as i32)))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
         let ring_offset = ring["offset_value"].as_str().unwrap_or("");
         let ring_offset_extra = ring["offset_extra_value"].as_str().unwrap_or("");
 
@@ -621,6 +631,16 @@ fn apply_ring_codes_history(
     let Some(changes) = change_node.as_array() else {
         return Ok(serde_json::json!(rings));
     };
+    let removed_ring_ids: std::collections::HashSet<i32> = changes
+        .iter()
+        .filter(|change| {
+            change
+                .get("remove")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .filter_map(|change| change.get("id").and_then(|v| v.as_i64()).map(|v| v as i32))
+        .collect();
     let mut removals: Vec<usize> = Vec::new();
     let mut additions: Vec<serde_json::Value> = Vec::new();
     let ring_index_by_id = |rings: &[serde_json::Value], id: i32| -> Option<usize> {
@@ -659,7 +679,7 @@ fn apply_ring_codes_history(
         }
 
         let merge_idx = if resolved_idx == usize::MAX {
-            find_matching_ring_entry(&rings, change)
+            find_matching_ring_entry(&rings, change, &removed_ring_ids)
         } else {
             None
         };
@@ -2228,6 +2248,114 @@ mod tests {
             AppError::BadRequest(msg) => assert!(msg.contains("requires entry id")),
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn apply_ring_codes_history_does_not_merge_addition_into_removed_entry() {
+        let old = serde_json::json!([{
+            "id": 3116,
+            "offset_value": "",
+            "offset_extra_value": "",
+            "sample_start": "",
+            "comment": "inherited",
+            "layers": [{
+                "mastering_code": "",
+                "mastering_sid": "",
+                "toolstamps": "",
+                "mould_sids": "",
+                "additional_moulds": ""
+            }]
+        }]);
+        let changes = serde_json::json!([
+            {
+                "offset_value": { "add": { "new": "2" } },
+                "layers": [{
+                    "index": 0,
+                    "mould_sids": { "add": { "new": "IFPI 947R" } }
+                }]
+            },
+            {
+                "id": 3116,
+                "remove": true
+            }
+        ]);
+
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].get("id").is_none());
+        assert_eq!(entries[0]["offset_value"], "2");
+        assert_eq!(entries[0]["comment"], "");
+        assert_eq!(entries[0]["layers"][0]["mould_sids"], "IFPI 947R");
+    }
+
+    #[test]
+    fn apply_ring_codes_history_does_not_merge_multiple_additions_into_removed_entries() {
+        let old = serde_json::json!([
+            {
+                "id": 1,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "first inherited",
+                "layers": [{
+                    "mastering_code": "",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            },
+            {
+                "id": 2,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "second inherited",
+                "layers": [{
+                    "mastering_code": "",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            }
+        ]);
+        let changes = serde_json::json!([
+            {
+                "offset_value": { "add": { "new": "11" } },
+                "layers": [{
+                    "index": 0,
+                    "mould_sids": { "add": { "new": "IFPI A111" } }
+                }]
+            },
+            {
+                "offset_value": { "add": { "new": "22" } },
+                "layers": [{
+                    "index": 0,
+                    "mould_sids": { "add": { "new": "IFPI B222" } }
+                }]
+            },
+            {
+                "id": 2,
+                "remove": true
+            },
+            {
+                "id": 1,
+                "remove": true
+            }
+        ]);
+
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|entry| entry.get("id").is_none()));
+        assert_eq!(entries[0]["offset_value"], "11");
+        assert_eq!(entries[0]["layers"][0]["mould_sids"], "IFPI A111");
+        assert_eq!(entries[1]["offset_value"], "22");
+        assert_eq!(entries[1]["layers"][0]["mould_sids"], "IFPI B222");
     }
 
     #[test]
