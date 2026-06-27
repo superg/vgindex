@@ -2255,6 +2255,7 @@ mod tests {
             submission_type,
             display_kind,
             title: "Test Game".to_string(),
+            region_flags: Vec::new(),
             system_code: "DVD".to_string(),
             system_display: "DVD".to_string(),
             submitter: "submitter".to_string(),
@@ -2863,6 +2864,10 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
                 submission_has_dat_add,
             ),
             title: row.try_get("title")?,
+            region_flags: serde_json::from_value(
+                row.try_get::<serde_json::Value, _>("region_flags")?,
+            )
+            .unwrap_or_default(),
             system_code,
             system_display,
             submitter: row.try_get("submitter")?,

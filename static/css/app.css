@@ -269,8 +269,14 @@ main > h3 {
 }
 
 .disc-table .language-col {
-    text-align: left;
-    max-width: 8.8em;
+    width: 5.75rem;
+    max-width: 5.75rem;
+    white-space: normal;
+    line-height: 1;
+}
+
+.disc-table td.language-col {
+    text-align: center;
 }
 
 .disc-table td.region-col {
@@ -289,14 +295,35 @@ main > h3 {
 
 /* Ellipsis truncation for Edition and Serial */
 .disc-table .truncate {
-    max-width: 10rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.disc-table .version-col { max-width: 7rem; }
-.disc-table .edition-col { max-width: 7.5rem; }
-.disc-table .serial-col  { max-width: 7rem; }
+.disc-table .system-col {
+    width: 6rem;
+    max-width: 6rem;
+}
+.disc-table .version-col {
+    width: 5.25rem;
+    max-width: 5.25rem;
+    padding-right: 0.25rem;
+}
+.disc-table .edition-col {
+    width: 7.5rem;
+    max-width: 7.5rem;
+    padding-left: 0.25rem;
+}
+.disc-table .serial-col  {
+    width: 7rem;
+    max-width: 7rem;
+    padding-right: 0;
+}
+.disc-table .status-col {
+    width: 4.3rem;
+    max-width: 4.3rem;
+    padding-left: 0;
+    padding-right: 0;
+}
 
 /* Striped table rows — matches home page alternating row style */
 table.striped tbody tr:nth-child(odd) td {
@@ -410,9 +437,21 @@ details + p small {
     font-size: 0.8rem;
 }
 
-/* Center pagination */
+/* Align pagination with the left edge of its result table. */
+nav[aria-label="Pagination"] {
+    width: 100%;
+}
+nav[aria-label="Pagination"] ul {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0;
+}
 #disc-results nav[aria-label="Pagination"] ul {
-    justify-content: center;
+    justify-content: flex-start;
 }
 #disc-results nav[aria-label="Pagination"] ul li,
 #disc-results nav[aria-label="Pagination"] ul li a {
@@ -522,6 +561,16 @@ details + p small {
 #filter-form.queue-filter-form select {
     width: max-content;
     max-width: 100%;
+}
+
+#filter-form.queue-filter-form {
+    grid-template-columns: max-content;
+    width: fit-content;
+    max-width: 100%;
+}
+
+#filter-form.queue-filter-form label {
+    grid-template-columns: 5rem max-content;
 }
 
 #filter-form > .advanced-search-toggle {
@@ -688,6 +737,7 @@ details + p small {
     margin-right: auto;
     margin-top: 0;
     margin-bottom: 0.35rem;
+    padding-top: 0.25rem;
 }
 .letter-picker a {
     display: inline-flex;
@@ -1266,6 +1316,7 @@ details + p small {
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
     gap: 0.5rem;
+    margin-top: 0.75rem;
     margin-bottom: 2.5rem;
 }
 .disc-title-row.has-title-action {
@@ -2223,6 +2274,17 @@ table.striped tbody tr.clickable-row.is-row-hover td {
 }
 
 /* Queue status dots */
+#queue-results {
+    width: max-content;
+    max-width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#queue-results > nav[aria-label="Pagination"] {
+    width: 100%;
+}
+
 .queue-table-scroll {
     width: 100%;
     text-align: center;
@@ -2240,6 +2302,10 @@ table.striped tbody tr.clickable-row.is-row-hover td {
 .queue-table td {
     white-space: nowrap;
     padding-inline-end: 0.75rem;
+}
+
+.queue-table .submission-title-col {
+    padding-inline-end: 1.5rem;
 }
 
 .queue-table th:last-child,

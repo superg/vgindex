@@ -108,15 +108,21 @@
 </div>
 <script>
 (function() {
+    var shouldScaleHomeTables = window.matchMedia('(max-width: 768px)');
+
     function scaleHomeTables() {
         document.querySelectorAll('.recent-dumps-scaler, .recent-changes-scaler').forEach(function(wrapper) {
         var table = wrapper && wrapper.querySelector('table');
         if (!table) return;
         table.style.transform = '';
         table.style.transformOrigin = '';
-        table.style.width = 'max-content';
+        table.style.width = '';
         wrapper.style.overflow = '';
         wrapper.style.height = '';
+        if (!shouldScaleHomeTables.matches) {
+            return;
+        }
+        table.style.width = 'max-content';
         var containerWidth = wrapper.clientWidth;
         var tableWidth = table.scrollWidth;
         var scale = 1;
@@ -133,6 +139,9 @@
     }
     document.addEventListener('DOMContentLoaded', scaleHomeTables);
     window.addEventListener('resize', scaleHomeTables);
+    if (shouldScaleHomeTables.addEventListener) {
+        shouldScaleHomeTables.addEventListener('change', scaleHomeTables);
+    }
 })();
 </script>
 {% endblock %}

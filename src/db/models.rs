@@ -519,7 +519,7 @@ pub struct DiscListRow {
     pub language_flags: Vec<FlagInfo>,
 }
 
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct FlagInfo {
     pub code: String,
     pub name: String,
@@ -1038,6 +1038,7 @@ pub struct SubmissionListRow {
     pub submission_type: SubmissionType,
     pub display_kind: SubmissionDisplayKind,
     pub title: String,
+    pub region_flags: Vec<FlagInfo>,
     pub system_code: String,
     pub system_display: String,
     pub submitter: String,
