@@ -90,137 +90,6 @@ fn quick_search_terms(input: &str) -> Vec<String> {
         .collect()
 }
 
-const LATIN_FOLD_PAIRS: &[(char, char)] = &[
-    ('á', 'a'),
-    ('à', 'a'),
-    ('â', 'a'),
-    ('ã', 'a'),
-    ('ä', 'a'),
-    ('å', 'a'),
-    ('ā', 'a'),
-    ('ă', 'a'),
-    ('ą', 'a'),
-    ('ǎ', 'a'),
-    ('ạ', 'a'),
-    ('ả', 'a'),
-    ('ấ', 'a'),
-    ('ầ', 'a'),
-    ('ẩ', 'a'),
-    ('ẫ', 'a'),
-    ('ậ', 'a'),
-    ('ắ', 'a'),
-    ('ằ', 'a'),
-    ('ẳ', 'a'),
-    ('ẵ', 'a'),
-    ('ặ', 'a'),
-    ('æ', 'a'),
-    ('ç', 'c'),
-    ('ć', 'c'),
-    ('č', 'c'),
-    ('ď', 'd'),
-    ('đ', 'd'),
-    ('é', 'e'),
-    ('è', 'e'),
-    ('ê', 'e'),
-    ('ë', 'e'),
-    ('ē', 'e'),
-    ('ĕ', 'e'),
-    ('ė', 'e'),
-    ('ę', 'e'),
-    ('ě', 'e'),
-    ('ẹ', 'e'),
-    ('ẻ', 'e'),
-    ('ẽ', 'e'),
-    ('ế', 'e'),
-    ('ề', 'e'),
-    ('ể', 'e'),
-    ('ễ', 'e'),
-    ('ệ', 'e'),
-    ('í', 'i'),
-    ('ì', 'i'),
-    ('î', 'i'),
-    ('ï', 'i'),
-    ('ĩ', 'i'),
-    ('ī', 'i'),
-    ('ĭ', 'i'),
-    ('į', 'i'),
-    ('ı', 'i'),
-    ('ǐ', 'i'),
-    ('ị', 'i'),
-    ('ỉ', 'i'),
-    ('ñ', 'n'),
-    ('ń', 'n'),
-    ('ň', 'n'),
-    ('ņ', 'n'),
-    ('ó', 'o'),
-    ('ò', 'o'),
-    ('ô', 'o'),
-    ('õ', 'o'),
-    ('ö', 'o'),
-    ('ō', 'o'),
-    ('ŏ', 'o'),
-    ('ő', 'o'),
-    ('ơ', 'o'),
-    ('ǒ', 'o'),
-    ('ọ', 'o'),
-    ('ỏ', 'o'),
-    ('ố', 'o'),
-    ('ồ', 'o'),
-    ('ổ', 'o'),
-    ('ỗ', 'o'),
-    ('ộ', 'o'),
-    ('ớ', 'o'),
-    ('ờ', 'o'),
-    ('ở', 'o'),
-    ('ỡ', 'o'),
-    ('ợ', 'o'),
-    ('ø', 'o'),
-    ('œ', 'o'),
-    ('ŕ', 'r'),
-    ('ř', 'r'),
-    ('ś', 's'),
-    ('š', 's'),
-    ('ş', 's'),
-    ('ș', 's'),
-    ('ß', 's'),
-    ('ú', 'u'),
-    ('ù', 'u'),
-    ('û', 'u'),
-    ('ü', 'u'),
-    ('ũ', 'u'),
-    ('ū', 'u'),
-    ('ŭ', 'u'),
-    ('ů', 'u'),
-    ('ű', 'u'),
-    ('ų', 'u'),
-    ('ư', 'u'),
-    ('ǔ', 'u'),
-    ('ụ', 'u'),
-    ('ủ', 'u'),
-    ('ứ', 'u'),
-    ('ừ', 'u'),
-    ('ử', 'u'),
-    ('ữ', 'u'),
-    ('ự', 'u'),
-    ('ý', 'y'),
-    ('ỳ', 'y'),
-    ('ŷ', 'y'),
-    ('ÿ', 'y'),
-    ('ỹ', 'y'),
-    ('ȳ', 'y'),
-    ('ỵ', 'y'),
-    ('ỷ', 'y'),
-    ('ź', 'z'),
-    ('ż', 'z'),
-    ('ž', 'z'),
-];
-
-fn latin_fold_sql(expr: &str) -> String {
-    let from_chars: String = LATIN_FOLD_PAIRS.iter().map(|(from, _)| *from).collect();
-    let to_chars: String = LATIN_FOLD_PAIRS.iter().map(|(_, to)| *to).collect();
-    format!("TRANSLATE(LOWER(COALESCE(({expr})::text, '')), '{from_chars}', '{to_chars}')")
-}
-
 fn hash_field_for_term(term: &str) -> Option<HashField> {
     if !term.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
@@ -236,14 +105,10 @@ fn hash_field_for_term(term: &str) -> Option<HashField> {
 
 fn quick_search_clause(bind_idx: u32, hash_field: Option<HashField>) -> String {
     let bind = format!("${bind_idx}");
-    let folded_bind = latin_fold_sql(&bind);
     let mut clause = format!(
-        r#"({title} LIKE '%' || {folded_bind} || '%'
-             OR {foreign_title} LIKE '%' || {folded_bind} || '%'
-             OR {serial} LIKE '%' || {folded_bind} || '%'"#,
-        title = latin_fold_sql("d.title"),
-        foreign_title = latin_fold_sql("d.title_foreign"),
-        serial = latin_fold_sql("arr_to_str(d.serial, ' ')")
+        r#"(LOWER(d.title) LIKE '%' || {bind} || '%'
+             OR LOWER(d.title_foreign) LIKE '%' || {bind} || '%'
+             OR LOWER(arr_to_str(d.serial, ' ')) LIKE '%' || {bind} || '%'"#
     );
 
     if let Some(field) = hash_field {
@@ -273,19 +138,11 @@ fn active_advanced_filter(value: Option<&String>) -> Option<String> {
 }
 
 fn edition_search_clause(bind_idx: u32) -> String {
-    format!(
-        "{} LIKE '%' || {} || '%'",
-        latin_fold_sql("arr_to_str(d.edition, ' ')"),
-        latin_fold_sql(&format!("${bind_idx}"))
-    )
+    format!("LOWER(arr_to_str(d.edition, ' ')) LIKE '%' || LOWER(${bind_idx}) || '%'")
 }
 
 fn comments_search_clause(bind_idx: u32) -> String {
-    format!(
-        "{} LIKE '%' || {} || '%'",
-        latin_fold_sql("d.comments"),
-        latin_fold_sql(&format!("${bind_idx}"))
-    )
+    format!("LOWER(d.comments) LIKE '%' || LOWER(${bind_idx}) || '%'")
 }
 
 fn display_title_sort_sql() -> &'static str {
@@ -1024,10 +881,9 @@ mod tests {
     fn quick_search_clause_for_text_terms_uses_only_indexed_title_foreign_title_and_serial() {
         let clause = quick_search_clause(3, None);
 
-        assert!(clause.contains("TRANSLATE(LOWER(COALESCE((d.title)::text"));
-        assert!(clause.contains("TRANSLATE(LOWER(COALESCE((d.title_foreign)::text"));
-        assert!(clause.contains("TRANSLATE(LOWER(COALESCE((arr_to_str(d.serial, ' '))::text"));
-        assert!(clause.contains("TRANSLATE(LOWER(COALESCE(($3)::text"));
+        assert!(clause.contains("LOWER(d.title) LIKE"));
+        assert!(clause.contains("LOWER(d.title_foreign) LIKE"));
+        assert!(clause.contains("LOWER(arr_to_str(d.serial, ' ')) LIKE"));
         assert!(!clause.contains("disc_title"));
         assert!(!clause.contains("barcode"));
         assert!(!clause.contains("FROM files"));
@@ -1062,12 +918,14 @@ mod tests {
         let edition_clause = edition_search_clause(5);
         let comments_clause = comments_search_clause(6);
 
-        assert!(
-            edition_clause.contains("TRANSLATE(LOWER(COALESCE((arr_to_str(d.edition, ' '))::text")
+        assert_eq!(
+            edition_clause,
+            "LOWER(arr_to_str(d.edition, ' ')) LIKE '%' || LOWER($5) || '%'"
         );
-        assert!(edition_clause.contains("TRANSLATE(LOWER(COALESCE(($5)::text"));
-        assert!(comments_clause.contains("TRANSLATE(LOWER(COALESCE((d.comments)::text"));
-        assert!(comments_clause.contains("TRANSLATE(LOWER(COALESCE(($6)::text"));
+        assert_eq!(
+            comments_clause,
+            "LOWER(d.comments) LIKE '%' || LOWER($6) || '%'"
+        );
     }
 
     #[test]
