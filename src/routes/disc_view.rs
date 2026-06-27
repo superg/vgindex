@@ -1,7 +1,7 @@
-use askama::Template;
+use askama::{Template, Html};
 use axum::{
     extract::{rejection::PathRejection, Path, State},
-    response::{Html, IntoResponse},
+    response::{Html as AxumHtml, IntoResponse},
     routing::get,
     Router,
 };
@@ -42,7 +42,11 @@ fn join_sorted_identifier_values(values: &[String]) -> String {
             .cmp(&b.trim().to_lowercase())
             .then_with(|| a.cmp(b))
     });
-    sorted.join("<br>")
+    sorted
+        .iter()
+        .map(|v| Html::from(v.as_str()).to_string())
+        .collect::<Vec<String>>()
+        .join("<br>")
 }
 
 pub fn routes() -> Router<AppState> {
@@ -449,7 +453,7 @@ async fn disc_view(
     State(state): State<AppState>,
     user: CurrentUser,
     id: Result<Path<i32>, PathRejection>,
-) -> AppResult<Html<String>> {
+) -> AppResult<AxumHtml<String>> {
     let id = crate::routes::path_i32(id)?;
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
@@ -647,7 +651,7 @@ async fn disc_view(
         user.is_logged_in(),
     );
 
-    Ok(Html(
+    Ok(AxumHtml(
         DiscViewTemplate {
             current_user: user.user().cloned(),
             can_edit,
@@ -1922,11 +1926,11 @@ mod tests {
         assert!(template
             .contains(r#"<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>"#));
         assert!(
-            template.contains(r#"<td class="ring-fixed-cell">{{ row.mastering_code }}</td>"#)
+            template.contains(r#"<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>"#)
         );
         assert!(!template.contains(r#"<td class="ring-layer-col ring-entry-cell""#));
         assert!(!template.contains(
-            r#"<td class="ring-fixed-cell ring-entry-cell">{{ row.mastering_code }}</td>"#
+            r#"<td class="ring-fixed-cell ring-entry-cell">{{ row.mastering_code|safe }}</td>"#
         ));
     }
 
@@ -1999,9 +2003,9 @@ mod tests {
         let template = include_str!("../../templates/disc_view.html");
         let css = include_str!("../../static/css/app.css");
 
-        assert!(template.contains("<td>{{ serial }}</td>"));
-        assert!(template.contains(r#"<td class="disc-edition-cell"><span class="disc-edition-value">{{ edition }}</span></td>"#));
-        assert!(template.contains("<td>{{ barcode }}</td>"));
+        assert!(template.contains("<td>{{ serial|safe }}</td>"));
+        assert!(template.contains(r#"<td class="disc-edition-cell"><span class="disc-edition-value">{{ edition|safe }}</span></td>"#));
+        assert!(template.contains("<td>{{ barcode|safe }}</td>"));
         assert!(!template.contains("serial_count > 6"));
         assert!(!template.contains("edition_count > 6"));
         assert!(!template.contains("barcode_count > 6"));
