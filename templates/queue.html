@@ -88,7 +88,6 @@
         <thead>
             <tr>
                 <th class="date-col"><a href="/queue?sort=date&amp;order={{ next_date_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Date{% if sort_column == "date" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="region-col">Region</th>
                 <th class="type-col"><a href="/queue?sort=type&amp;order={{ next_type_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Type{% if sort_column == "type" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="submission-title-col"><a href="/queue?sort=title&amp;order={{ next_title_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Submission Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="disc-id-col"><a href="/queue?sort=disc_id&amp;order={{ next_disc_id_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Disc ID{% if sort_column == "disc_id" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
@@ -102,11 +101,6 @@
             {% for entry in entries %}
             <tr{% if self.can_open_entry(entry) %} class="clickable-row" data-href="/queue/{{ entry.id }}" tabindex="0" role="link"{% endif %}>
                 <td class="date-col">{{ entry.created_at.format("%Y-%m-%d %H:%M") }}</td>
-                <td class="region-col"><span class="region-flags">
-                    {% for rf in entry.region_flags %}
-                    <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg" title="{{ rf.name }}" alt="{{ rf.name }}">
-                    {% endfor %}
-                </span></td>
                 <td class="type-col"><span class="{{ self.type_icon_class(entry) }}" role="img" aria-label="{{ self.type_icon_label(entry) }}" title="{{ self.type_icon_label(entry) }}"></span></td>
                 <td class="submission-title-col">{% if self.can_open_entry(entry) %}<a href="/queue/{{ entry.id }}">{{ entry.title }}</a>{% else %}{{ entry.title }}{% endif %}</td>
                 <td class="disc-id-col">{% match entry.target_disc_id %}{% when Some with (disc_id) %}<a href="/disc/{{ disc_id }}">{{ disc_id }}</a>{% when None %}{% endmatch %}</td>
@@ -117,7 +111,7 @@
             </tr>
             {% endfor %}
             {% if entries.is_empty() %}
-            <tr><td colspan="9">No submissions found.</td></tr>
+            <tr><td colspan="8">No submissions found.</td></tr>
             {% endif %}
         </tbody>
     </table>

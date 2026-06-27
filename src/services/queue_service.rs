@@ -1390,7 +1390,6 @@ pub async fn list_submissions(
         "SELECT ds.id, ds.submission_type,
                 {dat_add_expr} AS submission_has_dat_add,
                 {title_expr} AS title,
-                region_flags.region_flags,
                 COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', '') AS system_code,
                 COALESCE(s.short_name, '') AS system_short_name,
                 u.username AS submitter,
@@ -1406,32 +1405,6 @@ pub async fn list_submissions(
          LEFT JOIN discs d ON d.id = ds.target_disc_id
          LEFT JOIN systems s
              ON s.code = COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new')
-         LEFT JOIN LATERAL (
-             SELECT COALESCE(
-                 jsonb_agg(jsonb_build_object('code', r.flag_code, 'name', r.name) ORDER BY r.sort_order),
-                 '[]'::jsonb
-             ) AS region_flags
-             FROM regions r
-             JOIN (
-                 SELECT DISTINCT region_code
-                 FROM (
-                     SELECT jsonb_array_elements_text(ds.changes->'regions') AS region_code
-                     WHERE jsonb_typeof(ds.changes->'regions') = 'array'
-                     UNION
-                     SELECT dr.region_code
-                     FROM disc_regions dr
-                     WHERE dr.disc_id = ds.target_disc_id
-                       AND COALESCE(jsonb_typeof(ds.changes->'regions'), '') <> 'array'
-                     UNION
-                     SELECT jsonb_array_elements_text(ds.changes->'regions'->'add') AS region_code
-                     WHERE jsonb_typeof(ds.changes->'regions'->'add') = 'array'
-                 ) region_candidates
-                 WHERE region_code NOT IN (
-                     SELECT jsonb_array_elements_text(ds.changes->'regions'->'remove')
-                     WHERE jsonb_typeof(ds.changes->'regions'->'remove') = 'array'
-                 )
-             ) effective_regions ON effective_regions.region_code = r.code
-         ) region_flags ON TRUE
          WHERE {}
          ORDER BY {sort_col} {sort_dir}{nulls_order}
          LIMIT {page_size} OFFSET {offset}",
