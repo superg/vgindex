@@ -148,10 +148,8 @@ pub async fn find_matching_disc(
     pool: &PgPool,
     files_xml: &str,
     include_disabled_discs: bool,
-) -> Option<i32> {
-    find_matching_disc_excluding(pool, files_xml, include_disabled_discs, None)
-        .await
-        .unwrap_or_default()
+) -> AppResult<Option<i32>> {
+    find_matching_disc_excluding(pool, files_xml, include_disabled_discs, None).await
 }
 
 async fn find_matching_disc_excluding(
@@ -212,7 +210,7 @@ pub async fn find_matching_disc_by_universal_hash(
     pool: &PgPool,
     universal_hash: &str,
     include_disabled_discs: bool,
-) -> Option<i32> {
+) -> AppResult<Option<i32>> {
     find_matching_disc_by_universal_hash_excluding(
         pool,
         universal_hash,
@@ -220,7 +218,6 @@ pub async fn find_matching_disc_by_universal_hash(
         None,
     )
     .await
-    .unwrap_or_default()
 }
 
 async fn find_matching_disc_by_universal_hash_excluding(
@@ -1586,6 +1583,8 @@ pub async fn count_submissions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+    use std::time::Duration;
 
     fn file(
         track_number: &str,
@@ -1629,6 +1628,19 @@ mod tests {
         })
     }
 
+    fn unreachable_pool() -> PgPool {
+        let options = PgConnectOptions::new()
+            .host("127.0.0.1")
+            .port(1)
+            .username("vgindex")
+            .database("vgindex");
+
+        PgPoolOptions::new()
+            .max_connections(1)
+            .acquire_timeout(Duration::from_millis(50))
+            .connect_lazy_with(options)
+    }
+
     fn submission(
         submission_type: SubmissionType,
         target_disc_id: Option<i32>,
@@ -1650,6 +1662,30 @@ mod tests {
             created_at: chrono::Utc::now(),
             reviewed_at: None,
         }
+    }
+
+    #[tokio::test]
+    async fn public_match_helpers_return_database_errors() {
+        let pool = unreachable_pool();
+        let dat = rom_line(
+            "1",
+            100,
+            "11111111",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        );
+
+        let dat_err = find_matching_disc(&pool, &dat, false).await.unwrap_err();
+        assert!(matches!(dat_err, AppError::Database(_)));
+
+        let hash_err = find_matching_disc_by_universal_hash(
+            &pool,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(hash_err, AppError::Database(_)));
     }
 
     #[test]

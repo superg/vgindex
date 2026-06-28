@@ -19,6 +19,13 @@ use crate::error::{AppError, AppResult};
 use crate::services::{disc_service, queue_service, validation};
 use crate::AppState;
 
+const ADD_DISC_MATCH_LOOKUP_ERROR: &str =
+    "Disc matching: could not check existing discs. Please try again.";
+
+fn add_disc_match_lookup_errors() -> Vec<String> {
+    vec![ADD_DISC_MATCH_LOOKUP_ERROR.to_string()]
+}
+
 fn one_or_many_strings<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -1710,7 +1717,7 @@ fn resolve_add_disc_match(
 async fn fetch_add_disc_match_target(
     pool: &sqlx::PgPool,
     disc_id: i32,
-) -> Option<AddDiscMatchTarget> {
+) -> AppResult<AddDiscMatchTarget> {
     #[derive(sqlx::FromRow)]
     struct Row {
         id: i32,
@@ -1718,24 +1725,26 @@ async fn fetch_add_disc_match_target(
         media_type_code: String,
     }
 
-    sqlx::query_as::<_, Row>("SELECT id, system_code, media_type_code FROM discs WHERE id = $1")
-        .bind(disc_id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .map(|row| AddDiscMatchTarget {
-            disc_id: row.id,
-            system_code: row.system_code,
-            media_type: row.media_type_code,
-        })
+    let row = sqlx::query_as::<_, Row>(
+        "SELECT id, system_code, media_type_code FROM discs WHERE id = $1",
+    )
+    .bind(disc_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::Internal(format!("matched disc #{disc_id} was not found")))?;
+
+    Ok(AddDiscMatchTarget {
+        disc_id: row.id,
+        system_code: row.system_code,
+        media_type: row.media_type_code,
+    })
 }
 
 async fn find_add_disc_match(
     pool: &sqlx::PgPool,
     form: &DiscEditForm,
     include_disabled_discs: bool,
-) -> Option<AddDiscMatch> {
+) -> AppResult<Option<AddDiscMatch>> {
     let universal_hash_match = match valid_universal_hash_for_matching(form) {
         Some(universal_hash) => {
             queue_service::find_matching_disc_by_universal_hash(
@@ -1743,26 +1752,26 @@ async fn find_add_disc_match(
                 universal_hash,
                 include_disabled_discs,
             )
-            .await
+            .await?
         }
         None => None,
     };
     if let Some(disc_id) = universal_hash_match {
-        let target = fetch_add_disc_match_target(pool, disc_id).await;
-        return resolve_add_disc_match(target, None);
+        let target = fetch_add_disc_match_target(pool, disc_id).await?;
+        return Ok(resolve_add_disc_match(Some(target), None));
     }
 
     let dat_match = match valid_dat_for_matching(form) {
         Some(files_xml) => {
-            queue_service::find_matching_disc(pool, files_xml, include_disabled_discs).await
+            queue_service::find_matching_disc(pool, files_xml, include_disabled_discs).await?
         }
         None => None,
     };
     let dat_target = match dat_match {
-        Some(disc_id) => fetch_add_disc_match_target(pool, disc_id).await,
+        Some(disc_id) => Some(fetch_add_disc_match_target(pool, disc_id).await?),
         None => None,
     };
-    resolve_add_disc_match(None, dat_target)
+    Ok(resolve_add_disc_match(None, dat_target))
 }
 
 fn add_form_for_render(form: &DiscEditForm, add_match: Option<&AddDiscMatch>) -> DiscEditForm {
@@ -2379,7 +2388,25 @@ async fn add_submit(
     let form = post.disc;
     let ref_data = fetch_ref_data(&state.pool).await?;
     let add_match =
-        find_add_disc_match(&state.pool, &form, user.role.can_view_disabled_discs()).await;
+        match find_add_disc_match(&state.pool, &form, user.role.can_view_disabled_discs()).await {
+            Ok(add_match) => add_match,
+            Err(err) => {
+                tracing::error!("add-disc match lookup failed: {err}");
+                return render_form_with_errors(
+                    &state,
+                    0,
+                    user.clone(),
+                    &form,
+                    add_disc_match_lookup_errors(),
+                    vec![],
+                    ValidationResultMessage::default(),
+                    true,
+                    user.role.can_edit_directly(),
+                    user.role.can_moderate(),
+                )
+                .await;
+            }
+        };
     let target_disc_id = add_match.as_ref().map(AddDiscMatch::target_disc_id);
     let is_verification = target_disc_id.is_some();
     let mut errors = validate_add_submission_form(
@@ -3545,6 +3572,14 @@ mod operation_delta_tests {
         let errors =
             validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
         assert!(errors.contains(&"Media: must be valid for the selected system".to_string()));
+    }
+
+    #[test]
+    fn add_disc_match_lookup_error_is_generic_form_error() {
+        assert_eq!(
+            add_disc_match_lookup_errors(),
+            vec!["Disc matching: could not check existing discs. Please try again.".to_string()]
+        );
     }
 
     #[test]
