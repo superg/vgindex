@@ -1049,6 +1049,8 @@ pub struct SubmissionRingChangeRow {
     pub mould_sids: SubmissionRingChangeCell,
     pub additional_moulds: SubmissionRingChangeCell,
     pub offset: SubmissionRingChangeCell,
+    pub offset_extra: SubmissionRingChangeCell,
+    pub sample_start: SubmissionRingChangeCell,
     pub comment: SubmissionRingChangeCell,
 }
 
@@ -1064,6 +1066,57 @@ pub struct SubmissionChangeDetail {
     pub previous_kind: String,
     pub ring_rows: Vec<SubmissionRingChangeRow>,
     pub show_ring_layers: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionChangeScalarRow {
+    pub field: String,
+    pub action: String,
+    pub previous_value: String,
+    pub current_value: String,
+    pub status_class: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionChangeSetRow {
+    pub field: String,
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionChangeMultilineRow {
+    pub field: String,
+    pub action: String,
+    pub previous_value: String,
+    pub current_value: String,
+    pub status_class: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionChangeRingSection {
+    pub label: String,
+    pub ring_rows: Vec<SubmissionRingChangeRow>,
+    pub show_ring_layers: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionChangeFallbackRow {
+    pub path: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubmissionChangesView {
+    pub title: String,
+    pub note: String,
+    pub has_changes: bool,
+    pub scalar_rows: Vec<SubmissionChangeScalarRow>,
+    pub set_rows: Vec<SubmissionChangeSetRow>,
+    pub multiline_rows: Vec<SubmissionChangeMultilineRow>,
+    pub legacy_rows: Vec<SubmissionChangeScalarRow>,
+    pub ring_sections: Vec<SubmissionChangeRingSection>,
+    pub fallback_rows: Vec<SubmissionChangeFallbackRow>,
 }
 
 #[derive(Debug, Clone)]

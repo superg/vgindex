@@ -12,8 +12,6 @@
 {% endif %}
 
 {% if filter_disc_id.is_empty() %}
-<details open>
-    <summary></summary>
     <form method="get" action="/queue" id="filter-form" class="queue-filter-form">
         <label>
             <span>Status</span>
@@ -66,11 +64,10 @@
         <input type="hidden" name="disc_id" value="{{ filter_disc_id }}">
         {% endif %}
     </form>
-</details>
 {% endif %}
 
 {% if !is_disc_history %}
-<p><small>{{ total_count }} submission(s) found.</small></p>
+<p class="queue-count"><small>{{ total_count }} submission(s) found.</small></p>
 {% endif %}
 
 <div id="queue-results">
@@ -147,6 +144,8 @@
                                         <th>Mould SIDs</th>
                                         <th>Additional Moulds</th>
                                         <th>Offset</th>
+                                        <th>Extra Offset</th>
+                                        <th>Sample Start</th>
                                         <th>Comment</th>
                                     </tr>
                                 </thead>
@@ -162,6 +161,8 @@
                                         <td><input type="text" class="ring-addmoulds{% if !row.additional_moulds.status_class.is_empty() %} {{ row.additional_moulds.status_class }}{% endif %}" value="{{ row.additional_moulds.value }}" readonly></td>
                                         {% if row.entry_rowspan > 0 %}
                                         <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-offset{% if !row.offset.status_class.is_empty() %} {{ row.offset.status_class }}{% endif %}" value="{{ row.offset.value }}" readonly></td>
+                                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-offset-extra{% if !row.offset_extra.status_class.is_empty() %} {{ row.offset_extra.status_class }}{% endif %}" value="{{ row.offset_extra.value }}" readonly></td>
+                                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-sample-start{% if !row.sample_start.status_class.is_empty() %} {{ row.sample_start.status_class }}{% endif %}" value="{{ row.sample_start.value }}" readonly></td>
                                         <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-comment{% if !row.comment.status_class.is_empty() %} {{ row.comment.status_class }}{% endif %}" value="{{ row.comment.value }}" readonly></td>
                                         {% endif %}
                                     </tr>

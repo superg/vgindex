@@ -1,13 +1,14 @@
 use askama::Template;
 use axum::{
+    Router,
     extract::{Path, Query, State},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
-    Router,
 };
 use axum_extra::extract::Form;
 use serde::Deserialize;
 
+use crate::AppState;
 use crate::auth::{
     csrf,
     middleware::{AuthenticatedUser, CurrentUser, RequireAuth},
@@ -16,15 +17,14 @@ use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 use crate::services::{disc_service, queue_service};
-use crate::AppState;
 
 use super::disc_edit::{
-    self, approval_conflicts_to_linked_validation_errors, build_category_options,
-    build_check_options, build_flat_changes, build_lang_check_options, build_media_has_pic_json,
-    build_media_is_cd_json, build_media_layers_json, build_media_options,
-    build_media_rom_extensions_json, build_new_disc_changes, build_sparse_edit_changes,
-    build_system_options, build_systems_json, fetch_ref_data, max_layers_for_media, validate_form,
-    DiscEditForm, DiscEditTemplate, ReviewAnnotation, ReviewOldMultiline,
+    self, DiscEditForm, DiscEditTemplate, ReviewAnnotation, ReviewOldMultiline,
+    approval_conflicts_to_linked_validation_errors, build_category_options, build_check_options,
+    build_flat_changes, build_lang_check_options, build_media_has_pic_json, build_media_is_cd_json,
+    build_media_layers_json, build_media_options, build_media_rom_extensions_json,
+    build_new_disc_changes, build_sparse_edit_changes, build_system_options, build_systems_json,
+    fetch_ref_data, max_layers_for_media, validate_form,
 };
 
 fn normalize_newlines(s: &str) -> String {
@@ -173,6 +173,7 @@ fn change_field_label(field: &str) -> String {
         "disc_id" => "Disc ID".to_string(),
         "disc_key" => "Disc Key".to_string(),
         "universal_hash" => "Universal Hash".to_string(),
+        "status" => "Status".to_string(),
         "comments" => "Comments".to_string(),
         "protection" => "Protection".to_string(),
         "sector_ranges" => "Sector Ranges".to_string(),
@@ -212,6 +213,339 @@ fn direct_change_value<'a>(
 
 fn display_change_value(value: &serde_json::Value) -> String {
     review_annotation_value(value)
+}
+
+fn friendly_json_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(friendly_json_value)
+            .filter(|s| !s.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join(", "),
+        serde_json::Value::Object(map) => {
+            if let (Some(start), Some(end)) = (map.get("start"), map.get("end")) {
+                return format!(
+                    "{}-{}",
+                    friendly_json_value(start),
+                    friendly_json_value(end)
+                );
+            }
+            map.iter()
+                .map(|(key, value)| format!("{key}: {}", friendly_json_value(value)))
+                .collect::<Vec<_>>()
+                .join("; ")
+        }
+    }
+}
+
+fn empty_display_value(value: String) -> String {
+    if value.trim().is_empty() {
+        "(empty)".to_string()
+    } else {
+        value
+    }
+}
+
+fn status_for_action(action: &str) -> &'static str {
+    match action {
+        "Added" => "item-added",
+        "Removed" => "item-removed",
+        "Modified" => "item-changed",
+        _ => "",
+    }
+}
+
+fn change_operation_parts(
+    change: &serde_json::Value,
+) -> Option<(
+    &'static str,
+    Option<&serde_json::Value>,
+    Option<&serde_json::Value>,
+)> {
+    if let Some(modify) = change.get("modify") {
+        return Some(("Modified", modify.get("old"), modify.get("new")));
+    }
+    if let Some(add) = change.get("add") {
+        return Some(("Added", None, add.get("new").or(Some(add))));
+    }
+    if let Some(remove) = change.get("remove") {
+        return Some(("Removed", remove.get("old").or(Some(remove)), None));
+    }
+    match (change.get("old"), change.get("new")) {
+        (Some(old), Some(new)) => Some(("Modified", Some(old), Some(new))),
+        (None, Some(new)) => Some(("Added", None, Some(new))),
+        (Some(old), None) => Some(("Removed", Some(old), None)),
+        (None, None) => None,
+    }
+}
+
+fn change_scalar_row(field: &str, change: &serde_json::Value) -> Option<SubmissionChangeScalarRow> {
+    let (action, old, new) = change_operation_parts(change)?;
+    Some(SubmissionChangeScalarRow {
+        field: change_field_label(field),
+        action: action.to_string(),
+        previous_value: old
+            .map(friendly_json_value)
+            .map(empty_display_value)
+            .unwrap_or_default(),
+        current_value: new
+            .map(friendly_json_value)
+            .map(empty_display_value)
+            .unwrap_or_default(),
+        status_class: status_for_action(action).to_string(),
+    })
+}
+
+fn change_multiline_row(
+    field: &str,
+    change: &serde_json::Value,
+) -> Option<SubmissionChangeMultilineRow> {
+    let (action, old, new) = change_operation_parts(change)?;
+    Some(SubmissionChangeMultilineRow {
+        field: change_field_label(field),
+        action: action.to_string(),
+        previous_value: old.map(friendly_json_value).unwrap_or_default(),
+        current_value: new.map(friendly_json_value).unwrap_or_default(),
+        status_class: status_for_action(action).to_string(),
+    })
+}
+
+fn string_vec_values(value: Option<&serde_json::Value>) -> Vec<String> {
+    match value {
+        Some(serde_json::Value::Array(values)) => values
+            .iter()
+            .map(friendly_json_value)
+            .filter(|s| !s.trim().is_empty())
+            .collect(),
+        Some(value) => {
+            let display = friendly_json_value(value);
+            if display.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![display]
+            }
+        }
+        None => Vec::new(),
+    }
+}
+
+fn change_set_row(field: &str, change: &serde_json::Value) -> Option<SubmissionChangeSetRow> {
+    let added = string_vec_values(
+        change
+            .get("add")
+            .and_then(|value| value.get("new"))
+            .or_else(|| change.get("add")),
+    );
+    let removed = string_vec_values(
+        change
+            .get("remove")
+            .and_then(|value| value.get("old"))
+            .or_else(|| change.get("remove")),
+    );
+    if added.is_empty() && removed.is_empty() {
+        None
+    } else {
+        Some(SubmissionChangeSetRow {
+            field: change_field_label(field),
+            added,
+            removed,
+        })
+    }
+}
+
+fn push_fallback_rows(
+    rows: &mut Vec<SubmissionChangeFallbackRow>,
+    path: String,
+    value: &serde_json::Value,
+) {
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.is_empty() {
+                rows.push(SubmissionChangeFallbackRow {
+                    path,
+                    value: "(empty object)".to_string(),
+                });
+                return;
+            }
+            for (key, child) in map {
+                let child_path = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                push_fallback_rows(rows, child_path, child);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            if values.is_empty() {
+                rows.push(SubmissionChangeFallbackRow {
+                    path,
+                    value: "(empty list)".to_string(),
+                });
+                return;
+            }
+            for (idx, child) in values.iter().enumerate() {
+                push_fallback_rows(rows, format!("{path}[{idx}]"), child);
+            }
+        }
+        _ => rows.push(SubmissionChangeFallbackRow {
+            path,
+            value: empty_display_value(friendly_json_value(value)),
+        }),
+    }
+}
+
+fn add_change_fallback(view: &mut SubmissionChangesView, field: &str, change: &serde_json::Value) {
+    push_fallback_rows(&mut view.fallback_rows, change_field_label(field), change);
+}
+
+fn change_view_has_content(view: &SubmissionChangesView) -> bool {
+    !view.scalar_rows.is_empty()
+        || !view.set_rows.is_empty()
+        || !view.multiline_rows.is_empty()
+        || !view.legacy_rows.is_empty()
+        || !view.ring_sections.is_empty()
+        || !view.fallback_rows.is_empty()
+}
+
+fn is_multiline_change_field(field: &str) -> bool {
+    matches!(
+        field,
+        "comments"
+            | "contents"
+            | "protection"
+            | "sector_ranges"
+            | "sbi"
+            | "layerbreaks"
+            | "pvd"
+            | "header"
+            | "bca"
+            | "pic"
+            | "cuesheet"
+            | "dat"
+    )
+}
+
+fn is_set_change_field(field: &str) -> bool {
+    matches!(
+        field,
+        "regions" | "languages" | "serial" | "edition" | "barcode"
+    )
+}
+
+fn build_submission_changes_view(
+    title: &str,
+    note: &str,
+    changes: &serde_json::Value,
+) -> SubmissionChangesView {
+    let mut view = SubmissionChangesView {
+        title: title.to_string(),
+        note: note.to_string(),
+        has_changes: false,
+        scalar_rows: Vec::new(),
+        set_rows: Vec::new(),
+        multiline_rows: Vec::new(),
+        legacy_rows: Vec::new(),
+        ring_sections: Vec::new(),
+        fallback_rows: Vec::new(),
+    };
+
+    let Some(obj) = changes.as_object() else {
+        add_change_fallback(&mut view, "changes", changes);
+        view.has_changes = change_view_has_content(&view);
+        return view;
+    };
+
+    for (field, change) in obj {
+        if field == "legacy" {
+            if let Some(legacy_obj) = change.as_object() {
+                for (legacy_field, legacy_change) in legacy_obj {
+                    if let Some(row) = change_scalar_row(legacy_field, legacy_change) {
+                        view.legacy_rows.push(row);
+                    } else {
+                        push_fallback_rows(
+                            &mut view.fallback_rows,
+                            format!("Legacy.{}", change_field_label(legacy_field)),
+                            legacy_change,
+                        );
+                    }
+                }
+            } else {
+                add_change_fallback(&mut view, field, change);
+            }
+            continue;
+        }
+
+        if field == "ring_codes" && change.as_array().is_some() {
+            let (ring_rows, show_ring_layers) = submission_ring_change_rows(change);
+            if !ring_rows.is_empty() {
+                view.ring_sections.push(SubmissionChangeRingSection {
+                    label: change_field_label(field),
+                    ring_rows,
+                    show_ring_layers,
+                });
+            } else {
+                add_change_fallback(&mut view, field, change);
+            }
+            continue;
+        }
+
+        if is_set_change_field(field) {
+            if let Some(row) = change_set_row(field, change) {
+                view.set_rows.push(row);
+                continue;
+            }
+        }
+
+        if is_multiline_change_field(field) {
+            if let Some(row) = change_multiline_row(field, change) {
+                view.multiline_rows.push(row);
+                continue;
+            }
+        }
+
+        if let Some(row) = change_scalar_row(field, change) {
+            view.scalar_rows.push(row);
+        } else {
+            add_change_fallback(&mut view, field, change);
+        }
+    }
+
+    view.has_changes = change_view_has_content(&view);
+    view
+}
+
+fn submission_changes_views(
+    original: Option<&serde_json::Value>,
+    final_changes: &serde_json::Value,
+) -> Vec<SubmissionChangesView> {
+    match original.filter(|value| !value.is_null()) {
+        Some(original) => {
+            let mut views = vec![build_submission_changes_view(
+                "Submitted Changes",
+                "",
+                original,
+            )];
+            if original != final_changes {
+                views.push(build_submission_changes_view(
+                    "Final Approved Changes",
+                    "Includes reviewer edits made before approval.",
+                    final_changes,
+                ));
+            }
+            views
+        }
+        None => vec![build_submission_changes_view(
+            "Submitted / Current Changes",
+            "",
+            final_changes,
+        )],
+    }
 }
 
 fn empty_ring_change_cell() -> SubmissionRingChangeCell {
@@ -310,6 +644,12 @@ fn submission_ring_change_rows(
                 .get("offset_value")
                 .or_else(|| entry_obj.get("offset")),
         );
+        let offset_extra = ring_change_cell(entry_obj.get("offset_extra_value"));
+        let sample_start = ring_change_cell(
+            entry_obj
+                .get("sample_data_start")
+                .or_else(|| entry_obj.get("sample_start")),
+        );
         let comment = if entry_obj
             .get("remove")
             .and_then(|value| value.as_bool())
@@ -339,6 +679,8 @@ fn submission_ring_change_rows(
                 mould_sids: empty_ring_change_cell(),
                 additional_moulds: empty_ring_change_cell(),
                 offset,
+                offset_extra,
+                sample_start,
                 comment,
             });
             continue;
@@ -361,6 +703,16 @@ fn submission_ring_change_rows(
                 additional_moulds: ring_change_cell(layer.get("additional_moulds")),
                 offset: if idx == 0 {
                     offset.clone()
+                } else {
+                    empty_ring_change_cell()
+                },
+                offset_extra: if idx == 0 {
+                    offset_extra.clone()
+                } else {
+                    empty_ring_change_cell()
+                },
+                sample_start: if idx == 0 {
+                    sample_start.clone()
                 } else {
                     empty_ring_change_cell()
                 },
@@ -1143,8 +1495,7 @@ fn build_review_template(
             .reviewed_at
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
-        changes_original_json: pretty_optional_json(sub.changes_original.as_ref()),
-        changes_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
+        change_views: submission_changes_views(sub.changes_original.as_ref(), &sub.changes),
     }
 }
 
@@ -1689,17 +2040,9 @@ struct QueueDetailTemplate {
     created_at_display: String,
     reviewed_at_display: String,
     target_disc_id: i32,
-    changes_original_json: String,
-    changes_json: String,
+    change_views: Vec<SubmissionChangesView>,
 }
 impl SiteConfig for QueueDetailTemplate {}
-
-fn pretty_optional_json(value: Option<&serde_json::Value>) -> String {
-    match value {
-        Some(value) if !value.is_null() => serde_json::to_string_pretty(value).unwrap_or_default(),
-        _ => String::new(),
-    }
-}
 
 async fn render_readonly_detail(
     current_user: Option<AuthenticatedUser>,
@@ -1726,8 +2069,7 @@ async fn render_readonly_detail(
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
         target_disc_id: sub.target_disc_id.unwrap_or(0),
-        changes_original_json: pretty_optional_json(sub.changes_original.as_ref()),
-        changes_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
+        change_views: submission_changes_views(sub.changes_original.as_ref(), &sub.changes),
     };
 
     Ok(Html(template.render().unwrap()))
@@ -3071,8 +3413,7 @@ mod tests {
             created_at_display: "2026-01-01 00:00 UTC".to_string(),
             reviewed_at_display: String::new(),
             target_disc_id: 3,
-            changes_original_json: String::new(),
-            changes_json: "{}".to_string(),
+            change_views: submission_changes_views(None, &serde_json::json!({})),
         };
 
         let html = template.render().unwrap();
@@ -3081,7 +3422,7 @@ mod tests {
     }
 
     #[test]
-    fn queue_detail_template_shows_original_json_before_final_json() {
+    fn queue_detail_template_shows_submitted_changes_before_final_changes() {
         let template = QueueDetailTemplate {
             current_user: None,
             submission_id: 1,
@@ -3098,31 +3439,175 @@ mod tests {
             created_at_display: "2026-01-01 00:00 UTC".to_string(),
             reviewed_at_display: "2026-01-02 00:00 UTC".to_string(),
             target_disc_id: 3,
-            changes_original_json: "{\n  \"status\": \"original\"\n}".to_string(),
-            changes_json: "{\n  \"status\": \"final\"\n}".to_string(),
+            change_views: submission_changes_views(
+                Some(
+                    &serde_json::json!({ "status": { "modify": { "old": "Unverified", "new": "Verified" } } }),
+                ),
+                &serde_json::json!({ "status": { "modify": { "old": "Unverified", "new": "Disabled" } } }),
+            ),
         };
 
         let html = template.render().unwrap();
 
-        let original_pos = html.find("Original JSON").unwrap();
-        let final_pos = html.find("Final JSON").unwrap();
+        let original_pos = html.find("Submitted Changes").unwrap();
+        let final_pos = html.find("Final Approved Changes").unwrap();
         assert!(original_pos < final_pos);
-        assert!(!html.contains("Raw JSON"));
+        assert!(html.contains("Includes reviewer edits made before approval."));
+        assert!(!html.contains("raw-json"));
     }
 
     #[test]
-    fn review_template_shows_final_json_without_original_json_when_absent() {
+    fn review_template_shows_current_changes_without_original_when_absent() {
         let html = build_template(&submitted_snapshot()).render().unwrap();
 
-        assert!(!html.contains("Original JSON"));
-        assert!(html.contains("Final JSON"));
-        assert!(!html.contains("Raw JSON"));
+        assert!(!html.contains("Submitted Changes"));
+        assert!(html.contains("Submitted / Current Changes"));
+        assert!(!html.contains("raw-json"));
     }
 
     #[test]
-    fn changes_original_json_hides_none_and_json_null() {
-        assert_eq!(pretty_optional_json(None), "");
-        assert_eq!(pretty_optional_json(Some(&serde_json::Value::Null)), "");
+    fn submission_change_views_ignore_null_original() {
+        let views =
+            submission_changes_views(Some(&serde_json::Value::Null), &serde_json::json!({}));
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].title, "Submitted / Current Changes");
+    }
+
+    #[test]
+    fn submission_change_view_renders_scalar_set_multiline_and_fallback_rows() {
+        let changes = serde_json::json!({
+            "title": { "modify": { "old": "Old Title", "new": "New Title" } },
+            "version": { "add": { "new": "1.01" } },
+            "error_count": { "remove": { "old": 2 } },
+            "regions": { "add": ["Japan", "USA"], "remove": ["Europe"] },
+            "serial": { "add": { "new": ["SLUS-00001"] }, "remove": { "old": ["OLD-00001"] } },
+            "comments": { "modify": { "old": "old\ncomment", "new": "new\ncomment" } },
+            "dat": { "add": { "new": "<rom name=\"track.bin\" />" } },
+            "layerbreaks": { "modify": { "old": [12345], "new": [23456] } },
+            "future_shape": { "deep": [{ "value": true }] }
+        });
+
+        let view = build_submission_changes_view("Test Changes", "", &changes);
+
+        assert!(view.has_changes);
+        assert!(view.scalar_rows.iter().any(|row| {
+            row.field == "Title"
+                && row.action == "Modified"
+                && row.previous_value == "Old Title"
+                && row.current_value == "New Title"
+        }));
+        assert!(view.scalar_rows.iter().any(|row| {
+            row.field == "Version" && row.action == "Added" && row.current_value == "1.01"
+        }));
+        assert!(view.scalar_rows.iter().any(|row| {
+            row.field == "Error Count" && row.action == "Removed" && row.previous_value == "2"
+        }));
+        assert!(view.set_rows.iter().any(|row| {
+            row.field == "Region"
+                && row.added == vec!["Japan".to_string(), "USA".to_string()]
+                && row.removed == vec!["Europe".to_string()]
+        }));
+        assert!(view.set_rows.iter().any(|row| {
+            row.field == "Serial"
+                && row.added == vec!["SLUS-00001".to_string()]
+                && row.removed == vec!["OLD-00001".to_string()]
+        }));
+        assert!(view.multiline_rows.iter().any(|row| {
+            row.field == "Comments"
+                && row.previous_value == "old\ncomment"
+                && row.current_value == "new\ncomment"
+        }));
+        assert!(view.multiline_rows.iter().any(|row| {
+            row.field == "Files XML" && row.current_value == "<rom name=\"track.bin\" />"
+        }));
+        assert!(view.multiline_rows.iter().any(|row| {
+            row.field == "Layerbreaks"
+                && row.previous_value == "12345"
+                && row.current_value == "23456"
+        }));
+        assert!(
+            view.fallback_rows
+                .iter()
+                .any(|row| { row.path == "future shape.deep[0].value" && row.value == "true" })
+        );
+    }
+
+    #[test]
+    fn submission_change_view_renders_ring_and_legacy_changes() {
+        let changes = serde_json::json!({
+            "ring_codes": [
+                {
+                    "layers": [
+                        {
+                            "index": 0,
+                            "mastering_code": { "modify": { "old": "OLD-MC", "new": "NEW-MC" } },
+                            "toolstamps": { "add": { "new": "T1" } }
+                        }
+                    ],
+                    "offset": { "modify": { "old": "0", "new": "-12" } },
+                    "offset_extra_value": { "modify": { "old": "1", "new": "2" } },
+                    "sample_data_start": { "modify": { "old": "100", "new": "200" } },
+                    "comment": { "add": { "new": "Local history display test comment" } }
+                },
+                { "remove": true }
+            ],
+            "legacy": {
+                "serial": { "old": "SLPS-00001", "new": "SLPS 00001" },
+                "unmapped_blob": { "nested": "value" }
+            }
+        });
+
+        let view = build_submission_changes_view("Test Changes", "", &changes);
+
+        assert_eq!(view.ring_sections.len(), 1);
+        let ring = &view.ring_sections[0];
+        assert!(ring.show_ring_layers);
+        assert_eq!(ring.ring_rows.len(), 2);
+        assert_eq!(ring.ring_rows[0].mastering_code.value, "NEW-MC");
+        assert_eq!(
+            ring.ring_rows[0].mastering_code.status_class,
+            "item-changed"
+        );
+        assert_eq!(ring.ring_rows[0].toolstamps.value, "T1");
+        assert_eq!(ring.ring_rows[0].toolstamps.status_class, "item-added");
+        assert_eq!(ring.ring_rows[0].offset.value, "-12");
+        assert_eq!(ring.ring_rows[0].offset_extra.value, "2");
+        assert_eq!(ring.ring_rows[0].offset_extra.status_class, "item-changed");
+        assert_eq!(ring.ring_rows[0].sample_start.value, "200");
+        assert_eq!(ring.ring_rows[0].sample_start.status_class, "item-changed");
+        assert_eq!(
+            ring.ring_rows[0].comment.value,
+            "Local history display test comment"
+        );
+        assert_eq!(ring.ring_rows[1].comment.value, "(removed entry)");
+        assert_eq!(ring.ring_rows[1].comment.status_class, "item-removed");
+        assert!(view.legacy_rows.iter().any(|row| {
+            row.field == "Serial"
+                && row.previous_value == "SLPS-00001"
+                && row.current_value == "SLPS 00001"
+        }));
+        assert!(
+            view.fallback_rows
+                .iter()
+                .any(|row| { row.path == "Legacy.unmapped blob.nested" && row.value == "value" })
+        );
+    }
+
+    #[test]
+    fn submission_change_views_skip_final_panel_when_original_matches_final() {
+        let changes = serde_json::json!({
+            "status": { "modify": { "old": "Unverified", "new": "Verified" } }
+        });
+
+        let views = submission_changes_views(Some(&changes), &changes);
+
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].title, "Submitted Changes");
+        assert!(views[0].scalar_rows.iter().any(|row| {
+            row.field == "Status"
+                && row.previous_value == "Unverified"
+                && row.current_value == "Verified"
+        }));
     }
 
     #[test]
@@ -3295,22 +3780,30 @@ mod tests {
             annotation_values(&template, "universal_hash", "Changed from"),
             vec!["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()]
         );
-        assert!(template
-            .review_old_multiline
-            .iter()
-            .any(|old| old.field == "contents" && old.value == "old contents"));
-        assert!(template
-            .review_old_multiline
-            .iter()
-            .any(|old| old.field == "cue" && old.value == "old cue"));
-        assert!(template
-            .review_old_multiline
-            .iter()
-            .any(|old| { old.field == "files_xml" && old.value.contains("old.iso") }));
-        assert!(!template
-            .review_old_multiline
-            .iter()
-            .any(|old| old.field == "comments"));
+        assert!(
+            template
+                .review_old_multiline
+                .iter()
+                .any(|old| old.field == "contents" && old.value == "old contents")
+        );
+        assert!(
+            template
+                .review_old_multiline
+                .iter()
+                .any(|old| old.field == "cue" && old.value == "old cue")
+        );
+        assert!(
+            template
+                .review_old_multiline
+                .iter()
+                .any(|old| { old.field == "files_xml" && old.value.contains("old.iso") })
+        );
+        assert!(
+            !template
+                .review_old_multiline
+                .iter()
+                .any(|old| old.field == "comments")
+        );
     }
 
     #[test]
@@ -3358,22 +3851,28 @@ mod tests {
         submitted["universal_hash"] = serde_json::json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
 
         let highlights = compute_field_highlights(&submitted, &db);
-        assert!(highlights
-            .changed_fields
-            .contains(&"universal_hash:changed".to_string()));
+        assert!(
+            highlights
+                .changed_fields
+                .contains(&"universal_hash:changed".to_string())
+        );
 
         db["universal_hash"] = serde_json::Value::Null;
         let highlights = compute_field_highlights(&submitted, &db);
-        assert!(highlights
-            .changed_fields
-            .contains(&"universal_hash:added".to_string()));
+        assert!(
+            highlights
+                .changed_fields
+                .contains(&"universal_hash:added".to_string())
+        );
 
         db["universal_hash"] = serde_json::json!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         submitted["universal_hash"] = serde_json::Value::Null;
         let highlights = compute_field_highlights(&submitted, &db);
-        assert!(highlights
-            .changed_fields
-            .contains(&"universal_hash:removed".to_string()));
+        assert!(
+            highlights
+                .changed_fields
+                .contains(&"universal_hash:removed".to_string())
+        );
     }
 
     #[test]
@@ -3388,7 +3887,9 @@ mod tests {
     #[test]
     fn review_textarea_assets_autosize_sidecars_without_manual_resize_wrapper() {
         let css = include_str!("../../static/css/app.css");
-        assert!(css.contains("textarea.auto-expand {\n    overflow: hidden;\n    resize: none;\n}"));
+        assert!(
+            css.contains("textarea.auto-expand {\n    overflow: hidden;\n    resize: none;\n}")
+        );
         assert!(!css.contains("textarea-resize"));
         assert!(css.contains(".review-field-annotation {\n    flex: 0 0 100%;\n    width: 100%;\n    display: flex;\n    flex-wrap: nowrap;\n    align-items: center;\n    gap: 0.25rem;\n    overflow-x: auto;\n    white-space: nowrap;\n}"));
         assert!(
