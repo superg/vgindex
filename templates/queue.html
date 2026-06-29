@@ -5,12 +5,13 @@
 {% block content %}
 <h3 class="downloads-page-title">{{ page_title }}</h3>
 {% if is_disc_history %}
-<p><small>Disc history only shows approved and legacy submissions.</small></p>
+<div class="disc-history-summary">
+    <p><small>Disc history only shows approved and legacy submissions.</small></p>
+    <p><small>{{ total_count }} submission(s) found.</small></p>
+</div>
 {% endif %}
 
 {% if filter_disc_id.is_empty() %}
-<details open>
-    <summary></summary>
     <form method="get" action="/queue" id="filter-form" class="queue-filter-form">
         <label>
             <span>Status</span>
@@ -63,10 +64,11 @@
         <input type="hidden" name="disc_id" value="{{ filter_disc_id }}">
         {% endif %}
     </form>
-</details>
 {% endif %}
 
-<p><small>{{ total_count }} submission(s) found.</small></p>
+{% if !is_disc_history %}
+<p class="queue-count"><small>{{ total_count }} submission(s) found.</small></p>
+{% endif %}
 
 <div id="queue-results">
     {% if total_pages > 1 %}
@@ -84,7 +86,7 @@
     {% endif %}
 
     <div class="table-scroll queue-table-scroll">
-    <table class="disc-table striped table-nowrap queue-table">
+    <table class="disc-table striped table-nowrap queue-table{% if is_disc_history %} queue-history-table{% endif %}">
         <thead>
             <tr>
                 <th class="date-col"><a href="/queue?sort=date&amp;order={{ next_date_order }}&amp;status={{ filter_status }}&amp;sub_type={{ filter_type_url }}&amp;system={{ filter_system }}&amp;submitter={{ filter_submitter_url }}{% if !filter_disc_id.is_empty() %}&amp;disc_id={{ filter_disc_id }}{% endif %}">Date{% if sort_column == "date" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
@@ -99,8 +101,12 @@
         </thead>
         <tbody>
             {% for entry in entries %}
-            <tr{% if self.can_open_entry(entry) %} class="clickable-row" data-href="/queue/{{ entry.id }}" tabindex="0" role="link"{% endif %}>
+            <tr{% if !is_disc_history && self.can_open_entry(entry) %} class="clickable-row" data-href="/queue/{{ entry.id }}" tabindex="0" role="link"{% endif %}>
+                {% if is_disc_history %}
+                <td class="date-col"><span class="disc-history-date-cell"><button class="disc-history-toggle" type="button" aria-expanded="false" aria-controls="history-changes-{{ entry.id }}" aria-label="Show changes" title="Show changes"></button><span>{{ entry.created_at.format("%Y-%m-%d %H:%M") }}</span></span></td>
+                {% else %}
                 <td class="date-col">{{ entry.created_at.format("%Y-%m-%d %H:%M") }}</td>
+                {% endif %}
                 <td class="type-col"><span class="{{ self.type_icon_class(entry) }}" role="img" aria-label="{{ self.type_icon_label(entry) }}" title="{{ self.type_icon_label(entry) }}"></span></td>
                 <td class="submission-title-col">{% if self.can_open_entry(entry) %}<a href="/queue/{{ entry.id }}">{{ entry.title }}</a>{% else %}{{ entry.title }}{% endif %}</td>
                 <td class="disc-id-col">{% match entry.target_disc_id %}{% when Some with (disc_id) %}<a href="/disc/{{ disc_id }}">{{ disc_id }}</a>{% when None %}{% endmatch %}</td>
@@ -109,6 +115,103 @@
                 <td class="reviewer-col">{% match entry.reviewer_id %}{% when Some with (_) %}<a href="/discs?dumper={{ self.url_encode(entry.reviewer.as_deref().unwrap_or("")) }}">{{ entry.reviewer.as_deref().unwrap_or("") }}</a>{% when None %}{% endmatch %}</td>
                 <td class="status-col" title="{{ entry.status }}">{% match entry.status %}{% when SubmissionStatus::Pending %}🟡{% when SubmissionStatus::Approved %}🟢{% when SubmissionStatus::Rejected %}🔴{% when SubmissionStatus::Legacy %}⚪{% endmatch %}</td>
             </tr>
+            {% if is_disc_history %}
+            <tr id="history-changes-{{ entry.id }}" class="disc-history-changes-row" hidden>
+                <td colspan="8">
+                    <div class="disc-history-changes">
+                        {% if !entry.submission_comment.is_empty() %}
+                        <section class="disc-history-submission-comment">
+                            <strong>Submission Comment:</strong>
+                            <p class="pre-wrap section-text">{{ entry.submission_comment }}</p>
+                        </section>
+                        {% endif %}
+                        {% if entry.change_details.is_empty() %}
+                        <p>No field-level changes recorded.</p>
+                        {% else %}
+                        {% for change in entry.change_details %}
+                        {% if !change.ring_rows.is_empty() %}
+                        <section class="disc-history-ring-detail field-changed">
+                            <strong class="disc-history-ring-label">{{ change.label }}:</strong>
+                            <div class="table-scroll table-scroll-compact">
+                            <table class="disc-table ring-table ring-edit-table disc-history-ring-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        {% if change.show_ring_layers %}<th></th>{% endif %}
+                                        <th>Mastering Code</th>
+                                        <th>Mastering SID</th>
+                                        <th>Toolstamps</th>
+                                        <th>Mould SIDs</th>
+                                        <th>Additional Moulds</th>
+                                        <th>Offset</th>
+                                        <th>Extra Offset</th>
+                                        <th>Sample Start</th>
+                                        <th>Comment</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in change.ring_rows %}
+                                    <tr{% if row.entry_rowspan > 0 && row.entry_num > 1 %} class="ring-group-start"{% endif %}>
+                                        {% if row.entry_rowspan > 0 %}<td class="entry-num"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
+                                        {% if change.show_ring_layers %}<td><strong>{{ row.layer_label }}</strong></td>{% endif %}
+                                        <td><input type="text" class="ring-mc{% if !row.mastering_code.status_class.is_empty() %} {{ row.mastering_code.status_class }}{% endif %}" value="{{ row.mastering_code.value }}" readonly></td>
+                                        <td><input type="text" class="ring-ms{% if !row.mastering_sid.status_class.is_empty() %} {{ row.mastering_sid.status_class }}{% endif %}" value="{{ row.mastering_sid.value }}" readonly></td>
+                                        <td><input type="text" class="ring-tools{% if !row.toolstamps.status_class.is_empty() %} {{ row.toolstamps.status_class }}{% endif %}" value="{{ row.toolstamps.value }}" readonly></td>
+                                        <td><input type="text" class="ring-moulds{% if !row.mould_sids.status_class.is_empty() %} {{ row.mould_sids.status_class }}{% endif %}" value="{{ row.mould_sids.value }}" readonly></td>
+                                        <td><input type="text" class="ring-addmoulds{% if !row.additional_moulds.status_class.is_empty() %} {{ row.additional_moulds.status_class }}{% endif %}" value="{{ row.additional_moulds.value }}" readonly></td>
+                                        {% if row.entry_rowspan > 0 %}
+                                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-offset{% if !row.offset.status_class.is_empty() %} {{ row.offset.status_class }}{% endif %}" value="{{ row.offset.value }}" readonly></td>
+                                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-offset-extra{% if !row.offset_extra.status_class.is_empty() %} {{ row.offset_extra.status_class }}{% endif %}" value="{{ row.offset_extra.value }}" readonly></td>
+                                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-sample-start{% if !row.sample_start.status_class.is_empty() %} {{ row.sample_start.status_class }}{% endif %}" value="{{ row.sample_start.value }}" readonly></td>
+                                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-comment{% if !row.comment.status_class.is_empty() %} {{ row.comment.status_class }}{% endif %}" value="{{ row.comment.value }}" readonly></td>
+                                        {% endif %}
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            </div>
+                        </section>
+                        {% else %}
+                        {% if change.is_multiline && !change.previous_value.is_empty() %}
+                        <section class="disc-history-multiline-detail multiline-review-field field-changed">
+                            <label>{{ change.label }}
+                                <textarea rows="5" class="hex-dump-input auto-expand fixed-80" readonly>{{ change.current_value }}</textarea>
+                            </label>
+                            <label class="review-old-textarea">Previous
+                                <textarea rows="5" class="hex-dump-input auto-expand fixed-80" readonly>{{ change.previous_value }}</textarea>
+                            </label>
+                        </section>
+                        {% else %}
+                        <section class="disc-history-change-detail inline-field field-changed">
+                            <span class="inline-field-label">{{ change.label }}:</span>
+                            <div class="inline-field-values">
+                                {% if change.is_multiline %}
+                                <textarea class="hex-dump-input fixed-80" rows="4" readonly>{{ change.current_value }}</textarea>
+                                {% else %}
+                                <input type="text" value="{{ change.current_value }}" readonly>
+                                {% endif %}
+                                {% if !change.current_value.is_empty() && !change.current_label.is_empty() %}
+                                <div class="review-field-annotation review-field-annotation-combined">
+                                    <span class="review-field-annotation-label">{{ change.current_label }}:</span>
+                                    <span class="review-field-annotation-item item-{{ change.current_kind }}">{{ change.current_value }}</span>
+                                </div>
+                                {% endif %}
+                                {% if !change.previous_value.is_empty() %}
+                                <div class="review-field-annotation review-field-annotation-combined">
+                                    <span class="review-field-annotation-label">{{ change.previous_label }}:</span>
+                                    <span class="review-field-annotation-item item-{{ change.previous_kind }}">{{ change.previous_value }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </section>
+                        {% endif %}
+                        {% endif %}
+                        {% endfor %}
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endif %}
             {% endfor %}
             {% if entries.is_empty() %}
             <tr><td colspan="8">No submissions found.</td></tr>
@@ -131,4 +234,54 @@
     </nav>
     {% endif %}
 </div>
+{% if is_disc_history %}
+<script>
+function lockDiscHistoryTableWidth() {
+    var table = document.querySelector('.queue-history-table');
+    if (!table) return;
+    var rows = Array.prototype.slice.call(table.querySelectorAll('.disc-history-changes-row'));
+    if (!rows.length) return;
+
+    table.style.width = 'max-content';
+    table.style.minWidth = 'max-content';
+
+    var widest = Math.ceil(table.getBoundingClientRect().width);
+    rows.forEach(function(row) {
+        var wasHidden = row.hidden;
+        var oldVisibility = row.style.visibility;
+        row.hidden = false;
+        row.style.visibility = 'hidden';
+        widest = Math.max(
+            widest,
+            Math.ceil(table.scrollWidth),
+            Math.ceil(table.getBoundingClientRect().width)
+        );
+        row.hidden = wasHidden;
+        row.style.visibility = oldVisibility;
+    });
+
+    table.style.width = widest + 'px';
+    table.style.minWidth = widest + 'px';
+}
+
+lockDiscHistoryTableWidth();
+window.addEventListener('load', lockDiscHistoryTableWidth, { once: true });
+if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(lockDiscHistoryTableWidth);
+}
+
+document.addEventListener('click', function(event) {
+    var button = event.target.closest('.disc-history-toggle');
+    if (!button) return;
+    var targetId = button.getAttribute('aria-controls');
+    var target = targetId ? document.getElementById(targetId) : null;
+    if (!target) return;
+    var expanded = button.getAttribute('aria-expanded') === 'true';
+    button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    button.setAttribute('aria-label', expanded ? 'Show changes' : 'Hide changes');
+    button.title = expanded ? 'Show changes' : 'Hide changes';
+    target.hidden = expanded;
+});
+</script>
+{% endif %}
 {% endblock %}

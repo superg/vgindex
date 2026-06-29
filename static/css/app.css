@@ -860,7 +860,7 @@ nav[aria-label="Pagination"] ul {
     justify-content: center;
     align-items: start;
     gap: 0.5rem clamp(1.5rem, 4vw, 3.5rem);
-    margin-bottom: 2.5rem;
+    margin-bottom: 2rem;
 }
 .disc-view .disc-side-stack {
     display: contents;
@@ -2285,6 +2285,143 @@ table.striped tbody tr.clickable-row.is-row-hover td {
     width: 100%;
 }
 
+.queue-count {
+    text-align: center;
+    margin-bottom: 0.15rem;
+}
+
+.queue-count small {
+    font-size: 0.8rem;
+}
+
+.disc-history-summary {
+    text-align: center;
+}
+
+.disc-history-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    height: 1.05rem;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--pico-primary);
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    flex: 0 0 1.05rem;
+}
+
+.disc-history-toggle::before {
+    content: "▶";
+    display: block;
+}
+
+.disc-history-toggle[aria-expanded="true"]::before {
+    content: "▼";
+}
+
+.disc-history-date-cell {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+}
+
+.disc-history-changes-row > td {
+    padding: 0 0.35rem 0.55rem 2rem;
+}
+
+.disc-history-changes {
+    width: max-content;
+    min-width: 100%;
+    overflow-x: visible;
+    text-align: left;
+    white-space: normal;
+}
+
+.disc-history-submission-comment {
+    margin: 0.35rem 0;
+    padding: 0.35rem 0.5rem 0.45rem;
+    border-left: 3px solid var(--pico-primary);
+}
+
+.disc-history-submission-comment .section-text {
+    margin: 0.25rem 0 0;
+}
+
+.disc-history-change-detail {
+    display: grid;
+    grid-template-columns: 6.8rem minmax(12rem, 1fr);
+    column-gap: 0.35rem;
+    row-gap: 0.2rem;
+    align-items: flex-start;
+    margin: 0.35rem 0;
+}
+
+.disc-history-change-detail .inline-field-label {
+    padding-top: 0.2rem;
+}
+
+.disc-history-change-detail .inline-field-values {
+    min-width: 0;
+}
+
+.disc-history-change-detail input[readonly],
+.disc-history-change-detail textarea[readonly] {
+    max-width: 100%;
+    margin: 0;
+}
+
+.disc-history-change-detail input[readonly] {
+    width: min(42rem, 100%);
+}
+
+.disc-history-change-detail textarea[readonly] {
+    width: min(56rem, 100%);
+    resize: vertical;
+}
+
+.disc-history-multiline-detail {
+    margin: 0.35rem 0;
+    padding-top: 0.35rem;
+    padding-bottom: 0.45rem;
+}
+
+.disc-history-ring-detail {
+    margin: 0.35rem 0;
+    padding-top: 0.35rem;
+    padding-bottom: 0.4rem;
+}
+
+.disc-history-ring-label {
+    display: inline-block;
+    margin: 0 0 0.25rem 0.35rem;
+}
+
+.disc-history-ring-detail .table-scroll {
+    width: fit-content;
+    max-width: none;
+    margin: 0.1rem 0 0;
+    text-align: left;
+}
+
+.disc-history-ring-table input[readonly] {
+    cursor: default;
+}
+
+.disc-history-ring-table .ring-mc { width: 28ch; }
+.disc-history-ring-table .ring-ms { width: 16ch; }
+.disc-history-ring-table .ring-tools { width: 10ch; }
+.disc-history-ring-table .ring-moulds { width: 15ch; }
+.disc-history-ring-table .ring-addmoulds { width: 18ch; }
+.disc-history-ring-table .ring-offset { width: 6ch; }
+.disc-history-ring-table .ring-offset-extra { width: 8ch; }
+.disc-history-ring-table .ring-sample-start { width: 9ch; }
+.disc-history-ring-table .ring-comment { width: 28ch; }
+
 .queue-table-scroll {
     width: 100%;
     text-align: center;
@@ -2298,10 +2435,26 @@ table.striped tbody tr.clickable-row.is-row-hover td {
     text-align: left;
 }
 
+.queue-history-table {
+    min-width: max-content;
+}
+
 .queue-table th,
 .queue-table td {
     white-space: nowrap;
     padding-inline-end: 0.75rem;
+}
+
+.queue-history-table th,
+.queue-history-table tbody > tr:not(.disc-history-changes-row) > td {
+    padding-top: 0.12rem;
+    padding-bottom: 0.12rem;
+    line-height: 1.15;
+    vertical-align: middle;
+}
+
+.queue-history-table tbody > tr:not(.disc-history-changes-row) > td {
+    height: 1.65rem;
 }
 
 .queue-table .submission-title-col {
@@ -3510,38 +3663,102 @@ tr.field-changed > td { background-color: rgba(255, 235, 59, 0.18); }
     margin-left: auto;
     margin-right: auto;
 }
-.submission-info pre.raw-json {
-    box-sizing: border-box;
-    width: min(68rem, 100%);
-    max-height: none;
-    margin-left: auto;
-    margin-right: auto;
-    overflow: visible;
-    overflow-x: visible;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    font-size: 0.8rem;
-    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
-    border-radius: var(--pico-border-radius);
-    background: var(--pico-code-background-color);
-    padding: 0.65rem 0.8rem;
-}
-.submission-info pre.raw-json code {
-    max-height: none;
-    overflow-y: visible;
-}
-.submission-info details {
+.submission-change-view {
     width: min(68rem, 100%);
     margin-top: 0.75rem;
     margin-left: auto;
     margin-right: auto;
 }
-.submission-info details > summary {
+.submission-change-view > summary {
     width: fit-content;
     margin-bottom: 0.25rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+.submission-change-note,
+.submission-change-empty {
+    margin: 0.25rem 0 0.45rem;
+    font-size: 0.75rem;
+}
+.submission-change-table {
+    display: table;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0.4rem 0 0.55rem;
+    font-size: 0.74rem;
+    table-layout: auto;
+}
+.submission-change-table th,
+.submission-change-table td {
+    padding: 0.18rem 0.38rem;
+    vertical-align: top;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.submission-change-table td:first-child {
+    width: 1%;
+    white-space: nowrap;
+    font-weight: 600;
+}
+.submission-change-table .review-field-annotation-item {
+    display: inline-block;
+    margin: 0.04rem 0.12rem 0.04rem 0;
+}
+.submission-change-ring {
+    margin: 0.45rem 0 0.6rem;
+}
+.submission-change-ring > strong {
+    display: inline-block;
+    margin-bottom: 0.25rem;
+}
+.submission-change-ring .table-scroll {
+    width: fit-content;
+    max-width: 100%;
+}
+.submission-change-ring-table input[readonly] {
+    cursor: default;
+}
+.submission-change-ring-table .ring-mc { width: 28ch; }
+.submission-change-ring-table .ring-ms { width: 16ch; }
+.submission-change-ring-table .ring-tools { width: 10ch; }
+.submission-change-ring-table .ring-moulds { width: 15ch; }
+.submission-change-ring-table .ring-addmoulds { width: 18ch; }
+.submission-change-ring-table .ring-offset { width: 6ch; }
+.submission-change-ring-table .ring-offset-extra { width: 8ch; }
+.submission-change-ring-table .ring-sample-start { width: 9ch; }
+.submission-change-ring-table .ring-comment { width: 28ch; }
+.submission-change-multiline {
+    margin: 0.45rem 0 0.6rem;
+    padding: 0.35rem 0.5rem;
+}
+.submission-change-text-pair {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    overflow-x: auto;
+}
+.submission-change-text-pair label {
+    flex: 0 0 auto;
+    margin: 0.25rem 0 0;
     font-size: 0.75rem;
     font-weight: 600;
-    line-height: 1.2;
+}
+.submission-change-pre {
+    box-sizing: border-box;
+    width: 46ch;
+    min-height: 2.2rem;
+    max-width: calc(100vw - 3rem);
+    margin: 0.15rem 0 0;
+    padding: 0.45rem 0.55rem;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-code-background-color);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.72rem;
+    line-height: 1.3;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 /* Wrapped text blocks for dump log, comments, etc. */

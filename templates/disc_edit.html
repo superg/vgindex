@@ -62,19 +62,91 @@ const IS_ADD_MODE = {{ is_add_mode }};
         {% endif %}
     </table>
 
-    {% if !changes_original_json.is_empty() %}
-    <details>
-        <summary>Original JSON</summary>
-        <pre class="raw-json"><code>{{ changes_original_json }}</code></pre>
+    {% for view in change_views %}
+    <details class="submission-change-view" open>
+        <summary>{{ view.title }}</summary>
+        {% if !view.note.is_empty() %}<p class="submission-change-note">{{ view.note }}</p>{% endif %}
+        {% if !view.has_changes %}<p class="submission-change-empty">No recorded changes.</p>{% endif %}
+        {% if !view.scalar_rows.is_empty() %}
+        <table class="disc-table submission-change-table">
+            <thead><tr><th>Field</th><th>Action</th><th>Previous</th><th>Current</th></tr></thead>
+            <tbody>
+            {% for row in view.scalar_rows %}
+                <tr class="{{ row.status_class }}"><td>{{ row.field }}</td><td>{{ row.action }}</td><td>{{ row.previous_value }}</td><td>{{ row.current_value }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        {% if !view.set_rows.is_empty() %}
+        <table class="disc-table submission-change-table">
+            <thead><tr><th>Field</th><th>Added</th><th>Removed</th></tr></thead>
+            <tbody>
+            {% for row in view.set_rows %}
+                <tr><td>{{ row.field }}</td><td>{% for item in row.added %}<span class="review-field-annotation-item item-added">{{ item }}</span>{% endfor %}</td><td>{% for item in row.removed %}<span class="review-field-annotation-item item-removed">{{ item }}</span>{% endfor %}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        {% for section in view.ring_sections %}
+        <section class="submission-change-ring">
+            <strong>{{ section.label }}</strong>
+            <div class="table-scroll table-scroll-compact">
+            <table class="disc-table ring-table ring-edit-table submission-change-ring-table">
+                <thead><tr><th>#</th>{% if section.show_ring_layers %}<th></th>{% endif %}<th>Mastering Code</th><th>Mastering SID</th><th>Toolstamps</th><th>Mould SIDs</th><th>Additional Moulds</th><th>Offset</th><th>Extra Offset</th><th>Sample Start</th><th>Comment</th></tr></thead>
+                <tbody>
+                {% for row in section.ring_rows %}
+                    <tr{% if row.entry_rowspan > 0 && row.entry_num > 1 %} class="ring-group-start"{% endif %}>
+                        {% if row.entry_rowspan > 0 %}<td class="entry-num"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
+                        {% if section.show_ring_layers %}<td><strong>{{ row.layer_label }}</strong></td>{% endif %}
+                        <td><input type="text" class="ring-mc{% if !row.mastering_code.status_class.is_empty() %} {{ row.mastering_code.status_class }}{% endif %}" value="{{ row.mastering_code.value }}" readonly></td>
+                        <td><input type="text" class="ring-ms{% if !row.mastering_sid.status_class.is_empty() %} {{ row.mastering_sid.status_class }}{% endif %}" value="{{ row.mastering_sid.value }}" readonly></td>
+                        <td><input type="text" class="ring-tools{% if !row.toolstamps.status_class.is_empty() %} {{ row.toolstamps.status_class }}{% endif %}" value="{{ row.toolstamps.value }}" readonly></td>
+                        <td><input type="text" class="ring-moulds{% if !row.mould_sids.status_class.is_empty() %} {{ row.mould_sids.status_class }}{% endif %}" value="{{ row.mould_sids.value }}" readonly></td>
+                        <td><input type="text" class="ring-addmoulds{% if !row.additional_moulds.status_class.is_empty() %} {{ row.additional_moulds.status_class }}{% endif %}" value="{{ row.additional_moulds.value }}" readonly></td>
+                        {% if row.entry_rowspan > 0 %}
+                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-offset{% if !row.offset.status_class.is_empty() %} {{ row.offset.status_class }}{% endif %}" value="{{ row.offset.value }}" readonly></td>
+                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-offset-extra{% if !row.offset_extra.status_class.is_empty() %} {{ row.offset_extra.status_class }}{% endif %}" value="{{ row.offset_extra.value }}" readonly></td>
+                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-sample-start{% if !row.sample_start.status_class.is_empty() %} {{ row.sample_start.status_class }}{% endif %}" value="{{ row.sample_start.value }}" readonly></td>
+                        <td{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}><input type="text" class="ring-comment{% if !row.comment.status_class.is_empty() %} {{ row.comment.status_class }}{% endif %}" value="{{ row.comment.value }}" readonly></td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </section>
+        {% endfor %}
+        {% for row in view.multiline_rows %}
+        <section class="submission-change-multiline {{ row.status_class }}">
+            <strong>{{ row.field }}: {{ row.action }}</strong>
+            <div class="submission-change-text-pair">
+                <label>Previous<pre class="submission-change-pre">{{ row.previous_value }}</pre></label>
+                <label>Current<pre class="submission-change-pre">{{ row.current_value }}</pre></label>
+            </div>
+        </section>
+        {% endfor %}
+        {% if !view.legacy_rows.is_empty() %}
+        <table class="disc-table submission-change-table">
+            <thead><tr><th>Legacy Field</th><th>Action</th><th>Previous</th><th>Current</th></tr></thead>
+            <tbody>
+            {% for row in view.legacy_rows %}
+                <tr class="{{ row.status_class }}"><td>{{ row.field }}</td><td>{{ row.action }}</td><td>{{ row.previous_value }}</td><td>{{ row.current_value }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        {% if !view.fallback_rows.is_empty() %}
+        <table class="disc-table submission-change-table">
+            <thead><tr><th>Path</th><th>Value</th></tr></thead>
+            <tbody>
+            {% for row in view.fallback_rows %}
+                <tr><td>{{ row.path }}</td><td>{{ row.value }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
     </details>
-    {% endif %}
-
-    {% if !changes_json.is_empty() %}
-    <details>
-        <summary>Final JSON</summary>
-        <pre class="raw-json"><code>{{ changes_json }}</code></pre>
-    </details>
-    {% endif %}
+    {% endfor %}
 </div>
 
 {% if !dump_log_display.is_empty() %}

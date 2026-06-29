@@ -183,8 +183,7 @@ pub(crate) struct DiscEditTemplate {
     pub review_comment_input: String,
     pub created_at_display: String,
     pub reviewed_at_display: String,
-    pub changes_original_json: String,
-    pub changes_json: String,
+    pub change_views: Vec<SubmissionChangesView>,
 }
 impl SiteConfig for DiscEditTemplate {}
 
@@ -1044,8 +1043,7 @@ async fn edit_page(
             review_comment_input: String::new(),
             created_at_display: String::new(),
             reviewed_at_display: String::new(),
-            changes_original_json: String::new(),
-            changes_json: String::new(),
+            change_views: vec![],
         }
         .render()
         .unwrap(),
@@ -1636,8 +1634,7 @@ async fn render_form_with_errors(
         review_comment_input: String::new(),
         created_at_display: String::new(),
         reviewed_at_display: String::new(),
-        changes_original_json: String::new(),
-        changes_json: String::new(),
+        change_views: vec![],
     };
 
     let status =
@@ -2370,8 +2367,7 @@ async fn add_page(
             review_comment_input: String::new(),
             created_at_display: String::new(),
             reviewed_at_display: String::new(),
-            changes_original_json: String::new(),
-            changes_json: String::new(),
+            change_views: vec![],
         }
         .render()
         .unwrap(),
