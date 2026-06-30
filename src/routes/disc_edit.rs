@@ -1187,6 +1187,18 @@ impl FormValidationOptions {
     }
 }
 
+fn validate_identifier_values_do_not_contain_commas(
+    errors: &mut Vec<String>,
+    label: &str,
+    values: &[String],
+) {
+    if values.iter().any(|value| value.trim().contains(',')) {
+        errors.push(format!(
+            "{label}: commas are not allowed; enter each value separately"
+        ));
+    }
+}
+
 fn validate_form_with_options(
     form: &DiscEditForm,
     all_media_types: &[EditMediaTypeRow],
@@ -1229,6 +1241,10 @@ fn validate_form_with_options(
     if options.require_regions && form.regions.is_empty() {
         errors.push("Regions: at least one region must be selected".into());
     }
+
+    validate_identifier_values_do_not_contain_commas(&mut errors, "Disc Serials", &form.serial);
+    validate_identifier_values_do_not_contain_commas(&mut errors, "Editions", &form.edition);
+    validate_identifier_values_do_not_contain_commas(&mut errors, "Barcodes", &form.barcode);
 
     if let Some(ref s) = form.error_count {
         let s = s.trim();
@@ -3515,6 +3531,50 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn validate_form_rejects_commas_in_identifier_arrays() {
+        let mut form = new_disc_form();
+        form.serial = vec![
+            "ABC-001, DEF-002".to_string(),
+            "GHI-003,JLK-004".to_string(),
+        ];
+        form.edition = vec!["Original, Rerelease".to_string()];
+        form.barcode = vec!["1234567890123, 9876543210987".to_string()];
+
+        let errors = validate_form(&form, &media_rows(), &systems_with_edc(true));
+
+        let serial_error =
+            "Disc Serials: commas are not allowed; enter each value separately".to_string();
+        let edition_error =
+            "Editions: commas are not allowed; enter each value separately".to_string();
+        let barcode_error =
+            "Barcodes: commas are not allowed; enter each value separately".to_string();
+
+        assert_eq!(
+            errors
+                .iter()
+                .filter(|error| *error == &serial_error)
+                .count(),
+            1
+        );
+        assert!(errors.contains(&edition_error));
+        assert!(errors.contains(&barcode_error));
+    }
+
+    #[test]
+    fn validate_form_ignores_blank_identifier_values_for_comma_check() {
+        let mut form = new_disc_form();
+        form.serial = vec!["".to_string()];
+        form.edition = vec!["  ".to_string()];
+        form.barcode = vec!["\t".to_string()];
+
+        let errors = validate_form(&form, &media_rows(), &systems_with_edc(true));
+
+        assert!(!errors
+            .iter()
+            .any(|error| error.contains("commas are not allowed")));
+    }
+
+    #[test]
     fn validate_add_submission_form_requires_metadata_for_new_disc() {
         let mut form = new_disc_form();
         form.system_code = String::new();
@@ -3545,6 +3605,29 @@ mod operation_delta_tests {
         let errors =
             validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
 
+        assert!(!errors.contains(&"System: must be selected".to_string()));
+        assert!(!errors.contains(&"Media: must be selected".to_string()));
+        assert!(!errors.contains(&"Category: must be selected".to_string()));
+        assert!(!errors.contains(&"Title: cannot be empty".to_string()));
+        assert!(!errors.contains(&"Regions: at least one region must be selected".to_string()));
+    }
+
+    #[test]
+    fn validate_add_submission_form_rejects_identifier_commas_for_verification() {
+        let mut form = new_disc_form();
+        form.system_code = String::new();
+        form.media_type = String::new();
+        form.category = String::new();
+        form.title = String::new();
+        form.regions = Vec::new();
+        form.serial = vec!["ABC-001, DEF-002".to_string()];
+
+        let errors =
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+
+        assert!(errors.contains(
+            &"Disc Serials: commas are not allowed; enter each value separately".to_string()
+        ));
         assert!(!errors.contains(&"System: must be selected".to_string()));
         assert!(!errors.contains(&"Media: must be selected".to_string()));
         assert!(!errors.contains(&"Category: must be selected".to_string()));

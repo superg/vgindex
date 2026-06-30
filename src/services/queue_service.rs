@@ -927,10 +927,12 @@ async fn find_approval_conflicts_for_effective_data(
 
     let mut conflicts = Vec::new();
 
-    if let Some(conflict) =
-        find_generated_name_conflict(pool, effective_data, target_disc_id).await?
-    {
-        conflicts.push(conflict);
+    if effective_disc_is_archive_eligible(effective_data) {
+        if let Some(conflict) =
+            find_generated_name_conflict(pool, effective_data, target_disc_id).await?
+        {
+            conflicts.push(conflict);
+        }
     }
 
     if let Some(files_xml) = dat_hash_conflict_input(changes, effective_data) {
@@ -967,6 +969,13 @@ async fn find_approval_conflicts_for_effective_data(
 
 fn effective_disc_is_active(effective_data: &serde_json::Value) -> bool {
     effective_data["status"].as_str() != Some("Disabled")
+}
+
+fn effective_disc_is_archive_eligible(effective_data: &serde_json::Value) -> bool {
+    !matches!(
+        effective_data["status"].as_str(),
+        Some("Disabled" | "Questionable")
+    )
 }
 
 fn change_set_contains(changes: &serde_json::Value, key: &str) -> bool {
@@ -1094,30 +1103,12 @@ async fn find_generated_name_conflict(
     );
     let proposed_key = generated_name_key(&proposed_name);
 
-    let candidates: Vec<DuplicateNameDiscRow> = sqlx::query_as(
-        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
-                COALESCE((
-                    SELECT array_agg(r.name ORDER BY r.sort_order)
-                    FROM disc_regions dr
-                    JOIN regions r ON r.code = dr.region_code
-                    WHERE dr.disc_id = d.id
-                ), ARRAY[]::TEXT[]) AS region_names,
-                COALESCE((
-                    SELECT array_agg(l.code ORDER BY l.sort_order)
-                    FROM disc_languages dl
-                    JOIN languages l ON l.code = dl.language_code
-                    WHERE dl.disc_id = d.id
-                ), ARRAY[]::TEXT[]) AS language_codes
-         FROM discs d
-         WHERE d.system_code = $1
-           AND d.status <> 'Disabled'
-           AND ($2::INT IS NULL OR d.id <> $2)
-         ORDER BY d.id",
-    )
-    .bind(system_code)
-    .bind(exclude_disc_id)
-    .fetch_all(pool)
-    .await?;
+    let candidates: Vec<DuplicateNameDiscRow> =
+        sqlx::query_as(GENERATED_NAME_CONFLICT_CANDIDATES_SQL)
+            .bind(system_code)
+            .bind(exclude_disc_id)
+            .fetch_all(pool)
+            .await?;
 
     for candidate in candidates {
         let candidate_name = generated_disc_name(
@@ -1139,6 +1130,26 @@ async fn find_generated_name_conflict(
 
     Ok(None)
 }
+
+const GENERATED_NAME_CONFLICT_CANDIDATES_SQL: &str = "\
+SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
+                COALESCE((
+                    SELECT array_agg(r.name ORDER BY r.sort_order)
+                    FROM disc_regions dr
+                    JOIN regions r ON r.code = dr.region_code
+                    WHERE dr.disc_id = d.id
+                ), ARRAY[]::TEXT[]) AS region_names,
+                COALESCE((
+                    SELECT array_agg(l.code ORDER BY l.sort_order)
+                    FROM disc_languages dl
+                    JOIN languages l ON l.code = dl.language_code
+                    WHERE dl.disc_id = d.id
+                ), ARRAY[]::TEXT[]) AS language_codes
+         FROM discs d
+         WHERE d.system_code = $1
+           AND d.status NOT IN ('Disabled', 'Questionable')
+           AND ($2::INT IS NULL OR d.id <> $2)
+         ORDER BY d.id";
 
 async fn fetch_approval_conflict_disc_title(pool: &PgPool, disc_id: i32) -> AppResult<String> {
     #[derive(sqlx::FromRow)]
@@ -1750,6 +1761,32 @@ mod tests {
             None
         );
         assert_eq!(stale_review_approval_outcome(None, "current"), None);
+    }
+
+    #[test]
+    fn generated_name_conflict_uses_archive_eligible_statuses() {
+        assert!(!effective_disc_is_archive_eligible(
+            &serde_json::json!({"status": "Disabled"})
+        ));
+        assert!(!effective_disc_is_archive_eligible(
+            &serde_json::json!({"status": "Questionable"})
+        ));
+        assert!(effective_disc_is_archive_eligible(
+            &serde_json::json!({"status": "Unverified"})
+        ));
+        assert!(effective_disc_is_archive_eligible(
+            &serde_json::json!({"status": "Verified"})
+        ));
+        assert!(effective_disc_is_active(
+            &serde_json::json!({"status": "Questionable"})
+        ));
+    }
+
+    #[test]
+    fn generated_name_conflict_query_excludes_archive_ineligible_statuses() {
+        assert!(GENERATED_NAME_CONFLICT_CANDIDATES_SQL
+            .contains("d.status NOT IN ('Disabled', 'Questionable')"));
+        assert!(!GENERATED_NAME_CONFLICT_CANDIDATES_SQL.contains("d.status <> 'Disabled'"));
     }
 
     #[test]
