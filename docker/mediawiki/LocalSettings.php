@@ -231,3 +231,8 @@ $wgLogos = [
 
 # Cookie expiry 30 days
 $wgRememberMe = 'always';
+
+# Enable dark mode
+$wgVectorNightMode['logged_out'] = true;
+$wgVectorNightMode['logged_in'] = true;
+$wgVectorNightMode['beta'] = true;
