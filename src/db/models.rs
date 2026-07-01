@@ -919,8 +919,8 @@ pub(crate) fn extract_track_from_filename(filename: &str) -> Option<String> {
     if lower.starts_with("track.") {
         return Some("1".to_string());
     }
-    if let Some(pos) = lower.find("track ") {
-        let rest = &filename[pos + 6..];
+    if let Some(pos) = lower.rfind("track ") {
+        let rest = &lower[pos + 6..];
         let num: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
         if !num.is_empty() {
             return Some(num);
