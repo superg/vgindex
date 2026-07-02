@@ -630,7 +630,6 @@ pub fn sanitize_filename(s: &str) -> String {
         }
     }
     result.retain(|c| !matches!(c as u32, 0x00..=0x1F | 0x7F));
-	result.truncate(result.trim_end().len());
     result
 }
 
