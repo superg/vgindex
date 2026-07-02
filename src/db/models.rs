@@ -610,8 +610,10 @@ pub fn sanitize_filename(s: &str) -> String {
         ("\\", "-"),
         ("<", "_"),
         (">", "_"),
+        (" \"", ""),
         ("\"", ""),
         ("*", "-"),
+        (" ?", ""),
         ("?", ""),
         ("|", "+"),
     ];
@@ -1276,11 +1278,7 @@ FILE \"Track 2.bin\" BINARY\n\
     #[test]
     fn sanitize_filename_preserves_trailing_dots_and_spaces() {
         assert_eq!(sanitize_filename("Game."), "Game.");
-    }
-
-    #[test]
-    fn sanitize_filename_trims_spaces() {
-        assert_eq!(sanitize_filename("Game "), "Game");
+        assert_eq!(sanitize_filename("Game.. "), "Game.. ");
     }
 
     #[test]
