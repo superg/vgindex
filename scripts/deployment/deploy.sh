@@ -14,6 +14,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/app}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
 RELEASE_FILE="$APP_DIR/.last_release"
+LOCK_FILE="$APP_DIR/.operation.lock"
 
 if [[ -z "${IMAGE_TAG:-}" ]]; then
     echo "ERROR: IMAGE_TAG must be set" >&2
@@ -24,6 +25,9 @@ if [[ ! -f "$ENV_FILE" ]]; then
     echo "ERROR: env file not found at $ENV_FILE" >&2
     exit 1
 fi
+
+exec 9>"$LOCK_FILE"
+flock 9
 
 cd "$APP_DIR"
 

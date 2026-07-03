@@ -556,4 +556,4 @@ esac
 
 chown -R www-data:www-data /var/www/html/cache
 
-exec apache2-foreground
+exec "$@"

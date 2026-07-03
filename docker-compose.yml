@@ -57,6 +57,7 @@ services:
       - NEWS_FEED_URL=${NEWS_FEED_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/feed.php?mode=news}
     volumes:
       - archive_cache:/app/data
+      - backup_data:/app/backups:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -175,11 +176,52 @@ services:
       phpbb:
         condition: service_started
 
+  backup:
+    image: postgres:16-alpine
+    profiles: ["backup"]
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-myapp}
+    volumes:
+      - backup_data:/backups
+      - phpbb_files:/source/phpbb_files:ro
+      - phpbb_avatars:/source/phpbb_avatars:ro
+      - mediawiki_uploads:/source/mediawiki_uploads:ro
+      - ./scripts/backups/create-backup.sh:/usr/local/bin/create-backup.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/create-backup.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  restore:
+    image: postgres:16-alpine
+    profiles: ["backup"]
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-myapp}
+    volumes:
+      - phpbb_files:/restore/phpbb_files
+      - phpbb_avatars:/restore/phpbb_avatars
+      - mediawiki_uploads:/restore/mediawiki_uploads
+      - archive_cache:/restore/archive_cache
+      - ./scripts/backups/restore-container.sh:/usr/local/bin/restore-container.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/restore-container.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
   caddy_data:
   caddy_config:
   archive_cache:
+  backup_data:
   phpbb_files:
   phpbb_store:
   phpbb_avatars:

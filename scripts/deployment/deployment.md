@@ -69,7 +69,7 @@ Push to `main`. The CD workflow will:
 1. Build Docker images.
 2. Push to registry with `sha-<commit>` and `main` tags.
 3. Sync runtime config files to server.
-4. Run `deploy.sh` (pull images, compose up, health checks).
+4. Run `scripts/deployment/deploy.sh` (pull images, compose up, health checks).
 5. Run smoke tests against the live site.
 
 ### Manual trigger
@@ -80,7 +80,7 @@ Go to Actions → CD → Run workflow.
 
 ```bash
 ssh deploy@<server-ip>
-IMAGE_TAG=sha-abc1234 bash /opt/app/deploy.sh
+IMAGE_TAG=sha-abc1234 bash /opt/app/scripts/deployment/deploy.sh
 ```
 
 ## Rollback
@@ -101,11 +101,55 @@ ssh deploy@<server-ip>
 cat /opt/app/.last_release
 
 # Rollback to that tag
-IMAGE_TAG=$(cat /opt/app/.last_release) bash /opt/app/deploy.sh
+IMAGE_TAG=$(cat /opt/app/.last_release) bash /opt/app/scripts/deployment/deploy.sh
 ```
 
 Or rollback to any known good tag:
 
 ```bash
-IMAGE_TAG=sha-<known-good-commit> bash /opt/app/deploy.sh
+IMAGE_TAG=sha-<known-good-commit> bash /opt/app/scripts/deployment/deploy.sh
 ```
+
+## Daily backups
+
+The production host runs a one-shot PostgreSQL 16 backup container every day at
+06:00 UTC. It writes timestamped archives to the `backup_data` Docker volume and
+retains the newest seven completed files. Administrators can download those
+archives from the Backup tab in Maintenance.
+
+After the first deployment containing the backup files, install the host timer
+once as root:
+
+```bash
+sudo bash /opt/app/scripts/deployment/install-backup-timer.sh
+```
+
+Run a backup immediately and inspect its logs with:
+
+```bash
+sudo systemctl start vgindex-backup.service
+journalctl -u vgindex-backup.service -n 100 --no-pager
+systemctl list-timers vgindex-backup.timer --no-pager
+```
+
+The timer and the deployment script share `/opt/app/.operation.lock`, so a
+deployment and a backup wait for one another instead of running concurrently.
+
+For local testing, generate a backup from the running Compose stack:
+
+```bash
+docker compose --profile backup run --rm backup
+```
+
+Download the archive through the administrator UI or copy it out of the backup
+volume, then import it into an initialized local stack:
+
+```bash
+./scripts/backups/restore-local.sh /path/to/vgindex-backup-YYYYMMDDTHHMMSSZ.tar.gz
+```
+
+The restore command replaces the three local databases and the persisted phpBB
+and MediaWiki content volumes. It preserves the local phpBB signing-key volume,
+refreshes phpBB's OIDC configuration from the local `.env`, and restarts the
+web services. It prints the failing phase and returns the original nonzero exit
+code if a command fails; it does not attempt recovery.

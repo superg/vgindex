@@ -1,0 +1,13 @@
+[Unit]
+Description=VGIndex daily backup
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+SupplementaryGroups=docker
+WorkingDirectory=/opt/app
+ExecStart=/usr/bin/flock --wait 7200 /opt/app/.operation.lock /usr/bin/docker compose --env-file /opt/app/.env --profile backup run --rm -T backup
+TimeoutStartSec=0

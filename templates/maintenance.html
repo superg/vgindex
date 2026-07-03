@@ -36,6 +36,9 @@
     <a href="/maintenance?tab=regions" {% if show_regions %}class="active"{% endif %}>Regions</a>
     <a href="/maintenance?tab=languages" {% if show_languages %}class="active"{% endif %}>Languages</a>
     <a href="/maintenance?tab=misc" {% if show_misc %}class="active"{% endif %}>Miscellaneous</a>
+    {% if can_admin %}
+    <a href="/maintenance?tab=backup" {% if show_backup %}class="active"{% endif %}>Backup</a>
+    {% endif %}
 </nav>
 
 <section id="maintenance-general-panel" class="maintenance-panel" {% if !show_general %}hidden{% endif %}>
@@ -195,4 +198,33 @@
         </section>
     </div>
 </section>
+
+{% if can_admin %}
+<section id="maintenance-backup-panel" class="maintenance-panel" {% if !show_backup %}hidden{% endif %}>
+    {% if backup_files.is_empty() %}
+    <p class="maintenance-backup-empty">No completed backups are available.</p>
+    {% else %}
+    <div class="maintenance-backup-scroll">
+        <table class="maintenance-backup-table">
+            <thead>
+                <tr>
+                    <th scope="col">Created</th>
+                    <th scope="col">Size</th>
+                    <th scope="col">Download</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for backup in backup_files %}
+                <tr>
+                    <td>{{ backup.created_at }}</td>
+                    <td>{{ backup.size }}</td>
+                    <td><a href="/maintenance/backups/{{ backup.filename }}">{{ backup.filename }}</a></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
 {% endblock %}

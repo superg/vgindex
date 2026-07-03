@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the VGIndex backup every day at 06:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 UTC
+Persistent=true
+Unit=vgindex-backup.service
+
+[Install]
+WantedBy=timers.target

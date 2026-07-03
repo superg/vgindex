@@ -93,11 +93,11 @@ jobs:
       - name: Sync config files
         run: |
           scp -i ~/.ssh/deploy_key -r -P ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
-            docker-compose.yml Caddyfile docker/ scripts/deployment/deploy.sh \
+            docker-compose.yml Caddyfile docker/ scripts/ \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/app/
 
       - name: Run deploy
         run: |
           ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "IMAGE_TAG=${{ needs.build.outputs.image_tag }} bash /opt/app/deploy.sh"
+            "IMAGE_TAG=${{ needs.build.outputs.image_tag }} bash /opt/app/scripts/deployment/deploy.sh"

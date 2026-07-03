@@ -3240,6 +3240,30 @@ textarea.full-width-textarea {
     margin: 0 auto;
 }
 
+.maintenance-backup-scroll {
+    overflow-x: auto;
+}
+
+.maintenance-backup-table {
+    width: 100%;
+    max-width: 58rem;
+    margin: 0 auto;
+}
+
+.maintenance-backup-table th:nth-child(2),
+.maintenance-backup-table td:nth-child(2) {
+    white-space: nowrap;
+    text-align: right;
+}
+
+.maintenance-backup-table td:last-child {
+    overflow-wrap: anywhere;
+}
+
+.maintenance-backup-empty {
+    text-align: center;
+}
+
 .maintenance-systems-form,
 .maintenance-editor-form {
     margin: 0;

@@ -135,6 +135,26 @@ where
     }
 }
 
+/// Extractor that requires an administrator.
+pub struct RequireAdmin(pub AuthenticatedUser);
+
+impl<S> FromRequestParts<S> for RequireAdmin
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let RequireAuth(user) = RequireAuth::from_request_parts(parts, state).await?;
+        if user.role.can_admin() {
+            Ok(RequireAdmin(user))
+        } else {
+            Err(AppError::Forbidden)
+        }
+    }
+}
+
 // We need FromRef to extract AppState from any state type.
 pub trait FromRef<T> {
     fn from_ref(input: &T) -> Self;

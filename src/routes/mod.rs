@@ -130,6 +130,7 @@ fn canonical_route_segment(segment: &str) -> Option<&'static str> {
         "about" => Some("about"),
         "api" => Some("api"),
         "auth" => Some("auth"),
+        "backups" => Some("backups"),
         "callback" => Some("callback"),
         "cue" => Some("cue"),
         "cues" => Some("cues"),

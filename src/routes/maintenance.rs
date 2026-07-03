@@ -1,6 +1,7 @@
 use askama::Template;
 use axum::{
-    extract::{Query, State},
+    extract::{Path as AxumPath, Query, Request, State},
+    http::{header, HeaderValue},
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Router,
@@ -9,10 +10,12 @@ use axum_extra::extract::Form;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use tower::ServiceExt;
+use tower_http::services::ServeFile;
 
 use crate::auth::{
     csrf::{self, CsrfForm},
-    middleware::{AuthenticatedUser, RequireModerator},
+    middleware::{AuthenticatedUser, RequireAdmin, RequireModerator},
 };
 use crate::config::SiteConfig;
 use crate::db::models::System;
@@ -31,7 +34,12 @@ pub fn routes() -> Router<AppState> {
             "/maintenance/trigger-archive-generation",
             post(trigger_archive_generation),
         )
+        .route("/maintenance/backups/{filename}", get(download_backup))
 }
+
+const BACKUP_DIR: &str = "./backups";
+const BACKUP_PREFIX: &str = "vgindex-backup-";
+const BACKUP_SUFFIX: &str = ".tar.gz";
 
 #[derive(Deserialize, Default)]
 struct MaintenanceQuery {
@@ -54,22 +62,76 @@ struct MaintenanceTemplate {
     system_input_sizes: SystemInputSizes,
     region_input_sizes: LookupInputSizes,
     language_input_sizes: LookupInputSizes,
+    backup_files: Vec<BackupFile>,
+    can_admin: bool,
     show_general: bool,
     show_systems: bool,
     show_regions: bool,
     show_languages: bool,
     show_misc: bool,
+    show_backup: bool,
 }
 impl SiteConfig for MaintenanceTemplate {}
+
+struct BackupFile {
+    filename: String,
+    created_at: String,
+    size: String,
+}
 
 async fn maintenance_page(
     State(state): State<AppState>,
     RequireModerator(user): RequireModerator,
     Query(query): Query<MaintenanceQuery>,
 ) -> AppResult<Html<String>> {
+    if query.tab.as_deref() == Some("backup") && !user.role.can_admin() {
+        return Err(AppError::Forbidden);
+    }
+
     let template =
         build_maintenance_template(&state.pool, user, query, Vec::new(), None, None, None).await?;
     Ok(Html(template.render().unwrap()))
+}
+
+async fn download_backup(
+    RequireAdmin(user): RequireAdmin,
+    AxumPath(filename): AxumPath<String>,
+    request: Request,
+) -> Response {
+    if backup_timestamp(&filename).is_none() {
+        return AppError::NotFound.into_response();
+    }
+
+    let path = Path::new(BACKUP_DIR).join(&filename);
+    let is_regular_file = std::fs::symlink_metadata(&path)
+        .map(|metadata| metadata.file_type().is_file())
+        .unwrap_or(false);
+    if !is_regular_file {
+        return AppError::NotFound.into_response();
+    }
+
+    tracing::info!(
+        user_id = user.id,
+        username = %user.username,
+        backup = %filename,
+        "Administrator downloaded database backup"
+    );
+
+    let mut response = ServeFile::new(path)
+        .oneshot(request)
+        .await
+        .expect("ServeFile is infallible")
+        .into_response();
+    response.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
+            .expect("validated backup filename is a valid header value"),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    response
 }
 
 #[derive(Deserialize)]
@@ -732,6 +794,11 @@ async fn build_maintenance_template(
         }
     };
     let flag_options = load_flag_options()?;
+    let backup_files = if user.role.can_admin() {
+        list_backup_files(Path::new(BACKUP_DIR))
+    } else {
+        Vec::new()
+    };
 
     Ok(maintenance_template(
         user,
@@ -741,6 +808,7 @@ async fn build_maintenance_template(
         region_rows,
         language_rows,
         flag_options,
+        backup_files,
     ))
 }
 
@@ -752,17 +820,20 @@ fn maintenance_template(
     region_rows: Vec<LookupEditorRow>,
     language_rows: Vec<LookupEditorRow>,
     flag_options: Vec<FlagOption>,
+    backup_files: Vec<BackupFile>,
 ) -> MaintenanceTemplate {
     let active_tab = match query.tab.as_deref() {
         Some("systems") => "systems",
         Some("regions") => "regions",
         Some("languages") => "languages",
         Some("misc") => "misc",
+        Some("backup") if user.role.can_admin() => "backup",
         _ => "general",
     };
     let system_input_sizes = system_input_sizes(&system_rows);
     let region_input_sizes = lookup_input_sizes(&region_rows);
     let language_input_sizes = lookup_input_sizes(&language_rows);
+    let can_admin = user.role.can_admin();
     MaintenanceTemplate {
         current_user: Some(user),
         status_message: query.status.unwrap_or_default(),
@@ -775,11 +846,85 @@ fn maintenance_template(
         system_input_sizes,
         region_input_sizes,
         language_input_sizes,
+        backup_files,
+        can_admin,
         show_general: active_tab == "general",
         show_systems: active_tab == "systems",
         show_regions: active_tab == "regions",
         show_languages: active_tab == "languages",
         show_misc: active_tab == "misc",
+        show_backup: active_tab == "backup",
+    }
+}
+
+fn list_backup_files(directory: &Path) -> Vec<BackupFile> {
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(err) => {
+            tracing::warn!(path = %directory.display(), "Could not list backups: {err}");
+            return Vec::new();
+        }
+    };
+
+    let mut backups = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let filename = entry.file_name().into_string().ok()?;
+            let created_at = backup_timestamp(&filename)?;
+            if !entry.file_type().ok()?.is_file() {
+                return None;
+            }
+            let metadata = entry.metadata().ok()?;
+            Some(BackupFile {
+                filename,
+                created_at,
+                size: format_file_size(metadata.len()),
+            })
+        })
+        .collect::<Vec<_>>();
+    backups.sort_by(|left, right| right.filename.cmp(&left.filename));
+    backups
+}
+
+fn backup_timestamp(filename: &str) -> Option<String> {
+    let timestamp = filename
+        .strip_prefix(BACKUP_PREFIX)?
+        .strip_suffix(BACKUP_SUFFIX)?;
+    let bytes = timestamp.as_bytes();
+    if bytes.len() != 16
+        || bytes[8] != b'T'
+        || bytes[15] != b'Z'
+        || !bytes[..8].iter().all(u8::is_ascii_digit)
+        || !bytes[9..15].iter().all(u8::is_ascii_digit)
+    {
+        return None;
+    }
+
+    Some(format!(
+        "{}-{}-{} {}:{}:{} UTC",
+        &timestamp[0..4],
+        &timestamp[4..6],
+        &timestamp[6..8],
+        &timestamp[9..11],
+        &timestamp[11..13],
+        &timestamp[13..15],
+    ))
+}
+
+fn format_file_size(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * KIB;
+    const GIB: u64 = 1024 * MIB;
+
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} B")
     }
 }
 
@@ -1834,16 +1979,20 @@ mod tests {
         ]
     }
 
-    fn maintenance_template_for_tests(show_misc: bool) -> MaintenanceTemplate {
+    fn maintenance_template_for_role(
+        role: UserRole,
+        tab: Option<&str>,
+        backup_files: Vec<BackupFile>,
+    ) -> MaintenanceTemplate {
         let systems = vec![test_system("SYS", "System")];
         let system_rows = build_system_editor_rows(&systems);
         let region_rows = build_lookup_editor_rows(&[test_lookup_record("us", "USA", "us", 1)]);
         let language_rows =
             build_lookup_editor_rows(&[test_lookup_record("en", "English", "gb", 1)]);
         maintenance_template(
-            auth_user(UserRole::Moderator),
+            auth_user(role),
             MaintenanceQuery {
-                tab: show_misc.then(|| "misc".to_string()),
+                tab: tab.map(str::to_string),
                 ..Default::default()
             },
             Vec::new(),
@@ -1851,7 +2000,12 @@ mod tests {
             region_rows,
             language_rows,
             test_flag_options(),
+            backup_files,
         )
+    }
+
+    fn maintenance_template_for_tests(show_misc: bool) -> MaintenanceTemplate {
+        maintenance_template_for_role(UserRole::Moderator, show_misc.then_some("misc"), Vec::new())
     }
 
     fn payload_row(original_code: &str, code: &str, name: &str) -> SystemPayloadRow {
@@ -2004,6 +2158,67 @@ mod tests {
         assert!(systems_panel < regions_panel);
         assert!(regions_panel < languages_panel);
         assert!(languages_panel < misc_panel);
+    }
+
+    #[test]
+    fn backup_tab_is_visible_only_to_admins() {
+        let moderator = maintenance_template_for_role(UserRole::Moderator, None, Vec::new())
+            .render()
+            .unwrap();
+        assert!(!moderator.contains(r#"href="/maintenance?tab=backup""#));
+        assert!(!moderator.contains(r#"id="maintenance-backup-panel""#));
+
+        let admin = maintenance_template_for_role(UserRole::Admin, Some("backup"), Vec::new())
+            .render()
+            .unwrap();
+        assert!(admin.contains(r#"href="/maintenance?tab=backup" class="active""#));
+        assert!(admin.contains(r#"id="maintenance-backup-panel""#));
+    }
+
+    #[test]
+    fn backup_timestamp_accepts_only_completed_backup_names() {
+        assert_eq!(
+            backup_timestamp("vgindex-backup-20260703T060000Z.tar.gz").as_deref(),
+            Some("2026-07-03 06:00:00 UTC")
+        );
+        assert!(backup_timestamp(".vgindex-backup-20260703T060000Z.tar.gz.partial").is_none());
+        assert!(backup_timestamp("vgindex-backup-20260703.tar.gz").is_none());
+        assert!(backup_timestamp("../vgindex-backup-20260703T060000Z.tar.gz").is_none());
+    }
+
+    #[test]
+    fn backup_listing_sorts_newest_first_and_ignores_partial_files() {
+        let directory =
+            std::env::temp_dir().join(format!("vgindex-backups-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("vgindex-backup-20260702T060000Z.tar.gz"),
+            b"old",
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("vgindex-backup-20260703T060000Z.tar.gz"),
+            b"new",
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join(".vgindex-backup-20260704T060000Z.tar.gz.partial"),
+            b"partial",
+        )
+        .unwrap();
+
+        let backups = list_backup_files(&directory);
+        assert_eq!(backups.len(), 2);
+        assert_eq!(
+            backups[0].filename,
+            "vgindex-backup-20260703T060000Z.tar.gz"
+        );
+        assert_eq!(
+            backups[1].filename,
+            "vgindex-backup-20260702T060000Z.tar.gz"
+        );
+
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -2344,6 +2559,22 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/maintenance")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn backup_download_rejects_guests() {
+        let response = routes()
+            .with_state(test_state())
+            .oneshot(
+                Request::builder()
+                    .uri("/maintenance/backups/vgindex-backup-20260703T060000Z.tar.gz")
                     .body(Body::empty())
                     .unwrap(),
             )
