@@ -52,8 +52,44 @@
     </tbody>
 </table>
 </div>
+{% if can_download_database %}
+<h4 class="downloads-section-title">Database</h4>
+<div class="downloads-table-scaler">
+<table class="striped downloads-table" data-downloads-match-width>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th class="downloads-group-header">Downloads</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% match database_export %}
+        {% when Some with (export) %}
+        <tr>
+            <td><time datetime="{{ export.datetime }}" data-local-datetime>{{ export.date }}</time></td>
+            <td class="download-links-cell"><a href="/downloads/database">SQLite</a></td>
+        </tr>
+        {% when None %}
+        <tr>
+            <td colspan="2">The database export is being prepared.</td>
+        </tr>
+        {% endmatch %}
+    </tbody>
+</table>
+</div>
+{% endif %}
 <script>
 (function() {
+    document.querySelectorAll('[data-local-datetime]').forEach(function(element) {
+        var date = new Date(element.getAttribute('datetime'));
+        if (!isNaN(date.getTime())) {
+            element.textContent = new Intl.DateTimeFormat(undefined, {
+                dateStyle: 'medium',
+                timeStyle: 'medium'
+            }).format(date);
+        }
+    });
+
     function scaleDownloadsTable() {
         var sourceTable = document.querySelector('[data-downloads-width-source]');
         document.querySelectorAll('.downloads-table').forEach(function(table) {

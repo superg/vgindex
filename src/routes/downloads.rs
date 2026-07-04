@@ -1,17 +1,19 @@
 use askama::Template;
 use axum::{
-    extract::{Path, State},
-    http::header,
+    extract::{Path, Request, State},
+    http::{header, HeaderValue},
     response::{Html, IntoResponse, Response},
     routing::get,
     Router,
 };
 use std::collections::{HashMap, HashSet};
+use tower::ServiceExt;
+use tower_http::services::ServeFile;
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser, RequireAuth};
 use crate::config::SiteConfig;
 use crate::error::AppError;
-use crate::services::archive_service;
+use crate::services::{archive_service, database_export_service};
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -22,6 +24,7 @@ pub fn routes() -> Router<AppState> {
         .route("/cues/{system}", get(download_cue))
         .route("/keys/{system}", get(download_key))
         .route("/sbi/{system}", get(download_sbi))
+        .route("/downloads/database", get(download_database))
 }
 
 #[derive(Template)]
@@ -29,6 +32,8 @@ pub fn routes() -> Router<AppState> {
 struct DownloadsTemplate {
     current_user: Option<AuthenticatedUser>,
     can_download_keys: bool,
+    can_download_database: bool,
+    database_export: Option<DatabaseDownload>,
     systems: Vec<SystemDownload>,
     bios_systems: Vec<BiosDownload>,
 }
@@ -46,6 +51,11 @@ struct SystemDownload {
 struct BiosDownload {
     name: String,
     href: &'static str,
+}
+
+struct DatabaseDownload {
+    date: String,
+    datetime: String,
 }
 
 struct BiosDownloadSpec {
@@ -91,6 +101,7 @@ fn bios_downloads(system_names: &HashMap<String, String>) -> Vec<BiosDownload> {
 }
 
 async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
+    let authenticated = user.is_logged_in();
     let media_types: Vec<MediaTypeCdRow> =
         sqlx::query_as("SELECT code, rom_extension FROM media_types")
             .fetch_all(&state.pool)
@@ -145,13 +156,25 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
     Html(
         DownloadsTemplate {
             current_user: user.user().cloned(),
-            can_download_keys: user.is_logged_in(),
+            can_download_keys: authenticated,
+            can_download_database: authenticated,
+            database_export: database_export_download(),
             systems,
             bios_systems: bios_downloads(&system_names),
         }
         .render()
         .unwrap(),
     )
+}
+
+fn database_export_download() -> Option<DatabaseDownload> {
+    database_export_service::latest_export().map(|export| DatabaseDownload {
+        date: export
+            .created_at
+            .format("%Y-%m-%d %H:%M:%S UTC")
+            .to_string(),
+        datetime: export.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+    })
 }
 
 #[derive(sqlx::FromRow)]
@@ -231,6 +254,39 @@ async fn download_sbi(State(state): State<AppState>, Path(system): Path<String>)
     serve_archive(&state, &system, "sbi").await
 }
 
+async fn download_database(_user: RequireAuth, request: Request) -> Response {
+    let Some(export) = database_export_service::latest_export() else {
+        return AppError::NotFound.into_response();
+    };
+
+    serve_database_export(export, request).await
+}
+
+async fn serve_database_export(
+    export: database_export_service::DatabaseExportInfo,
+    request: Request,
+) -> Response {
+    let mut response = ServeFile::new(export.path)
+        .oneshot(request)
+        .await
+        .expect("ServeFile is infallible")
+        .into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/zstd"),
+    );
+    response.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!("attachment; filename=\"{}\"", export.filename))
+            .expect("validated export filename is a valid header value"),
+    );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    response
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,6 +321,11 @@ mod tests {
                 avatar_url: None,
             }),
             can_download_keys,
+            can_download_database: can_download_keys,
+            database_export: Some(DatabaseDownload {
+                date: "2026-07-03 19:25:58 UTC".to_string(),
+                datetime: "2026-07-03T19:25:58Z".to_string(),
+            }),
             systems: vec![
                 SystemDownload {
                     code: "PS3".to_string(),
@@ -326,6 +387,8 @@ mod tests {
         let html = template(false).render().unwrap();
 
         assert!(!html.contains(r#"/keys/PS3"#));
+        assert!(!html.contains(r#"href="/downloads/database""#));
+        assert!(!html.contains(">Database</h4>"));
         assert!(html.contains(r#"/datfile/PS3"#));
         assert!(html.contains(r#"/cues/PC"#));
     }
@@ -335,7 +398,67 @@ mod tests {
         let html = template(true).render().unwrap();
 
         assert!(html.contains(r#"/keys/PS3"#));
+        assert!(html.contains(r#"href="/downloads/database""#));
+        assert!(html.contains(
+            r#"<time datetime="2026-07-03T19:25:58Z" data-local-datetime>2026-07-03 19:25:58 UTC</time>"#
+        ));
+        assert!(html.contains(">SQLite</a>"));
+        assert!(!html.contains("unzstd"));
         assert!(!html.contains(r#"/keys/PC"#));
+    }
+
+    #[tokio::test]
+    async fn database_download_rejects_guests() {
+        let response = routes()
+            .with_state(test_state())
+            .oneshot(
+                Request::builder()
+                    .uri("/downloads/database")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn database_download_streams_private_attachment() {
+        let directory =
+            std::env::temp_dir().join(format!("database-download-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let filename = "redump-discs-20260703T070000Z.sqlite.zst";
+        let path = directory.join(filename);
+        std::fs::write(&path, b"compressed database").unwrap();
+
+        let response = serve_database_export(
+            database_export_service::DatabaseExportInfo {
+                path,
+                filename: filename.to_string(),
+                created_at: "2026-07-03T07:00:00Z".parse().unwrap(),
+                size: 19,
+            },
+            Request::builder().body(Body::empty()).unwrap(),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/zstd");
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, no-store"
+        );
+        assert_eq!(
+            response.headers()[header::CONTENT_DISPOSITION],
+            format!("attachment; filename=\"{filename}\"")
+        );
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], b"compressed database");
+
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

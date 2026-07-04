@@ -134,6 +134,7 @@ fn canonical_route_segment(segment: &str) -> Option<&'static str> {
         "callback" => Some("callback"),
         "cue" => Some("cue"),
         "cues" => Some("cues"),
+        "database" => Some("database"),
         "datfile" => Some("datfile"),
         "disc" => Some("disc"),
         "discs" => Some("discs"),

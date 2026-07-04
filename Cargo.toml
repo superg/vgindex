@@ -8,7 +8,7 @@ axum = { version = "0.8", features = ["multipart"] }
 axum-extra = { version = "0.10", features = ["form"] }
 any_ascii = "0.3.3"
 tokio = { version = "1", features = ["full"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid", "json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite", "chrono", "uuid", "json"] }
 askama = { version = "0.12", features = ["with-axum"] }
 askama_axum = "0.4"
 tower = "0.5"
@@ -38,3 +38,5 @@ roxmltree = "0.20"
 lindera = { version = "3", features = ["embed-ipadic"] }
 pinyin = { version = "0.11", default-features = false, features = ["plain"] }
 unicode-normalization = "0.1"
+futures-util = "0.3"
+zstd = "0.13"

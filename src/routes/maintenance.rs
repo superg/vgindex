@@ -20,7 +20,7 @@ use crate::auth::{
 use crate::config::SiteConfig;
 use crate::db::models::System;
 use crate::error::{AppError, AppResult};
-use crate::services::{archive_service, disc_service};
+use crate::services::{archive_service, database_export_service, disc_service};
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -1806,12 +1806,23 @@ async fn trigger_archive_generation(
 ) -> crate::error::AppResult<Response> {
     csrf::verify_form(&user, &form)?;
 
+    if let Err(err) = database_export_service::mark_export_dirty() {
+        tracing::error!("Failed to mark database export for regeneration: {err}");
+        return Ok(redirect_with_message(
+            "misc",
+            "error",
+            "Failed to trigger database export generation.",
+        ));
+    }
+
     Ok(
         match archive_service::mark_all_system_archives_dirty(&state.pool).await {
             Ok(count) => redirect_with_message(
                 "misc",
                 "status",
-                &format!("Triggered archive generation for {count} system(s)."),
+                &format!(
+                    "Triggered archive generation for {count} system(s) and the disc database."
+                ),
             ),
             Err(err) => {
                 tracing::error!("Failed to trigger archive generation: {err}");

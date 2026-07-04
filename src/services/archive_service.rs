@@ -43,6 +43,10 @@ impl ArchiveMetadata {
             url,
         }
     }
+
+    pub fn source_url(&self) -> &str {
+        &self.url
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +249,15 @@ pub async fn run_archive_worker(pool: PgPool, metadata: ArchiveMetadata) {
         interval.tick().await;
         if let Err(err) = process_dirty_archive_systems(pool.clone(), metadata.clone()).await {
             tracing::error!("Failed to process dirty archive systems: {err}");
+        }
+        if let Err(err) = crate::services::database_export_service::regenerate_if_due(
+            &pool,
+            metadata.source_url(),
+            chrono::Utc::now(),
+        )
+        .await
+        {
+            tracing::error!("Failed to generate disc database export: {err}");
         }
     }
 }

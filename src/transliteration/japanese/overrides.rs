@@ -162,30 +162,30 @@ const PHRASE_SEED: &[(&str, &str)] = &[
     //     (バイオハザード) were excluded. ---
     ("ファイナルファンタジー", "Final Fantasy"), // 223
     ("アクションリプレイ", "Action Replay"),
-    ("ドラマ", "Drama"),                         // 254
-    ("ガンダム", "Gundam"),                      // 171
-    ("サクラ", "Sakura"),                        // 135
-    ("プロモーション", "Promotion"),             // 133
-    ("イース", "Ys"),                            // 110
-    ("アトリエ", "Atelier"),                     // 97
-    ("メモリアル", "Memorial"),                  // 88
-    ("パワフルプロ", "Powerful Pro"),            // 86
-    ("ウイニングポスト", "Winning Post"),        // 83
-    ("ウイニングイレブン", "Winning Eleven"),    // 82
-    ("プリンセス", "Princess"),                  // 79
-    ("ドラキュラ", "Dracula"),                   // 79
+    ("ドラマ", "Drama"),                                      // 254
+    ("ガンダム", "Gundam"),                                   // 171
+    ("サクラ", "Sakura"),                                     // 135
+    ("プロモーション", "Promotion"),                          // 133
+    ("イース", "Ys"),                                         // 110
+    ("アトリエ", "Atelier"),                                  // 97
+    ("メモリアル", "Memorial"),                               // 88
+    ("パワフルプロ", "Powerful Pro"),                         // 86
+    ("ウイニングポスト", "Winning Post"),                     // 83
+    ("ウイニングイレブン", "Winning Eleven"),                 // 82
+    ("プリンセス", "Princess"),                               // 79
+    ("ドラキュラ", "Dracula"),                                // 79
     ("ファンタシースターオンライン", "Phantasy Star Online"), // 66
-    ("ソニック", "Sonic"),                       // 66
-    ("ゼルダ", "Zelda"),                         // 65
-    ("ロックマン", "Rockman"),                   // 64
-    ("テニス", "Tennis"),                        // 66
-    ("ドラゴンクエスト", "Dragon Quest"),        // 71
-    ("アルティメット", "Ultimate"),              // 71
-    ("ディアボリックラヴァーズ", "Diabolik Lovers"), // 70
-    ("クイズ", "Quiz"),                          // 67
-    ("デモ", "Demo"),                            // 70
-    ("ダンジョン", "Dungeon"),                   // 56
-    ("アンジェリーク", "Angelique"),             // 58
+    ("ソニック", "Sonic"),                                    // 66
+    ("ゼルダ", "Zelda"),                                      // 65
+    ("ロックマン", "Rockman"),                                // 64
+    ("テニス", "Tennis"),                                     // 66
+    ("ドラゴンクエスト", "Dragon Quest"),                     // 71
+    ("アルティメット", "Ultimate"),                           // 71
+    ("ディアボリックラヴァーズ", "Diabolik Lovers"),          // 70
+    ("クイズ", "Quiz"),                                       // 67
+    ("デモ", "Demo"),                                         // 70
+    ("ダンジョン", "Dungeon"),                                // 56
+    ("アンジェリーク", "Angelique"),                          // 58
     ("アンジェリ", "Angelique"), // requested; longest-match keeps アンジェリーク intact
     ("エンジェル", "Angel"),     // 24 (エンジェル = Angel)
     ("エンゼル", "Angel"),       // 3 (older transliteration of Angel)
