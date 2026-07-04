@@ -57,7 +57,7 @@ services:
       - NEWS_FEED_URL=${NEWS_FEED_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/feed.php?mode=news}
     volumes:
       - archive_cache:/app/data
-      - backup_data:/app/backups:ro
+      - backup_data:/app/data/backups:ro
     depends_on:
       postgres:
         condition: service_healthy

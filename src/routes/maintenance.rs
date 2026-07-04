@@ -37,7 +37,7 @@ pub fn routes() -> Router<AppState> {
         .route("/maintenance/backups/{filename}", get(download_backup))
 }
 
-const BACKUP_DIR: &str = "./backups";
+const BACKUP_DIR: &str = "./data/backups";
 const BACKUP_PREFIX: &str = "vgindex-backup-";
 const BACKUP_SUFFIX: &str = ".tar.gz";
 

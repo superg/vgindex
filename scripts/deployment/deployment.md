@@ -114,8 +114,8 @@ IMAGE_TAG=sha-<known-good-commit> bash /opt/app/scripts/deployment/deploy.sh
 
 The production host runs a one-shot PostgreSQL 16 backup container every day at
 06:00 UTC. It writes timestamped archives to the `backup_data` Docker volume and
-retains the newest seven completed files. Administrators can download those
-archives from the Backup tab in Maintenance.
+retains the newest seven completed files. The application reads that volume at
+`data/backups` for the admin-only Maintenance listing and downloads.
 
 After the first deployment containing the backup files, install the host timer
 once as root:
