@@ -249,6 +249,10 @@ function isAddMode() {
     return typeof IS_ADD_MODE !== 'undefined' && !!IS_ADD_MODE;
 }
 
+function canAddRingcodeEntries() {
+    return typeof CAN_ADD_RINGCODE_ENTRIES !== 'undefined' && !!CAN_ADD_RINGCODE_ENTRIES;
+}
+
 function ringStatusClass(status) {
     if (status === 'added') return 'item-added';
     if (status === 'removed') return 'item-removed';
@@ -348,6 +352,7 @@ function ensureEmptyRingEntry() {
         }
         return;
     }
+    if (!canAddRingcodeEntries()) return;
     if (ringEntries.length === 0 || !isEntryEmpty(ringEntries[ringEntries.length - 1])) {
         ringEntries.push(emptyEntry(ml));
     }
@@ -459,6 +464,7 @@ function removeRingEntry(idx) {
 }
 
 function addRingEntry() {
+    if (!canAddRingcodeEntries()) return;
     if (isAddMode()) {
         var firstInput = document.querySelector('#ring-tbody tr[data-entry="0"] input');
         if (firstInput) firstInput.focus();

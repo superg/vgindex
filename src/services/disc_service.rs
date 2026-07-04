@@ -427,8 +427,8 @@ fn parse_comma_separated(s: &str) -> Vec<String> {
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
         .collect();
-    out.sort_by_key(|v| v.to_lowercase());
-    out.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    out.sort_by(|a, b| cmp_case_insensitive_then_exact(a, b));
+    out.dedup();
     out
 }
 
@@ -440,6 +440,14 @@ fn norm_cmp_str(s: &str) -> String {
     s.trim().to_lowercase()
 }
 
+fn cmp_case_insensitive_then_exact(a: &str, b: &str) -> Ordering {
+    let a = a.trim();
+    let b = b.trim();
+    a.to_lowercase()
+        .cmp(&b.to_lowercase())
+        .then_with(|| a.cmp(b))
+}
+
 fn json_field_norm(entry: &serde_json::Value, key: &str) -> String {
     entry
         .get(key)
@@ -448,12 +456,8 @@ fn json_field_norm(entry: &serde_json::Value, key: &str) -> String {
         .unwrap_or_default()
 }
 
-fn json_layer_field_norm(layer: &serde_json::Value, key: &str) -> String {
-    layer
-        .get(key)
-        .and_then(|v| v.as_str())
-        .map(norm_cmp_str)
-        .unwrap_or_default()
+fn json_layer_field_value<'a>(layer: &'a serde_json::Value, key: &str) -> &'a str {
+    layer.get(key).and_then(|v| v.as_str()).unwrap_or("")
 }
 
 fn cmp_ring_entry_layers_json(
@@ -473,14 +477,18 @@ fn cmp_ring_entry_layers_json(
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
 
-        let by_mc = json_layer_field_norm(&a_layer, "mastering_code")
-            .cmp(&json_layer_field_norm(&b_layer, "mastering_code"));
+        let by_mc = cmp_case_insensitive_then_exact(
+            json_layer_field_value(&a_layer, "mastering_code"),
+            json_layer_field_value(&b_layer, "mastering_code"),
+        );
         if by_mc != Ordering::Equal {
             return by_mc;
         }
 
-        let by_ms = json_layer_field_norm(&a_layer, "mastering_sid")
-            .cmp(&json_layer_field_norm(&b_layer, "mastering_sid"));
+        let by_ms = cmp_case_insensitive_then_exact(
+            json_layer_field_value(&a_layer, "mastering_sid"),
+            json_layer_field_value(&b_layer, "mastering_sid"),
+        );
         if by_ms != Ordering::Equal {
             return by_ms;
         }
@@ -499,7 +507,10 @@ fn cmp_ring_entry_layers_json(
     if by_sample != Ordering::Equal {
         return by_sample;
     }
-    let by_comment = json_field_norm(a, "comment").cmp(&json_field_norm(b, "comment"));
+    let by_comment = cmp_case_insensitive_then_exact(
+        a.get("comment").and_then(|v| v.as_str()).unwrap_or(""),
+        b.get("comment").and_then(|v| v.as_str()).unwrap_or(""),
+    );
     if by_comment != Ordering::Equal {
         return by_comment;
     }
@@ -509,13 +520,12 @@ fn cmp_ring_entry_layers_json(
     a_id.cmp(&b_id)
 }
 
-fn layer_field_norm(layer: Option<&DiscRingCodeLayer>, key: &str) -> String {
-    let raw = match (layer, key) {
+fn layer_field_value<'a>(layer: Option<&'a DiscRingCodeLayer>, key: &str) -> &'a str {
+    match (layer, key) {
         (Some(l), "mastering_code") => l.mastering_code.as_deref().unwrap_or(""),
         (Some(l), "mastering_sid") => l.mastering_sid.as_deref().unwrap_or(""),
         _ => "",
-    };
-    norm_cmp_str(raw)
+    }
 }
 
 pub fn sort_ring_entry_views(entries: &mut [RingEntryView], max_layers: usize) {
@@ -524,14 +534,18 @@ pub fn sort_ring_entry_views(entries: &mut [RingEntryView], max_layers: usize) {
             let a_layer = a.layers.iter().find(|l| l.layer == idx as i32);
             let b_layer = b.layers.iter().find(|l| l.layer == idx as i32);
 
-            let by_mc = layer_field_norm(a_layer, "mastering_code")
-                .cmp(&layer_field_norm(b_layer, "mastering_code"));
+            let by_mc = cmp_case_insensitive_then_exact(
+                layer_field_value(a_layer, "mastering_code"),
+                layer_field_value(b_layer, "mastering_code"),
+            );
             if by_mc != Ordering::Equal {
                 return by_mc;
             }
 
-            let by_ms = layer_field_norm(a_layer, "mastering_sid")
-                .cmp(&layer_field_norm(b_layer, "mastering_sid"));
+            let by_ms = cmp_case_insensitive_then_exact(
+                layer_field_value(a_layer, "mastering_sid"),
+                layer_field_value(b_layer, "mastering_sid"),
+            );
             if by_ms != Ordering::Equal {
                 return by_ms;
             }
@@ -569,13 +583,10 @@ pub fn sort_ring_entry_views(entries: &mut [RingEntryView], max_layers: usize) {
         if by_sample != Ordering::Equal {
             return by_sample;
         }
-        let by_comment = a
-            .comment
-            .as_deref()
-            .unwrap_or("")
-            .trim()
-            .to_lowercase()
-            .cmp(&b.comment.as_deref().unwrap_or("").trim().to_lowercase());
+        let by_comment = cmp_case_insensitive_then_exact(
+            a.comment.as_deref().unwrap_or(""),
+            b.comment.as_deref().unwrap_or(""),
+        );
         if by_comment != Ordering::Equal {
             return by_comment;
         }
@@ -1243,6 +1254,73 @@ mod tests {
         sort_ring_codes_json(&mut entries, 1);
         assert_eq!(entries[0]["id"], 3);
         assert_eq!(entries[1]["id"], 9);
+    }
+
+    #[test]
+    fn ring_text_sorting_uses_exact_case_as_tiebreaker() {
+        let mut json_entries = vec![
+            serde_json::json!({
+                "id": 1,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "pressing",
+                "layers": [{"mastering_code": "master", "mastering_sid": "sid"}]
+            }),
+            serde_json::json!({
+                "id": 9,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "Pressing",
+                "layers": [{"mastering_code": "MASTER", "mastering_sid": "SID"}]
+            }),
+        ];
+
+        sort_ring_codes_json(&mut json_entries, 1);
+        assert_eq!(json_entries[0]["id"], 9);
+        assert_eq!(json_entries[1]["id"], 1);
+
+        let layer = |id, mastering_code: &str, mastering_sid: &str| DiscRingCodeLayer {
+            id,
+            entry_id: id,
+            layer: 0,
+            mastering_code: Some(mastering_code.to_string()),
+            mastering_sid: Some(mastering_sid.to_string()),
+            mould_sids: String::new(),
+            toolstamps: String::new(),
+            additional_moulds: String::new(),
+        };
+        let mut view_entries = vec![
+            RingEntryView {
+                id: 1,
+                offset_value: None,
+                offset_extra_value: None,
+                sample_data_start: None,
+                comment: Some("pressing".to_string()),
+                layers: vec![layer(1, "MASTER", "SID")],
+            },
+            RingEntryView {
+                id: 9,
+                offset_value: None,
+                offset_extra_value: None,
+                sample_data_start: None,
+                comment: Some("Pressing".to_string()),
+                layers: vec![layer(9, "MASTER", "SID")],
+            },
+        ];
+
+        sort_ring_entry_views(&mut view_entries, 1);
+        assert_eq!(view_entries[0].id, 9);
+        assert_eq!(view_entries[1].id, 1);
+    }
+
+    #[test]
+    fn ring_csv_normalization_preserves_case_distinct_values() {
+        assert_eq!(
+            normalize_comma_separated("mould, MOULD, mould, , Mould"),
+            "MOULD, Mould, mould"
+        );
     }
 
     #[test]

@@ -470,8 +470,12 @@ fn parse_csv_ids(value: &str) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    out.sort_by_key(|s| s.to_lowercase());
-    out.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    out.sort_by(|a, b| {
+        a.to_lowercase()
+            .cmp(&b.to_lowercase())
+            .then_with(|| a.cmp(b))
+    });
+    out.dedup();
     out
 }
 
@@ -607,11 +611,15 @@ fn ring_layers_max(entries: &[serde_json::Value]) -> usize {
 fn merge_csv_values(existing: &str, incoming: &str) -> String {
     let mut combined: Vec<String> = parse_csv_ids(existing);
     for val in parse_csv_ids(incoming) {
-        if !combined.iter().any(|v| v.eq_ignore_ascii_case(&val)) {
+        if !combined.contains(&val) {
             combined.push(val);
         }
     }
-    combined.sort_by_key(|s| s.to_lowercase());
+    combined.sort_by(|a, b| {
+        a.to_lowercase()
+            .cmp(&b.to_lowercase())
+            .then_with(|| a.cmp(b))
+    });
     combined.join(", ")
 }
 
@@ -2765,6 +2773,30 @@ mod tests {
     }
 
     #[test]
+    fn no_merge_when_mastering_identity_differs_only_by_case() {
+        for (database_mastering, change_mastering) in [
+            (("MASTER", "SID-1"), ("master", "SID-1")),
+            (("MASTER", "SID-1"), ("MASTER", "sid-1")),
+        ] {
+            let old = serde_json::json!([ring_merge_candidate(
+                database_mastering,
+                ["10", "20", "30"],
+                "same comment",
+                "IFPI 1111",
+            )]);
+            let changes = serde_json::json!([ring_merge_change(
+                change_mastering,
+                ["10", "20", "30"],
+                "same comment",
+                "IFPI 2222",
+            )]);
+
+            let result = apply_ring_codes_history(&old, &changes).unwrap();
+            assert_eq!(result.as_array().unwrap().len(), 2);
+        }
+    }
+
+    #[test]
     fn no_merge_when_database_has_mastering_identity_on_omitted_change_layer() {
         let old = serde_json::json!([{
             "id": 1,
@@ -2801,7 +2833,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_deduplicates_csv_values() {
+    fn merge_csv_values_preserves_case_variants_and_deduplicates_exact_values() {
         let old = serde_json::json!([{
             "id": 1,
             "offset_value": "",
@@ -2811,9 +2843,9 @@ mod tests {
             "layers": [{
                 "mastering_code": "X",
                 "mastering_sid": "",
-                "toolstamps": "A, B",
-                "mould_sids": "M1",
-                "additional_moulds": ""
+                "toolstamps": "STAMP",
+                "mould_sids": "MOULD",
+                "additional_moulds": "ADDITIONAL"
             }]
         }]);
         let changes = serde_json::json!([{
@@ -2821,8 +2853,9 @@ mod tests {
                 "index": 0,
                 "mastering_code": { "add": { "new": "X" } },
                 "mastering_sid": { "add": { "new": "" } },
-                "toolstamps": { "add": { "new": "B, C" } },
-                "mould_sids": { "add": { "new": "m1, M2" } }
+                "toolstamps": { "add": { "new": "stamp, STAMP" } },
+                "mould_sids": { "add": { "new": "mould, MOULD" } },
+                "additional_moulds": { "add": { "new": "additional, ADDITIONAL" } }
             }]
         }]);
 
@@ -2830,8 +2863,9 @@ mod tests {
         let entries = result.as_array().unwrap();
         assert_eq!(entries.len(), 1);
         let layer = &entries[0]["layers"][0];
-        assert_eq!(layer["toolstamps"], "A, B, C");
-        assert_eq!(layer["mould_sids"], "M1, M2");
+        assert_eq!(layer["toolstamps"], "STAMP, stamp");
+        assert_eq!(layer["mould_sids"], "MOULD, mould");
+        assert_eq!(layer["additional_moulds"], "ADDITIONAL, additional");
     }
 
     #[test]

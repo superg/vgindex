@@ -17,6 +17,7 @@ const MEDIA_HAS_PIC = {{ media_has_pic_json|safe }};
 const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{% endif %}{% endfor %}];
 const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
 const IS_ADD_MODE = {{ is_add_mode }};
+const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
 </script>
 <script src="/static/js/disc_edit.js" defer></script>
 {% endblock %}
@@ -499,7 +500,7 @@ const IS_ADD_MODE = {{ is_add_mode }};
             <tbody id="ring-tbody"></tbody>
         </table>
         </div>
-        {% if !is_add_mode %}
+        {% if !is_add_mode && can_add_ringcode_entries %}
         <button type="button" class="outline secondary array-add-btn" onclick="addRingEntry()">+</button>
         {% endif %}
         <input type="hidden" name="ring_codes_json" id="ring-codes-json">

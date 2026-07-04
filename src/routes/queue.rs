@@ -741,6 +741,7 @@ fn build_review_template(
             .collect(),
         ring_codes_json,
         ring_highlights_json: "[]".to_string(),
+        can_add_ringcode_entries: true,
 
         comments: json_opt_str("comments"),
         contents: json_opt_str("contents"),

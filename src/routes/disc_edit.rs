@@ -22,6 +22,7 @@ use crate::AppState;
 
 const ADD_DISC_MATCH_LOOKUP_ERROR: &str =
     "Disc matching: could not check existing discs. Please try again.";
+const NEW_RINGCODE_EDIT_ERROR: &str = "Ring Codes: new entries must be submitted through Add Disc.";
 
 fn add_disc_match_lookup_errors() -> Vec<String> {
     vec![ADD_DISC_MATCH_LOOKUP_ERROR.to_string()]
@@ -108,6 +109,7 @@ pub(crate) struct DiscEditTemplate {
 
     pub ring_codes_json: String,
     pub ring_highlights_json: String,
+    pub can_add_ringcode_entries: bool,
 
     pub comments: String,
     pub contents: String,
@@ -910,6 +912,7 @@ async fn edit_page(
                 .collect(),
             ring_codes_json,
             ring_highlights_json: "[]".to_string(),
+            can_add_ringcode_entries: user.role.can_edit_directly(),
 
             comments: detail.disc.comments.clone().unwrap_or_default(),
             contents: detail.disc.contents.clone().unwrap_or_default(),
@@ -1577,6 +1580,7 @@ async fn render_form_with_errors(
             .collect(),
         ring_codes_json: form.ring_codes_json.clone().unwrap_or_else(|| "[]".into()),
         ring_highlights_json: "[]".to_string(),
+        can_add_ringcode_entries: is_add_mode || can_edit_directly,
 
         comments: form.comments.clone().unwrap_or_default(),
         contents: form.contents.clone().unwrap_or_default(),
@@ -2114,6 +2118,34 @@ fn build_ring_codes_json_from_detail(detail: &DiscDetail) -> serde_json::Value {
     serde_json::json!(entries)
 }
 
+fn validate_edit_ringcode_additions(
+    changes: &serde_json::Value,
+    can_add_ringcode_entries: bool,
+) -> Vec<String> {
+    if can_add_ringcode_entries {
+        return Vec::new();
+    }
+
+    let adds_entry = changes
+        .get("ring_codes")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries.iter().any(|entry| {
+                entry
+                    .get("id")
+                    .and_then(serde_json::Value::as_i64)
+                    .is_none()
+            })
+        })
+        .unwrap_or(false);
+
+    if adds_entry {
+        vec![NEW_RINGCODE_EDIT_ERROR.to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
 async fn edit_submit(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
@@ -2155,6 +2187,23 @@ async fn edit_submit(
         &ref_data.all_media_types,
         &ref_data.all_systems,
     );
+
+    let ringcode_errors = validate_edit_ringcode_additions(&changes, can_edit_directly);
+    if !ringcode_errors.is_empty() {
+        return render_form_with_errors(
+            &state,
+            id,
+            user.clone(),
+            &form,
+            ringcode_errors,
+            vec![],
+            ValidationResultMessage::default(),
+            false,
+            can_edit_directly,
+            false,
+        )
+        .await;
+    }
 
     if can_edit_directly {
         let linked_validation_errors = approval_conflicts_to_linked_validation_errors(
@@ -2315,6 +2364,7 @@ async fn add_page(
             barcodes: vec![],
             ring_codes_json: "[]".to_string(),
             ring_highlights_json: "[]".to_string(),
+            can_add_ringcode_entries: true,
 
             comments: String::new(),
             contents: String::new(),
@@ -2821,8 +2871,12 @@ fn parse_csv_items(value: &str) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    items.sort_by_key(|s| s.to_lowercase());
-    items.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    items.sort_by(|a, b| {
+        a.to_lowercase()
+            .cmp(&b.to_lowercase())
+            .then_with(|| a.cmp(b))
+    });
+    items.dedup();
     items
 }
 
@@ -4083,6 +4137,34 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn build_new_disc_changes_preserves_case_distinct_ring_csv_values() {
+        let mut form = new_disc_form();
+        let mut ring_codes: serde_json::Value =
+            serde_json::from_str(form.ring_codes_json.as_deref().unwrap()).unwrap();
+        let layer = &mut ring_codes[0]["layers"][0];
+        layer["toolstamps"] = serde_json::json!("stamp, STAMP, stamp");
+        layer["mould_sids"] = serde_json::json!("mould, MOULD, mould");
+        layer["additional_moulds"] = serde_json::json!("additional, ADDITIONAL, additional");
+        form.ring_codes_json = Some(ring_codes.to_string());
+
+        let changes = build_new_disc_changes(&form, &media_rows(), &systems_with_edc(true));
+        let layer = &changes["ring_codes"][0]["layers"][0];
+
+        assert_eq!(
+            layer["toolstamps"],
+            serde_json::json!({ "add": { "new": "STAMP, stamp" } })
+        );
+        assert_eq!(
+            layer["mould_sids"],
+            serde_json::json!({ "add": { "new": "MOULD, mould" } })
+        );
+        assert_eq!(
+            layer["additional_moulds"],
+            serde_json::json!({ "add": { "new": "ADDITIONAL, additional" } })
+        );
+    }
+
+    #[test]
     fn build_new_disc_changes_writes_explicit_add_delta_without_db_dedup() {
         let form = new_disc_form();
 
@@ -4840,6 +4922,85 @@ mod operation_delta_tests {
         assert!(!css.contains(concat!(".dump", "-log", "-collapsible")));
         assert!(!script.contains(concat!("init", "CollapsibleReviewFields")));
         assert!(css.contains("textarea.full-width-textarea {\n    width: 100%;\n}"));
+    }
+
+    #[test]
+    fn ringcode_add_controls_follow_template_capability() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let script = include_str!("../../static/js/disc_edit.js");
+
+        assert!(
+            template.contains("const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};")
+        );
+        assert!(template.contains("{% if !is_add_mode && can_add_ringcode_entries %}"));
+        assert!(script.contains("function canAddRingcodeEntries()"));
+        assert_eq!(
+            script
+                .matches("if (!canAddRingcodeEntries()) return;")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn plain_users_may_modify_or_remove_existing_ringcodes() {
+        let changes = serde_json::json!({
+            "ring_codes": [
+                {
+                    "id": 10,
+                    "comment": { "modify": { "old": "old", "new": "updated" } }
+                },
+                { "id": 20, "remove": true }
+            ]
+        });
+
+        assert!(
+            validate_edit_ringcode_additions(&changes, UserRole::User.can_edit_directly())
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn only_plain_users_are_blocked_from_adding_ringcodes_on_edit() {
+        let changes = serde_json::json!({
+            "ring_codes": [{
+                "comment": { "add": { "new": "new pressing" } }
+            }]
+        });
+
+        assert_eq!(
+            validate_edit_ringcode_additions(&changes, UserRole::User.can_edit_directly()),
+            vec![NEW_RINGCODE_EDIT_ERROR.to_string()]
+        );
+        for role in [UserRole::UserPlus, UserRole::Moderator, UserRole::Admin] {
+            assert!(
+                validate_edit_ringcode_additions(&changes, role.can_edit_directly()).is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_ringcode_id_is_treated_as_a_blocked_addition() {
+        let detail = base_detail();
+        let mut form = form_from_detail(&detail);
+        let mut ring_codes: serde_json::Value =
+            serde_json::from_str(form.ring_codes_json.as_deref().unwrap()).unwrap();
+        ring_codes[0]["id"] = serde_json::json!(999);
+        ring_codes[0]["comment"] = serde_json::json!("unknown ring");
+        form.ring_codes_json = Some(ring_codes.to_string());
+
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+
+        assert_eq!(
+            validate_edit_ringcode_additions(&changes, UserRole::User.can_edit_directly()),
+            vec![NEW_RINGCODE_EDIT_ERROR.to_string()]
+        );
+        assert!(changes["ring_codes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry.get("id").is_none()));
     }
 
     #[test]
