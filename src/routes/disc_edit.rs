@@ -4584,7 +4584,7 @@ mod operation_delta_tests {
     }
 
     #[test]
-    fn edition_and_barcode_plus_buttons_are_hidden_only_on_add_disc() {
+    fn serial_and_barcode_plus_buttons_are_available_on_add_disc() {
         let template = include_str!("../../templates/disc_edit.html");
 
         assert!(template.contains(
@@ -4594,8 +4594,11 @@ mod operation_delta_tests {
             "{% if !is_add_mode %}\n        <button type=\"button\" class=\"outline secondary array-add-btn\" onclick=\"addInlineEntry('edition-list','edition')\">+</button>\n        {% endif %}"
         ));
         assert!(template.contains(
-            "{% if !is_add_mode %}\n        <button type=\"button\" class=\"outline secondary array-add-btn\" onclick=\"addInlineEntry('barcode-list','barcode')\">+</button>\n        {% endif %}"
+            r#"<button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('barcode-list','barcode')">+</button>"#
         ));
+        assert!(!template.contains("{% if barcodes.is_empty() %}"));
+        assert!(!template
+            .contains("{% if loop.first %}\n            <input type=\"text\" name=\"barcode\""));
     }
 
     #[test]

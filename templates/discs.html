@@ -184,6 +184,10 @@
                 <input type="text" name="comments" value="{{ filter_comments }}">
             </label>
             <label class="advanced-search-row">
+                <span>Contents</span>
+                <input type="text" name="contents" value="{{ filter_contents }}">
+            </label>
+            <label class="advanced-search-row">
                 <span>Ringcode</span>
                 <input type="text" name="ringcode" value="{{ filter_ringcode }}">
             </label>
@@ -272,6 +276,9 @@
                     {% if !filter_protection.is_empty() %}<input type="hidden" name="protection" value="{{ filter_protection }}">{% endif %}
                     {% if !filter_comments.is_empty() %}
                     <input type="hidden" name="comments" value="{{ filter_comments }}">
+                    {% endif %}
+                    {% if !filter_contents.is_empty() %}
+                    <input type="hidden" name="contents" value="{{ filter_contents }}">
                     {% endif %}
                     {% if !filter_ringcode.is_empty() %}<input type="hidden" name="ringcode" value="{{ filter_ringcode }}">{% endif %}
                     {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}
@@ -370,6 +377,9 @@
                     {% if !filter_protection.is_empty() %}<input type="hidden" name="protection" value="{{ filter_protection }}">{% endif %}
                     {% if !filter_comments.is_empty() %}
                     <input type="hidden" name="comments" value="{{ filter_comments }}">
+                    {% endif %}
+                    {% if !filter_contents.is_empty() %}
+                    <input type="hidden" name="contents" value="{{ filter_contents }}">
                     {% endif %}
                     {% if !filter_ringcode.is_empty() %}<input type="hidden" name="ringcode" value="{{ filter_ringcode }}">{% endif %}
                     {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}

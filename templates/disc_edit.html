@@ -357,17 +357,6 @@ const IS_ADD_MODE = {{ is_add_mode }};
     <div class="inline-field repeatable-inline-field{% if !self.highlight_class("barcode").is_empty() %} {{ self.highlight_class("barcode") }}{% endif %}" data-add-requires-system-media data-field-flag="has_barcode"{% if !show_barcode %} style="display:none"{% endif %}>
         <span class="inline-field-label">Barcodes</span>
         <div id="barcode-list" class="inline-field-values repeatable-inline-values">
-            {% if is_add_mode %}
-            {% if barcodes.is_empty() %}
-            <input type="text" name="barcode" value="">
-            {% else %}
-            {% for b in barcodes %}
-            {% if loop.first %}
-            <input type="text" name="barcode" value="{{ b.value }}"{% if !b.highlight.is_empty() %} class="item-{{ b.highlight }}"{% endif %}>
-            {% endif %}
-            {% endfor %}
-            {% endif %}
-            {% else %}
             {% for b in barcodes %}
             <input type="text" name="barcode" value="{{ b.value }}"{% if !b.highlight.is_empty() %} class="item-{{ b.highlight }}"{% endif %}>
             {% endfor %}
@@ -382,11 +371,8 @@ const IS_ADD_MODE = {{ is_add_mode }};
                 {% endfor %}
             </div>
             {% endif %}
-            {% endif %}
         </div>
-        {% if !is_add_mode %}
         <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('barcode-list','barcode')">+</button>
-        {% endif %}
     </div>
 
     <div class="inline-field{% if !self.highlight_class("version").is_empty() %} {{ self.highlight_class("version") }}{% endif %}" data-add-requires-system-media data-field-flag="has_version"{% if !show_version %} style="display:none"{% endif %}>

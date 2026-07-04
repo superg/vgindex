@@ -307,6 +307,7 @@ pub struct DiscsQuery {
     pub edc: Option<String>,
     pub protection: Option<String>,
     pub comments: Option<String>,
+    pub contents: Option<String>,
     pub ringcode: Option<String>,
     pub offset: Option<String>,
     pub sort: Option<String>,
@@ -573,6 +574,10 @@ fn comments_search_clause(bind_idx: u32) -> String {
     format!("LOWER(d.comments) LIKE '%' || LOWER(${bind_idx}) || '%'")
 }
 
+fn contents_search_clause(bind_idx: u32) -> String {
+    format!("LOWER(d.contents) LIKE '%' || LOWER(${bind_idx}) || '%'")
+}
+
 fn ringcode_search_clause(bind_idx: u32) -> String {
     format!(
         "EXISTS (SELECT 1 FROM disc_ring_code_entries ring_entry JOIN disc_ring_code_layers ring_layer ON ring_layer.entry_id = ring_entry.id WHERE ring_entry.disc_id = d.id AND ringcode_layer_search_text(ring_layer.mastering_code, ring_layer.mastering_sid) LIKE '%' || LOWER(${bind_idx}) || '%' AND (LOWER(REGEXP_REPLACE(COALESCE(ring_layer.mastering_code, ''), '[[:blank:]]{{2,}}', CHR(9), 'g')) LIKE '%' || LOWER(${bind_idx}) || '%' OR LOWER(REGEXP_REPLACE(COALESCE(ring_layer.mastering_sid, ''), '[[:blank:]]{{2,}}', CHR(9), 'g')) LIKE '%' || LOWER(${bind_idx}) || '%'))"
@@ -755,6 +760,7 @@ struct DiscsTemplate {
     filter_edc: String,
     filter_protection: String,
     filter_comments: String,
+    filter_contents: String,
     filter_ringcode: String,
     filter_offset: String,
     advanced_open: bool,
@@ -807,6 +813,7 @@ impl DiscsTemplate {
             edc: &self.filter_edc,
             protection: &self.filter_protection,
             comments: &self.filter_comments,
+            contents: &self.filter_contents,
             ringcode: &self.filter_ringcode,
             offset: &self.filter_offset,
             q: &self.filter_q,
@@ -862,6 +869,7 @@ struct DiscsUrlOptions<'a> {
     edc: &'a str,
     protection: &'a str,
     comments: &'a str,
+    contents: &'a str,
     ringcode: &'a str,
     offset: &'a str,
     q: &'a str,
@@ -942,6 +950,7 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("edc", options.edc),
             ("protection", options.protection),
             ("comments", options.comments),
+            ("contents", options.contents),
             ("ringcode", options.ringcode),
             ("offset", options.offset),
             ("q", options.q),
@@ -1320,6 +1329,12 @@ async fn discs_page(
         .unwrap_or_default()
         .trim()
         .to_string();
+    let filter_contents = query
+        .contents
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let active_ringcode = active_advanced_filter(query.ringcode.as_ref());
     let filter_ringcode = active_ringcode.clone().unwrap_or_default();
     let ringcode_bind = active_ringcode
@@ -1331,6 +1346,7 @@ async fn discs_page(
         .unwrap_or_default();
     let active_protection = active_advanced_filter(query.protection.as_ref());
     let active_comments = active_advanced_filter(query.comments.as_ref());
+    let active_contents = active_advanced_filter(query.contents.as_ref());
     let requested_dumper = query.dumper.clone().unwrap_or_default().trim().to_string();
     let filter_dumper_lookup = if requested_dumper.is_empty() {
         None
@@ -1368,6 +1384,7 @@ async fn discs_page(
         || !filter_edc.is_empty()
         || active_protection.is_some()
         || active_comments.is_some()
+        || active_contents.is_some()
         || active_ringcode.is_some()
         || filter_offset_value.is_some()
         || !filter_status.is_empty()
@@ -1547,6 +1564,10 @@ async fn discs_page(
         bind_idx += 1;
         where_clauses.push(comments_search_clause(bind_idx));
     }
+    if active_contents.is_some() {
+        bind_idx += 1;
+        where_clauses.push(contents_search_clause(bind_idx));
+    }
     add_ring_filter_clauses(
         &mut where_clauses,
         &mut bind_idx,
@@ -1696,6 +1717,10 @@ async fn discs_page(
         .as_deref()
         .map(str::to_lowercase)
         .unwrap_or_default();
+    let count_key_contents = active_contents
+        .as_deref()
+        .map(str::to_lowercase)
+        .unwrap_or_default();
     let count_key_ringcode = ringcode_bind
         .as_deref()
         .map(str::to_lowercase)
@@ -1728,6 +1753,7 @@ async fn discs_page(
             edc: &filter_edc,
             protection: &count_key_protection,
             comments: &count_key_comments,
+            contents: &count_key_contents,
             ringcode: &count_key_ringcode,
             offset: &filter_offset,
             q: &count_key_q,
@@ -1868,6 +1894,9 @@ async fn discs_page(
     if let Some(comments) = &active_comments {
         bind_queries!(comments.clone());
     }
+    if let Some(contents) = &active_contents {
+        bind_queries!(contents.clone());
+    }
     if let Some(ringcode) = &ringcode_bind {
         bind_queries!(ringcode.clone());
     }
@@ -2005,6 +2034,7 @@ async fn discs_page(
             filter_edc,
             filter_protection,
             filter_comments,
+            filter_contents,
             filter_ringcode,
             filter_offset,
             advanced_open,
@@ -2372,6 +2402,7 @@ mod tests {
         let edc = template.find("id=\"edc-filter-label\">EDC</span>").unwrap();
         let protection = template.find("<span>Protection</span>").unwrap();
         let comments = template.find("<span>Comments</span>").unwrap();
+        let contents = template.find("<span>Contents</span>").unwrap();
         let ringcode = template.find("<span>Ringcode</span>").unwrap();
         let offset = template.find("<span>Offset</span>").unwrap();
 
@@ -2387,7 +2418,8 @@ mod tests {
                 && errors < edc
                 && edc < protection
                 && protection < comments
-                && comments < ringcode
+                && comments < contents
+                && contents < ringcode
                 && ringcode < offset
         );
         assert!(template.contains("<option value=\"\">All Languages</option>"));
@@ -2413,6 +2445,7 @@ mod tests {
         assert_eq!(template.matches("name=\"edc\"").count(), 3);
         assert_eq!(template.matches("name=\"protection\"").count(), 3);
         assert_eq!(template.matches("name=\"comments\"").count(), 3);
+        assert_eq!(template.matches("name=\"contents\"").count(), 3);
         assert_eq!(template.matches("name=\"ringcode\"").count(), 3);
         assert_eq!(template.matches("name=\"offset\"").count(), 3);
         assert!(!template.contains("edition_q"));
@@ -2551,6 +2584,7 @@ mod tests {
                 edc: "no",
                 protection: "SecuROM 7+",
                 comments: "Disc & manual",
+                contents: "Game data & extras",
                 ringcode: "MASTER  L0",
                 offset: "123",
                 q: "Game Name",
@@ -2559,7 +2593,7 @@ mod tests {
                 page: 2,
                 advanced: true,
             }),
-            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&ringcode=MASTER%20%20L0&offset=123&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
+            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&ringcode=MASTER%20%20L0&offset=123&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
         );
 
         assert_eq!(
@@ -2842,10 +2876,15 @@ mod tests {
     #[test]
     fn advanced_scalar_search_clauses_use_case_insensitive_substring_matching() {
         let comments_clause = comments_search_clause(7);
+        let contents_clause = contents_search_clause(8);
 
         assert_eq!(
             comments_clause,
             "LOWER(d.comments) LIKE '%' || LOWER($7) || '%'"
+        );
+        assert_eq!(
+            contents_clause,
+            "LOWER(d.contents) LIKE '%' || LOWER($8) || '%'"
         );
     }
 
@@ -2887,16 +2926,17 @@ mod tests {
     }
 
     #[test]
-    fn ringcode_and_offset_follow_comments_in_binding_order() {
-        let mut clauses = vec![comments_search_clause(7)];
-        let mut bind_idx = 7;
+    fn contents_ringcode_and_offset_follow_comments_in_binding_order() {
+        let mut clauses = vec![comments_search_clause(7), contents_search_clause(8)];
+        let mut bind_idx = 8;
 
         add_ring_filter_clauses(&mut clauses, &mut bind_idx, true, true);
 
-        assert_eq!(bind_idx, 9);
-        assert_eq!(clauses.len(), 3);
+        assert_eq!(bind_idx, 10);
+        assert_eq!(clauses.len(), 4);
         assert!(clauses[1].contains("LOWER($8)"));
-        assert!(clauses[2].contains("offset_entry.offset_value = $9"));
+        assert!(clauses[2].contains("LOWER($9)"));
+        assert!(clauses[3].contains("offset_entry.offset_value = $10"));
     }
 
     #[test]
@@ -2913,7 +2953,7 @@ mod tests {
 
     #[test]
     fn disc_query_uses_unsuffixed_advanced_text_parameters_only() {
-        let uri = "/discs?title=Game&title_exact=1&title_foreign=Foreign&title_foreign_exact=1&serial=SLUS-12345&serial_exact=1&edition=Limited&edition_exact=1&barcode=012345&barcode_exact=1&protection=SecuROM&comments=Note&ringcode=MASTER-L0&offset=%2B123&edition_q=Old&comments_q=Old"
+        let uri = "/discs?title=Game&title_exact=1&title_foreign=Foreign&title_foreign_exact=1&serial=SLUS-12345&serial_exact=1&edition=Limited&edition_exact=1&barcode=012345&barcode_exact=1&protection=SecuROM&comments=Note&contents=Bonus%20videos&ringcode=MASTER-L0&offset=%2B123&edition_q=Old&comments_q=Old"
                 .parse()
                 .unwrap();
         let Query(query) = Query::<DiscsQuery>::try_from_uri(&uri).unwrap();
@@ -2930,6 +2970,7 @@ mod tests {
         assert_eq!(query.barcode_exact.as_deref(), Some("1"));
         assert_eq!(query.protection.as_deref(), Some("SecuROM"));
         assert_eq!(query.comments.as_deref(), Some("Note"));
+        assert_eq!(query.contents.as_deref(), Some("Bonus videos"));
         assert_eq!(query.ringcode.as_deref(), Some("MASTER-L0"));
         assert_eq!(query.offset.as_deref(), Some("+123"));
 
@@ -2938,6 +2979,7 @@ mod tests {
         assert!(legacy_query.edition.is_none());
         assert!(legacy_query.protection.is_none());
         assert!(legacy_query.comments.is_none());
+        assert!(legacy_query.contents.is_none());
     }
 
     #[test]
@@ -3113,6 +3155,10 @@ mod tests {
         assert!(
             modification_index.contains("DROP INDEX idx_submissions_public_target_created_desc")
         );
+
+        let contents_index = include_str!("../../migrations/014_index_disc_contents_search.sql");
+        assert!(contents_index.contains("idx_discs_contents_trgm"));
+        assert!(contents_index.contains("LOWER(contents) gin_trgm_ops"));
     }
 
     #[tokio::test]
@@ -3169,6 +3215,10 @@ mod tests {
             },
             DiscsQuery {
                 ringcode: Some("IFPI L557".to_string()),
+                ..Default::default()
+            },
+            DiscsQuery {
+                contents: Some("game".to_string()),
                 ..Default::default()
             },
             DiscsQuery {
