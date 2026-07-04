@@ -2966,6 +2966,32 @@ mod tests {
     }
 
     #[test]
+    fn review_ignores_hexadecimal_case_only_submission_changes() {
+        let mut db = old_snapshot();
+        db["disc_id"] = serde_json::json!("aabbccdd");
+        db["disc_key"] = serde_json::json!("aabbccdd");
+        db["sbi"] = serde_json::json!("MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD");
+        let changes = serde_json::json!({
+            "disc_id": {"modify": {"old": "aabbccdd", "new": "AABBCCDD"}},
+            "disc_key": {"modify": {"old": "aabbccdd", "new": "AABBCCDD"}},
+            "universal_hash": {"modify": {"old": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "new": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}},
+            "sbi": {"modify": {"old": db["sbi"], "new": "MSF: 02:03:04 Q-Data: a1b2c3 0a:0b:0c 00 0d:0e:0f abcd"}},
+            "dat": {"modify": {"old": db["dat"], "new": "<rom name=\"old.iso\" size=\"1\" crc=\"11111111\" md5=\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\" sha1=\"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\" />"}}
+        });
+        let canonical_db =
+            queue_service::resolve_submission_snapshot(&db, &serde_json::json!({})).unwrap();
+        let submitted = queue_service::resolve_submission_snapshot(&db, &changes).unwrap();
+
+        let highlights = compute_field_highlights(&submitted, &canonical_db);
+        let context =
+            build_review_diff_context(&submitted, &canonical_db, &ref_data(), SubmissionType::Edit);
+
+        assert!(highlights.changed_fields.is_empty());
+        assert!(context.annotations.is_empty());
+        assert!(context.old_multiline.is_empty());
+    }
+
+    #[test]
     fn comments_delimiter_validation_detects_unreviewed_comments() {
         assert!(comments_text_contains_review_delimiter(Some(&format!(
             "old\n\n{COMMENTS_REVIEW_DELIMITER}\n\nnew"

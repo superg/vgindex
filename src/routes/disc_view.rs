@@ -539,9 +539,9 @@ async fn disc_view(
                 is_synthetic: false,
                 track_sort_num: track_num,
                 size: f.size,
-                crc32: f.crc32.clone(),
-                md5: f.md5.clone(),
-                sha1: f.sha1.clone(),
+                crc32: f.crc32.to_ascii_lowercase(),
+                md5: f.md5.to_ascii_lowercase(),
+                sha1: f.sha1.to_ascii_lowercase(),
             }
         })
         .collect();
@@ -610,7 +610,12 @@ async fn disc_view(
         String::new()
     };
     let disc_id_text = if can_view_key_material {
-        detail.disc.disc_id.clone().unwrap_or_default()
+        detail
+            .disc
+            .disc_id
+            .as_deref()
+            .map(|value| value.to_ascii_lowercase())
+            .unwrap_or_default()
     } else {
         String::new()
     };

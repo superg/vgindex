@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
+use crate::hex_case::canonicalize_disc_snapshot_hex_fields;
 use crate::services::{archive_service, disc_service};
 
 const APPROVAL_CONFLICT_LOCK_KEY: i64 = 0x7667_696e_6465_7801;
@@ -816,9 +817,11 @@ pub fn resolve_submission_snapshot(
 ) -> AppResult<serde_json::Value> {
     let mut resolved = db_snapshot.clone();
     let Some(change_obj) = changes.as_object() else {
+        canonicalize_disc_snapshot_hex_fields(&mut resolved);
         return Ok(resolved);
     };
     let Some(resolved_obj) = resolved.as_object_mut() else {
+        canonicalize_disc_snapshot_hex_fields(&mut resolved);
         return Ok(resolved);
     };
 
@@ -844,6 +847,7 @@ pub fn resolve_submission_snapshot(
         }
     }
 
+    canonicalize_disc_snapshot_hex_fields(&mut resolved);
     Ok(resolved)
 }
 
@@ -2004,6 +2008,32 @@ mod tests {
             "MASTER-A"
         );
         assert_eq!(result["ring_codes"][0]["layers"][0]["toolstamps"], "T1");
+    }
+
+    #[test]
+    fn resolver_canonicalizes_hex_case_without_rewriting_stored_changes() {
+        let db = serde_json::json!({
+            "disc_id": "aabbccdd",
+            "disc_key": "aabbccdd",
+            "universal_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sbi": "MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD",
+            "pvd": "0320 : AA BB                                           ab",
+            "dat": "<rom name=\"Track.bin\" size=\"1\" crc=\"abcdef12\" md5=\"aabbccddeeff00112233445566778899\" sha1=\"abcdefabcdefabcdefabcdefabcdefabcdefabcd\" />"
+        });
+        let changes = serde_json::json!({
+            "disc_id": {"modify": {"old": "aabbccdd", "new": "AABBCCDD"}},
+            "disc_key": {"modify": {"old": "aabbccdd", "new": "AABBCCDD"}},
+            "universal_hash": {"modify": {"old": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "new": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}},
+            "sbi": {"modify": {"old": "MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD", "new": "MSF: 02:03:04 Q-Data: a1b2c3 0a:0b:0c 00 0d:0e:0f abcd"}},
+            "pvd": {"modify": {"old": "0320 : AA BB                                           ab", "new": "0320 : aa bb                                           ab"}},
+            "dat": {"modify": {"old": db["dat"], "new": "<rom name=\"Track.bin\" size=\"1\" crc=\"ABCDEF12\" md5=\"AABBCCDDEEFF00112233445566778899\" sha1=\"ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD\" />"}}
+        });
+        let stored_changes = changes.clone();
+
+        let resolved = resolve_submission_snapshot(&db, &changes).unwrap();
+
+        assert_eq!(resolved, db);
+        assert_eq!(changes, stored_changes);
     }
 
     #[test]

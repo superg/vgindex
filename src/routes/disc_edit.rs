@@ -16,6 +16,7 @@ use crate::auth::{
 use crate::config::SiteConfig;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
+use crate::hex_case::{normalize_dat_hash_case, normalize_sbi_hex_case};
 use crate::services::{disc_service, queue_service, validation};
 use crate::AppState;
 
@@ -810,7 +811,11 @@ async fn edit_page(
                 build_simple_track_name(f.track_number.as_deref(), total_tracks, rom_extension);
             format!(
                 r#"<rom name="{}" size="{}" crc="{}" md5="{}" sha1="{}" />"#,
-                name, f.size, f.crc32, f.md5, f.sha1
+                name,
+                f.size,
+                f.crc32.to_ascii_lowercase(),
+                f.md5.to_ascii_lowercase(),
+                f.sha1.to_ascii_lowercase()
             )
         })
         .collect::<Vec<_>>()
@@ -968,7 +973,12 @@ async fn edit_page(
             show_sbi: detail
                 .system
                 .has_sbi_for_media_type(&detail.disc.media_type),
-            sbi: detail.disc.sbi.clone().unwrap_or_default(),
+            sbi: detail
+                .disc
+                .sbi
+                .as_deref()
+                .map(normalize_sbi_hex_case)
+                .unwrap_or_default(),
             has_sample_start: detail.system.has_sample_start,
             protection_key_disc_key: detail
                 .disc
@@ -992,7 +1002,12 @@ async fn edit_page(
                         .collect::<String>()
                 })
                 .unwrap_or_default(),
-            protection_key_disc_id: detail.disc.disc_id.clone().unwrap_or_default(),
+            protection_key_disc_id: detail
+                .disc
+                .disc_id
+                .as_deref()
+                .map(|value| value.to_ascii_lowercase())
+                .unwrap_or_default(),
 
             cue: detail
                 .disc
@@ -1575,14 +1590,14 @@ async fn render_form_with_errors(
 
         layerbreaks: form.layerbreak.clone(),
         show_pvd: has_sys(|s| s.has_pvd),
-        pvd_hex: form.pvd.clone().unwrap_or_default(),
+        pvd_hex: normalize_hex_dump_for_render(form.pvd.as_deref(), true),
         show_pic: media_pic,
         media_has_pic_json,
-        pic_hex: form.pic.clone().unwrap_or_default(),
+        pic_hex: normalize_hex_dump_for_render(form.pic.as_deref(), false),
         show_bca: has_sys(|s| s.has_bca),
-        bca_hex: form.bca.clone().unwrap_or_default(),
+        bca_hex: normalize_hex_dump_for_render(form.bca.as_deref(), false),
         show_header: has_sys(|s| s.has_header),
-        header_hex: form.header.clone().unwrap_or_default(),
+        header_hex: normalize_hex_dump_for_render(form.header.as_deref(), false),
 
         show_disc_id: has_sys(|s| s.has_disc_id),
         show_key: has_sys(|s| s.has_key),
@@ -1592,18 +1607,34 @@ async fn render_form_with_errors(
         show_sector_ranges: has_sys(|s| s.has_sector_ranges),
         sector_ranges_text: form.sector_ranges.clone().unwrap_or_default(),
         show_sbi,
-        sbi: form.sbi.clone().unwrap_or_default(),
+        sbi: form
+            .sbi
+            .as_deref()
+            .map(normalize_sbi_hex_case)
+            .unwrap_or_default(),
         has_sample_start: has_sys(|s| s.has_sample_start),
-        protection_key_disc_key: form.protection_key_disc_key.clone().unwrap_or_default(),
+        protection_key_disc_key: form
+            .protection_key_disc_key
+            .as_deref()
+            .map(|value| value.trim().to_ascii_lowercase())
+            .unwrap_or_default(),
         universal_hash: form
             .universal_hash
             .as_deref()
             .map(|hash| hash.trim().to_ascii_lowercase())
             .unwrap_or_default(),
-        protection_key_disc_id: form.protection_key_disc_id.clone().unwrap_or_default(),
+        protection_key_disc_id: form
+            .protection_key_disc_id
+            .as_deref()
+            .map(|value| value.trim().to_ascii_lowercase())
+            .unwrap_or_default(),
 
         cue: form.cue.clone().unwrap_or_default(),
-        files_xml: form.files_xml.clone().unwrap_or_default(),
+        files_xml: form
+            .files_xml
+            .as_deref()
+            .map(normalize_dat_hash_case)
+            .unwrap_or_default(),
 
         status: normalized_disc_status(&form.status),
 
@@ -1889,6 +1920,20 @@ fn norm_opt_multiline_str(s: Option<&str>) -> Option<String> {
     s.map(normalize_newlines)
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
+}
+
+fn normalize_hex_dump_for_render(text: Option<&str>, is_pvd: bool) -> String {
+    let Some(text) = text else {
+        return String::new();
+    };
+    let Ok(bytes) = disc_service::parse_binary_hex_input(text) else {
+        return text.to_string();
+    };
+    if is_pvd {
+        format_pvd_hex_dump(&bytes)
+    } else {
+        format_header_hex_dump(&bytes)
+    }
 }
 
 pub(crate) fn norm_str_vec(v: Vec<String>) -> Vec<String> {
@@ -2601,10 +2646,12 @@ pub(crate) fn build_flat_changes(
             }
         })
         .collect();
-    let new_disc_key = norm_opt_str(form.protection_key_disc_key.as_deref());
+    let new_disc_key =
+        norm_opt_str(form.protection_key_disc_key.as_deref()).map(|key| key.to_ascii_lowercase());
     let new_universal_hash =
         norm_opt_str(form.universal_hash.as_deref()).map(|hash| hash.to_ascii_lowercase());
-    let new_disc_id = norm_opt_str(form.protection_key_disc_id.as_deref());
+    let new_disc_id =
+        norm_opt_str(form.protection_key_disc_id.as_deref()).map(|id| id.to_ascii_lowercase());
     let new_ring_codes = form
         .ring_codes_json
         .as_deref()
@@ -2634,7 +2681,7 @@ pub(crate) fn build_flat_changes(
         &form.system_code,
         &form.media_type,
     ) {
-        norm_opt_multiline_str(form.sbi.as_deref())
+        norm_opt_multiline_str(form.sbi.as_deref()).map(|sbi| normalize_sbi_hex_case(&sbi))
     } else {
         None
     };
@@ -2668,7 +2715,9 @@ pub(crate) fn build_flat_changes(
         "disc_key": new_disc_key,
         "universal_hash": new_universal_hash,
         "cuesheet": new_cue,
-        "dat": norm_opt_multiline_str(form.files_xml.as_deref()).map(|s| simplify_files_xml(&s, rom_ext)),
+        "dat": norm_opt_multiline_str(form.files_xml.as_deref())
+            .map(|s| simplify_files_xml(&s, rom_ext))
+            .map(|dat| normalize_dat_hash_case(&dat)),
         "regions": new_regions,
         "languages": new_languages,
         "ring_codes": new_ring_codes,
@@ -2776,9 +2825,9 @@ fn dat_track_map(dat: &str) -> Option<std::collections::BTreeMap<String, DatTrac
         let name = dat_attr(line, "name")?;
         let track = extract_track_from_filename(&name)?;
         let size = dat_attr(line, "size")?.parse::<i64>().ok()?;
-        let crc = dat_attr(line, "crc")?;
-        let md5 = dat_attr(line, "md5")?;
-        let sha1 = dat_attr(line, "sha1")?;
+        let crc = dat_attr(line, "crc")?.to_ascii_lowercase();
+        let md5 = dat_attr(line, "md5")?.to_ascii_lowercase();
+        let sha1 = dat_attr(line, "sha1")?.to_ascii_lowercase();
         if out.contains_key(&track) {
             return None;
         }
@@ -3951,28 +4000,54 @@ mod operation_delta_tests {
     }
 
     #[test]
-    fn build_flat_changes_normalizes_short_binary_hex_fields() {
+    fn build_flat_changes_normalizes_all_hexadecimal_fields() {
         let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
         let pvd_bytes: Vec<u8> = (0u8..96).collect();
         form.pvd = Some(
             pvd_bytes
                 .iter()
-                .map(|byte| format!("{byte:02X}"))
+                .map(|byte| format!("{byte:02x}"))
                 .collect::<Vec<_>>()
                 .join(""),
         );
-        form.header = Some("01 02\n03 04".to_string());
-        form.bca = Some("01020304".to_string());
-        form.pic = Some("01 02 03 04".to_string());
+        form.header = Some("a1 b2\nc3 d4".to_string());
+        form.bca = Some("a1b2c3d4".to_string());
+        form.pic = Some("a1 b2 c3 d4".to_string());
+        form.sbi = Some("MSF: 02:03:04 Q-Data: a1b2c3 0a:0b:0c 00 0d:0e:0f abcd".to_string());
+        form.protection_key_disc_id = Some("AABBCCDD".to_string());
+        form.protection_key_disc_key = Some("CCDDEEFF".to_string());
+        form.universal_hash = Some("ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD".to_string());
+        form.files_xml = Some(
+            r#"<rom name="MixedCase.iso" size="1" crc="ABCDEF12" md5="AABBCCDDEEFF00112233445566778899" sha1="ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD" />"#.to_string(),
+        );
 
-        let snapshot = build_flat_changes(&form, &media_rows(), &systems_with_edc(true));
-        let expected = format_header_hex_dump(&[0x01, 0x02, 0x03, 0x04]);
+        let snapshot = build_flat_changes(
+            &form,
+            &media_rows_with_cd(),
+            &systems_with_sbi_media(true, &["DVD", "CD"]),
+        );
+        let expected = format_header_hex_dump(&[0xa1, 0xb2, 0xc3, 0xd4]);
         let expected_pvd = format_pvd_hex_dump(&pvd_bytes[..82]);
 
         assert_eq!(snapshot["pvd"].as_str().unwrap(), expected_pvd);
         assert_eq!(snapshot["header"].as_str().unwrap(), expected);
         assert_eq!(snapshot["bca"].as_str().unwrap(), expected);
         assert_eq!(snapshot["pic"].as_str().unwrap(), expected);
+        assert_eq!(
+            snapshot["sbi"],
+            "MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD"
+        );
+        assert_eq!(snapshot["disc_id"], "aabbccdd");
+        assert_eq!(snapshot["disc_key"], "ccddeeff");
+        assert_eq!(
+            snapshot["universal_hash"],
+            "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
+        );
+        let dat = snapshot["dat"].as_str().unwrap();
+        assert!(dat.contains(r#"crc="abcdef12""#));
+        assert!(dat.contains(r#"md5="aabbccddeeff00112233445566778899""#));
+        assert!(dat.contains(r#"sha1="abcdefabcdefabcdefabcdefabcdefabcdefabcd""#));
     }
 
     #[test]
@@ -4312,6 +4387,50 @@ mod operation_delta_tests {
 
         let changes =
             build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+
+        assert_eq!(changes, serde_json::json!({}));
+    }
+
+    #[test]
+    fn build_sparse_edit_changes_ignores_hexadecimal_case_only_differences() {
+        let mut detail = base_detail();
+        detail.disc.media_type = MediaTypeRow {
+            code: "CD".to_string(),
+            name: "CD-ROM".to_string(),
+            layer_count: 1,
+            pic: false,
+            rom_extension: "bin".to_string(),
+        }
+        .into();
+        detail.disc.disc_id = Some("AABBCCDD".to_string());
+        detail.disc.disc_key = Some(vec![0xaa, 0xbb, 0xcc, 0xdd]);
+        detail.disc.sbi =
+            Some("MSF: 02:03:04 Q-Data: a1b2c3 0a:0b:0c 00 0d:0e:0f abcd".to_string());
+        detail.files = vec![File {
+            id: 1,
+            disc_id: detail.disc.id,
+            track_number: Some("1".to_string()),
+            size: 1,
+            crc32: "ABCDEF12".to_string(),
+            md5: "AABBCCDDEEFF00112233445566778899".to_string(),
+            sha1: "ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD".to_string(),
+        }];
+
+        let mut form = form_from_detail(&detail);
+        form.protection_key_disc_id = Some("aabbccdd".to_string());
+        form.protection_key_disc_key = Some("AABBCCDD".to_string());
+        form.universal_hash = Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string());
+        form.sbi = Some("MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD".to_string());
+        form.files_xml = Some(
+            r#"<rom name="Track.bin" size="1" crc="abcdef12" md5="aabbccddeeff00112233445566778899" sha1="abcdefabcdefabcdefabcdefabcdefabcdefabcd" />"#.to_string(),
+        );
+
+        let changes = build_sparse_edit_changes(
+            &form,
+            &detail,
+            &media_rows_with_cd(),
+            &systems_with_sbi_media(true, &["DVD", "CD"]),
+        );
 
         assert_eq!(changes, serde_json::json!({}));
     }

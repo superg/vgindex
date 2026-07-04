@@ -7,6 +7,7 @@ use tokio::sync::RwLock;
 
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
+use crate::hex_case::{canonicalize_disc_snapshot_hex_fields, normalize_sbi_hex_case};
 
 /// SQL predicate over submission alias `ds` and disc alias `d`: selects submission
 /// rows that represent a genuine, publicly-approved change to a disc — Approved/Legacy
@@ -765,13 +766,14 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         data["sbi"]
             .as_str()
             .map(normalize_newlines)
+            .map(|value| normalize_sbi_hex_case(&value))
             .filter(|s| !s.is_empty())
     } else {
         None
     };
     let disc_id_text = data["disc_id"]
         .as_str()
-        .map(|s| s.trim().to_string())
+        .map(|s| s.trim().to_ascii_lowercase())
         .filter(|s| !s.is_empty());
     let disc_key = parse_hex_text_bytes(data["disc_key"].as_str())?;
     let universal_hash = parse_universal_hash_bytes(data["universal_hash"].as_str())?;
@@ -1239,14 +1241,14 @@ mod tests {
                 edc: false,
                 layerbreaks: None,
                 protection: None,
-                sbi: None,
-                disc_id: None,
-                disc_key: None,
+                sbi: Some("MSF: 02:03:04 Q-Data: a1b2c3 0a:0b:0c 00 0d:0e:0f abcd".to_string()),
+                disc_id: Some("AABBCCDD".to_string()),
+                disc_key: Some(vec![0xaa, 0xbb, 0xcc, 0xdd]),
                 universal_hash: Some((0u8..20).collect()),
                 cue: None,
                 pvd: None,
                 pic: None,
-                header: None,
+                header: Some(vec![0xab, 0xcd]),
                 bca: None,
                 status: DiscStatus::Verified,
             },
@@ -1310,7 +1312,15 @@ mod tests {
                     },
                 ],
             }],
-            files: vec![],
+            files: vec![File {
+                id: 1,
+                disc_id: 1,
+                track_number: Some("1".to_string()),
+                size: 1,
+                crc32: "ABCDEF12".to_string(),
+                md5: "AABBCCDDEEFF00112233445566778899".to_string(),
+                sha1: "ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD".to_string(),
+            }],
             dumpers: vec![],
             disc_submission_count: 0,
             sector_ranges: vec![],
@@ -1329,6 +1339,17 @@ mod tests {
             snapshot["universal_hash"],
             "000102030405060708090a0b0c0d0e0f10111213"
         );
+        assert_eq!(snapshot["disc_id"], "aabbccdd");
+        assert_eq!(snapshot["disc_key"], "aabbccdd");
+        assert_eq!(
+            snapshot["sbi"],
+            "MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD"
+        );
+        assert!(snapshot["header"].as_str().unwrap().contains("AB CD"));
+        let dat = snapshot["dat"].as_str().unwrap();
+        assert!(dat.contains(r#"crc="abcdef12""#));
+        assert!(dat.contains(r#"md5="aabbccddeeff00112233445566778899""#));
+        assert!(dat.contains(r#"sha1="abcdefabcdefabcdefabcdefabcdefabcdefabcd""#));
     }
 
     #[test]
@@ -1805,9 +1826,15 @@ async fn parse_and_insert_files(pool: &PgPool, disc_id: i32, files_xml: &str) ->
         let size: i64 = extract_attr(line, "size")
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
-        let crc = extract_attr(line, "crc").unwrap_or_default();
-        let md5 = extract_attr(line, "md5").unwrap_or_default();
-        let sha1 = extract_attr(line, "sha1").unwrap_or_default();
+        let crc = extract_attr(line, "crc")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let md5 = extract_attr(line, "md5")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let sha1 = extract_attr(line, "sha1")
+            .unwrap_or_default()
+            .to_ascii_lowercase();
 
         let track_number = extract_track_number(&name);
 
@@ -1953,7 +1980,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         .filter(|s| !s.is_empty())
         .map(|c| simplify_cue(c, rom_extension));
 
-    serde_json::json!({
+    let mut snapshot = serde_json::json!({
         "system_code": detail.disc.system_code,
         "media_type": detail.disc.media_type.code(),
         "title": detail.disc.title,
@@ -1988,7 +2015,9 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "ring_codes": ring_codes,
         "sector_ranges": sector_ranges,
         "dat": if files_xml.is_empty() { serde_json::Value::Null } else { serde_json::json!(files_xml) },
-    })
+    });
+    canonicalize_disc_snapshot_hex_fields(&mut snapshot);
+    snapshot
 }
 
 // DumperInfo needs FromRow
