@@ -1908,6 +1908,11 @@ mod tests {
                 crate::services::news_service::NEWS_FEED_TTL_SECONDS,
             )),
             homepage_cache: crate::routes::main_page::HomepageCache::new(Duration::from_secs(60)),
+            discs_cache: crate::routes::discs::DiscsCache::new(
+                Duration::from_secs(60),
+                Duration::from_secs(60),
+                Duration::from_secs(60),
+            ),
             transliteration: Arc::new(
                 crate::transliteration::TransliterationRegistry::new().unwrap(),
             ),

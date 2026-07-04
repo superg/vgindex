@@ -18,6 +18,8 @@ use crate::error::{AppError, AppResult};
 use crate::services::{disc_service, queue_service};
 use crate::AppState;
 
+use super::compact_query_url;
+
 use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
     build_check_options, build_flat_changes, build_lang_check_options, build_media_has_pic_json,
@@ -75,10 +77,8 @@ struct QueueTemplate {
     filter_disc_id: String,
     filter_status: String,
     filter_type: String,
-    filter_type_url: String,
     filter_system: String,
     filter_submitter: String,
-    filter_submitter_url: String,
     total_count: i64,
     page: i64,
     total_pages: i64,
@@ -97,6 +97,28 @@ struct QueueTemplate {
 }
 impl SiteConfig for QueueTemplate {}
 impl QueueTemplate {
+    fn url(&self, page: i64, sort: &str, order: &str) -> String {
+        build_queue_url(QueueUrlOptions {
+            status: &self.filter_status,
+            sub_type: &self.filter_type,
+            system: &self.filter_system,
+            submitter: &self.filter_submitter,
+            disc_id: &self.filter_disc_id,
+            sort,
+            order,
+            page,
+            is_disc_history: self.is_disc_history,
+        })
+    }
+
+    fn page_url(&self, page: &i64) -> String {
+        self.url(*page, &self.sort_column, &self.sort_order)
+    }
+
+    fn sort_url(&self, sort: &str, order: &str) -> String {
+        self.url(1, sort, order)
+    }
+
     fn can_open_entry(&self, entry: &SubmissionListRow) -> bool {
         self.current_user_id.is_some()
             || matches!(
@@ -112,6 +134,48 @@ impl QueueTemplate {
     fn type_icon_class(&self, entry: &SubmissionListRow) -> &'static str {
         queue_type_icon_class(entry)
     }
+}
+
+#[derive(Default)]
+struct QueueUrlOptions<'a> {
+    status: &'a str,
+    sub_type: &'a str,
+    system: &'a str,
+    submitter: &'a str,
+    disc_id: &'a str,
+    sort: &'a str,
+    order: &'a str,
+    page: i64,
+    is_disc_history: bool,
+}
+
+fn build_queue_url(options: QueueUrlOptions<'_>) -> String {
+    let page = (options.page > 1)
+        .then(|| options.page.to_string())
+        .unwrap_or_default();
+    let status = (!options.is_disc_history && options.status != "Pending")
+        .then_some(options.status)
+        .unwrap_or_default();
+    let sort = (options.sort != "date")
+        .then_some(options.sort)
+        .unwrap_or_default();
+    let order = (options.order != "desc")
+        .then_some(options.order)
+        .unwrap_or_default();
+
+    compact_query_url(
+        "/queue",
+        &[
+            ("status", status),
+            ("sub_type", options.sub_type),
+            ("system", options.system),
+            ("submitter", options.submitter),
+            ("disc_id", options.disc_id),
+            ("sort", sort),
+            ("order", order),
+            ("page", &page),
+        ],
+    )
 }
 
 fn queue_type_icon_label(entry: &SubmissionListRow) -> &'static str {
@@ -251,8 +315,6 @@ async fn queue_list(
     } else {
         String::new()
     };
-    let filter_type_url = urlencoding::encode(&filter_type).into_owned();
-    let filter_submitter_url = urlencoding::encode(&filter_submitter).into_owned();
     let sort_column = normalize_queue_sort(query.sort.as_deref());
     let sort_order = normalize_queue_order(query.order.as_deref());
 
@@ -379,10 +441,8 @@ async fn queue_list(
                 .unwrap_or_default(),
             filter_status,
             filter_type,
-            filter_type_url,
             filter_system,
             filter_submitter,
-            filter_submitter_url,
             total_count,
             page,
             total_pages,
@@ -2106,6 +2166,49 @@ mod tests {
     use std::time::Duration;
     use tower::ServiceExt;
 
+    #[test]
+    fn compact_queue_urls_omit_empty_and_default_state() {
+        assert_eq!(
+            build_queue_url(QueueUrlOptions {
+                status: "Pending",
+                sort: "date",
+                order: "desc",
+                page: 1,
+                ..Default::default()
+            }),
+            "/queue"
+        );
+    }
+
+    #[test]
+    fn compact_queue_urls_preserve_filters_navigation_and_encoding() {
+        assert_eq!(
+            build_queue_url(QueueUrlOptions {
+                status: "Approved",
+                sub_type: "New Disc",
+                system: "PS2",
+                submitter: "A/B",
+                sort: "title",
+                order: "asc",
+                page: 3,
+                ..Default::default()
+            }),
+            "/queue?status=Approved&sub_type=New%20Disc&system=PS2&submitter=A%2FB&sort=title&order=asc&page=3"
+        );
+        assert_eq!(
+            build_queue_url(QueueUrlOptions {
+                status: "All Visible",
+                disc_id: "42",
+                sort: "date",
+                order: "desc",
+                page: 1,
+                is_disc_history: true,
+                ..Default::default()
+            }),
+            "/queue?disc_id=42"
+        );
+    }
+
     fn test_state() -> AppState {
         let database_url = "postgres://postgres:postgres@localhost/postgres".to_string();
 
@@ -2134,6 +2237,11 @@ mod tests {
                 crate::services::news_service::NEWS_FEED_TTL_SECONDS,
             )),
             homepage_cache: crate::routes::main_page::HomepageCache::new(Duration::from_secs(60)),
+            discs_cache: crate::routes::discs::DiscsCache::new(
+                Duration::from_secs(60),
+                Duration::from_secs(60),
+                Duration::from_secs(60),
+            ),
             transliteration: Arc::new(
                 crate::transliteration::TransliterationRegistry::new().unwrap(),
             ),

@@ -26,6 +26,7 @@ pub struct AppState {
     pub edition_suggestions: services::disc_service::EditionSuggestionsCache,
     pub news_cache: services::news_service::NewsCache,
     pub homepage_cache: routes::main_page::HomepageCache,
+    pub discs_cache: routes::discs::DiscsCache,
     pub transliteration: Arc<transliteration::TransliterationRegistry>,
 }
 
@@ -73,6 +74,7 @@ async fn main() {
         homepage_cache: routes::main_page::HomepageCache::new(Duration::from_secs(
             routes::main_page::HOMEPAGE_CACHE_TTL_SECONDS,
         )),
+        discs_cache: routes::discs::DiscsCache::production(),
         transliteration,
     };
 

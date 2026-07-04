@@ -46,6 +46,42 @@ pub fn modification_date_sql() -> String {
     )
 }
 
+fn is_horizontal_whitespace(ch: char) -> bool {
+    ch.is_whitespace() && ch != '\n' && ch != '\r'
+}
+
+pub(crate) fn normalize_ringcode_whitespace(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut run = String::new();
+
+    for ch in value.chars() {
+        if is_horizontal_whitespace(ch) {
+            run.push(ch);
+            continue;
+        }
+
+        if !run.is_empty() {
+            if run.chars().count() >= 2 {
+                out.push('\t');
+            } else {
+                out.push_str(&run);
+            }
+            run.clear();
+        }
+        out.push(ch);
+    }
+
+    if !run.is_empty() {
+        if run.chars().count() >= 2 {
+            out.push('\t');
+        } else {
+            out.push_str(&run);
+        }
+    }
+
+    out
+}
+
 const EDITION_USAGE_COUNTS_SQL: &str = "\
 SELECT d.system_code,
        btrim(e.edition) AS edition,
@@ -1357,6 +1393,15 @@ mod tests {
         let mixed = "A\r\nB\rC\nD";
         assert_eq!(to_lf_newlines(mixed), "A\nB\nC\nD");
         assert_eq!(to_crlf_newlines(mixed), "A\r\nB\r\nC\r\nD");
+    }
+
+    #[test]
+    fn ringcode_whitespace_normalization_preserves_single_and_collapses_repeated_spacing() {
+        assert_eq!(normalize_ringcode_whitespace("MASTER L0"), "MASTER L0");
+        assert_eq!(normalize_ringcode_whitespace("MASTER  L0"), "MASTER\tL0");
+        assert_eq!(normalize_ringcode_whitespace("MASTER\t\tL0"), "MASTER\tL0");
+        assert_eq!(normalize_ringcode_whitespace("MASTER\tL0"), "MASTER\tL0");
+        assert_eq!(normalize_ringcode_whitespace("A\n  B"), "A\n\tB");
     }
 
     #[test]

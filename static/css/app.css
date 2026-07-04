@@ -648,9 +648,10 @@ nav[aria-label="Pagination"] ul {
     margin: 0 auto;
     font-size: 0.75rem;
 }
-#filter-form .advanced-search-row span {
+#filter-form .advanced-search-row > span {
     align-self: center;
     text-align: right;
+    line-height: 1.1;
 }
 #filter-form .advanced-search-row input[type="text"] {
     width: 100%;
@@ -665,6 +666,108 @@ nav[aria-label="Pagination"] ul {
     width: var(--advanced-system-control-width, 21.875rem);
     max-width: 100%;
 }
+.text-exact-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    width: var(--advanced-system-control-width, 21.875rem);
+    max-width: 100%;
+    min-width: 0;
+}
+#filter-form .text-exact-controls input[type="text"],
+#filter-form.advanced-search-visible .text-exact-controls input[type="text"] {
+    flex: 1 1 10rem;
+    width: 0;
+    min-width: 8rem;
+}
+#filter-form .text-exact-toggle,
+#filter-form.advanced-search-visible .text-exact-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    width: auto;
+    margin: 0;
+    white-space: nowrap;
+}
+#filter-form .text-exact-toggle input {
+    margin: 0;
+}
+#filter-form .text-exact-toggle span {
+    text-align: left;
+}
+.count-range-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.25rem;
+    width: var(--advanced-system-control-width, 21.875rem);
+    max-width: 100%;
+    min-width: 0;
+}
+#filter-form .count-range-controls input[type="number"] {
+    width: 100%;
+    min-width: 0;
+    min-height: 1.6rem;
+    height: auto;
+    margin: 0;
+    padding: 0.18rem 0.4rem;
+    font-size: 0.75rem;
+}
+#filter-form .advanced-search-row .count-range-separator {
+    text-align: center;
+}
+#filter-form .count-exact-toggle,
+#filter-form.advanced-search-visible .count-exact-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    width: auto;
+    margin: 0;
+    white-space: nowrap;
+}
+#filter-form .count-exact-toggle input {
+    margin: 0;
+}
+#filter-form .count-exact-toggle span {
+    text-align: left;
+}
+#filter-form .count-range-controls input[type="number"]:disabled {
+    opacity: 0.65;
+}
+#filter-form .edc-filter-row {
+    align-items: center;
+}
+#filter-form .edc-filter-controls {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: 0.35rem;
+    width: max-content;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    line-height: 1.1;
+}
+#filter-form .edc-filter-controls > label,
+#filter-form.advanced-search-visible .edc-filter-controls > label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    width: auto;
+    margin: 0;
+    padding: 0;
+    font-size: 0.75rem;
+    line-height: 1.1;
+    white-space: nowrap;
+}
+#filter-form .edc-filter-controls input[type="checkbox"] {
+    margin: 0;
+}
+#filter-form .edc-filter-controls label > span {
+    align-self: center;
+    text-align: left;
+}
 #filter-form .advanced-search-row select {
     width: max-content;
     max-width: 100%;
@@ -675,8 +778,62 @@ nav[aria-label="Pagination"] ul {
 }
 #filter-form.advanced-search-visible select[name="region"],
 #filter-form.advanced-search-visible select[name="status"],
-#filter-form.advanced-search-visible select.sort-select {
+#filter-form.advanced-search-visible select[name="language"],
+#filter-form.advanced-search-visible select[name="media"],
+#filter-form.advanced-search-visible select[name="category"] {
     width: var(--advanced-dumper-control-width, max-content);
+}
+.disc-sort-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+    width: var(--advanced-system-control-width, 21.875rem);
+    max-width: 100%;
+    min-width: 0;
+}
+#filter-form.advanced-search-visible .disc-sort-controls .sort-select {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+}
+.sort-direction {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex: 0 0 auto;
+    width: 7rem;
+    margin: 0;
+    vertical-align: middle;
+}
+.sort-direction button {
+    width: 100%;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0;
+    padding: 0.22rem 0.35rem;
+    border: 1px solid var(--pico-form-element-border-color);
+    border-radius: 0;
+    background: var(--pico-form-element-background-color);
+    color: var(--pico-form-element-color);
+    font-size: 0.75rem;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+.sort-direction button:first-child {
+    border-radius: var(--pico-border-radius) 0 0 var(--pico-border-radius);
+}
+.sort-direction button:last-child {
+    margin-left: -1px;
+    border-radius: 0 var(--pico-border-radius) var(--pico-border-radius) 0;
+}
+.sort-direction button[aria-pressed="true"] {
+    z-index: 1;
+    border-color: var(--pico-primary-border);
+    background: var(--pico-primary-background);
+    color: var(--pico-primary-inverse);
+}
+.sort-direction button:focus-visible {
+    z-index: 2;
 }
 .advanced-search-actions {
     display: flex;
@@ -718,11 +875,42 @@ nav[aria-label="Pagination"] ul {
     #filter-form.advanced-search-visible select,
     #filter-form.advanced-search-visible select[name="region"],
     #filter-form.advanced-search-visible select[name="status"],
+    #filter-form.advanced-search-visible select[name="language"],
+    #filter-form.advanced-search-visible select[name="media"],
+    #filter-form.advanced-search-visible select[name="category"],
     #filter-form .advanced-search-row select,
     #filter-form.advanced-search-visible .advanced-search-row input[type="text"] {
         width: 100%;
         max-width: 100%;
         min-width: 0;
+    }
+    .text-exact-controls {
+        width: 100%;
+    }
+    #filter-form .text-exact-controls input[type="text"],
+    #filter-form.advanced-search-visible .text-exact-controls input[type="text"] {
+        flex-basis: 10rem;
+        width: 0;
+        min-width: 8rem;
+    }
+    #filter-form .text-exact-toggle,
+    #filter-form.advanced-search-visible .text-exact-toggle {
+        width: auto;
+    }
+    .disc-sort-controls {
+        width: 100%;
+    }
+    .count-range-controls {
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        width: 100%;
+    }
+    #filter-form .count-exact-toggle,
+    #filter-form.advanced-search-visible .count-exact-toggle {
+        grid-column: 1 / -1;
+        justify-self: end;
+    }
+    #filter-form.advanced-search-visible .disc-sort-controls .sort-select {
+        width: 0;
     }
 }
 

@@ -30,7 +30,7 @@
                 <a class="site-banner" href="/" aria-label="Home">
                     <img src="/static/images/branding/logo_v2.png" alt="{{ self.site_name() }}">
                 </a>
-                <form class="quick-search" method="get" action="/discs">
+                <form class="quick-search" method="get" action="/discs" data-compact-get>
                     <input type="text" name="q" placeholder="Search discs..." aria-label="Search">
                 </form>
                 <ul class="site-nav-auth">
@@ -89,6 +89,38 @@
     </main>
 
     <script>
+        (function() {
+            document.querySelectorAll('form[data-compact-get]').forEach(function(form) {
+                form.addEventListener('submit', function(event) {
+                    event.preventDefault();
+
+                    var defaults = {};
+                    form.querySelectorAll('[name][data-default-value]').forEach(function(control) {
+                        defaults[control.name] = control.getAttribute('data-default-value');
+                    });
+
+                    var nonblankDependencies = {};
+                    form.querySelectorAll('[name][data-requires-nonblank]').forEach(function(control) {
+                        nonblankDependencies[control.name] = control.getAttribute('data-requires-nonblank');
+                    });
+
+                    var params = new URLSearchParams();
+                    new FormData(form).forEach(function(value, name) {
+                        if (typeof value !== 'string') return;
+                        if (value.trim() === '' || defaults[name] === value) return;
+                        var dependencyName = nonblankDependencies[name];
+                        var dependency = dependencyName && form.elements.namedItem(dependencyName);
+                        if (dependencyName && (!dependency || dependency.value.trim() === '')) return;
+                        params.append(name, value);
+                    });
+
+                    var target = new URL(form.action, window.location.href);
+                    target.search = params.toString();
+                    window.location.assign(target.pathname + target.search);
+                });
+            });
+        })();
+
         (function() {
             var toggle = document.getElementById('dark-mode-toggle');
             if (!toggle) return;

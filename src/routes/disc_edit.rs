@@ -1995,42 +1995,6 @@ fn normalized_disc_status(raw: &str) -> String {
     }
 }
 
-fn is_horizontal_whitespace(ch: char) -> bool {
-    ch.is_whitespace() && ch != '\n' && ch != '\r'
-}
-
-fn normalize_ringcode_whitespace(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    let mut run = String::new();
-
-    for ch in value.chars() {
-        if is_horizontal_whitespace(ch) {
-            run.push(ch);
-            continue;
-        }
-
-        if !run.is_empty() {
-            if run.chars().count() >= 2 {
-                out.push('\t');
-            } else {
-                out.push_str(&run);
-            }
-            run.clear();
-        }
-        out.push(ch);
-    }
-
-    if !run.is_empty() {
-        if run.chars().count() >= 2 {
-            out.push('\t');
-        } else {
-            out.push_str(&run);
-        }
-    }
-
-    out
-}
-
 fn normalize_ring_layer_whitespace(layer: &mut serde_json::Value) {
     const RING_LAYER_TEXT_FIELDS: &[&str] = &[
         "mastering_code",
@@ -2051,7 +2015,7 @@ fn normalize_ring_layer_whitespace(layer: &mut serde_json::Value) {
         let Some(text) = value.as_str() else {
             continue;
         };
-        *value = serde_json::json!(normalize_ringcode_whitespace(text));
+        *value = serde_json::json!(disc_service::normalize_ringcode_whitespace(text));
     }
 }
 

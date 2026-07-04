@@ -44,6 +44,7 @@
 {$APP_PUBLIC_URL} {
 	import access_log
 	import security_headers
+	encode zstd
 	reverse_proxy {$APP_UPSTREAM_HOST}:{$APP_UPSTREAM_PORT}
 }
 

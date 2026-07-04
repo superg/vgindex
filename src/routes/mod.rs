@@ -38,6 +38,25 @@ pub(crate) fn path_i32(path: Result<Path<i32>, PathRejection>) -> AppResult<i32>
     path.map(|Path(id)| id).map_err(|_| AppError::NotFound)
 }
 
+pub(crate) fn compact_query_url(path: &str, params: &[(&str, &str)]) -> String {
+    let mut url = path.to_string();
+    let mut separator = '?';
+
+    for (name, value) in params {
+        if value.is_empty() {
+            continue;
+        }
+
+        url.push(separator);
+        separator = '&';
+        url.push_str(&urlencoding::encode(name));
+        url.push('=');
+        url.push_str(&urlencoding::encode(value));
+    }
+
+    url
+}
+
 pub async fn canonical_url_middleware(request: Request, next: Next) -> Response {
     if let Some(target) = canonical_url_target(request.uri()) {
         return (StatusCode::PERMANENT_REDIRECT, [(header::LOCATION, target)]).into_response();
@@ -170,6 +189,23 @@ mod tests {
         assert_eq!(path_i32(Ok(Path(123))).unwrap(), 123);
     }
 
+    #[test]
+    fn compact_query_url_omits_empty_values_and_encodes_in_input_order() {
+        assert_eq!(
+            compact_query_url(
+                "/discs",
+                &[
+                    ("system", "3DO"),
+                    ("region", ""),
+                    ("q", "Game & Watch"),
+                    ("dumper", "A/B"),
+                ],
+            ),
+            "/discs?system=3DO&q=Game%20%26%20Watch&dumper=A%2FB"
+        );
+        assert_eq!(compact_query_url("/queue", &[("status", "")]), "/queue");
+    }
+
     fn target(uri: &str) -> Option<String> {
         canonical_url_target(&uri.parse::<Uri>().unwrap())
     }
@@ -273,6 +309,52 @@ mod tests {
                     "template contains trailing slash URL pattern {forbidden}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn get_forms_opt_into_compact_query_submission() {
+        let templates = [
+            include_str!("../../templates/base.html"),
+            include_str!("../../templates/discs.html"),
+            include_str!("../../templates/queue.html"),
+        ];
+
+        let get_forms: Vec<&str> = templates
+            .iter()
+            .flat_map(|template| template.lines())
+            .filter(|line| line.contains("<form") && line.contains("method=\"get\""))
+            .collect();
+
+        assert_eq!(get_forms.len(), 5);
+        assert!(get_forms
+            .iter()
+            .all(|form| form.contains("data-compact-get")));
+    }
+
+    #[test]
+    fn automatic_get_form_submissions_run_compaction() {
+        for template in [
+            include_str!("../../templates/discs.html"),
+            include_str!("../../templates/queue.html"),
+        ] {
+            assert!(!template.contains("this.form.submit()"));
+            assert!(template.contains("this.form.requestSubmit()"));
+        }
+    }
+
+    #[test]
+    fn compact_get_submission_omits_controls_with_blank_dependencies() {
+        let base = include_str!("../../templates/base.html");
+        let discs = include_str!("../../templates/discs.html");
+
+        assert!(base.contains("[name][data-requires-nonblank]"));
+        assert!(base.contains("form.elements.namedItem(dependencyName)"));
+        assert!(base.contains("dependency.value.trim() === ''"));
+        for field in ["title", "title_foreign", "serial", "edition", "barcode"] {
+            assert!(discs.contains(&format!(
+                "name=\"{field}_exact\" value=\"1\" data-requires-nonblank=\"{field}\""
+            )));
         }
     }
 }

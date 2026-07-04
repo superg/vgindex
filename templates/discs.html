@@ -11,13 +11,13 @@
 
 <details class="filter-details" open>
     <summary>Filters</summary>
-    <form method="get" action="/discs" id="filter-form" class="{% if advanced_open %}advanced-search-visible{% endif %}">
+    <form method="get" action="/discs" id="filter-form" class="{% if advanced_open %}advanced-search-visible{% endif %}" data-compact-get>
         <button type="button" class="advanced-search-toggle" aria-expanded="{% if advanced_open %}true{% else %}false{% endif %}" aria-controls="advanced-search-panel">
             <span>Advanced Filters</span><span class="advanced-search-icon" aria-hidden="true"></span>
         </button>
         <label>
             <span>System</span>
-            <select name="system" onchange="this.form.submit()">
+            <select name="system" id="system-filter">
                 <option value="">All Systems</option>
                 {% for sys in systems %}
                 <option value="{{ sys.code }}" {% if sys.selected %}selected{% endif %}>{{ sys.name }}</option>
@@ -26,7 +26,7 @@
         </label>
         <label>
             <span>Region</span>
-            <select name="region" onchange="this.form.submit()">
+            <select name="region" onchange="this.form.requestSubmit()">
                 <option value="">All Regions</option>
                 {% for r in regions %}
                 <option value="{{ r.code }}" {% if r.selected %}selected{% endif %}>{{ r.name }}</option>
@@ -35,8 +35,35 @@
         </label>
         <div class="advanced-search-panel" id="advanced-search-panel" {% if !advanced_open %}hidden{% endif %}>
             <label class="advanced-search-row">
+                <span>Language</span>
+                <select name="language" onchange="this.form.requestSubmit()">
+                    <option value="">All Languages</option>
+                    {% for language in languages %}
+                    <option value="{{ language.code }}" {% if language.selected %}selected{% endif %}>{{ language.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="advanced-search-row">
+                <span>Media</span>
+                <select name="media" id="media-filter" onchange="this.form.requestSubmit()">
+                    <option value="">All Media</option>
+                    {% for media in media_types %}
+                    <option value="{{ media.code }}" {% if media.selected %}selected{% endif %}{% if media.hidden %} hidden{% endif %}>{{ media.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="advanced-search-row">
+                <span>Category</span>
+                <select name="category" onchange="this.form.requestSubmit()">
+                    <option value="">All Categories</option>
+                    {% for category in categories %}
+                    <option value="{{ category.name }}" {% if category.selected %}selected{% endif %}>{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="advanced-search-row">
                 <span>Status</span>
-                <select name="status" onchange="this.form.submit()">
+                <select name="status" onchange="this.form.requestSubmit()">
                     <option value="" {% if filter_status.is_empty() %}selected{% endif %}>All Statuses (🟢🔵🟡)</option>
                     {% if can_view_disabled_discs %}
                     <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🔵🟡🔴)</option>
@@ -51,45 +78,154 @@
             </label>
             <label class="advanced-search-row">
                 <span>Dumper</span>
-                <select name="dumper" onchange="this.form.submit()">
-                    <option value="">All Dumpers</option>
-                    {% for d in dumpers %}
-                    <option value="{{ d.name }}" {% if d.selected %}selected{% endif %}>{{ d.name }}</option>
-                    {% endfor %}
+                <select name="dumper" id="dumper-filter" data-selected-dumper="{{ filter_dumper }}" onchange="this.form.requestSubmit()">
+                    <option value="" {% if filter_dumper.is_empty() %}selected{% endif %}>All Dumpers</option>
+                    {% if !filter_dumper.is_empty() %}
+                    <option value="{{ filter_dumper }}" selected>{{ filter_dumper }}</option>
+                    {% endif %}
                 </select>
             </label>
+            <div class="advanced-search-row">
+                <span id="title-filter-label">Title</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="title-filter" name="title" value="{{ filter_title }}" aria-labelledby="title-filter-label">
+                    <label class="text-exact-toggle" for="title-exact">
+                        <input type="checkbox" id="title-exact" name="title_exact" value="1" data-requires-nonblank="title" {% if title_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
+                <span id="title-foreign-filter-label">Foreign Title</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="title-foreign-filter" name="title_foreign" value="{{ filter_title_foreign }}" aria-labelledby="title-foreign-filter-label">
+                    <label class="text-exact-toggle" for="title-foreign-exact">
+                        <input type="checkbox" id="title-foreign-exact" name="title_foreign_exact" value="1" data-requires-nonblank="title_foreign" {% if title_foreign_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
+                <span id="serial-filter-label">Disc Serial</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="serial-filter" name="serial" value="{{ filter_serial }}" aria-labelledby="serial-filter-label">
+                    <label class="text-exact-toggle" for="serial-exact">
+                        <input type="checkbox" id="serial-exact" name="serial_exact" value="1" data-requires-nonblank="serial" {% if serial_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
+                <span id="edition-filter-label">Edition</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="edition-filter" name="edition" value="{{ filter_edition }}" aria-labelledby="edition-filter-label">
+                    <label class="text-exact-toggle" for="edition-exact">
+                        <input type="checkbox" id="edition-exact" name="edition_exact" value="1" data-requires-nonblank="edition" {% if edition_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
+                <span id="barcode-filter-label">Barcode</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="barcode-filter" name="barcode" value="{{ filter_barcode }}" aria-labelledby="barcode-filter-label">
+                    <label class="text-exact-toggle" for="barcode-exact">
+                        <input type="checkbox" id="barcode-exact" name="barcode_exact" value="1" data-requires-nonblank="barcode" {% if barcode_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
+                <span>Tracks</span>
+                <div class="count-range-controls">
+                    <input type="number" id="tracks-min" name="tracks_min" value="{{ filter_tracks_min }}" min="0" step="1" placeholder="Min" aria-label="Minimum tracks">
+                    <span class="count-range-separator" aria-hidden="true">to</span>
+                    <input type="number" id="tracks-max" name="tracks_max" value="{{ filter_tracks_max }}" min="0" step="1" placeholder="Max" aria-label="Maximum tracks" {% if tracks_exact %}disabled{% endif %}>
+                    <input type="hidden" id="tracks-max-mirror" name="tracks_max" value="{{ filter_tracks_max }}" {% if !tracks_exact %}disabled{% endif %}>
+                    <label class="count-exact-toggle" for="tracks-exact">
+                        <input type="checkbox" id="tracks-exact" {% if tracks_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
+                <span>Errors</span>
+                <div class="count-range-controls">
+                    <input type="number" id="errors-min" name="errors_min" value="{{ filter_errors_min }}" min="0" step="1" placeholder="Min" aria-label="Minimum errors">
+                    <span class="count-range-separator" aria-hidden="true">to</span>
+                    <input type="number" id="errors-max" name="errors_max" value="{{ filter_errors_max }}" min="0" step="1" placeholder="Max" aria-label="Maximum errors" {% if errors_exact %}disabled{% endif %}>
+                    <input type="hidden" id="errors-max-mirror" name="errors_max" value="{{ filter_errors_max }}" {% if !errors_exact %}disabled{% endif %}>
+                    <label class="count-exact-toggle" for="errors-exact">
+                        <input type="checkbox" id="errors-exact" {% if errors_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row edc-filter-row">
+                <span id="edc-filter-label">EDC</span>
+                <div class="edc-filter-controls" role="group" aria-labelledby="edc-filter-label">
+                    <input type="hidden" id="edc-filter-value" name="edc" value="{{ filter_edc }}">
+                    <label for="edc-yes">
+                        <input type="checkbox" id="edc-yes" data-edc-value="yes" {% if filter_edc == "yes" %}checked{% endif %}>
+                        <span>Yes</span>
+                    </label>
+                    <label for="edc-no">
+                        <input type="checkbox" id="edc-no" data-edc-value="no" {% if filter_edc == "no" %}checked{% endif %}>
+                        <span>No</span>
+                    </label>
+                </div>
+            </div>
             <label class="advanced-search-row">
-                <span>Edition</span>
-                <input type="text" name="edition_q" value="{{ filter_edition_q }}">
+                <span>Protection</span>
+                <input type="text" name="protection" value="{{ filter_protection }}">
             </label>
             <label class="advanced-search-row">
                 <span>Comments</span>
-                <input type="text" name="comments_q" value="{{ filter_comments_q }}">
+                <input type="text" name="comments" value="{{ filter_comments }}">
             </label>
             <label class="advanced-search-row">
-                <span>Order</span>
-                <select class="sort-select" onchange="var p=this.value.split('|');this.form.sort.value=p[0];this.form.order.value=p[1];this.form.submit();">
-                    <option value="title|asc" {% if sort_column == "title" %}selected{% endif %}>Alphabetical</option>
-                    <option value="added|desc" {% if sort_column == "added" && sort_order == "desc" %}selected{% endif %}>Added Date: Newest</option>
-                    <option value="added|asc" {% if sort_column == "added" && sort_order == "asc" %}selected{% endif %}>Added Date: Oldest</option>
-                    <option value="updated|desc" {% if sort_column == "updated" %}selected{% endif %}>Modification Date: Newest</option>
-                </select>
+                <span>Ringcode</span>
+                <input type="text" name="ringcode" value="{{ filter_ringcode }}">
             </label>
+            <label class="advanced-search-row">
+                <span>Offset</span>
+                <input type="text" name="offset" value="{{ filter_offset }}">
+            </label>
+            <div class="advanced-search-row">
+                <span id="disc-sort-label">Sort by</span>
+                <div class="disc-sort-controls">
+                    <select class="sort-select" name="sort" aria-labelledby="disc-sort-label" data-default-value="title" onchange="this.form.requestSubmit()">
+                        <option value="title" {% if sort_column == "title" %}selected{% endif %}>Title</option>
+                        <option value="region" {% if sort_column == "region" %}selected{% endif %}>Region</option>
+                        <option value="system" {% if sort_column == "system" %}selected{% endif %}>System</option>
+                        <option value="version" {% if sort_column == "version" %}selected{% endif %}>Version</option>
+                        <option value="edition" {% if sort_column == "edition" %}selected{% endif %}>Edition</option>
+                        <option value="language" {% if sort_column == "language" %}selected{% endif %}>Language</option>
+                        <option value="serial" {% if sort_column == "serial" %}selected{% endif %}>Serial</option>
+                        <option value="status" {% if sort_column == "status" %}selected{% endif %}>Status</option>
+                        <option value="added" {% if sort_column == "added" %}selected{% endif %}>Date added</option>
+                        <option value="modified" {% if sort_column == "modified" %}selected{% endif %}>Date modified</option>
+                    </select>
+                    <div class="sort-direction" role="group" aria-label="Sort direction">
+                        <button type="button" aria-label="Ascending" aria-pressed="{% if sort_order == "asc" %}true{% else %}false{% endif %}" onclick="this.form.order.value='asc';this.form.requestSubmit();">↑ Asc</button>
+                        <button type="button" aria-label="Descending" aria-pressed="{% if sort_order == "desc" %}true{% else %}false{% endif %}" onclick="this.form.order.value='desc';this.form.requestSubmit();">↓ Desc</button>
+                    </div>
+                </div>
+            </div>
             <div class="advanced-search-actions">
-                <button type="submit">Search for Text</button>
+                <button type="submit">Apply</button>
             </div>
         </div>
         <input type="hidden" name="q" value="{{ filter_q }}">
-        <input type="hidden" name="sort" value="{{ sort_column }}">
-        <input type="hidden" name="order" value="{{ sort_order }}">
-        <input type="hidden" name="advanced" id="advanced-flag" value="{% if advanced_open %}1{% else %}0{% endif %}">
+        <input type="hidden" name="order" value="{{ sort_order }}" data-default-value="asc">
+        <input type="hidden" name="advanced" id="advanced-flag" value="{% if advanced_explicit %}1{% else %}0{% endif %}" data-default-value="0">
     </form>
 
     <div class="letter-picker">
-        <a href="/discs?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
-        <a href="/discs?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter=%23{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
+        <a href="{{ self.letter_url("") }}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
+        <a href="{{ self.letter_url("#") }}" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
         {% for c in letters %}
-        <a href="/discs?system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ c.0 }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
+        <a href="{{ self.letter_url(c.0) }}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
         {% endfor %}
     </div>
 </details>
@@ -101,29 +237,50 @@
     <nav aria-label="Pagination">
         <ul>
             {% if page > 1 %}
-            <li><a href="/discs?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">&laquo; Previous</a></li>
+            <li><a href="{{ self.page_url(prev_page) }}">&laquo; Previous</a></li>
             {% endif %}
             <li>
-                <form method="get" action="/discs" class="page-jump-form">
-                    Page <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}" class="page-jump-input"> of {{ total_pages }}
+                <form method="get" action="/discs" class="page-jump-form" data-compact-get>
+                    Page <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}" class="page-jump-input" data-default-value="1"> of {{ total_pages }}
                     <input type="hidden" name="system" value="{{ filter_system }}">
                     <input type="hidden" name="region" value="{{ filter_region }}">
+                    {% if !filter_language.is_empty() %}<input type="hidden" name="language" value="{{ filter_language }}">{% endif %}
+                    {% if !filter_media.is_empty() %}<input type="hidden" name="media" value="{{ filter_media }}">{% endif %}
+                    {% if !filter_category.is_empty() %}<input type="hidden" name="category" value="{{ filter_category }}">{% endif %}
                     <input type="hidden" name="letter" value="{{ filter_letter }}">
                     <input type="hidden" name="status" value="{{ filter_status }}">
                     <input type="hidden" name="q" value="{{ filter_q }}">
-                    <input type="hidden" name="sort" value="{{ sort_column }}">
-                    <input type="hidden" name="order" value="{{ sort_order }}">
-                    {% if !filter_edition_q.is_empty() %}
-                    <input type="hidden" name="edition_q" value="{{ filter_edition_q }}">
+                    <input type="hidden" name="sort" value="{{ sort_column }}" data-default-value="title">
+                    <input type="hidden" name="order" value="{{ sort_order }}" data-default-value="asc">
+                    {% if !filter_title.is_empty() %}<input type="hidden" name="title" value="{{ filter_title }}">{% endif %}
+                    {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
+                    {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}
+                    {% if title_foreign_exact %}<input type="hidden" name="title_foreign_exact" value="1">{% endif %}
+                    {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
+                    {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
+                    {% if !filter_edition.is_empty() %}
+                    <input type="hidden" name="edition" value="{{ filter_edition }}">
                     {% endif %}
-                    {% if !filter_comments_q.is_empty() %}
-                    <input type="hidden" name="comments_q" value="{{ filter_comments_q }}">
+                    {% if edition_exact %}<input type="hidden" name="edition_exact" value="1">{% endif %}
+                    {% if !filter_barcode.is_empty() %}<input type="hidden" name="barcode" value="{{ filter_barcode }}">{% endif %}
+                    {% if barcode_exact %}<input type="hidden" name="barcode_exact" value="1">{% endif %}
+                    {% if !filter_tracks_min.is_empty() %}<input type="hidden" name="tracks_min" value="{{ filter_tracks_min }}">{% endif %}
+                    {% if !filter_tracks_max.is_empty() %}<input type="hidden" name="tracks_max" value="{{ filter_tracks_max }}">{% endif %}
+                    {% if !filter_errors_min.is_empty() %}<input type="hidden" name="errors_min" value="{{ filter_errors_min }}">{% endif %}
+                    {% if !filter_errors_max.is_empty() %}<input type="hidden" name="errors_max" value="{{ filter_errors_max }}">{% endif %}
+                    {% if !filter_edc.is_empty() %}<input type="hidden" name="edc" value="{{ filter_edc }}">{% endif %}
+                    {% if !filter_protection.is_empty() %}<input type="hidden" name="protection" value="{{ filter_protection }}">{% endif %}
+                    {% if !filter_comments.is_empty() %}
+                    <input type="hidden" name="comments" value="{{ filter_comments }}">
                     {% endif %}
+                    {% if !filter_ringcode.is_empty() %}<input type="hidden" name="ringcode" value="{{ filter_ringcode }}">{% endif %}
+                    {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
+                    {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}
                 </form>
             </li>
             {% if page < total_pages %}
-            <li><a href="/discs?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Next &raquo;</a></li>
+            <li><a href="{{ self.page_url(next_page) }}">Next &raquo;</a></li>
             {% endif %}
         </ul>
     </nav>
@@ -136,14 +293,14 @@
                 {% if current_user.is_some() %}
                 <th class="dumped-by-me-col" title="Dumped by me">👤</th>
                 {% endif %}
-                <th class="region-col"><a href="/discs?sort=region&amp;order={{ next_region_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="title-col"><a href="/discs?sort=title&amp;order={{ next_title_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="system-col"><a href="/discs?sort=system&amp;order={{ next_system_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="version-col"><a href="/discs?sort=version&amp;order={{ next_version_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Version{% if sort_column == "version" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="edition-col"><a href="/discs?sort=edition&amp;order={{ next_edition_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Edition{% if sort_column == "edition" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="language-col"><a href="/discs?sort=language&amp;order={{ next_language_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="serial-col"><a href="/discs?sort=serial&amp;order={{ next_serial_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Serial{% if sort_column == "serial" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
-                <th class="status-col"><a href="/discs?sort=status&amp;order={{ next_status_order }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;status={{ filter_status }}&amp;letter={{ filter_letter }}&amp;q={{ self.url_encode(filter_q) }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="region-col"><a href="{{ self.sort_url("region", next_region_order) }}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="title-col"><a href="{{ self.sort_url("title", next_title_order) }}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="system-col"><a href="{{ self.sort_url("system", next_system_order) }}">System{% if sort_column == "system" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="version-col"><a href="{{ self.sort_url("version", next_version_order) }}">Version{% if sort_column == "version" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="edition-col"><a href="{{ self.sort_url("edition", next_edition_order) }}">Edition{% if sort_column == "edition" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="language-col"><a href="{{ self.sort_url("language", next_language_order) }}">Language{% if sort_column == "language" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="serial-col"><a href="{{ self.sort_url("serial", next_serial_order) }}">Serial{% if sort_column == "serial" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                <th class="status-col"><a href="{{ self.sort_url("status", next_status_order) }}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
             </tr>
         </thead>
         <tbody>
@@ -178,29 +335,50 @@
     <nav aria-label="Pagination">
         <ul>
             {% if page > 1 %}
-            <li><a href="/discs?page={{ prev_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">&laquo; Previous</a></li>
+            <li><a href="{{ self.page_url(prev_page) }}">&laquo; Previous</a></li>
             {% endif %}
             <li>
-                <form method="get" action="/discs" class="page-jump-form">
-                    Page <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}" class="page-jump-input"> of {{ total_pages }}
+                <form method="get" action="/discs" class="page-jump-form" data-compact-get>
+                    Page <input type="number" name="page" min="1" max="{{ total_pages }}" value="{{ page }}" class="page-jump-input" data-default-value="1"> of {{ total_pages }}
                     <input type="hidden" name="system" value="{{ filter_system }}">
                     <input type="hidden" name="region" value="{{ filter_region }}">
+                    {% if !filter_language.is_empty() %}<input type="hidden" name="language" value="{{ filter_language }}">{% endif %}
+                    {% if !filter_media.is_empty() %}<input type="hidden" name="media" value="{{ filter_media }}">{% endif %}
+                    {% if !filter_category.is_empty() %}<input type="hidden" name="category" value="{{ filter_category }}">{% endif %}
                     <input type="hidden" name="letter" value="{{ filter_letter }}">
                     <input type="hidden" name="status" value="{{ filter_status }}">
                     <input type="hidden" name="q" value="{{ filter_q }}">
-                    <input type="hidden" name="sort" value="{{ sort_column }}">
-                    <input type="hidden" name="order" value="{{ sort_order }}">
-                    {% if !filter_edition_q.is_empty() %}
-                    <input type="hidden" name="edition_q" value="{{ filter_edition_q }}">
+                    <input type="hidden" name="sort" value="{{ sort_column }}" data-default-value="title">
+                    <input type="hidden" name="order" value="{{ sort_order }}" data-default-value="asc">
+                    {% if !filter_title.is_empty() %}<input type="hidden" name="title" value="{{ filter_title }}">{% endif %}
+                    {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
+                    {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}
+                    {% if title_foreign_exact %}<input type="hidden" name="title_foreign_exact" value="1">{% endif %}
+                    {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
+                    {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
+                    {% if !filter_edition.is_empty() %}
+                    <input type="hidden" name="edition" value="{{ filter_edition }}">
                     {% endif %}
-                    {% if !filter_comments_q.is_empty() %}
-                    <input type="hidden" name="comments_q" value="{{ filter_comments_q }}">
+                    {% if edition_exact %}<input type="hidden" name="edition_exact" value="1">{% endif %}
+                    {% if !filter_barcode.is_empty() %}<input type="hidden" name="barcode" value="{{ filter_barcode }}">{% endif %}
+                    {% if barcode_exact %}<input type="hidden" name="barcode_exact" value="1">{% endif %}
+                    {% if !filter_tracks_min.is_empty() %}<input type="hidden" name="tracks_min" value="{{ filter_tracks_min }}">{% endif %}
+                    {% if !filter_tracks_max.is_empty() %}<input type="hidden" name="tracks_max" value="{{ filter_tracks_max }}">{% endif %}
+                    {% if !filter_errors_min.is_empty() %}<input type="hidden" name="errors_min" value="{{ filter_errors_min }}">{% endif %}
+                    {% if !filter_errors_max.is_empty() %}<input type="hidden" name="errors_max" value="{{ filter_errors_max }}">{% endif %}
+                    {% if !filter_edc.is_empty() %}<input type="hidden" name="edc" value="{{ filter_edc }}">{% endif %}
+                    {% if !filter_protection.is_empty() %}<input type="hidden" name="protection" value="{{ filter_protection }}">{% endif %}
+                    {% if !filter_comments.is_empty() %}
+                    <input type="hidden" name="comments" value="{{ filter_comments }}">
                     {% endif %}
+                    {% if !filter_ringcode.is_empty() %}<input type="hidden" name="ringcode" value="{{ filter_ringcode }}">{% endif %}
+                    {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
+                    {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}
                 </form>
             </li>
             {% if page < total_pages %}
-            <li><a href="/discs?page={{ next_page }}&amp;system={{ filter_system }}&amp;region={{ filter_region }}&amp;letter={{ filter_letter }}&amp;status={{ filter_status }}&amp;q={{ self.url_encode(filter_q) }}&amp;sort={{ sort_column }}&amp;order={{ sort_order }}{% if !filter_dumper.is_empty() %}&amp;dumper={{ filter_dumper_url }}{% endif %}{{ self.advanced_query_params() }}">Next &raquo;</a></li>
+            <li><a href="{{ self.page_url(next_page) }}">Next &raquo;</a></li>
             {% endif %}
         </ul>
     </nav>
@@ -208,6 +386,60 @@
 </div>
 <script>
 (function() {
+    function initDumperDirectory() {
+        var select = document.getElementById('dumper-filter');
+        if (!select) return;
+
+        var selected = select.getAttribute('data-selected-dumper') || '';
+        var request = null;
+        var loaded = false;
+
+        function populate(names) {
+            var current = select.value || selected;
+            while (select.options.length > 1) select.remove(1);
+
+            names.forEach(function(name) {
+                var option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                select.appendChild(option);
+            });
+
+            if (current && !Array.prototype.some.call(select.options, function(option) {
+                return option.value === current;
+            })) {
+                var selectedOption = document.createElement('option');
+                selectedOption.value = current;
+                selectedOption.textContent = current;
+                select.appendChild(selectedOption);
+            }
+            select.value = current;
+            loaded = true;
+        }
+
+        function load() {
+            if (loaded) return Promise.resolve();
+            if (request) return request;
+            request = fetch('/api/disc-dumpers', {
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin'
+            })
+                .then(function(response) {
+                    if (!response.ok) throw new Error('Unable to load dumpers');
+                    return response.json();
+                })
+                .then(populate)
+                .catch(function() {
+                    request = null;
+                });
+            return request;
+        }
+
+        load();
+        select.addEventListener('focus', load);
+        select.addEventListener('pointerdown', load);
+    }
+
     function scaleDiscTable() {
         var wrapper = document.querySelector('.disc-table-scaler');
         var table = wrapper && wrapper.querySelector('table');
@@ -232,6 +464,114 @@
         var toggle = document.querySelector('.advanced-search-toggle');
         var panel = document.getElementById('advanced-search-panel');
         if (!form || !toggle || !panel) return;
+
+        var systemsMedia = {{ systems_media_json|safe }};
+        var systemSelect = document.getElementById('system-filter');
+        var mediaSelect = document.getElementById('media-filter');
+        var originalMediaOptions = mediaSelect ? Array.prototype.slice.call(mediaSelect.options) : [];
+        var edcValue = document.getElementById('edc-filter-value');
+        var edcOptions = Array.prototype.slice.call(form.querySelectorAll('[data-edc-value]'));
+
+        function initExactRange(prefix) {
+            var min = document.getElementById(prefix + '-min');
+            var max = document.getElementById(prefix + '-max');
+            var maxMirror = document.getElementById(prefix + '-max-mirror');
+            var exact = document.getElementById(prefix + '-exact');
+            if (!min || !max || !maxMirror || !exact) return;
+
+            function sync() {
+                if (exact.checked) {
+                    max.value = min.value;
+                    maxMirror.value = min.value;
+                    max.disabled = true;
+                    maxMirror.disabled = false;
+                } else {
+                    max.disabled = false;
+                    maxMirror.disabled = true;
+                }
+            }
+
+            exact.addEventListener('change', sync);
+            min.addEventListener('input', function() {
+                if (exact.checked) sync();
+            });
+            sync();
+        }
+
+        initExactRange('tracks');
+        initExactRange('errors');
+
+        function syncEdcFilter(changed) {
+            if (!edcValue) return;
+            if (!changed) {
+                edcOptions.forEach(function(option) {
+                    option.checked = option.dataset.edcValue === edcValue.value;
+                });
+                return;
+            }
+
+            if (changed.checked) {
+                edcOptions.forEach(function(option) {
+                    if (option !== changed) option.checked = false;
+                });
+                edcValue.value = changed.dataset.edcValue;
+            } else if (edcValue.value === changed.dataset.edcValue) {
+                edcValue.value = '';
+            }
+        }
+
+        edcOptions.forEach(function(option) {
+            option.addEventListener('change', function() {
+                syncEdcFilter(option);
+            });
+        });
+        syncEdcFilter();
+
+        function filterMediaOptions(clearIncompatible) {
+            if (!systemSelect || !mediaSelect) return;
+
+            var systemCode = systemSelect.value;
+            var allowed = systemCode ? (systemsMedia[systemCode] || []) : null;
+            var current = mediaSelect.value;
+            if (clearIncompatible && current && allowed && allowed.indexOf(current) === -1) {
+                current = '';
+            }
+
+            var byValue = {};
+            originalMediaOptions.forEach(function(option) {
+                byValue[option.value] = option;
+            });
+            var appendOption = function(value) {
+                if (byValue[value] && byValue[value].parentNode === mediaSelect) {
+                    mediaSelect.appendChild(byValue[value]);
+                }
+            };
+
+            appendOption('');
+            if (allowed) {
+                allowed.forEach(appendOption);
+                if (current && allowed.indexOf(current) === -1) appendOption(current);
+            }
+            originalMediaOptions.forEach(function(option) {
+                if (option.value !== '') appendOption(option.value);
+            });
+
+            originalMediaOptions.forEach(function(option) {
+                option.hidden = !!allowed
+                    && option.value !== ''
+                    && allowed.indexOf(option.value) === -1
+                    && option.value !== current;
+            });
+            mediaSelect.value = current;
+        }
+
+        if (systemSelect) {
+            systemSelect.addEventListener('change', function() {
+                filterMediaOptions(true);
+                form.requestSubmit();
+            });
+        }
+        filterMediaOptions(false);
 
         function updateAdvancedSearchWidths() {
             if (!form.classList.contains('advanced-search-visible')) return;
@@ -262,7 +602,8 @@
 
     document.addEventListener('DOMContentLoaded', function() {
         scaleDiscTable();
-        initAdvancedSearchToggle();
+    initDumperDirectory();
+    initAdvancedSearchToggle();
     });
     window.addEventListener('resize', scaleDiscTable);
 })();
