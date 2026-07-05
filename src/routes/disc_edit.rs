@@ -1220,6 +1220,7 @@ struct FormValidationOptions {
     require_title: bool,
     require_regions: bool,
     require_edc: bool,
+    require_cuesheet: bool,
 }
 
 impl FormValidationOptions {
@@ -1231,6 +1232,7 @@ impl FormValidationOptions {
             require_title: true,
             require_regions: true,
             require_edc: true,
+            require_cuesheet: true,
         }
     }
 
@@ -1242,6 +1244,7 @@ impl FormValidationOptions {
             require_title: !is_verification,
             require_regions: !is_verification,
             require_edc: !is_verification,
+            require_cuesheet: !is_verification,
         }
     }
 }
@@ -1427,7 +1430,9 @@ fn validate_form_with_options(
     if is_cd_media {
         match form.cue.as_deref().map(|s| s.trim()) {
             None | Some("") => {
-                errors.push("Cuesheet: required for this media type".into());
+                if options.require_cuesheet {
+                    errors.push("Cuesheet: required for this media type".into());
+                }
             }
             Some(text) => {
                 if let Err(e) = validation::validate_cuesheet(text) {
@@ -1836,16 +1841,10 @@ async fn fetch_add_disc_match_target(
 async fn find_add_disc_match(
     pool: &sqlx::PgPool,
     form: &DiscEditForm,
-    include_disabled_discs: bool,
 ) -> AppResult<Option<AddDiscMatch>> {
     let universal_hash_match = match valid_universal_hash_for_matching(form) {
         Some(universal_hash) => {
-            queue_service::find_matching_disc_by_universal_hash(
-                pool,
-                universal_hash,
-                include_disabled_discs,
-            )
-            .await?
+            queue_service::find_matching_disc_by_universal_hash(pool, universal_hash).await?
         }
         None => None,
     };
@@ -1855,9 +1854,7 @@ async fn find_add_disc_match(
     }
 
     let dat_match = match valid_dat_for_matching(form) {
-        Some(files_xml) => {
-            queue_service::find_matching_disc(pool, files_xml, include_disabled_discs).await?
-        }
+        Some(files_xml) => queue_service::find_matching_disc(pool, files_xml).await?,
         None => None,
     };
     let dat_target = match dat_match {
@@ -2513,26 +2510,25 @@ async fn add_submit(
 
     let mut form = post.disc;
     let ref_data = fetch_ref_data(&state.pool).await?;
-    let add_match =
-        match find_add_disc_match(&state.pool, &form, user.role.can_view_disabled_discs()).await {
-            Ok(add_match) => add_match,
-            Err(err) => {
-                tracing::error!("add-disc match lookup failed: {err}");
-                return render_form_with_errors(
-                    &state,
-                    0,
-                    user.clone(),
-                    &form,
-                    add_disc_match_lookup_errors(),
-                    vec![],
-                    ValidationResultMessage::default(),
-                    true,
-                    user.role.can_edit_directly(),
-                    user.role.can_moderate(),
-                )
-                .await;
-            }
-        };
+    let add_match = match find_add_disc_match(&state.pool, &form).await {
+        Ok(add_match) => add_match,
+        Err(err) => {
+            tracing::error!("add-disc match lookup failed: {err}");
+            return render_form_with_errors(
+                &state,
+                0,
+                user.clone(),
+                &form,
+                add_disc_match_lookup_errors(),
+                vec![],
+                ValidationResultMessage::default(),
+                true,
+                user.role.can_edit_directly(),
+                user.role.can_moderate(),
+            )
+            .await;
+        }
+    };
     let target_disc_id = add_match.as_ref().map(AddDiscMatch::target_disc_id);
     let is_verification = target_disc_id.is_some();
     let mut errors = validate_add_submission_form(
@@ -3132,6 +3128,7 @@ fn build_history_changes(
     detail: Option<&DiscDetail>,
     all_media_types: &[EditMediaTypeRow],
     all_systems: &[System],
+    include_status: bool,
 ) -> serde_json::Value {
     let db_snapshot = detail
         .map(disc_service::build_snapshot_from_disc)
@@ -3177,6 +3174,9 @@ fn build_history_changes(
         "status",
         "layerbreaks",
     ] {
+        if key == "status" && !include_status {
+            continue;
+        }
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let new = form_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let Some(change) = scalar_operation_change(old, new) else {
@@ -3233,7 +3233,16 @@ pub(crate) fn build_sparse_edit_changes(
     all_media_types: &[EditMediaTypeRow],
     all_systems: &[System],
 ) -> serde_json::Value {
-    build_history_changes(form, Some(detail), all_media_types, all_systems)
+    build_history_changes(form, Some(detail), all_media_types, all_systems, true)
+}
+
+pub(crate) fn build_sparse_disc_submission_changes(
+    form: &DiscEditForm,
+    detail: &DiscDetail,
+    all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
+) -> serde_json::Value {
+    build_history_changes(form, Some(detail), all_media_types, all_systems, false)
 }
 
 pub(crate) fn build_new_disc_changes(
@@ -3241,7 +3250,7 @@ pub(crate) fn build_new_disc_changes(
     all_media_types: &[EditMediaTypeRow],
     all_systems: &[System],
 ) -> serde_json::Value {
-    build_history_changes(form, None, all_media_types, all_systems)
+    build_history_changes(form, None, all_media_types, all_systems, false)
 }
 
 fn build_add_submission_changes(
@@ -3822,6 +3831,25 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn validate_add_submission_form_allows_blank_cuesheet_only_for_verification() {
+        let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
+        form.cue = None;
+        let media = media_rows_with_cd();
+        let systems = systems_with_sbi_media(true, &["DVD", "CD"]);
+        let required_error = "Cuesheet: required for this media type".to_string();
+
+        let verification_errors = validate_add_submission_form(&form, &media, &systems, true);
+        assert!(!verification_errors.contains(&required_error));
+
+        let new_disc_errors = validate_add_submission_form(&form, &media, &systems, false);
+        assert!(new_disc_errors.contains(&required_error));
+
+        let edit_errors = validate_form(&form, &media, &systems);
+        assert!(edit_errors.contains(&required_error));
+    }
+
+    #[test]
     fn validate_add_submission_form_rejects_identifier_commas_for_verification() {
         let mut form = new_disc_form();
         form.system_code = String::new();
@@ -4353,10 +4381,7 @@ mod operation_delta_tests {
             changes["ring_codes"][0]["layers"][0]["toolstamps"],
             serde_json::json!({ "add": { "new": "T1, T2" } })
         );
-        assert_eq!(
-            changes["status"],
-            serde_json::json!({ "add": { "new": "Verified" } })
-        );
+        assert!(changes.get("status").is_none());
         assert_eq!(
             changes["dat"],
             serde_json::json!({
@@ -4462,6 +4487,8 @@ mod operation_delta_tests {
 
         assert!(new_disc_changes.get("dat").is_some());
         assert!(verification_changes.get("dat").is_none());
+        assert!(new_disc_changes.get("status").is_none());
+        assert!(verification_changes.get("status").is_none());
         assert!(verification_changes.get("system_code").is_none());
         assert!(verification_changes.get("media_type").is_none());
         assert_eq!(
@@ -4539,6 +4566,43 @@ mod operation_delta_tests {
                 serde_json::json!({ "add": { "new": expected } })
             );
         }
+    }
+
+    #[test]
+    fn build_add_submission_changes_omits_blank_cuesheet_for_verification() {
+        let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
+        form.cue = None;
+        let media = media_rows_with_cd();
+        let systems = systems_with_sbi_media(true, &["DVD", "CD"]);
+        let matched = add_match(1, AddDiscMatchSource::Dat, "SYS", "CD");
+
+        let changes = build_add_submission_changes(&form, &media, &systems, Some(&matched));
+
+        assert!(changes.get("cuesheet").is_none());
+
+        let existing = serde_json::json!({ "cuesheet": "existing cuesheet" });
+        let verification = queue_service::resolve_submission_snapshot(&existing, &changes).unwrap();
+        assert_eq!(
+            verification["cuesheet"],
+            serde_json::json!("existing cuesheet")
+        );
+    }
+
+    #[test]
+    fn build_add_submission_changes_preserves_supplied_cuesheet_for_verification() {
+        let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
+        form.cue = Some(
+            "FILE \"Track.bin\" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00".to_string(),
+        );
+        let media = media_rows_with_cd();
+        let systems = systems_with_sbi_media(true, &["DVD", "CD"]);
+        let matched = add_match(1, AddDiscMatchSource::Dat, "SYS", "CD");
+
+        let changes = build_add_submission_changes(&form, &media, &systems, Some(&matched));
+
+        assert!(changes.get("cuesheet").is_some());
     }
 
     #[test]
@@ -4737,6 +4801,22 @@ mod operation_delta_tests {
             changes["status"],
             serde_json::json!({ "modify": { "old": "Unverified", "new": "Disabled" } })
         );
+    }
+
+    #[test]
+    fn verification_form_changes_do_not_emit_status() {
+        let detail = base_detail();
+        let mut form = form_from_detail(&detail);
+        form.status = "Disabled".to_string();
+
+        let changes = build_sparse_disc_submission_changes(
+            &form,
+            &detail,
+            &media_rows(),
+            &systems_with_edc(true),
+        );
+
+        assert!(changes.get("status").is_none());
     }
 
     #[test]

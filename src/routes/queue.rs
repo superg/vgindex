@@ -24,9 +24,10 @@ use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
     build_check_options, build_flat_changes, build_lang_check_options, build_media_has_pic_json,
     build_media_is_cd_json, build_media_layers_json, build_media_options,
-    build_media_rom_extensions_json, build_new_disc_changes, build_sparse_edit_changes,
-    build_system_options, build_systems_json, fetch_ref_data, max_layers_for_media, validate_form,
-    DiscEditForm, DiscEditTemplate, ReviewAnnotation, ReviewOldMultiline,
+    build_media_rom_extensions_json, build_new_disc_changes, build_sparse_disc_submission_changes,
+    build_sparse_edit_changes, build_system_options, build_systems_json, fetch_ref_data,
+    max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
+    ReviewOldMultiline,
 };
 
 fn normalize_newlines(s: &str) -> String {
@@ -2041,12 +2042,21 @@ async fn review_submit(
 
     let form_snapshot = if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
-        build_sparse_edit_changes(
-            &form.disc,
-            &detail,
-            &ref_data.all_media_types,
-            &ref_data.all_systems,
-        )
+        if sub.submission_type == SubmissionType::Disc {
+            build_sparse_disc_submission_changes(
+                &form.disc,
+                &detail,
+                &ref_data.all_media_types,
+                &ref_data.all_systems,
+            )
+        } else {
+            build_sparse_edit_changes(
+                &form.disc,
+                &detail,
+                &ref_data.all_media_types,
+                &ref_data.all_systems,
+            )
+        }
     } else {
         if sub.submission_type != SubmissionType::Disc {
             return Err(AppError::BadRequest(

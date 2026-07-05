@@ -340,18 +340,20 @@ fn parse_rom_entries(files_xml: &str) -> Vec<RomEntry> {
         .collect()
 }
 
-pub async fn find_matching_disc(
-    pool: &PgPool,
-    files_xml: &str,
-    include_disabled_discs: bool,
-) -> AppResult<Option<i32>> {
-    find_matching_disc_excluding(pool, files_xml, include_disabled_discs, None).await
+pub async fn find_matching_disc(pool: &PgPool, files_xml: &str) -> AppResult<Option<i32>> {
+    find_matching_disc_excluding(pool, files_xml, None).await
 }
+
+const DAT_MATCH_CANDIDATES_SQL: &str = "SELECT DISTINCT f.disc_id
+         FROM files f
+         JOIN discs d ON d.id = f.disc_id
+         WHERE LOWER(f.sha1) = LOWER($1)
+           AND d.status <> 'Disabled'
+           AND ($2::INT IS NULL OR f.disc_id <> $2)";
 
 async fn find_matching_disc_excluding(
     pool: &PgPool,
     files_xml: &str,
-    include_disabled_discs: bool,
     exclude_disc_id: Option<i32>,
 ) -> AppResult<Option<i32>> {
     let submitted = parse_rom_entries(files_xml);
@@ -359,20 +361,7 @@ async fn find_matching_disc_excluding(
         return Ok(None);
     }
 
-    let candidate_sql = if include_disabled_discs {
-        "SELECT DISTINCT disc_id
-         FROM files
-         WHERE LOWER(sha1) = LOWER($1)
-           AND ($2::INT IS NULL OR disc_id <> $2)"
-    } else {
-        "SELECT DISTINCT f.disc_id
-         FROM files f
-         JOIN discs d ON d.id = f.disc_id
-         WHERE LOWER(f.sha1) = LOWER($1)
-           AND d.status <> 'Disabled'
-           AND ($2::INT IS NULL OR f.disc_id <> $2)"
-    };
-    let candidates: Vec<i32> = sqlx::query_scalar(candidate_sql)
+    let candidates: Vec<i32> = sqlx::query_scalar(DAT_MATCH_CANDIDATES_SQL)
         .bind(&submitted[0].sha1)
         .bind(exclude_disc_id)
         .fetch_all(pool)
@@ -405,44 +394,27 @@ pub(crate) fn universal_hash_bytes_for_matching(universal_hash: Option<&str>) ->
 pub async fn find_matching_disc_by_universal_hash(
     pool: &PgPool,
     universal_hash: &str,
-    include_disabled_discs: bool,
 ) -> AppResult<Option<i32>> {
-    find_matching_disc_by_universal_hash_excluding(
-        pool,
-        universal_hash,
-        include_disabled_discs,
-        None,
-    )
-    .await
+    find_matching_disc_by_universal_hash_excluding(pool, universal_hash, None).await
 }
 
-async fn find_matching_disc_by_universal_hash_excluding(
-    pool: &PgPool,
-    universal_hash: &str,
-    include_disabled_discs: bool,
-    exclude_disc_id: Option<i32>,
-) -> AppResult<Option<i32>> {
-    let Some(hash_bytes) = universal_hash_bytes_for_matching(Some(universal_hash)) else {
-        return Ok(None);
-    };
-    let sql = if include_disabled_discs {
-        "SELECT id
-         FROM discs
-         WHERE universal_hash = $1
-           AND ($2::INT IS NULL OR id <> $2)
-         ORDER BY id
-         LIMIT 1"
-    } else {
-        "SELECT id
+const UNIVERSAL_HASH_MATCH_SQL: &str = "SELECT id
          FROM discs
          WHERE universal_hash = $1
            AND status <> 'Disabled'
            AND ($2::INT IS NULL OR id <> $2)
          ORDER BY id
-         LIMIT 1"
-    };
+         LIMIT 1";
 
-    Ok(sqlx::query_scalar(sql)
+async fn find_matching_disc_by_universal_hash_excluding(
+    pool: &PgPool,
+    universal_hash: &str,
+    exclude_disc_id: Option<i32>,
+) -> AppResult<Option<i32>> {
+    let Some(hash_bytes) = universal_hash_bytes_for_matching(Some(universal_hash)) else {
+        return Ok(None);
+    };
+    Ok(sqlx::query_scalar(UNIVERSAL_HASH_MATCH_SQL)
         .bind(hash_bytes)
         .bind(exclude_disc_id)
         .fetch_optional(pool)
@@ -1108,54 +1080,86 @@ pub fn resolve_submission_snapshot_for_submission(
     resolve_submission_snapshot(db_snapshot, &sub.changes)
 }
 
-async fn resolve_submission_data(
-    pool: &PgPool,
-    sub: &DiscSubmission,
-    changes: &serde_json::Value,
-) -> AppResult<serde_json::Value> {
-    resolve_submission_data_for_target(pool, sub.target_disc_id, changes).await
+struct ApprovalResolution {
+    changes: serde_json::Value,
+    effective_data: serde_json::Value,
+    target_status: Option<DiscStatus>,
 }
 
-async fn resolve_submission_data_for_target(
-    pool: &PgPool,
-    target_disc_id: Option<i32>,
-    changes: &serde_json::Value,
-) -> AppResult<serde_json::Value> {
-    let db_snapshot = if let Some(disc_id) = target_disc_id {
-        let detail = disc_service::get_disc_detail(pool, disc_id).await?;
-        disc_service::build_snapshot_from_disc(&detail)
-    } else {
-        serde_json::json!({})
-    };
-    resolve_submission_snapshot(&db_snapshot, changes)
-}
-
-fn apply_approval_status(
-    data: &mut serde_json::Value,
+fn preserve_submitted_status_change(
     submission_type: SubmissionType,
-    target_disc_id: Option<i32>,
-) {
-    let Some(obj) = data.as_object_mut() else {
-        return;
+    submitted_changes: &serde_json::Value,
+    reviewed_changes: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    let mut approval_changes = reviewed_changes.clone();
+    if submission_type != SubmissionType::Disc || change_set_contains(reviewed_changes, "status") {
+        return Ok(approval_changes);
+    }
+    let Some(status_change) = submitted_changes.get("status") else {
+        return Ok(approval_changes);
     };
+    let changes_obj = approval_changes
+        .as_object_mut()
+        .ok_or_else(|| AppError::BadRequest("submission changes must be a JSON object".into()))?;
+    changes_obj.insert("status".to_string(), status_change.clone());
+    Ok(approval_changes)
+}
 
-    if target_disc_id.is_none() {
-        obj.insert("status".to_string(), serde_json::json!("Unverified"));
-    } else if submission_type == SubmissionType::Disc {
-        obj.insert("status".to_string(), serde_json::json!("Verified"));
+fn automatic_disc_status_change(target_status: Option<DiscStatus>) -> Option<serde_json::Value> {
+    match target_status {
+        None => Some(serde_json::json!({ "add": { "new": "Unverified" } })),
+        Some(status @ (DiscStatus::Unverified | DiscStatus::Questionable)) => {
+            Some(serde_json::json!({
+                "modify": {
+                    "old": status.to_string(),
+                    "new": "Verified"
+                }
+            }))
+        }
+        Some(DiscStatus::Verified | DiscStatus::Disabled) => None,
     }
 }
 
-async fn approval_effective_data(
+fn resolve_approval_from_snapshot(
+    submission_type: SubmissionType,
+    target_status: Option<DiscStatus>,
+    db_snapshot: &serde_json::Value,
+    changes: &serde_json::Value,
+) -> AppResult<ApprovalResolution> {
+    let mut approved_changes = changes.clone();
+    if submission_type == SubmissionType::Disc && !change_set_contains(changes, "status") {
+        if let Some(status_change) = automatic_disc_status_change(target_status) {
+            let changes_obj = approved_changes.as_object_mut().ok_or_else(|| {
+                AppError::BadRequest("submission changes must be a JSON object".into())
+            })?;
+            changes_obj.insert("status".to_string(), status_change);
+        }
+    }
+    let effective_data = resolve_submission_snapshot(db_snapshot, &approved_changes)?;
+    Ok(ApprovalResolution {
+        changes: approved_changes,
+        effective_data,
+        target_status,
+    })
+}
+
+async fn approval_resolution(
     pool: &PgPool,
     submission_type: SubmissionType,
     target_disc_id: Option<i32>,
     changes: &serde_json::Value,
-) -> AppResult<serde_json::Value> {
-    let mut effective_data =
-        resolve_submission_data_for_target(pool, target_disc_id, changes).await?;
-    apply_approval_status(&mut effective_data, submission_type, target_disc_id);
-    Ok(effective_data)
+) -> AppResult<ApprovalResolution> {
+    let (db_snapshot, target_status) = if let Some(disc_id) = target_disc_id {
+        let detail = disc_service::get_disc_detail(pool, disc_id).await?;
+        let status = detail.disc.status;
+        (
+            disc_service::build_snapshot_from_disc(&detail),
+            Some(status),
+        )
+    } else {
+        (serde_json::json!({}), None)
+    };
+    resolve_approval_from_snapshot(submission_type, target_status, &db_snapshot, changes)
 }
 
 pub async fn find_approval_conflicts(
@@ -1164,17 +1168,37 @@ pub async fn find_approval_conflicts(
     target_disc_id: Option<i32>,
     changes: &serde_json::Value,
 ) -> AppResult<Vec<ApprovalConflict>> {
-    let effective_data =
-        approval_effective_data(pool, submission_type, target_disc_id, changes).await?;
-    find_approval_conflicts_for_effective_data(pool, target_disc_id, changes, &effective_data).await
+    let resolution = approval_resolution(pool, submission_type, target_disc_id, changes).await?;
+    find_approval_conflicts_for_effective_data(
+        pool,
+        submission_type,
+        target_disc_id,
+        resolution.target_status,
+        &resolution.changes,
+        &resolution.effective_data,
+    )
+    .await
 }
 
 async fn find_approval_conflicts_for_effective_data(
     pool: &PgPool,
+    submission_type: SubmissionType,
     target_disc_id: Option<i32>,
+    target_status: Option<DiscStatus>,
     changes: &serde_json::Value,
     effective_data: &serde_json::Value,
 ) -> AppResult<Vec<ApprovalConflict>> {
+    if disabled_verification_target(submission_type, target_status) {
+        let disc_id = target_disc_id.ok_or_else(|| {
+            AppError::Internal("disabled verification target is missing a disc ID".into())
+        })?;
+        return Ok(vec![ApprovalConflict {
+            text: "Verification target is disabled:".to_string(),
+            disc_id,
+            disc_title: fetch_approval_conflict_disc_title(pool, disc_id).await?,
+        }]);
+    }
+
     if !effective_disc_is_active(effective_data) {
         return Ok(Vec::new());
     }
@@ -1190,8 +1214,7 @@ async fn find_approval_conflicts_for_effective_data(
     }
 
     if let Some(files_xml) = dat_hash_conflict_input(changes, effective_data) {
-        if let Some(disc_id) =
-            find_matching_disc_excluding(pool, files_xml, false, target_disc_id).await?
+        if let Some(disc_id) = find_matching_disc_excluding(pool, files_xml, target_disc_id).await?
         {
             conflicts.push(ApprovalConflict {
                 text: "DAT hashes already exist:".to_string(),
@@ -1202,13 +1225,9 @@ async fn find_approval_conflicts_for_effective_data(
     }
 
     if let Some(universal_hash) = universal_hash_conflict_input(changes, effective_data) {
-        if let Some(disc_id) = find_matching_disc_by_universal_hash_excluding(
-            pool,
-            universal_hash,
-            false,
-            target_disc_id,
-        )
-        .await?
+        if let Some(disc_id) =
+            find_matching_disc_by_universal_hash_excluding(pool, universal_hash, target_disc_id)
+                .await?
         {
             conflicts.push(ApprovalConflict {
                 text: "Universal hash already exists:".to_string(),
@@ -1219,6 +1238,13 @@ async fn find_approval_conflicts_for_effective_data(
     }
 
     Ok(conflicts)
+}
+
+fn disabled_verification_target(
+    submission_type: SubmissionType,
+    target_status: Option<DiscStatus>,
+) -> bool {
+    submission_type == SubmissionType::Disc && target_status == Some(DiscStatus::Disabled)
 }
 
 fn effective_disc_is_active(effective_data: &serde_json::Value) -> bool {
@@ -1548,13 +1574,22 @@ async fn approve_submission_on(
         }
     }
 
-    let effective_data =
-        approval_effective_data(pool, sub.submission_type, sub.target_disc_id, changes).await?;
+    let approval_changes =
+        preserve_submitted_status_change(sub.submission_type, &sub.changes, changes)?;
+    let resolution = approval_resolution(
+        pool,
+        sub.submission_type,
+        sub.target_disc_id,
+        &approval_changes,
+    )
+    .await?;
     let conflicts = find_approval_conflicts_for_effective_data(
         pool,
+        sub.submission_type,
         sub.target_disc_id,
-        changes,
-        &effective_data,
+        resolution.target_status,
+        &resolution.changes,
+        &resolution.effective_data,
     )
     .await?;
     if !conflicts.is_empty() {
@@ -1569,7 +1604,8 @@ async fn approve_submission_on(
     } else {
         None
     };
-    let stored_data = changes.clone();
+    let stored_data = resolution.changes;
+    let effective_data = resolution.effective_data;
 
     // Atomically claim the submission by setting status = 'Approved'
     // only when it is still 'Pending'.  If another moderator already
@@ -2529,17 +2565,174 @@ mod tests {
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         );
 
-        let dat_err = find_matching_disc(&pool, &dat, false).await.unwrap_err();
+        let dat_err = find_matching_disc(&pool, &dat).await.unwrap_err();
         assert!(matches!(dat_err, AppError::Database(_)));
 
-        let hash_err = find_matching_disc_by_universal_hash(
-            &pool,
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            false,
-        )
-        .await
-        .unwrap_err();
+        let hash_err =
+            find_matching_disc_by_universal_hash(&pool, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+                .await
+                .unwrap_err();
         assert!(matches!(hash_err, AppError::Database(_)));
+    }
+
+    #[test]
+    fn verification_match_queries_always_exclude_disabled_discs() {
+        assert!(DAT_MATCH_CANDIDATES_SQL.contains("d.status <> 'Disabled'"));
+        assert!(UNIVERSAL_HASH_MATCH_SQL.contains("status <> 'Disabled'"));
+    }
+
+    #[test]
+    fn status_free_disc_approval_generates_status_changes() {
+        let new_disc = resolve_approval_from_snapshot(
+            SubmissionType::Disc,
+            None,
+            &serde_json::json!({}),
+            &serde_json::json!({}),
+        )
+        .unwrap();
+        assert_eq!(
+            new_disc.changes["status"],
+            serde_json::json!({ "add": { "new": "Unverified" } })
+        );
+        assert_eq!(new_disc.effective_data["status"], "Unverified");
+
+        for old_status in [DiscStatus::Unverified, DiscStatus::Questionable] {
+            let snapshot = serde_json::json!({ "status": old_status.to_string() });
+            let verification = resolve_approval_from_snapshot(
+                SubmissionType::Disc,
+                Some(old_status),
+                &snapshot,
+                &serde_json::json!({}),
+            )
+            .unwrap();
+
+            assert_eq!(
+                verification.changes["status"],
+                serde_json::json!({
+                    "modify": {
+                        "old": old_status.to_string(),
+                        "new": "Verified"
+                    }
+                })
+            );
+            assert_eq!(verification.effective_data["status"], "Verified");
+        }
+
+        let verified = resolve_approval_from_snapshot(
+            SubmissionType::Disc,
+            Some(DiscStatus::Verified),
+            &serde_json::json!({ "status": "Verified" }),
+            &serde_json::json!({}),
+        )
+        .unwrap();
+        assert!(verified.changes.get("status").is_none());
+        assert_eq!(verified.effective_data["status"], "Verified");
+    }
+
+    #[test]
+    fn explicit_status_suppresses_disc_approval_automation() {
+        let new_disc_changes = serde_json::json!({
+            "status": { "add": { "new": "Verified" } }
+        });
+        let new_disc = resolve_approval_from_snapshot(
+            SubmissionType::Disc,
+            None,
+            &serde_json::json!({}),
+            &new_disc_changes,
+        )
+        .unwrap();
+        assert_eq!(new_disc.changes, new_disc_changes);
+        assert_eq!(new_disc.effective_data["status"], "Verified");
+
+        let verification_changes = serde_json::json!({
+            "status": {
+                "modify": { "old": "Unverified", "new": "Questionable" }
+            }
+        });
+        let verification = resolve_approval_from_snapshot(
+            SubmissionType::Disc,
+            Some(DiscStatus::Unverified),
+            &serde_json::json!({ "status": "Unverified" }),
+            &verification_changes,
+        )
+        .unwrap();
+        assert_eq!(verification.changes, verification_changes);
+        assert_eq!(verification.effective_data["status"], "Questionable");
+    }
+
+    #[test]
+    fn explicit_disc_status_survives_a_status_free_review_delta() {
+        let submitted_changes = serde_json::json!({
+            "status": {
+                "modify": { "old": "Unverified", "new": "Questionable" }
+            }
+        });
+        let reviewed_changes = serde_json::json!({
+            "comments": { "add": { "new": "reviewed" } }
+        });
+
+        let approval_changes = preserve_submitted_status_change(
+            SubmissionType::Disc,
+            &submitted_changes,
+            &reviewed_changes,
+        )
+        .unwrap();
+        let resolution = resolve_approval_from_snapshot(
+            SubmissionType::Disc,
+            Some(DiscStatus::Unverified),
+            &serde_json::json!({ "status": "Unverified" }),
+            &approval_changes,
+        )
+        .unwrap();
+
+        assert_eq!(resolution.changes["status"], submitted_changes["status"]);
+        assert_eq!(resolution.effective_data["status"], "Questionable");
+        assert_eq!(resolution.effective_data["comments"], "reviewed");
+    }
+
+    #[test]
+    fn edit_approval_never_generates_status_changes() {
+        let snapshot = serde_json::json!({ "status": "Unverified" });
+        let unchanged = resolve_approval_from_snapshot(
+            SubmissionType::Edit,
+            Some(DiscStatus::Unverified),
+            &snapshot,
+            &serde_json::json!({}),
+        )
+        .unwrap();
+        assert!(unchanged.changes.get("status").is_none());
+        assert_eq!(unchanged.effective_data["status"], "Unverified");
+
+        let explicit_changes = serde_json::json!({
+            "status": {
+                "modify": { "old": "Unverified", "new": "Disabled" }
+            }
+        });
+        let explicit = resolve_approval_from_snapshot(
+            SubmissionType::Edit,
+            Some(DiscStatus::Unverified),
+            &snapshot,
+            &explicit_changes,
+        )
+        .unwrap();
+        assert_eq!(explicit.changes, explicit_changes);
+        assert_eq!(explicit.effective_data["status"], "Disabled");
+    }
+
+    #[test]
+    fn disabled_targets_block_only_verification_approval() {
+        assert!(disabled_verification_target(
+            SubmissionType::Disc,
+            Some(DiscStatus::Disabled)
+        ));
+        assert!(!disabled_verification_target(
+            SubmissionType::Edit,
+            Some(DiscStatus::Disabled)
+        ));
+        assert!(!disabled_verification_target(
+            SubmissionType::Disc,
+            Some(DiscStatus::Questionable)
+        ));
     }
 
     #[test]
