@@ -3452,6 +3452,120 @@ textarea.full-width-textarea {
     text-align: center;
 }
 
+.maintenance-users-note,
+.maintenance-users-empty,
+.maintenance-users-picker-help {
+    max-width: 32rem;
+    margin-right: auto;
+    margin-left: auto;
+    text-align: center;
+}
+
+.maintenance-user-picker-label,
+.maintenance-user-rename-row {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    align-items: center;
+    column-gap: 0.45rem;
+    width: min(32rem, 100%);
+    max-width: 100%;
+    margin-right: auto;
+    margin-left: auto;
+}
+
+.maintenance-user-picker-label {
+    font-size: 0.75rem;
+    margin-bottom: 0.25rem;
+}
+
+.maintenance-user-field-label,
+.maintenance-user-rename-row label {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.1;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.maintenance-user-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.06rem;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.maintenance-user-picker input[type="text"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-bottom: 0;
+    height: auto;
+    padding: 0.15rem 0.35rem;
+    font-size: 0.75rem;
+}
+
+.maintenance-user-picker select.maintenance-user-select {
+    display: block;
+    width: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
+    min-width: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
+    height: calc((0.75rem * var(--pico-line-height)) + 0.3rem + (var(--pico-border-width) * 2));
+    min-height: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    margin-bottom: 0;
+    padding: 0 !important;
+    font-size: 0.75rem;
+    line-height: var(--pico-line-height);
+    vertical-align: middle;
+    background-color: var(--pico-form-element-background-color);
+    background-image: var(--pico-icon-chevron);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 0.7rem auto;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.maintenance-users-picker-help {
+    color: var(--pico-muted-color);
+    font-size: 0.8rem;
+}
+
+.maintenance-user-actions {
+    width: min(32rem, 100%);
+    max-width: 100%;
+    margin: 0 auto;
+}
+
+.maintenance-user-summary {
+    text-align: center;
+}
+
+.maintenance-user-action-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 0.45rem;
+    margin-top: 0.8rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+    padding-top: 0.8rem;
+}
+
+.maintenance-user-action-buttons form,
+.maintenance-user-action-buttons button {
+    margin: 0;
+}
+
+.maintenance-user-rename-row input[type="text"] {
+    height: auto;
+    margin: 0;
+    padding: 0.15rem 0.35rem;
+    font-size: 0.75rem;
+}
+
 .maintenance-systems-form,
 .maintenance-editor-form {
     margin: 0;

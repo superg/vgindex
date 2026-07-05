@@ -37,6 +37,7 @@
     <a href="/maintenance?tab=languages" {% if show_languages %}class="active"{% endif %}>Languages</a>
     <a href="/maintenance?tab=misc" {% if show_misc %}class="active"{% endif %}>Miscellaneous</a>
     {% if can_admin %}
+    <a href="/maintenance?tab=users" {% if show_users %}class="active"{% endif %}>Users</a>
     <a href="/maintenance?tab=backup" {% if show_backup %}class="active"{% endif %}>Backup</a>
     {% endif %}
 </nav>
@@ -200,6 +201,57 @@
 </section>
 
 {% if can_admin %}
+<section id="maintenance-users-panel" class="maintenance-panel" {% if !show_users %}hidden{% endif %}>
+    <p class="maintenance-users-note">Logging out a user revokes all current app sessions. If the user is still permitted and logged in on the forum, the app can sign them in again automatically.</p>
+
+    {% if user_rows.is_empty() %}
+    <p class="maintenance-users-empty">No users found.</p>
+    {% else %}
+    <label class="maintenance-user-picker-label">
+        <span class="maintenance-user-field-label">Username</span>
+        <span class="maintenance-user-picker">
+            <input type="text" id="maintenance-user-input" autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" aria-describedby="maintenance-user-picker-help">
+            <select class="maintenance-user-select" id="maintenance-user-select" aria-label="Choose user">
+                <option value=""></option>
+                {% for row in user_rows %}
+                <option value="{{ row.id }}" data-username="{{ row.username }}" data-session-count="{{ row.active_session_count }}">{{ row.username }}</option>
+                {% endfor %}
+            </select>
+        </span>
+    </label>
+    <p id="maintenance-user-picker-help" class="maintenance-users-picker-help">Type an exact username or choose one from the list.</p>
+
+    <div id="maintenance-user-actions" class="maintenance-user-actions" hidden>
+        <p class="maintenance-user-summary"><strong id="maintenance-selected-username"></strong> · <span id="maintenance-selected-sessions"></span></p>
+
+        <div class="maintenance-user-rename-row">
+            <label for="maintenance-new-username">New Username</label>
+            <input type="text" name="new_username" id="maintenance-new-username" form="maintenance-user-rename-form" maxlength="64" required autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true">
+        </div>
+
+        <div class="maintenance-user-action-buttons">
+            <form method="post" action="/maintenance" id="maintenance-user-rename-form">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <button type="submit" id="maintenance-user-rename-button" disabled>Rename</button>
+            </form>
+
+            <form method="post" action="/maintenance" class="maintenance-user-logout" id="maintenance-user-logout-form">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <button type="submit" class="outline secondary" id="maintenance-user-logout-button" disabled>Logout</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</section>
+
 <section id="maintenance-backup-panel" class="maintenance-panel" {% if !show_backup %}hidden{% endif %}>
     {% if backup_files.is_empty() %}
     <p class="maintenance-backup-empty">No completed backups are available.</p>

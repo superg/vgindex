@@ -46,6 +46,67 @@ function updateFlagPreview(select) {
     }
 }
 
+function initMaintenanceUserPicker() {
+    var input = document.getElementById('maintenance-user-input');
+    var select = document.getElementById('maintenance-user-select');
+    var actions = document.getElementById('maintenance-user-actions');
+    var selectedUsername = document.getElementById('maintenance-selected-username');
+    var selectedSessions = document.getElementById('maintenance-selected-sessions');
+    var renameForm = document.getElementById('maintenance-user-rename-form');
+    var renameInput = document.getElementById('maintenance-new-username');
+    var renameButton = document.getElementById('maintenance-user-rename-button');
+    var logoutForm = document.getElementById('maintenance-user-logout-form');
+    var logoutButton = document.getElementById('maintenance-user-logout-button');
+    if (!input || !select || !actions || !renameForm || !logoutForm) return;
+
+    var usersByName = Object.create(null);
+    Array.prototype.forEach.call(select.options, function (option) {
+        var username = option.getAttribute('data-username');
+        if (username) usersByName[username] = option;
+    });
+
+    function clearSelection() {
+        actions.hidden = true;
+        renameForm.action = '/maintenance';
+        logoutForm.action = '/maintenance';
+        renameButton.disabled = true;
+        logoutButton.disabled = true;
+    }
+
+    function selectUser(option) {
+        if (!option || !option.value) {
+            clearSelection();
+            return;
+        }
+
+        var username = option.getAttribute('data-username') || '';
+        var sessions = Number(option.getAttribute('data-session-count') || '0');
+        selectedUsername.textContent = username;
+        selectedSessions.textContent = sessions + (sessions === 1 ? ' app session' : ' app sessions');
+        renameInput.value = username;
+        renameForm.action = '/maintenance/users/' + option.value + '/rename';
+        logoutForm.action = '/maintenance/users/' + option.value + '/logout';
+        renameButton.disabled = false;
+        logoutButton.disabled = false;
+        actions.hidden = false;
+    }
+
+    select.addEventListener('change', function () {
+        var option = select.options[select.selectedIndex];
+        if (!option || !option.value) return;
+        input.value = option.getAttribute('data-username') || '';
+        selectUser(option);
+        select.value = '';
+        input.focus();
+    });
+
+    input.addEventListener('input', function () {
+        selectUser(usersByName[input.value]);
+    });
+
+    clearSelection();
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-maintenance-form]').forEach(function (form) {
         form.addEventListener('submit', function () {
@@ -59,4 +120,6 @@ document.addEventListener('DOMContentLoaded', function () {
             updateFlagPreview(select);
         });
     });
+
+    initMaintenanceUserPicker();
 });

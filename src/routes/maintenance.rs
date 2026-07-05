@@ -34,6 +34,8 @@ pub fn routes() -> Router<AppState> {
             "/maintenance/trigger-archive-generation",
             post(trigger_archive_generation),
         )
+        .route("/maintenance/users/{user_id}/logout", post(logout_user))
+        .route("/maintenance/users/{user_id}/rename", post(rename_user))
         .route("/maintenance/backups/{filename}", get(download_backup))
 }
 
@@ -62,6 +64,7 @@ struct MaintenanceTemplate {
     system_input_sizes: SystemInputSizes,
     region_input_sizes: LookupInputSizes,
     language_input_sizes: LookupInputSizes,
+    user_rows: Vec<MaintenanceUser>,
     backup_files: Vec<BackupFile>,
     can_admin: bool,
     show_general: bool,
@@ -69,6 +72,7 @@ struct MaintenanceTemplate {
     show_regions: bool,
     show_languages: bool,
     show_misc: bool,
+    show_users: bool,
     show_backup: bool,
 }
 impl SiteConfig for MaintenanceTemplate {}
@@ -85,18 +89,212 @@ struct BackupTimestamp {
     datetime: String,
 }
 
+#[derive(sqlx::FromRow)]
+struct MaintenanceUser {
+    id: i32,
+    username: String,
+    active_session_count: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct UserIdentity {
+    id: i32,
+    username: String,
+}
+
+#[derive(Deserialize)]
+struct RenameUserForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    new_username: String,
+}
+
 async fn maintenance_page(
     State(state): State<AppState>,
     RequireModerator(user): RequireModerator,
     Query(query): Query<MaintenanceQuery>,
 ) -> AppResult<Html<String>> {
-    if query.tab.as_deref() == Some("backup") && !user.role.can_admin() {
+    if matches!(query.tab.as_deref(), Some("users" | "backup")) && !user.role.can_admin() {
         return Err(AppError::Forbidden);
     }
 
     let template =
         build_maintenance_template(&state.pool, user, query, Vec::new(), None, None, None).await?;
     Ok(Html(template.render().unwrap()))
+}
+
+async fn logout_user(
+    State(state): State<AppState>,
+    RequireAdmin(admin): RequireAdmin,
+    AxumPath(user_id): AxumPath<i32>,
+    Form(form): Form<CsrfForm>,
+) -> AppResult<Response> {
+    csrf::verify_form(&admin, &form)?;
+
+    let Some(target) = fetch_user_identity(&state.pool, user_id).await? else {
+        return Ok(redirect_with_message(
+            "users",
+            "error",
+            "User was not found.",
+        ));
+    };
+
+    let result = sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&state.pool)
+        .await?;
+    let revoked = result.rows_affected();
+
+    tracing::info!(
+        administrator_id = admin.id,
+        administrator_username = %admin.username,
+        target_user_id = target.id,
+        target_username = %target.username,
+        sessions_revoked = revoked,
+        "Administrator revoked all app sessions for user"
+    );
+
+    Ok(redirect_with_message(
+        "users",
+        "status",
+        &format!(
+            "Logged out {} from {revoked} app {}.",
+            target.username,
+            if revoked == 1 { "session" } else { "sessions" }
+        ),
+    ))
+}
+
+enum RenameUserResult {
+    Renamed { old_username: String },
+    Unchanged,
+    NotFound,
+    Conflict { username: String },
+}
+
+async fn rename_user(
+    State(state): State<AppState>,
+    RequireAdmin(admin): RequireAdmin,
+    AxumPath(user_id): AxumPath<i32>,
+    Form(form): Form<RenameUserForm>,
+) -> AppResult<Response> {
+    csrf::verify_token(&admin, &form.csrf_token)?;
+
+    let new_username = match normalize_maintenance_username(&form.new_username) {
+        Ok(username) => username,
+        Err(message) => return Ok(redirect_with_message("users", "error", message)),
+    };
+
+    match rename_app_user(&state.pool, user_id, &new_username).await? {
+        RenameUserResult::Renamed { old_username } => {
+            tracing::info!(
+                administrator_id = admin.id,
+                administrator_username = %admin.username,
+                target_user_id = user_id,
+                old_username = %old_username,
+                new_username = %new_username,
+                "Administrator renamed app user"
+            );
+            Ok(redirect_with_message(
+                "users",
+                "status",
+                &format!("Renamed {old_username} to {new_username}."),
+            ))
+        }
+        RenameUserResult::Unchanged => Ok(redirect_with_message(
+            "users",
+            "status",
+            &format!("User is already named {new_username}."),
+        )),
+        RenameUserResult::NotFound => Ok(redirect_with_message(
+            "users",
+            "error",
+            "User was not found.",
+        )),
+        RenameUserResult::Conflict { username } => Ok(redirect_with_message(
+            "users",
+            "error",
+            &format!("Username {username} already belongs to another app user."),
+        )),
+    }
+}
+
+fn normalize_maintenance_username(value: &str) -> Result<String, &'static str> {
+    let username = value.trim();
+    if username.is_empty() {
+        return Err("Username cannot be empty.");
+    }
+    if username.chars().count() > 64 {
+        return Err("Username must be 64 characters or fewer.");
+    }
+    Ok(username.to_string())
+}
+
+async fn rename_app_user(
+    pool: &sqlx::PgPool,
+    user_id: i32,
+    new_username: &str,
+) -> Result<RenameUserResult, sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut *transaction)
+        .await?;
+
+    let target = sqlx::query_as::<_, UserIdentity>(
+        "SELECT id, username FROM users WHERE id = $1 FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let Some(target) = target else {
+        transaction.rollback().await?;
+        return Ok(RenameUserResult::NotFound);
+    };
+
+    if target.username == new_username {
+        transaction.rollback().await?;
+        return Ok(RenameUserResult::Unchanged);
+    }
+
+    let conflict = sqlx::query_as::<_, UserIdentity>(
+        "SELECT id, username
+         FROM users
+         WHERE id <> $1 AND LOWER(username) = LOWER($2)
+         ORDER BY id
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(new_username)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    if let Some(conflict) = conflict {
+        transaction.rollback().await?;
+        return Ok(RenameUserResult::Conflict {
+            username: conflict.username,
+        });
+    }
+
+    sqlx::query("UPDATE users SET username = $2 WHERE id = $1")
+        .bind(user_id)
+        .bind(new_username)
+        .execute(&mut *transaction)
+        .await?;
+    transaction.commit().await?;
+
+    Ok(RenameUserResult::Renamed {
+        old_username: target.username,
+    })
+}
+
+async fn fetch_user_identity(
+    pool: &sqlx::PgPool,
+    user_id: i32,
+) -> Result<Option<UserIdentity>, sqlx::Error> {
+    sqlx::query_as("SELECT id, username FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
 }
 
 async fn download_backup(
@@ -800,6 +998,11 @@ async fn build_maintenance_template(
         }
     };
     let flag_options = load_flag_options()?;
+    let user_rows = if user.role.can_admin() && query.tab.as_deref() == Some("users") {
+        fetch_maintenance_users(pool).await?
+    } else {
+        Vec::new()
+    };
     let backup_files = if user.role.can_admin() {
         list_backup_files(Path::new(BACKUP_DIR))
     } else {
@@ -814,6 +1017,7 @@ async fn build_maintenance_template(
         region_rows,
         language_rows,
         flag_options,
+        user_rows,
         backup_files,
     ))
 }
@@ -826,6 +1030,7 @@ fn maintenance_template(
     region_rows: Vec<LookupEditorRow>,
     language_rows: Vec<LookupEditorRow>,
     flag_options: Vec<FlagOption>,
+    user_rows: Vec<MaintenanceUser>,
     backup_files: Vec<BackupFile>,
 ) -> MaintenanceTemplate {
     let active_tab = match query.tab.as_deref() {
@@ -833,6 +1038,7 @@ fn maintenance_template(
         Some("regions") => "regions",
         Some("languages") => "languages",
         Some("misc") => "misc",
+        Some("users") if user.role.can_admin() => "users",
         Some("backup") if user.role.can_admin() => "backup",
         _ => "general",
     };
@@ -852,6 +1058,7 @@ fn maintenance_template(
         system_input_sizes,
         region_input_sizes,
         language_input_sizes,
+        user_rows,
         backup_files,
         can_admin,
         show_general: active_tab == "general",
@@ -859,8 +1066,24 @@ fn maintenance_template(
         show_regions: active_tab == "regions",
         show_languages: active_tab == "languages",
         show_misc: active_tab == "misc",
+        show_users: active_tab == "users",
         show_backup: active_tab == "backup",
     }
+}
+
+async fn fetch_maintenance_users(pool: &sqlx::PgPool) -> AppResult<Vec<MaintenanceUser>> {
+    let rows = sqlx::query_as(
+        "SELECT u.id,
+                u.username,
+                COUNT(s.id)::BIGINT AS active_session_count
+         FROM users u
+         LEFT JOIN sessions s ON s.user_id = u.id
+         GROUP BY u.id, u.username
+         ORDER BY LOWER(u.username), u.username, u.id",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }
 
 fn list_backup_files(directory: &Path) -> Vec<BackupFile> {
@@ -2034,6 +2257,7 @@ mod tests {
             region_rows,
             language_rows,
             test_flag_options(),
+            Vec::new(),
             backup_files,
         )
     }
@@ -2207,6 +2431,72 @@ mod tests {
             .unwrap();
         assert!(admin.contains(r#"href="/maintenance?tab=backup" class="active""#));
         assert!(admin.contains(r#"id="maintenance-backup-panel""#));
+    }
+
+    #[test]
+    fn users_tab_is_visible_only_to_admins() {
+        let moderator = maintenance_template_for_role(UserRole::Moderator, None, Vec::new())
+            .render()
+            .unwrap();
+        assert!(!moderator.contains(r#"href="/maintenance?tab=users""#));
+        assert!(!moderator.contains(r#"id="maintenance-users-panel""#));
+
+        let admin = maintenance_template_for_role(UserRole::Admin, Some("users"), Vec::new())
+            .render()
+            .unwrap();
+        assert!(admin.contains(r#"href="/maintenance?tab=users" class="active""#));
+        assert!(admin.contains(r#"id="maintenance-users-panel""#));
+    }
+
+    #[test]
+    fn users_tab_renders_picker_actions_and_counts() {
+        let mut template =
+            maintenance_template_for_role(UserRole::Admin, Some("users"), Vec::new());
+        template.user_rows = vec![MaintenanceUser {
+            id: 42,
+            username: "Alice".to_string(),
+            active_session_count: 3,
+        }];
+
+        let html = template.render().unwrap();
+        assert!(html.contains(r#"class="maintenance-user-field-label">Username</span>"#));
+        assert!(html.contains(r#"id="maintenance-user-input""#));
+        assert!(html.contains(r#"class="maintenance-user-select""#));
+        assert!(html.contains(r#"value="42" data-username="Alice" data-session-count="3""#));
+        assert!(html.contains(r#"id="maintenance-user-rename-form""#));
+        assert!(html.contains(r#"id="maintenance-user-logout-form""#));
+        assert!(html.contains(r#"form="maintenance-user-rename-form""#));
+        assert_eq!(html.matches(r#"data-lpignore="true""#).count(), 2);
+        assert!(!html.contains("data-maintenance-confirm"));
+        assert!(!html.contains("maintenance-users-search"));
+    }
+
+    #[test]
+    fn users_picker_selects_locally_without_search_requests() {
+        let script = include_str!("../../static/js/maintenance.js");
+
+        assert!(script.contains("function initMaintenanceUserPicker()"));
+        assert!(script.contains("var usersByName = Object.create(null)"));
+        assert!(script.contains("select.addEventListener('change'"));
+        assert!(script.contains("input.addEventListener('input'"));
+        assert!(script.contains("'/maintenance/users/' + option.value + '/rename'"));
+        assert!(script.contains("'/maintenance/users/' + option.value + '/logout'"));
+        assert!(!script.contains("fetch("));
+    }
+
+    #[test]
+    fn maintenance_username_validation_trims_and_enforces_limits() {
+        assert_eq!(
+            normalize_maintenance_username("  New Name  ").unwrap(),
+            "New Name"
+        );
+        assert_eq!(
+            normalize_maintenance_username("é").unwrap(),
+            "é".to_string()
+        );
+        assert!(normalize_maintenance_username("   ").is_err());
+        assert!(normalize_maintenance_username(&"x".repeat(65)).is_err());
+        assert!(normalize_maintenance_username(&"é".repeat(64)).is_ok());
     }
 
     #[test]
@@ -2622,6 +2912,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn users_page_rejects_moderators() {
+        let response = routes()
+            .with_state(test_state())
+            .oneshot(
+                Request::builder()
+                    .uri("/maintenance?tab=users")
+                    .extension(crate::auth::middleware::CurrentUser(Some(auth_user(
+                        UserRole::Moderator,
+                    ))))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn user_admin_routes_reject_moderators() {
+        for uri in [
+            "/maintenance/users/42/logout",
+            "/maintenance/users/42/rename",
+        ] {
+            let response = routes()
+                .with_state(test_state())
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(uri)
+                        .header("content-type", "application/x-www-form-urlencoded")
+                        .extension(crate::auth::middleware::CurrentUser(Some(auth_user(
+                            UserRole::Moderator,
+                        ))))
+                        .body(Body::from("_csrf=test-csrf-token&new_username=Renamed"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+    }
+
+    #[tokio::test]
+    async fn user_admin_routes_require_csrf() {
+        for (uri, body) in [
+            ("/maintenance/users/42/logout", "_csrf=wrong"),
+            (
+                "/maintenance/users/42/rename",
+                "_csrf=wrong&new_username=Renamed",
+            ),
+        ] {
+            let response = routes()
+                .with_state(test_state())
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(uri)
+                        .header("content-type", "application/x-www-form-urlencoded")
+                        .extension(crate::auth::middleware::CurrentUser(Some(auth_user(
+                            UserRole::Admin,
+                        ))))
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+    }
+
+    #[tokio::test]
     async fn backup_download_rejects_guests() {
         let response = routes()
             .with_state(test_state())
@@ -2645,6 +3009,8 @@ mod tests {
             "/maintenance/languages",
             "/maintenance/rebuild-cue",
             "/maintenance/trigger-archive-generation",
+            "/maintenance/users/42/logout",
+            "/maintenance/users/42/rename",
         ] {
             let response = routes()
                 .with_state(test_state())
