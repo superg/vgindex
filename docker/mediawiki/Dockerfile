@@ -1,7 +1,5 @@
 FROM mediawiki:1.46.0@sha256:51756779bb215c32842dfa38276813f504111c9624e2e4ec0c52204745d52aba
 
-LABEL org.vgindex.mediawiki.schema-generation="1.46"
-
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends libpq-dev git unzip postgresql-client; \
@@ -28,6 +26,5 @@ RUN set -eux; \
     rm -rf /var/www/html/extensions/*/.git
 
 COPY docker/mediawiki/entrypoint.sh /usr/local/bin/mediawiki-entrypoint.sh
-COPY docker/mediawiki/healthcheck.php /usr/local/bin/mediawiki-healthcheck.php
 ENTRYPOINT ["mediawiki-entrypoint.sh"]
-CMD ["serve"]
+CMD ["apache2-foreground"]

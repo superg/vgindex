@@ -15,42 +15,6 @@ env:
   IMAGE_PREFIX: ${{ github.repository_owner }}
 
 jobs:
-  mediawiki-smoke:
-    name: MediaWiki 1.46 smoke test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Validate scripts and Compose model
-        run: |
-          bash -n docker/mediawiki/entrypoint.sh scripts/deployment/*.sh
-          sh -n scripts/backups/create-backup.sh scripts/backups/restore-container.sh
-          docker compose --env-file /dev/null config --quiet
-
-      - name: Build MediaWiki image
-        run: docker compose --env-file /dev/null build mediawiki
-
-      - name: Fresh install and explicit migrations
-        run: |
-          docker compose --env-file /dev/null -p mediawiki_smoke up -d --wait postgres
-          docker compose --env-file /dev/null -p mediawiki_smoke up -d --no-deps mediawiki
-          for attempt in $(seq 1 30); do
-            status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' $(docker compose --env-file /dev/null -p mediawiki_smoke ps -q mediawiki))
-            test "$status" = healthy && break
-            sleep 2
-          done
-          test "$status" = healthy
-          docker compose --env-file /dev/null -p mediawiki_smoke \
-            --profile migration run --rm --no-deps -T mediawiki-migrate
-          docker compose --env-file /dev/null -p mediawiki_smoke \
-            --profile migration run --rm --no-deps -T mediawiki-migrate
-          docker compose --env-file /dev/null -p mediawiki_smoke exec -T mediawiki \
-            php /usr/local/bin/mediawiki-healthcheck.php
-
-      - name: Tear down smoke stack
-        if: always()
-        run: docker compose --env-file /dev/null -p mediawiki_smoke down --volumes
-
   build:
     name: Build images
     runs-on: ubuntu-latest
@@ -110,7 +74,7 @@ jobs:
   deploy:
     name: Deploy to production
     if: github.ref == 'refs/heads/main'
-    needs: [build, mediawiki-smoke]
+    needs: build
     runs-on: ubuntu-latest
     concurrency:
       group: production-deploy
@@ -127,20 +91,13 @@ jobs:
           chmod 644 ~/.ssh/known_hosts
 
       - name: Sync config files
-        env:
-          RELEASE_DIR: /opt/app/.incoming/${{ needs.build.outputs.image_tag }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "mkdir -p '$RELEASE_DIR'"
           scp -i ~/.ssh/deploy_key -r -P ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
             docker-compose.yml Caddyfile docker/ scripts/ \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:"$RELEASE_DIR/"
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/app/
 
       - name: Run deploy
-        env:
-          RELEASE_DIR: /opt/app/.incoming/${{ needs.build.outputs.image_tag }}
         run: |
           ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "IMAGE_TAG=${{ needs.build.outputs.image_tag }} APP_DIR=/opt/app RELEASE_DIR='$RELEASE_DIR' bash '$RELEASE_DIR/scripts/deployment/deploy.sh'"
+            "IMAGE_TAG=${{ needs.build.outputs.image_tag }} bash /opt/app/scripts/deployment/deploy.sh"

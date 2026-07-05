@@ -6,15 +6,6 @@ set -eu
 : "${POSTGRES_USER:?POSTGRES_USER must be set}"
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
 : "${POSTGRES_DB:?POSTGRES_DB must be set}"
-: "${RESTORE_SCOPE:=full}"
-
-case "$RESTORE_SCOPE" in
-    full|mediawiki) ;;
-    *)
-        echo "ERROR: RESTORE_SCOPE must be 'full' or 'mediawiki'" >&2
-        exit 2
-        ;;
-esac
 
 archive="/input/backup.tar.gz"
 work_dir="/tmp/vgindex-restore"
@@ -30,16 +21,7 @@ rm -rf "$work_dir"
 mkdir -p "$work_dir"
 
 echo "Extracting database dumps..."
-if [ "$RESTORE_SCOPE" = "mediawiki" ]; then
-    if ! tar -xOzf "$archive" manifest.env | grep -qx 'SCOPE=mediawiki'; then
-        echo "ERROR: archive is not a MediaWiki-only upgrade backup" >&2
-        exit 2
-    fi
-    tar -xzf "$archive" -C "$work_dir" manifest.env databases/mediawiki.dump
-    pg_restore --list "$work_dir/databases/mediawiki.dump" >/dev/null
-else
-    tar -xzf "$archive" -C "$work_dir" databases
-fi
+tar -xzf "$archive" -C "$work_dir" databases
 
 recreate_database() {
     database="$1"
@@ -76,19 +58,6 @@ restore_database() {
         --exit-on-error \
         "$dump"
 }
-
-if [ "$RESTORE_SCOPE" = "mediawiki" ]; then
-    restore_database mediawiki "$work_dir/databases/mediawiki.dump"
-
-    echo "Replacing persisted MediaWiki uploads..."
-    rm -rf \
-        /restore/mediawiki_uploads/* \
-        /restore/mediawiki_uploads/.[!.]* \
-        /restore/mediawiki_uploads/..?*
-    tar -xzf "$archive" -C /restore mediawiki_uploads
-    echo "MediaWiki upgrade restore complete."
-    exit 0
-fi
 
 restore_database "$POSTGRES_DB" "$work_dir/databases/app.dump"
 restore_database phpbb "$work_dir/databases/phpbb.dump"

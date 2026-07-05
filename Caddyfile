@@ -56,8 +56,4 @@
 {$MEDIAWIKI_PUBLIC_URL} {
 	import access_log
 	reverse_proxy mediawiki:80
-	handle_errors {
-		header Retry-After "300"
-		respond "The wiki is temporarily unavailable for scheduled maintenance. Please try again shortly.\n" 503
-	}
 }

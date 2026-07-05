@@ -78,35 +78,21 @@ install_wiki() {
     echo "MediaWiki entrypoint: install completed."
 }
 
-run_migrations() {
-    echo "MediaWiki entrypoint: running explicit schema migration..."
+initialize_schema() {
+    echo "MediaWiki entrypoint: initializing extension schema..."
     php maintenance/run.php update --quick
-    echo "MediaWiki entrypoint: schema migration completed."
+    echo "MediaWiki entrypoint: extension schema initialized."
 }
 
-case "${1:-serve}" in
-    serve)
-        freshly_installed=false
-        if ! db_initialized; then
-            install_wiki
-            freshly_installed=true
-        fi
-        install_config
-        if [[ "$freshly_installed" == "true" ]]; then
-            run_migrations
-        fi
-        exec apache2-foreground
-        ;;
-    migrate)
-        if ! db_initialized; then
-            echo "MediaWiki entrypoint: ERROR - cannot migrate an uninitialized database" >&2
-            exit 1
-        fi
-        install_config
-        run_migrations
-        ;;
-    *)
-        install_config
-        exec "$@"
-        ;;
-esac
+freshly_installed=false
+if ! db_initialized; then
+    install_wiki
+    freshly_installed=true
+fi
+
+install_config
+if [[ "$freshly_installed" == "true" ]]; then
+    initialize_schema
+fi
+
+exec "$@"

@@ -95,11 +95,6 @@ $wgDBprefix = "";
 $wgSecretKey = requireEnv('MEDIAWIKI_SECRET_KEY');
 $wgUpgradeKey = requireEnv('MEDIAWIKI_UPGRADE_KEY');
 
-$mediawikiReadOnlyReason = getenv('MEDIAWIKI_READ_ONLY_REASON');
-if (PHP_SAPI !== 'cli' && $mediawikiReadOnlyReason !== false && $mediawikiReadOnlyReason !== '') {
-    $wgReadOnly = $mediawikiReadOnlyReason;
-}
-
 # Email
 $mediawikiEmailEnabled = envBool('MEDIAWIKI_EMAIL_ENABLE', false);
 $wgEnableEmail = $mediawikiEmailEnabled;

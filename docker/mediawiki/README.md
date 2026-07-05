@@ -16,14 +16,8 @@ silently changing existing databases:
 4. Runs the schema updater once to create extension tables such as `openid_connect`.
 5. Starts Apache.
 
-On subsequent starts, the web container never runs schema migrations. Major
-upgrades must use the explicit one-shot migration service:
-
-```bash
-docker compose --profile migration run --rm -T mediawiki-migrate
-```
-
-This separation prevents a routine restart from mutating the production schema.
+On subsequent starts, the web container assumes the database is already on the
+MediaWiki 1.46 schema and starts without running the updater.
 OIDC client registration is owned by the phpBB container; MediaWiki does not
 write client rows into the application database.
 
@@ -52,9 +46,6 @@ Main settings:
 - `MEDIAWIKI_OIDC_VERIFY_TLS` (default: `true`) - set `false` only for local
   HTTPS issuer testing with self-signed certificates
 - `MEDIAWIKI_LOCAL_LOGIN` (default: `false`) - keep ordinary local login hidden
-- `MEDIAWIKI_READ_ONLY_REASON` (default: blank) - block HTTP writes while still
-  allowing CLI maintenance commands; optional and not used by the production
-  migration workflow
 
 ## Volumes
 
@@ -65,23 +56,7 @@ ensuring Dockerfile changes (e.g. new extensions) always take effect.
 ## Health checks
 
 - Container is running: `docker compose ps mediawiki`
-- Container health is `healthy`: `docker inspect $(docker compose ps -q mediawiki)`
 - DB reachable: `docker compose exec mediawiki php -m | grep pgsql`
 - Route works through Caddy: open `$MEDIAWIKI_PUBLIC_URL`
 - Discovery works from MediaWiki:
   `docker compose exec mediawiki php -r 'echo file_get_contents(getenv("OIDC_PROVIDER_URL") . "/.well-known/openid-configuration");'`
-
-## Major upgrades
-
-Production major upgrades use `scripts/deployment/mediawiki-migration.sh` via
-the manually dispatched **MediaWiki schema migration** workflow:
-
-1. `prepare` drains jobs, stops the wiki, creates a MediaWiki-only snapshot,
-   runs the updater, and starts the target version writable.
-2. Validate pages, files, Special:Version, SSO, and group synchronization.
-3. Run `finalize` to commit the release markers, or `rollback` to restore the
-   database, uploads, runtime configuration, and previous image. Rollback also
-   discards any wiki changes made after `prepare` created the snapshot.
-
-The upgrade archive and checksum are retained under
-`data/mediawiki-upgrade-backups`; they are not affected by daily-backup pruning.
