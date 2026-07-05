@@ -1,3 +1,37 @@
+x-mediawiki-environment: &mediawiki-environment
+  MEDIAWIKI_DB_HOST: postgres
+  MEDIAWIKI_DB_PORT: 5432
+  MEDIAWIKI_DB_SCHEMA: public
+  MEDIAWIKI_DB_NAME: mediawiki
+  MEDIAWIKI_DB_USER: ${POSTGRES_USER:-admin}
+  MEDIAWIKI_DB_PASSWORD: ${POSTGRES_PASSWORD:-changeme-postgres}
+  MEDIAWIKI_DB_TYPE: postgres
+  MEDIAWIKI_SECRET_KEY: ${MEDIAWIKI_SECRET_KEY:-00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff}
+  MEDIAWIKI_UPGRADE_KEY: ${MEDIAWIKI_UPGRADE_KEY:-0011223344556677}
+  MEDIAWIKI_PUBLIC_URL: ${MEDIAWIKI_PUBLIC_URL:-http://wiki.redump.test:${LOCAL_SITE_PORT:-18000}}
+  MEDIAWIKI_SITE_NAME: ${MEDIAWIKI_SITE_NAME:-}
+  MEDIAWIKI_ADMIN_USER: ${MEDIAWIKI_ADMIN_USER:-admin}
+  MEDIAWIKI_ADMIN_PASSWORD: ${MEDIAWIKI_ADMIN_PASSWORD:-changeme-mediawiki}
+  OIDC_PROVIDER_URL: ${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
+  MEDIAWIKI_OIDC_CLIENT_ID: ${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
+  MEDIAWIKI_OIDC_CLIENT_SECRET: ${MEDIAWIKI_OIDC_CLIENT_SECRET:-changeme-mediawiki-oidc}
+  MEDIAWIKI_OIDC_VERIFY_TLS: ${MEDIAWIKI_OIDC_VERIFY_TLS:-true}
+  MEDIAWIKI_LOCAL_LOGIN: ${MEDIAWIKI_LOCAL_LOGIN:-false}
+  MEDIAWIKI_EMAIL_ENABLE: ${MEDIAWIKI_EMAIL_ENABLE:-false}
+  MEDIAWIKI_EMAIL_FROM: ${MEDIAWIKI_EMAIL_FROM:-${SMTP_FROM:-${SITE_ADMIN_EMAIL:-admin@example.com}}}
+  MEDIAWIKI_EMAIL_FROM_NAME: ${MEDIAWIKI_EMAIL_FROM_NAME:-${SMTP_FROM_NAME:-}}
+  MEDIAWIKI_SMTP_HOST: ${MEDIAWIKI_SMTP_HOST:-${SMTP_HOST:-}}
+  MEDIAWIKI_SMTP_PORT: ${MEDIAWIKI_SMTP_PORT:-${SMTP_PORT:-587}}
+  MEDIAWIKI_SMTP_USER: ${MEDIAWIKI_SMTP_USER:-${SMTP_USER:-}}
+  MEDIAWIKI_SMTP_PASSWORD: ${MEDIAWIKI_SMTP_PASSWORD:-${SMTP_PASSWORD:-}}
+  MEDIAWIKI_SMTP_STARTTLS: ${MEDIAWIKI_SMTP_STARTTLS:-}
+  MEDIAWIKI_READ_ONLY_REASON: ${MEDIAWIKI_READ_ONLY_REASON:-}
+  MEDIAWIKI_EXPECTED_VERSION: 1.46.0
+
+x-mediawiki-volumes: &mediawiki-volumes
+  - mediawiki_uploads:/var/www/html/images
+  - ./docker/mediawiki/LocalSettings.php:/etc/mediawiki/LocalSettings.php:ro
+
 services:
   caddy:
     image: caddy:2-alpine
@@ -140,41 +174,30 @@ services:
     restart: unless-stopped
     ports:
       - "${DIRECT_BIND_ADDR:-127.0.0.1}:${MEDIAWIKI_DIRECT_PORT:-18081}:80"
-    environment:
-      - MEDIAWIKI_DB_HOST=postgres
-      - MEDIAWIKI_DB_PORT=5432
-      - MEDIAWIKI_DB_SCHEMA=public
-      - MEDIAWIKI_DB_NAME=mediawiki
-      - MEDIAWIKI_DB_USER=${POSTGRES_USER:-admin}
-      - MEDIAWIKI_DB_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
-      - MEDIAWIKI_DB_TYPE=postgres
-      - MEDIAWIKI_SECRET_KEY=${MEDIAWIKI_SECRET_KEY:-00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff}
-      - MEDIAWIKI_UPGRADE_KEY=${MEDIAWIKI_UPGRADE_KEY:-0011223344556677}
-      - MEDIAWIKI_PUBLIC_URL=${MEDIAWIKI_PUBLIC_URL:-http://wiki.redump.test:${LOCAL_SITE_PORT:-18000}}
-      - MEDIAWIKI_SITE_NAME=${MEDIAWIKI_SITE_NAME:-}
-      - MEDIAWIKI_ADMIN_USER=${MEDIAWIKI_ADMIN_USER:-admin}
-      - MEDIAWIKI_ADMIN_PASSWORD=${MEDIAWIKI_ADMIN_PASSWORD:-changeme-mediawiki}
-      - OIDC_PROVIDER_URL=${OIDC_PROVIDER_URL:-${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}/app.php/oidc}
-      - MEDIAWIKI_OIDC_CLIENT_ID=${MEDIAWIKI_OIDC_CLIENT_ID:-mediawiki-client}
-      - MEDIAWIKI_OIDC_CLIENT_SECRET=${MEDIAWIKI_OIDC_CLIENT_SECRET:-changeme-mediawiki-oidc}
-      - MEDIAWIKI_OIDC_VERIFY_TLS=${MEDIAWIKI_OIDC_VERIFY_TLS:-true}
-      - MEDIAWIKI_LOCAL_LOGIN=${MEDIAWIKI_LOCAL_LOGIN:-false}
-      - MEDIAWIKI_EMAIL_ENABLE=${MEDIAWIKI_EMAIL_ENABLE:-false}
-      - MEDIAWIKI_EMAIL_FROM=${MEDIAWIKI_EMAIL_FROM:-${SMTP_FROM:-${SITE_ADMIN_EMAIL:-admin@example.com}}}
-      - MEDIAWIKI_EMAIL_FROM_NAME=${MEDIAWIKI_EMAIL_FROM_NAME:-${SMTP_FROM_NAME:-}}
-      - MEDIAWIKI_SMTP_HOST=${MEDIAWIKI_SMTP_HOST:-${SMTP_HOST:-}}
-      - MEDIAWIKI_SMTP_PORT=${MEDIAWIKI_SMTP_PORT:-${SMTP_PORT:-587}}
-      - MEDIAWIKI_SMTP_USER=${MEDIAWIKI_SMTP_USER:-${SMTP_USER:-}}
-      - MEDIAWIKI_SMTP_PASSWORD=${MEDIAWIKI_SMTP_PASSWORD:-${SMTP_PASSWORD:-}}
-      - MEDIAWIKI_SMTP_STARTTLS=${MEDIAWIKI_SMTP_STARTTLS:-}
-    volumes:
-      - mediawiki_uploads:/var/www/html/images
-      - ./docker/mediawiki/LocalSettings.php:/etc/mediawiki/LocalSettings.php:ro
+    environment: *mediawiki-environment
+    volumes: *mediawiki-volumes
     depends_on:
       postgres:
         condition: service_healthy
       phpbb:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "php", "/usr/local/bin/mediawiki-healthcheck.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  mediawiki-migrate:
+    profiles: ["migration"]
+    image: ${MEDIAWIKI_IMAGE:-mediawiki}:${IMAGE_TAG:-dev}
+    command: ["migrate"]
+    restart: "no"
+    environment: *mediawiki-environment
+    volumes: *mediawiki-volumes
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   backup:
     image: postgres:16-alpine
@@ -185,8 +208,12 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-myapp}
+      - BACKUP_SCOPE=${BACKUP_SCOPE:-full}
+      - SOURCE_IMAGE_TAG=${SOURCE_IMAGE_TAG:-unknown}
+      - SOURCE_SCHEMA_VERSION=${SOURCE_SCHEMA_VERSION:-unknown}
     volumes:
       - backup_data:/backups
+      - ${MEDIAWIKI_UPGRADE_BACKUP_DIR:-./data/mediawiki-upgrade-backups}:/upgrade-backups
       - phpbb_files:/source/phpbb_files:ro
       - phpbb_avatars:/source/phpbb_avatars:ro
       - mediawiki_uploads:/source/mediawiki_uploads:ro
@@ -205,6 +232,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-myapp}
+      - RESTORE_SCOPE=${RESTORE_SCOPE:-full}
     volumes:
       - phpbb_files:/restore/phpbb_files
       - phpbb_avatars:/restore/phpbb_avatars

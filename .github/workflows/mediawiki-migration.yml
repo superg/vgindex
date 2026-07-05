@@ -1,0 +1,69 @@
+name: MediaWiki schema migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Migration phase to run
+        required: true
+        type: choice
+        options:
+          - prepare
+          - finalize
+          - rollback
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: MediaWiki ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Compute target image tag
+        id: meta
+        shell: bash
+        run: echo "sha_tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Stage migration release
+        if: inputs.action == 'prepare'
+        env:
+          RELEASE_DIR: /opt/app/.incoming/${{ steps.meta.outputs.sha_tag }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "mkdir -p '$RELEASE_DIR'"
+          scp -i ~/.ssh/deploy_key -r -P ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
+            docker-compose.yml Caddyfile docker/ scripts/ \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:"$RELEASE_DIR/"
+
+      - name: Prepare migration
+        if: inputs.action == 'prepare'
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.sha_tag }}
+          RELEASE_DIR: /opt/app/.incoming/${{ steps.meta.outputs.sha_tag }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "MEDIAWIKI_MIGRATION_ACTION=prepare IMAGE_TAG='$IMAGE_TAG' APP_DIR=/opt/app RELEASE_DIR='$RELEASE_DIR' bash '$RELEASE_DIR/scripts/deployment/mediawiki-migration.sh'"
+
+      - name: Finalize or roll back migration
+        if: inputs.action != 'prepare'
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT || '22' }} \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "MEDIAWIKI_MIGRATION_ACTION='${{ inputs.action }}' APP_DIR=/opt/app bash /opt/app/scripts/deployment/mediawiki-migration.sh"

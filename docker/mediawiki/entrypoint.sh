@@ -54,9 +54,14 @@ db_initialized() {
 
 wait_for_db
 
-if ! db_initialized; then
+install_config() {
+    cp /etc/mediawiki/LocalSettings.php /var/www/html/LocalSettings.php
+    chown www-data:www-data /var/www/html/LocalSettings.php
+}
+
+install_wiki() {
     echo "MediaWiki entrypoint: database not initialized, running install.php..."
-    php maintenance/install.php \
+    php maintenance/run.php install \
         --dbtype postgres \
         --dbserver "$MEDIAWIKI_DB_HOST" \
         --dbport "$MEDIAWIKI_DB_PORT" \
@@ -70,14 +75,38 @@ if ! db_initialized; then
         --pass "$MEDIAWIKI_ADMIN_PASSWORD" \
         "$WIKI_SITE_NAME" \
         "$MEDIAWIKI_ADMIN_USER"
-    echo "MediaWiki entrypoint: install.php completed."
-fi
+    echo "MediaWiki entrypoint: install completed."
+}
 
-cp /etc/mediawiki/LocalSettings.php /var/www/html/LocalSettings.php
-chown www-data:www-data /var/www/html/LocalSettings.php
+run_migrations() {
+    echo "MediaWiki entrypoint: running explicit schema migration..."
+    php maintenance/run.php update --quick
+    echo "MediaWiki entrypoint: schema migration completed."
+}
 
-echo "MediaWiki entrypoint: running update.php..."
-php maintenance/update.php --quick
-echo "MediaWiki entrypoint: update.php completed."
-
-exec apache2-foreground
+case "${1:-serve}" in
+    serve)
+        freshly_installed=false
+        if ! db_initialized; then
+            install_wiki
+            freshly_installed=true
+        fi
+        install_config
+        if [[ "$freshly_installed" == "true" ]]; then
+            run_migrations
+        fi
+        exec apache2-foreground
+        ;;
+    migrate)
+        if ! db_initialized; then
+            echo "MediaWiki entrypoint: ERROR - cannot migrate an uninitialized database" >&2
+            exit 1
+        fi
+        install_config
+        run_migrations
+        ;;
+    *)
+        install_config
+        exec "$@"
+        ;;
+esac
