@@ -165,6 +165,7 @@ fn canonical_route_segment(segment: &str) -> Option<&'static str> {
         "maintenance" => Some("maintenance"),
         "oidc" => Some("oidc"),
         "queue" => Some("queue"),
+        "revalidate" => Some("revalidate"),
         "review" => Some("review"),
         "rebuild-cue" => Some("rebuild-cue"),
         "sbi" => Some("sbi"),

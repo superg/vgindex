@@ -80,6 +80,7 @@ class oidc_controller
                 'role',
                 'picture',
             ],
+            'prompt_values_supported' => ['none'],
             'token_endpoint_auth_methods_supported' => ['client_secret_basic', 'client_secret_post'],
             'code_challenge_methods_supported' => ['S256'],
         ]);
@@ -98,6 +99,7 @@ class oidc_controller
         $scope = $this->request->variable('scope', 'openid');
         $state = $this->request->variable('state', '');
         $nonce = $this->request->variable('nonce', '');
+        $prompt = trim($this->request->variable('prompt', ''));
         $code_challenge = $this->request->variable('code_challenge', '');
         $code_challenge_method = $this->request->variable('code_challenge_method', '');
 
@@ -123,7 +125,15 @@ class oidc_controller
             return $this->redirect_error($redirect_uri, $state, 'invalid_request', 'Only S256 PKCE is supported.');
         }
 
+        $prompt_values = array_values(array_unique(array_filter(preg_split('/\s+/', $prompt) ?: [])));
+        if (in_array('none', $prompt_values, true) && count($prompt_values) !== 1) {
+            return $this->redirect_error($redirect_uri, $state, 'invalid_request', 'prompt=none cannot be combined with other prompt values.');
+        }
+
         if (!$this->is_registered_user()) {
+            if ($prompt_values === ['none']) {
+                return $this->redirect_error($redirect_uri, $state, 'login_required');
+            }
             return new RedirectResponse($this->login_url());
         }
 

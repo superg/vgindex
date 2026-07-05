@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -34,6 +34,13 @@ pub enum ApprovalOutcome {
 pub struct SubmissionCreation {
     pub submission: DiscSubmission,
     pub created: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum DirectSubmissionOutcome {
+    Approved(i32),
+    Existing(DiscSubmission),
+    Conflicts(Vec<ApprovalConflict>),
 }
 
 fn normalize_submission_token(token: Option<&str>) -> AppResult<Option<String>> {
@@ -115,6 +122,43 @@ pub async fn create_submission(
     submission_token: Option<&str>,
     submission_fingerprint: Option<&str>,
 ) -> AppResult<SubmissionCreation> {
+    let mut tx = pool.begin().await?;
+    let creation = match create_submission_on(
+        &mut tx,
+        sub_type,
+        submitter_id,
+        target_disc_id,
+        &changes,
+        submission_comment,
+        dump_log,
+        extra_upload_url,
+        submission_token,
+        submission_fingerprint,
+    )
+    .await
+    {
+        Ok(creation) => creation,
+        Err(err) => {
+            tx.rollback().await?;
+            return Err(err);
+        }
+    };
+    tx.commit().await?;
+    Ok(creation)
+}
+
+async fn create_submission_on(
+    conn: &mut PgConnection,
+    sub_type: SubmissionType,
+    submitter_id: i32,
+    target_disc_id: Option<i32>,
+    changes: &serde_json::Value,
+    submission_comment: Option<&str>,
+    dump_log: Option<&str>,
+    extra_upload_url: Option<&str>,
+    submission_token: Option<&str>,
+    submission_fingerprint: Option<&str>,
+) -> AppResult<SubmissionCreation> {
     let normalized_submission_comment: Option<String> = submission_comment
         .map(normalize_newlines)
         .map(|s| s.trim().to_string())
@@ -140,12 +184,12 @@ pub async fn create_submission(
     .bind(submitter_id)
     .bind(normalized_submission_comment.as_deref())
     .bind(target_disc_id)
-    .bind(&changes)
+    .bind(changes)
     .bind(dump_log)
     .bind(extra_upload_url)
     .bind(submission_token.as_deref())
     .bind(submission_token.as_ref().map(|_| &submission_fingerprint))
-    .fetch_optional(pool)
+    .fetch_optional(&mut *conn)
     .await?;
 
     if let Some(submission) = inserted {
@@ -161,7 +205,7 @@ pub async fn create_submission(
     let submission: DiscSubmission =
         sqlx::query_as("SELECT * FROM disc_submissions WHERE submission_token = $1")
             .bind(token)
-            .fetch_one(pool)
+            .fetch_one(&mut *conn)
             .await?;
 
     let same_request = submission.submission_type == sub_type
@@ -178,6 +222,92 @@ pub async fn create_submission(
         submission,
         created: false,
     })
+}
+
+fn direct_outcome_for_existing(submission: DiscSubmission) -> DirectSubmissionOutcome {
+    if submission.status == SubmissionStatus::Approved {
+        if let Some(disc_id) = submission.target_disc_id {
+            return DirectSubmissionOutcome::Approved(disc_id);
+        }
+    }
+    DirectSubmissionOutcome::Existing(submission)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_and_approve_submission(
+    pool: &PgPool,
+    sub_type: SubmissionType,
+    submitter_id: i32,
+    target_disc_id: Option<i32>,
+    changes: serde_json::Value,
+    submission_comment: Option<&str>,
+    dump_log: Option<&str>,
+    extra_upload_url: Option<&str>,
+    submission_token: Option<&str>,
+    submission_fingerprint: Option<&str>,
+    reviewer_id: i32,
+) -> AppResult<DirectSubmissionOutcome> {
+    let mut tx = pool.begin().await?;
+    acquire_approval_lock(&mut tx).await?;
+
+    let creation = match create_submission_on(
+        &mut tx,
+        sub_type,
+        submitter_id,
+        target_disc_id,
+        &changes,
+        submission_comment,
+        dump_log,
+        extra_upload_url,
+        submission_token,
+        submission_fingerprint,
+    )
+    .await
+    {
+        Ok(creation) => creation,
+        Err(err) => {
+            tx.rollback().await?;
+            return Err(err);
+        }
+    };
+    let created = creation.created;
+    let submission = creation.submission;
+
+    if !created && submission.status != SubmissionStatus::Pending {
+        tx.rollback().await?;
+        return Ok(direct_outcome_for_existing(submission));
+    }
+
+    let approval = approve_submission_on(
+        pool,
+        &mut tx,
+        &submission,
+        &submission.changes,
+        reviewer_id,
+        None,
+        None,
+    )
+    .await;
+
+    match approval {
+        Ok(ApprovalOutcome::Approved(disc_id)) => {
+            tx.commit().await?;
+            Ok(DirectSubmissionOutcome::Approved(disc_id))
+        }
+        Ok(ApprovalOutcome::Conflicts(conflicts)) => {
+            tx.rollback().await?;
+            Ok(DirectSubmissionOutcome::Conflicts(conflicts))
+        }
+        Ok(ApprovalOutcome::AlreadyProcessed | ApprovalOutcome::StaleDiscState) => {
+            tx.rollback().await?;
+            let existing = get_submission(pool, submission.id).await?;
+            Ok(direct_outcome_for_existing(existing))
+        }
+        Err(err) => {
+            tx.rollback().await?;
+            Err(err)
+        }
+    }
 }
 
 struct RomEntry {
@@ -1344,10 +1474,16 @@ pub async fn reject_submission(
     Ok(result.rows_affected() > 0)
 }
 
-/// Apply approval to a submission: update/create the disc, mark the
-/// submission as Approved, and return the approval outcome.
-///
-/// The status is claimed atomically before any disc mutations are performed.
+async fn acquire_approval_lock(conn: &mut PgConnection) -> AppResult<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(APPROVAL_CONFLICT_LOCK_KEY)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
+/// Apply approval to a submission atomically: update/create the disc, mark the
+/// submission as Approved, and commit every related mutation together.
 pub async fn approve_submission(
     pool: &PgPool,
     sub: &DiscSubmission,
@@ -1356,19 +1492,50 @@ pub async fn approve_submission(
     review_comment: Option<&str>,
     expected_review_base_hash: Option<&str>,
 ) -> AppResult<ApprovalOutcome> {
-    let mut approval_lock = pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(APPROVAL_CONFLICT_LOCK_KEY)
-        .execute(&mut *approval_lock)
-        .await?;
+    let mut tx = pool.begin().await?;
+    acquire_approval_lock(&mut tx).await?;
+    let outcome = approve_submission_on(
+        pool,
+        &mut tx,
+        sub,
+        changes,
+        reviewer_id,
+        review_comment,
+        expected_review_base_hash,
+    )
+    .await;
 
+    match outcome {
+        Ok(outcome @ ApprovalOutcome::Approved(_)) => {
+            tx.commit().await?;
+            Ok(outcome)
+        }
+        Ok(outcome) => {
+            tx.rollback().await?;
+            Ok(outcome)
+        }
+        Err(err) => {
+            tx.rollback().await?;
+            Err(err)
+        }
+    }
+}
+
+async fn approve_submission_on(
+    pool: &PgPool,
+    conn: &mut PgConnection,
+    sub: &DiscSubmission,
+    changes: &serde_json::Value,
+    reviewer_id: i32,
+    review_comment: Option<&str>,
+    expected_review_base_hash: Option<&str>,
+) -> AppResult<ApprovalOutcome> {
     let current_status: Option<SubmissionStatus> =
         sqlx::query_scalar("SELECT status FROM disc_submissions WHERE id = $1")
             .bind(sub.id)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *conn)
             .await?;
     if current_status != Some(SubmissionStatus::Pending) {
-        approval_lock.rollback().await?;
         return Ok(ApprovalOutcome::AlreadyProcessed);
     }
 
@@ -1377,7 +1544,6 @@ pub async fn approve_submission(
         if let Some(outcome) =
             stale_review_approval_outcome(expected_review_base_hash, &current_hash)
         {
-            approval_lock.rollback().await?;
             return Ok(outcome);
         }
     }
@@ -1392,14 +1558,13 @@ pub async fn approve_submission(
     )
     .await?;
     if !conflicts.is_empty() {
-        approval_lock.rollback().await?;
         return Ok(ApprovalOutcome::Conflicts(conflicts));
     }
 
     let previous_system_code: Option<String> = if let Some(existing_id) = sub.target_disc_id {
         sqlx::query_scalar("SELECT system_code FROM discs WHERE id = $1")
             .bind(existing_id)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *conn)
             .await?
     } else {
         None
@@ -1423,16 +1588,15 @@ pub async fn approve_submission(
     .bind(normalized_review_comment.as_deref())
     .bind(&stored_data)
     .bind(sub.id)
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
 
     if claim.rows_affected() == 0 {
-        approval_lock.rollback().await?;
         return Ok(ApprovalOutcome::AlreadyProcessed);
     }
 
     let disc_id = if let Some(existing_id) = sub.target_disc_id {
-        disc_service::update_disc(pool, existing_id, &effective_data).await?;
+        disc_service::update_disc(&mut *conn, existing_id, &effective_data).await?;
 
         if sub.submission_type == SubmissionType::Disc {
             sqlx::query(
@@ -1442,20 +1606,23 @@ pub async fn approve_submission(
             )
             .bind(existing_id)
             .bind(sub.submitter_id)
-            .execute(pool)
+            .execute(&mut *conn)
             .await?;
         }
 
         existing_id
     } else {
-        let new_id =
-            disc_service::create_disc_from_submission(pool, &effective_data, sub.submitter_id)
-                .await?;
+        let new_id = disc_service::create_disc_from_submission(
+            &mut *conn,
+            &effective_data,
+            sub.submitter_id,
+        )
+        .await?;
 
         sqlx::query("UPDATE disc_submissions SET target_disc_id = $1 WHERE id = $2")
             .bind(new_id)
             .bind(sub.id)
-            .execute(pool)
+            .execute(&mut *conn)
             .await?;
 
         new_id
@@ -1464,10 +1631,8 @@ pub async fn approve_submission(
     let system_code: Option<String> =
         sqlx::query_scalar("SELECT system_code FROM discs WHERE id = $1")
             .bind(disc_id)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
+            .fetch_optional(&mut *conn)
+            .await?;
 
     let mut dirty_systems = Vec::new();
     if let Some(code) = previous_system_code {
@@ -1480,10 +1645,8 @@ pub async fn approve_submission(
     }
 
     for code in dirty_systems {
-        archive_service::mark_system_archives_dirty(pool, &code).await?;
+        archive_service::mark_system_archives_dirty_on(&mut *conn, &code).await?;
     }
-
-    approval_lock.commit().await?;
 
     Ok(ApprovalOutcome::Approved(disc_id))
 }
@@ -1852,7 +2015,371 @@ mod tests {
         );
         assert_ne!(first.created, second.created);
         assert!(!same_form_after_state_change.created);
+        assert_eq!(first.submission.status, SubmissionStatus::Pending);
+        assert_eq!(second.submission.status, SubmissionStatus::Pending);
         assert!(matches!(mismatched, Err(AppError::BadRequest(_))));
+    }
+
+    struct ApprovalFixture {
+        disc_id: i32,
+        submitter_id: i32,
+        title: String,
+        system_code: String,
+        archives_dirty: bool,
+    }
+
+    fn random_test_token() -> String {
+        let mut bytes = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        hex::encode(bytes)
+    }
+
+    async fn approval_fixture(pool: &PgPool, label: &str) -> ApprovalFixture {
+        let submitter_id: i32 = sqlx::query_scalar("SELECT id FROM users ORDER BY id LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        let title = format!("Atomic approval {label} {}", &random_test_token()[..12]);
+        let (disc_id, system_code): (i32, String) = sqlx::query_as(
+            "INSERT INTO discs (system_code, media_type_code, title, category_id, status)
+             SELECT system_code, media_type_code, $1, category_id, 'Unverified'
+             FROM discs ORDER BY id LIMIT 1
+             RETURNING id, system_code",
+        )
+        .bind(&title)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let archives_dirty: bool =
+            sqlx::query_scalar("SELECT archives_dirty FROM systems WHERE code = $1")
+                .bind(&system_code)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        ApprovalFixture {
+            disc_id,
+            submitter_id,
+            title,
+            system_code,
+            archives_dirty,
+        }
+    }
+
+    async fn cleanup_approval_fixture(pool: &PgPool, fixture: &ApprovalFixture, tokens: &[&str]) {
+        sqlx::query("DELETE FROM disc_submissions WHERE submission_token = ANY($1)")
+            .bind(tokens)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM discs WHERE id = $1")
+            .bind(fixture.disc_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE systems SET archives_dirty = $1 WHERE code = $2")
+            .bind(fixture.archives_dirty)
+            .bind(&fixture.system_code)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn atomic_moderator_approval_rolls_back_claim_and_partial_disc_writes() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "moderator rollback").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let changed_title = format!("{} changed", fixture.title);
+        let changes = serde_json::json!({
+            "title": { "modify": { "old": fixture.title, "new": changed_title } },
+            "languages": { "add": ["__"] }
+        });
+        let creation = create_submission(
+            &pool,
+            SubmissionType::Edit,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            changes,
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+
+        let approval = approve_submission(
+            &pool,
+            &creation.submission,
+            &creation.submission.changes,
+            fixture.submitter_id,
+            None,
+            None,
+        )
+        .await;
+        let status: SubmissionStatus =
+            sqlx::query_scalar("SELECT status FROM disc_submissions WHERE id = $1")
+                .bind(creation.submission.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let stored_title: String = sqlx::query_scalar("SELECT title FROM discs WHERE id = $1")
+            .bind(fixture.disc_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+
+        assert!(matches!(approval, Err(AppError::Database(_))));
+        assert_eq!(status, SubmissionStatus::Pending);
+        assert_eq!(stored_title, fixture.title);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn atomic_direct_failure_leaves_no_submission_or_partial_disc_writes() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "direct rollback").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let changed_title = format!("{} changed", fixture.title);
+        let changes = serde_json::json!({
+            "title": { "modify": { "old": fixture.title, "new": changed_title } },
+            "languages": { "add": ["__"] }
+        });
+
+        let approval = create_and_approve_submission(
+            &pool,
+            SubmissionType::Edit,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            changes,
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+            fixture.submitter_id,
+        )
+        .await;
+        let submission_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM disc_submissions WHERE submission_token = $1")
+                .bind(&token)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let stored_title: String = sqlx::query_scalar("SELECT title FROM discs WHERE id = $1")
+            .bind(fixture.disc_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+
+        assert!(matches!(approval, Err(AppError::Database(_))));
+        assert_eq!(submission_count, 0);
+        assert_eq!(stored_title, fixture.title);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn concurrent_atomic_direct_retries_commit_one_approved_change() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "direct retry").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let changed_title = format!("{} changed", fixture.title);
+        let changes = serde_json::json!({
+            "title": { "modify": { "old": fixture.title, "new": changed_title } }
+        });
+
+        let first = create_and_approve_submission(
+            &pool,
+            SubmissionType::Edit,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            changes.clone(),
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+            fixture.submitter_id,
+        );
+        let second = create_and_approve_submission(
+            &pool,
+            SubmissionType::Edit,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            changes,
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+            fixture.submitter_id,
+        );
+        let (first, second) = tokio::join!(first, second);
+        let submission_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM disc_submissions
+             WHERE submission_token = $1 AND status = 'Approved'",
+        )
+        .bind(&token)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let stored_title: String = sqlx::query_scalar("SELECT title FROM discs WHERE id = $1")
+            .bind(fixture.disc_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+
+        assert!(
+            matches!(first.unwrap(), DirectSubmissionOutcome::Approved(id) if id == fixture.disc_id)
+        );
+        assert!(
+            matches!(second.unwrap(), DirectSubmissionOutcome::Approved(id) if id == fixture.disc_id)
+        );
+        assert_eq!(submission_count, 1);
+        assert_eq!(stored_title, changed_title);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn atomic_direct_conflict_rolls_back_new_submission() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "direct conflict").await;
+        let conflicting_disc_id: i32 = sqlx::query_scalar(
+            "INSERT INTO discs (system_code, media_type_code, title, category_id, status)
+             SELECT system_code, media_type_code, title, category_id, 'Unverified'
+             FROM discs WHERE id = $1 RETURNING id",
+        )
+        .bind(fixture.disc_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let changes = serde_json::json!({
+            "comments": { "add": { "new": "Conflict rollback test" } }
+        });
+
+        let outcome = create_and_approve_submission(
+            &pool,
+            SubmissionType::Edit,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            changes,
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+            fixture.submitter_id,
+        )
+        .await
+        .unwrap();
+        let submission_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM disc_submissions WHERE submission_token = $1")
+                .bind(&token)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        sqlx::query("DELETE FROM discs WHERE id = $1")
+            .bind(conflicting_disc_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+
+        assert!(
+            matches!(outcome, DirectSubmissionOutcome::Conflicts(conflicts) if !conflicts.is_empty())
+        );
+        assert_eq!(submission_count, 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn atomic_approve_reject_race_has_one_consistent_winner() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "approve reject race").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let changed_title = format!("{} changed", fixture.title);
+        let changes = serde_json::json!({
+            "title": { "modify": { "old": fixture.title, "new": changed_title } }
+        });
+        let creation = create_submission(
+            &pool,
+            SubmissionType::Edit,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            changes,
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+
+        let approve = approve_submission(
+            &pool,
+            &creation.submission,
+            &creation.submission.changes,
+            fixture.submitter_id,
+            None,
+            None,
+        );
+        let reject = reject_submission(
+            &pool,
+            creation.submission.id,
+            fixture.submitter_id,
+            Some("race"),
+        );
+        let (approve, reject) = tokio::join!(approve, reject);
+        let approve = approve.unwrap();
+        let reject = reject.unwrap();
+        let status: SubmissionStatus =
+            sqlx::query_scalar("SELECT status FROM disc_submissions WHERE id = $1")
+                .bind(creation.submission.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let stored_title: String = sqlx::query_scalar("SELECT title FROM discs WHERE id = $1")
+            .bind(fixture.disc_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+
+        match status {
+            SubmissionStatus::Approved => {
+                assert_eq!(approve, ApprovalOutcome::Approved(fixture.disc_id));
+                assert!(!reject);
+                assert_eq!(stored_title, changed_title);
+            }
+            SubmissionStatus::Rejected => {
+                assert_eq!(approve, ApprovalOutcome::AlreadyProcessed);
+                assert!(reject);
+                assert_eq!(stored_title, fixture.title);
+            }
+            other => panic!("unexpected race outcome: {other:?}"),
+        }
     }
 
     fn file(

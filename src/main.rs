@@ -85,8 +85,13 @@ async fn main() {
         archive_metadata,
     ));
 
+    let dynamic_routes = routes::build_router().layer(middleware::from_fn_with_state(
+        state.clone(),
+        auth::middleware::session_auth_middleware,
+    ));
+
     let app = Router::new()
-        .merge(routes::build_router())
+        .merge(dynamic_routes)
         .nest_service("/static", ServeDir::new("static"))
         .layer(middleware::from_fn(routes::canonical_url_middleware))
         .layer(TraceLayer::new_for_http())
@@ -100,13 +105,13 @@ async fn main() {
 
 async fn run_session_cleanup(pool: PgPool) {
     loop {
-        match auth::session::cleanup_expired(&pool).await {
+        match auth::session::cleanup_abandoned(&pool).await {
             Ok(deleted) if deleted > 0 => {
-                tracing::debug!("Cleaned up {deleted} expired sessions");
+                tracing::debug!("Cleaned up {deleted} abandoned sessions");
             }
             Ok(_) => {}
             Err(e) => {
-                tracing::warn!("Failed to clean up expired sessions: {e}");
+                tracing::warn!("Failed to clean up abandoned sessions: {e}");
             }
         }
         match auth::oidc::cleanup_expired_login_states(&pool).await {

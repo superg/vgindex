@@ -1,10 +1,10 @@
 -- Indexable normalization used by the advanced array-entry filters.  The
 -- unit-separator keeps adjacent array entries from forming a false match;
 -- callers still recheck individual entries to preserve exact semantics.
-CREATE OR REPLACE FUNCTION compact_disc_array_search(TEXT[]) RETURNS TEXT
+CREATE OR REPLACE FUNCTION public.compact_disc_array_search(TEXT[]) RETURNS TEXT
     LANGUAGE SQL IMMUTABLE PARALLEL SAFE STRICT
     AS $$
-        SELECT LOWER(REGEXP_REPLACE(arr_to_str($1, CHR(31)), '[[:space:]]+', '', 'g'))
+        SELECT LOWER(REGEXP_REPLACE(public.arr_to_str($1, CHR(31)), '[[:space:]]+', '', 'g'))
     $$;
 
 CREATE OR REPLACE FUNCTION ringcode_layer_search_text(TEXT, TEXT) RETURNS TEXT

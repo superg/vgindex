@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::auth::{
     csrf,
-    middleware::{AuthenticatedUser, CurrentUser, RequireAuth},
+    middleware::{AuthenticatedUser, RequireAuth},
 };
 use crate::config::SiteConfig;
 use crate::db::models::*;
@@ -280,19 +280,16 @@ fn normalize_queue_order(order: Option<&str>) -> String {
 
 async fn queue_list(
     State(state): State<AppState>,
-    user: CurrentUser,
+    RequireAuth(user): RequireAuth,
     Query(query): Query<QueueQuery>,
 ) -> AppResult<Html<String>> {
-    let current = user.user();
-    let is_logged_in = current.is_some();
-    let can_view_disabled_discs = user.can_view_disabled_discs();
+    let current = Some(&user);
+    let is_logged_in = true;
+    let can_view_disabled_discs = user.role.can_view_disabled_discs();
     let disc_id_filter = query.disc_id;
     let is_disc_history = disc_id_filter.is_some();
     let can_view_all_statuses = is_logged_in && !is_disc_history;
 
-    if !is_logged_in {
-        return Err(AppError::Unauthorized);
-    }
     if let Some(disc_id) = disc_id_filter {
         disc_service::ensure_disc_id_visible(&state.pool, disc_id, can_view_disabled_discs).await?;
     }
@@ -468,19 +465,20 @@ async fn queue_list(
 
 async fn submission_detail(
     State(state): State<AppState>,
-    user: CurrentUser,
+    RequireAuth(user): RequireAuth,
     Path(id): Path<i32>,
 ) -> AppResult<Html<String>> {
-    let current = user.user();
-    if current.is_none() {
-        return Err(AppError::Unauthorized);
-    }
+    let current = Some(&user);
 
     let sub = queue_service::get_submission(&state.pool, id).await?;
 
     if let Some(disc_id) = sub.target_disc_id {
-        disc_service::ensure_disc_id_visible(&state.pool, disc_id, user.can_view_disabled_discs())
-            .await?;
+        disc_service::ensure_disc_id_visible(
+            &state.pool,
+            disc_id,
+            user.role.can_view_disabled_discs(),
+        )
+        .await?;
     }
 
     let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")

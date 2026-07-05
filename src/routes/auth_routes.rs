@@ -32,9 +32,13 @@ async fn logout(
     }
 
     let cookie = session::expired_session_cookie(&state.config);
+    let sso_cookie = session::suppress_automatic_sso_cookie(&state.config);
     let mut response = Redirect::to("/").into_response();
     response
         .headers_mut()
-        .insert(header::SET_COOKIE, cookie.parse().unwrap());
+        .append(header::SET_COOKIE, cookie.parse().unwrap());
+    response
+        .headers_mut()
+        .append(header::SET_COOKIE, sso_cookie.parse().unwrap());
     Ok(response)
 }

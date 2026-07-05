@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -159,6 +159,14 @@ pub async fn mark_system_archives_dirty(pool: &PgPool, system: &str) -> AppResul
     sqlx::query("UPDATE systems SET archives_dirty = TRUE WHERE code = $1")
         .bind(system)
         .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn mark_system_archives_dirty_on(conn: &mut PgConnection, system: &str) -> AppResult<()> {
+    sqlx::query("UPDATE systems SET archives_dirty = TRUE WHERE code = $1")
+        .bind(system)
+        .execute(&mut *conn)
         .await?;
     Ok(())
 }

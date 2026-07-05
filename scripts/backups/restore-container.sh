@@ -48,15 +48,47 @@ restore_database() {
     dump="$2"
     recreate_database "$database"
     echo "Restoring PostgreSQL database ${database}..."
-    pg_restore \
-        --host="$POSTGRES_HOST" \
-        --port="$POSTGRES_PORT" \
-        --username="$POSTGRES_USER" \
-        --dbname="$database" \
-        --no-owner \
-        --no-acl \
-        --exit-on-error \
-        "$dump"
+
+    for section in pre-data data post-data; do
+        pg_restore \
+            --host="$POSTGRES_HOST" \
+            --port="$POSTGRES_PORT" \
+            --username="$POSTGRES_USER" \
+            --dbname="$database" \
+            --no-owner \
+            --no-acl \
+            --exit-on-error \
+            --section="$section" \
+            "$dump"
+
+        if [ "$database" = "$POSTGRES_DB" ] && [ "$section" = "pre-data" ]; then
+            # Older dumps contain a SQL function that refers to arr_to_str
+            # without its schema. pg_restore intentionally clears search_path,
+            # so give that function a safe path before its indexes are rebuilt.
+            psql \
+                --host="$POSTGRES_HOST" \
+                --port="$POSTGRES_PORT" \
+                --username="$POSTGRES_USER" \
+                --dbname="$database" \
+                --set=ON_ERROR_STOP=1 <<'SQL'
+DO $$
+DECLARE
+    compact_function REGPROCEDURE :=
+        to_regprocedure('public.compact_disc_array_search(text[])');
+BEGIN
+    IF compact_function IS NOT NULL
+       AND STRPOS(
+           (SELECT prosrc FROM pg_proc WHERE oid = compact_function),
+           'public.arr_to_str'
+       ) = 0 THEN
+        ALTER FUNCTION public.compact_disc_array_search(TEXT[])
+            SET search_path = pg_catalog, public;
+    END IF;
+END
+$$;
+SQL
+        fi
+    done
 }
 
 restore_database "$POSTGRES_DB" "$work_dir/databases/app.dump"

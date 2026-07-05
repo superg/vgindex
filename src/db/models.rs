@@ -405,8 +405,9 @@ pub struct Session {
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
     pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
     pub last_active_at: DateTime<Utc>,
+    pub oidc_validated_at: DateTime<Utc>,
+    pub oidc_revalidation_attempted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

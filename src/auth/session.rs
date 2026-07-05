@@ -1,5 +1,4 @@
 use axum::http::{header, HeaderMap};
-use chrono::{Duration, Utc};
 use rand::RngCore;
 use sqlx::PgPool;
 
@@ -7,21 +6,30 @@ use crate::config::Config;
 use crate::db::models::{Session, UserRole};
 
 pub const SESSION_COOKIE_NAME: &str = "session_id";
-const SESSION_DURATION_DAYS: i64 = 14;
-const AUTH_SESSION_DURATION_SECS: i64 = SESSION_DURATION_DAYS * 86400;
+pub const SSO_CHECK_COOKIE_NAME: &str = "forum_sso_checked";
+pub const SSO_CHECK_TTL_SECS: i64 = 15 * 60;
+const ABANDONED_SESSION_DAYS: i64 = 30;
 
-pub fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
+fn extract_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
     for part in cookie_header.split(';') {
         let part = part.trim();
         if let Some(value) = part
-            .strip_prefix(SESSION_COOKIE_NAME)
+            .strip_prefix(name)
             .and_then(|rest| rest.strip_prefix('='))
         {
             return Some(value.to_string());
         }
     }
     None
+}
+
+pub fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
+    extract_cookie(headers, SESSION_COOKIE_NAME)
+}
+
+pub fn has_sso_check_cookie(headers: &HeaderMap) -> bool {
+    extract_cookie(headers, SSO_CHECK_COOKIE_NAME).is_some()
 }
 
 pub fn extract_client_ip(headers: &HeaderMap) -> Option<String> {
@@ -57,11 +65,11 @@ pub fn cookies_should_be_secure(config: &Config) -> bool {
     config.base_url.starts_with("https://") || config.site_url.starts_with("https://")
 }
 
-pub fn session_cookie(sid: &str, max_age_secs: i64, secure: bool) -> String {
-    let mut cookie = format!(
-        "{}={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_secs}",
-        SESSION_COOKIE_NAME
-    );
+fn cookie(name: &str, value: &str, max_age_secs: Option<i64>, secure: bool) -> String {
+    let mut cookie = format!("{name}={value}; Path=/; HttpOnly; SameSite=Lax");
+    if let Some(max_age_secs) = max_age_secs {
+        cookie.push_str(&format!("; Max-Age={max_age_secs}"));
+    }
     if secure {
         cookie.push_str("; Secure");
     }
@@ -69,15 +77,48 @@ pub fn session_cookie(sid: &str, max_age_secs: i64, secure: bool) -> String {
 }
 
 pub fn login_session_cookie(sid: &str, config: &Config) -> String {
-    session_cookie(
+    cookie(
+        SESSION_COOKIE_NAME,
         sid,
-        AUTH_SESSION_DURATION_SECS,
+        None,
         cookies_should_be_secure(config),
     )
 }
 
 pub fn expired_session_cookie(config: &Config) -> String {
-    session_cookie("", 0, cookies_should_be_secure(config))
+    cookie(
+        SESSION_COOKIE_NAME,
+        "",
+        Some(0),
+        cookies_should_be_secure(config),
+    )
+}
+
+pub fn checked_sso_cookie(config: &Config) -> String {
+    cookie(
+        SSO_CHECK_COOKIE_NAME,
+        "1",
+        Some(SSO_CHECK_TTL_SECS),
+        cookies_should_be_secure(config),
+    )
+}
+
+pub fn suppress_automatic_sso_cookie(config: &Config) -> String {
+    cookie(
+        SSO_CHECK_COOKIE_NAME,
+        "1",
+        None,
+        cookies_should_be_secure(config),
+    )
+}
+
+pub fn expired_sso_check_cookie(config: &Config) -> String {
+    cookie(
+        SSO_CHECK_COOKIE_NAME,
+        "",
+        Some(0),
+        cookies_should_be_secure(config),
+    )
 }
 
 pub async fn create_session(
@@ -89,11 +130,10 @@ pub async fn create_session(
 ) -> Result<String, sqlx::Error> {
     let id = generate_session_id();
     let csrf_token = generate_csrf_token();
-    let expires = Utc::now() + Duration::days(SESSION_DURATION_DAYS);
 
     sqlx::query(
-        "INSERT INTO sessions (id, user_id, role, csrf_token, ip_address, user_agent, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        "INSERT INTO sessions (id, user_id, role, csrf_token, ip_address, user_agent)
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(&id)
     .bind(user_id)
@@ -101,7 +141,6 @@ pub async fn create_session(
     .bind(csrf_token)
     .bind(ip)
     .bind(ua)
-    .bind(expires)
     .execute(pool)
     .await?;
 
@@ -112,29 +151,29 @@ pub async fn validate_session(
     pool: &PgPool,
     session_id: &str,
 ) -> Result<Option<Session>, sqlx::Error> {
-    let mut session: Option<Session> =
-        sqlx::query_as("SELECT * FROM sessions WHERE id = $1 AND expires_at > NOW()")
-            .bind(session_id)
-            .fetch_optional(pool)
-            .await?;
+    sqlx::query_as(
+        "UPDATE sessions
+         SET last_active_at = NOW(),
+             csrf_token = COALESCE(csrf_token, $2)
+         WHERE id = $1
+         RETURNING *",
+    )
+    .bind(session_id)
+    .bind(generate_csrf_token())
+    .fetch_optional(pool)
+    .await
+}
 
-    if let Some(ref mut s) = session {
-        let fallback_token = generate_csrf_token();
-        let csrf_token: Option<String> = sqlx::query_scalar(
-            "UPDATE sessions
-             SET last_active_at = NOW(),
-                 csrf_token = COALESCE(csrf_token, $2)
-             WHERE id = $1
-             RETURNING csrf_token",
-        )
-        .bind(&s.id)
-        .bind(fallback_token)
-        .fetch_optional(pool)
-        .await?;
-        s.csrf_token = csrf_token;
-    }
-
-    Ok(session)
+pub async fn mark_revalidation_attempt(pool: &PgPool, session_id: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE sessions
+         SET oidc_revalidation_attempted_at = NOW()
+         WHERE id = $1",
+    )
+    .bind(session_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 pub async fn delete_session(pool: &PgPool, session_id: &str) -> Result<(), sqlx::Error> {
@@ -145,10 +184,14 @@ pub async fn delete_session(pool: &PgPool, session_id: &str) -> Result<(), sqlx:
     Ok(())
 }
 
-pub async fn cleanup_expired(pool: &PgPool) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query("DELETE FROM sessions WHERE expires_at < NOW()")
-        .execute(pool)
-        .await?;
+pub async fn cleanup_abandoned(pool: &PgPool) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query(
+        "DELETE FROM sessions
+         WHERE last_active_at < NOW() - make_interval(days => $1::int)",
+    )
+    .bind(ABANDONED_SESSION_DAYS)
+    .execute(pool)
+    .await?;
     Ok(result.rows_affected())
 }
 
@@ -229,6 +272,7 @@ mod tests {
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Lax"));
         assert!(cookie.contains("Secure"));
+        assert!(!cookie.contains("Max-Age"));
     }
 
     #[test]
@@ -237,6 +281,7 @@ mod tests {
             login_session_cookie("sid", &config("http://vgindex.test", "http://root.test"));
 
         assert!(!cookie.contains("Secure"));
+        assert!(!cookie.contains("Max-Age"));
     }
 
     #[test]
@@ -248,5 +293,23 @@ mod tests {
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Lax"));
         assert!(cookie.contains("Secure"));
+    }
+
+    #[test]
+    fn checked_sso_cookie_is_short_lived_and_non_identifying() {
+        let cookie = checked_sso_cookie(&config("https://vgindex.test", "#"));
+
+        assert!(cookie.contains("forum_sso_checked=1"));
+        assert!(cookie.contains("Max-Age=900"));
+        assert!(cookie.contains("HttpOnly"));
+        assert!(cookie.contains("Secure"));
+    }
+
+    #[test]
+    fn sso_suppression_cookie_lasts_for_the_browser_session() {
+        let cookie = suppress_automatic_sso_cookie(&config("https://vgindex.test", "#"));
+
+        assert!(cookie.contains("forum_sso_checked=1"));
+        assert!(!cookie.contains("Max-Age"));
     }
 }

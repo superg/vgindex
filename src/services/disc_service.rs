@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -754,7 +754,7 @@ struct SbiApplicabilityRow {
 }
 
 async fn disc_data_allows_sbi(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     disc_id: i32,
     system_code: Option<&str>,
     media_type: Option<&str>,
@@ -769,7 +769,7 @@ async fn disc_data_allows_sbi(
     .bind(disc_id)
     .bind(system_code)
     .bind(media_type)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *conn)
     .await?;
 
     Ok(row.map_or(false, |row| {
@@ -777,7 +777,11 @@ async fn disc_data_allows_sbi(
     }))
 }
 
-pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) -> AppResult<()> {
+pub async fn update_disc(
+    conn: &mut PgConnection,
+    disc_id: i32,
+    data: &serde_json::Value,
+) -> AppResult<()> {
     let title = data["title"].as_str().unwrap_or_default();
     let system_code = data["system_code"].as_str();
     let media_type = data["media_type"].as_str();
@@ -803,7 +807,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         .map(normalize_newlines)
         .filter(|s| !s.is_empty());
     let sbi_allowed = disc_data_allows_sbi(
-        pool,
+        &mut *conn,
         disc_id,
         system_code.filter(|s| !s.trim().is_empty()),
         media_type.filter(|s| !s.trim().is_empty()),
@@ -925,7 +929,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     .bind(cue) // $28
     .bind(status) // $29
     .bind(disc_id) // $30
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
 
     // Sector ranges (INT4RANGE[] needs special handling)
@@ -933,7 +937,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         if ranges.is_empty() {
             sqlx::query("UPDATE discs SET sector_ranges = NULL WHERE id = $1")
                 .bind(disc_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await?;
         } else {
             let range_strs: Vec<String> = ranges
@@ -948,7 +952,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
             sqlx::query("UPDATE discs SET sector_ranges = $1::INT4RANGE[] WHERE id = $2")
                 .bind(&array_literal)
                 .bind(disc_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await?;
         }
     }
@@ -956,7 +960,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     // Regions
     sqlx::query("DELETE FROM disc_regions WHERE disc_id = $1")
         .bind(disc_id)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     if let Some(regions) = data["regions"].as_array() {
         for r in regions {
@@ -967,7 +971,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
                 )
                 .bind(disc_id)
                 .bind(rcode)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await?;
             }
         }
@@ -976,7 +980,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     // Languages
     sqlx::query("DELETE FROM disc_languages WHERE disc_id = $1")
         .bind(disc_id)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     if let Some(langs) = data["languages"].as_array() {
         for l in langs {
@@ -987,7 +991,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
                 )
                 .bind(disc_id)
                 .bind(lcode)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await?;
             }
         }
@@ -1023,7 +1027,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
                 .bind(comment)
                 .bind(existing_id)
                 .bind(disc_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await?;
                 if updated.rows_affected() == 0 {
                     return Err(AppError::BadRequest(format!(
@@ -1042,7 +1046,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
                 .bind(offset_extra_value)
                 .bind(sample_start)
                 .bind(comment)
-                .fetch_one(pool)
+                .fetch_one(&mut *conn)
                 .await?
             };
 
@@ -1050,7 +1054,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
 
             sqlx::query("DELETE FROM disc_ring_code_layers WHERE entry_id = $1")
                 .bind(entry_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await?;
 
             if let Some(layers) = entry_data["layers"].as_array() {
@@ -1087,7 +1091,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
                         .bind(&mould_sids)
                         .bind(&toolstamps)
                         .bind(&additional_moulds)
-                        .execute(pool)
+                        .execute(&mut *conn)
                         .await?;
                     }
                 }
@@ -1097,7 +1101,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
         if keep_entry_ids.is_empty() {
             sqlx::query("DELETE FROM disc_ring_code_entries WHERE disc_id = $1")
                 .bind(disc_id)
-                .execute(pool)
+                .execute(&mut *conn)
                 .await?;
         } else {
             sqlx::query(
@@ -1106,7 +1110,7 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
             )
             .bind(disc_id)
             .bind(&keep_entry_ids)
-            .execute(pool)
+            .execute(&mut *conn)
             .await?;
         }
     }
@@ -1115,20 +1119,20 @@ pub async fn update_disc(pool: &PgPool, disc_id: i32, data: &serde_json::Value) 
     if let Some(files_xml) = data["dat"].as_str().map(normalize_newlines) {
         sqlx::query("DELETE FROM files WHERE disc_id = $1 AND track_number IS NOT NULL")
             .bind(disc_id)
-            .execute(pool)
+            .execute(&mut *conn)
             .await?;
         if !files_xml.is_empty() {
-            parse_and_insert_files(pool, disc_id, &files_xml).await?;
+            parse_and_insert_files(&mut *conn, disc_id, &files_xml).await?;
         }
     }
 
-    regenerate_cue_entry(pool, disc_id).await?;
+    regenerate_cue_entry(&mut *conn, disc_id).await?;
 
     Ok(())
 }
 
 pub async fn create_disc_from_submission(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     data: &serde_json::Value,
     submitter_id: i32,
 ) -> AppResult<i32> {
@@ -1150,15 +1154,15 @@ pub async fn create_disc_from_submission(
     .bind(media_type)
     .bind(title)
     .bind(category)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await?;
 
-    update_disc(pool, disc_id, data).await?;
+    update_disc(&mut *conn, disc_id, data).await?;
 
     sqlx::query("INSERT INTO disc_dumpers (disc_id, user_id, position) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING")
         .bind(disc_id)
         .bind(submitter_id)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
     Ok(disc_id)
@@ -1534,25 +1538,35 @@ mod tests {
     }
 }
 
-pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> {
+pub async fn regenerate_cue_entry(conn: &mut PgConnection, disc_id: i32) -> AppResult<()> {
     let mut disc: Disc = sqlx::query_as("SELECT * FROM discs WHERE id = $1")
         .bind(disc_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await?
         .ok_or(AppError::NotFound)?;
-    enrich_media_type(pool, &mut disc).await?;
-    let system = get_system(pool, &disc.system_code).await?;
+    let media_type: MediaTypeRow = sqlx::query_as(
+        "SELECT code, name, layer_count, pic, rom_extension FROM media_types WHERE code = $1",
+    )
+    .bind(disc.media_type.code())
+    .fetch_one(&mut *conn)
+    .await?;
+    disc.media_type = media_type.into();
+    let system: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
+        .bind(&disc.system_code)
+        .fetch_optional(&mut *conn)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
     let raw_cue = match &disc.cue {
         Some(c) if !c.is_empty() => c,
         _ => {
-            delete_cue_file_entry(pool, disc_id).await?;
+            delete_cue_file_entry(&mut *conn, disc_id).await?;
             return Ok(());
         }
     };
 
     if !system.has_cue_for_media_type(&disc.media_type) {
-        delete_cue_file_entry(pool, disc_id).await?;
+        delete_cue_file_entry(&mut *conn, disc_id).await?;
         return Ok(());
     }
 
@@ -1562,7 +1576,7 @@ pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> 
          WHERE dr.disc_id = $1 ORDER BY r.sort_order",
     )
     .bind(disc_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await?;
 
     let language_codes: Vec<String> = sqlx::query_scalar(
@@ -1571,7 +1585,7 @@ pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> 
          WHERE dl.disc_id = $1 ORDER BY l.sort_order",
     )
     .bind(disc_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await?;
 
     let base_name = build_rom_base_name(
@@ -1590,7 +1604,7 @@ pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> 
     sqlx::query("UPDATE discs SET cue = $1 WHERE id = $2")
         .bind(&finalized_crlf)
         .bind(disc_id)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
 
     let (size, crc32, md5, sha1) = compute_file_hashes(finalized_crlf.as_bytes());
@@ -1606,7 +1620,7 @@ pub async fn regenerate_cue_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> 
     .bind(&crc32)
     .bind(&md5)
     .bind(&sha1)
-    .execute(pool)
+    .execute(&mut *conn)
     .await?;
 
     Ok(())
@@ -1931,15 +1945,19 @@ mod cue_rebuild_tests {
     }
 }
 
-async fn delete_cue_file_entry(pool: &PgPool, disc_id: i32) -> AppResult<()> {
+async fn delete_cue_file_entry(conn: &mut PgConnection, disc_id: i32) -> AppResult<()> {
     sqlx::query("DELETE FROM files WHERE disc_id = $1 AND track_number IS NULL")
         .bind(disc_id)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     Ok(())
 }
 
-async fn parse_and_insert_files(pool: &PgPool, disc_id: i32, files_xml: &str) -> AppResult<()> {
+async fn parse_and_insert_files(
+    conn: &mut PgConnection,
+    disc_id: i32,
+    files_xml: &str,
+) -> AppResult<()> {
     for line in files_xml.lines() {
         let line = line.trim();
         if !line.starts_with("<rom ") {
@@ -1973,7 +1991,7 @@ async fn parse_and_insert_files(pool: &PgPool, disc_id: i32, files_xml: &str) ->
         .bind(&crc)
         .bind(&md5)
         .bind(&sha1)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     }
     Ok(())

@@ -22,6 +22,36 @@ use crate::AppState;
 const LOGIN_STATE_TTL_MINUTES: i64 = 10;
 const OIDC_SCOPE: &str = "openid profile email";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OidcFlow {
+    Interactive,
+    Probe,
+    Revalidate,
+}
+
+impl OidcFlow {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Interactive => "interactive",
+            Self::Probe => "probe",
+            Self::Revalidate => "revalidate",
+        }
+    }
+
+    fn from_db(value: &str) -> AppResult<Self> {
+        match value {
+            "interactive" => Ok(Self::Interactive),
+            "probe" => Ok(Self::Probe),
+            "revalidate" => Ok(Self::Revalidate),
+            _ => Err(AppError::BadRequest("Invalid OIDC login flow".into())),
+        }
+    }
+
+    fn is_silent(self) -> bool {
+        self != Self::Interactive
+    }
+}
+
 #[derive(Deserialize)]
 struct LoginQuery {
     return_to: Option<String>,
@@ -86,6 +116,7 @@ struct LoginStateRow {
     nonce: String,
     pkce_verifier: String,
     return_to: String,
+    flow: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -96,6 +127,7 @@ struct UserIdRow {
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/login", get(login))
+        .route("/auth/oidc/revalidate", get(revalidate))
         .route("/auth/oidc/callback", get(callback))
 }
 
@@ -109,7 +141,43 @@ async fn login(
         return Ok(Redirect::to(&return_to).into_response());
     }
 
-    let discovery = fetch_discovery(&state).await?;
+    begin_authorization(&state, &return_to, OidcFlow::Interactive).await
+}
+
+async fn revalidate(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    user: CurrentUser,
+    Query(query): Query<LoginQuery>,
+) -> AppResult<Response> {
+    let return_to = sanitize_return_to(query.return_to.as_deref());
+    let flow = if user.is_logged_in() {
+        OidcFlow::Revalidate
+    } else {
+        OidcFlow::Probe
+    };
+
+    if let Some(sid) = session::extract_session_cookie(&headers) {
+        if let Err(error) = session::mark_revalidation_attempt(&state.pool, &sid).await {
+            tracing::warn!("Failed to record OIDC revalidation attempt: {error}");
+        }
+    }
+
+    match begin_authorization(&state, &return_to, flow).await {
+        Ok(response) => Ok(response),
+        Err(error) => {
+            tracing::warn!("Could not start silent OIDC {flow:?}: {error}");
+            Ok(silent_return_response(&state, &return_to, flow, false))
+        }
+    }
+}
+
+async fn begin_authorization(
+    state: &AppState,
+    return_to: &str,
+    flow: OidcFlow,
+) -> AppResult<Response> {
+    let discovery = fetch_discovery(state).await?;
     let state_token = random_url_token(32);
     let nonce = random_url_token(32);
     let pkce_verifier = random_url_token(48);
@@ -120,24 +188,26 @@ async fn login(
         &state_token,
         &nonce,
         &pkce_verifier,
-        &return_to,
+        return_to,
+        flow,
     )
     .await?;
 
-    let redirect_uri = callback_url(&state);
-    let auth_url = with_query(
-        &discovery.authorization_endpoint,
-        &[
-            ("response_type", "code".to_string()),
-            ("client_id", state.config.oidc_client_id.clone()),
-            ("redirect_uri", redirect_uri),
-            ("scope", OIDC_SCOPE.to_string()),
-            ("state", state_token),
-            ("nonce", nonce),
-            ("code_challenge", code_challenge),
-            ("code_challenge_method", "S256".to_string()),
-        ],
-    );
+    let redirect_uri = callback_url(state);
+    let mut params = vec![
+        ("response_type", "code".to_string()),
+        ("client_id", state.config.oidc_client_id.clone()),
+        ("redirect_uri", redirect_uri),
+        ("scope", OIDC_SCOPE.to_string()),
+        ("state", state_token),
+        ("nonce", nonce),
+        ("code_challenge", code_challenge),
+        ("code_challenge_method", "S256".to_string()),
+    ];
+    if flow.is_silent() {
+        params.push(("prompt", "none".to_string()));
+    }
+    let auth_url = with_query(&discovery.authorization_endpoint, &params);
 
     Ok(Redirect::to(&auth_url).into_response())
 }
@@ -147,7 +217,42 @@ async fn callback(
     headers: HeaderMap,
     Query(query): Query<CallbackQuery>,
 ) -> AppResult<Response> {
-    if let Some(error) = query.error {
+    let state_token = query
+        .state
+        .as_deref()
+        .ok_or_else(|| AppError::BadRequest("Missing OIDC state".into()))?;
+    let login_state = consume_login_state(&state.pool, state_token).await?;
+    let flow = OidcFlow::from_db(&login_state.flow)?;
+
+    if let Some(error) = query.error.as_deref() {
+        if flow.is_silent() {
+            let login_required = error == "login_required";
+            if login_required {
+                tracing::debug!("Silent OIDC {flow:?} found no forum login");
+                if flow == OidcFlow::Revalidate {
+                    if let Some(sid) = session::extract_session_cookie(&headers) {
+                        if let Err(delete_error) = session::delete_session(&state.pool, &sid).await
+                        {
+                            tracing::warn!(
+                                "Failed to clear app session after forum logout: {delete_error}"
+                            );
+                        }
+                    }
+                }
+            } else {
+                tracing::warn!(
+                    "Silent OIDC {flow:?} failed: {error}: {}",
+                    query.error_description.as_deref().unwrap_or_default()
+                );
+            }
+            return Ok(silent_return_response(
+                &state,
+                &login_state.return_to,
+                flow,
+                login_required,
+            ));
+        }
+
         let description = query.error_description.unwrap_or_default();
         let suffix = if description.is_empty() {
             String::new()
@@ -163,15 +268,31 @@ async fn callback(
         .code
         .as_deref()
         .ok_or_else(|| AppError::BadRequest("Missing OIDC authorization code".into()))?;
-    let state_token = query
-        .state
-        .as_deref()
-        .ok_or_else(|| AppError::BadRequest("Missing OIDC state".into()))?;
 
-    let login_state = consume_login_state(&state.pool, state_token).await?;
-    let discovery = fetch_discovery(&state).await?;
-    let token = exchange_code(&state, &discovery, code, &login_state.pkce_verifier).await?;
-    let claims = validate_id_token(&state, &discovery, &token.id_token, &login_state.nonce).await?;
+    match complete_login(&state, &headers, code, &login_state).await {
+        Ok(response) => Ok(response),
+        Err(error) if flow.is_silent() => {
+            tracing::warn!("Silent OIDC {flow:?} callback failed: {error}");
+            Ok(silent_return_response(
+                &state,
+                &login_state.return_to,
+                flow,
+                false,
+            ))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn complete_login(
+    state: &AppState,
+    headers: &HeaderMap,
+    code: &str,
+    login_state: &LoginStateRow,
+) -> AppResult<Response> {
+    let discovery = fetch_discovery(state).await?;
+    let token = exchange_code(state, &discovery, code, &login_state.pkce_verifier).await?;
+    let claims = validate_id_token(state, &discovery, &token.id_token, &login_state.nonce).await?;
     let avatar_url = sanitize_picture_url(claims.picture.as_deref());
     let user_id = upsert_user(
         &state.pool,
@@ -180,13 +301,7 @@ async fn callback(
     )
     .await?;
 
-    if let Some(existing_sid) = session::extract_session_cookie(&headers) {
-        if let Err(e) = session::delete_session(&state.pool, &existing_sid).await {
-            tracing::warn!("Failed to replace previous session during OIDC login: {e}");
-        }
-    }
-
-    let ip = session::extract_client_ip(&headers);
+    let ip = session::extract_client_ip(headers);
     let ua = headers
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
@@ -200,12 +315,50 @@ async fn callback(
     )
     .await?;
 
+    if let Some(existing_sid) = session::extract_session_cookie(headers) {
+        if let Err(e) = session::delete_session(&state.pool, &existing_sid).await {
+            tracing::warn!("Failed to replace previous session during OIDC login: {e}");
+        }
+    }
+
     let cookie = session::login_session_cookie(&sid, &state.config);
+    let sso_cookie = session::expired_sso_check_cookie(&state.config);
     let mut response = Redirect::to(&login_state.return_to).into_response();
     response
         .headers_mut()
-        .insert(header::SET_COOKIE, cookie.parse().unwrap());
+        .append(header::SET_COOKIE, cookie.parse().unwrap());
+    response
+        .headers_mut()
+        .append(header::SET_COOKIE, sso_cookie.parse().unwrap());
     Ok(response)
+}
+
+fn silent_return_response(
+    state: &AppState,
+    return_to: &str,
+    flow: OidcFlow,
+    login_required: bool,
+) -> Response {
+    let mut response = Redirect::to(return_to).into_response();
+
+    if flow == OidcFlow::Probe || login_required {
+        response.headers_mut().append(
+            header::SET_COOKIE,
+            session::checked_sso_cookie(&state.config)
+                .parse()
+                .expect("SSO check cookie must be a valid header"),
+        );
+    }
+    if flow == OidcFlow::Revalidate && login_required {
+        response.headers_mut().append(
+            header::SET_COOKIE,
+            session::expired_session_cookie(&state.config)
+                .parse()
+                .expect("session cookie must be a valid header"),
+        );
+    }
+
+    response
 }
 
 async fn fetch_discovery(state: &AppState) -> AppResult<Discovery> {
@@ -360,17 +513,19 @@ async fn store_login_state(
     nonce: &str,
     pkce_verifier: &str,
     return_to: &str,
+    flow: OidcFlow,
 ) -> Result<(), sqlx::Error> {
     let expires = Utc::now() + Duration::minutes(LOGIN_STATE_TTL_MINUTES);
     sqlx::query(
         "INSERT INTO oidc_login_states
-             (state_hash, nonce, pkce_verifier, return_to, expires_at)
-         VALUES ($1, $2, $3, $4, $5)",
+             (state_hash, nonce, pkce_verifier, return_to, flow, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(hash_token(state_token))
     .bind(nonce)
     .bind(pkce_verifier)
     .bind(return_to)
+    .bind(flow.as_str())
     .bind(expires)
     .execute(pool)
     .await?;
@@ -381,7 +536,7 @@ async fn consume_login_state(pool: &PgPool, state_token: &str) -> AppResult<Logi
     sqlx::query_as(
         "DELETE FROM oidc_login_states
          WHERE state_hash = $1 AND expires_at > NOW()
-         RETURNING nonce, pkce_verifier, return_to",
+         RETURNING nonce, pkce_verifier, return_to, flow",
     )
     .bind(hash_token(state_token))
     .fetch_optional(pool)

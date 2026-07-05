@@ -99,14 +99,6 @@ fn processed_submission_redirect(submission: &DiscSubmission) -> Response {
     Redirect::to(&format!("/queue/{}", submission.id)).into_response()
 }
 
-async fn already_processed_submission_response(
-    pool: &sqlx::PgPool,
-    submission_id: i32,
-) -> AppResult<Response> {
-    let submission = queue_service::get_submission(pool, submission_id).await?;
-    Ok(processed_submission_redirect(&submission))
-}
-
 #[derive(Template)]
 #[template(path = "disc_edit.html")]
 pub(crate) struct DiscEditTemplate {
@@ -1231,6 +1223,7 @@ struct FormValidationOptions {
     require_category: bool,
     require_title: bool,
     require_regions: bool,
+    require_edc: bool,
 }
 
 impl FormValidationOptions {
@@ -1241,6 +1234,7 @@ impl FormValidationOptions {
             require_category: true,
             require_title: true,
             require_regions: true,
+            require_edc: true,
         }
     }
 
@@ -1251,6 +1245,7 @@ impl FormValidationOptions {
             require_category: !is_verification,
             require_title: !is_verification,
             require_regions: !is_verification,
+            require_edc: !is_verification,
         }
     }
 }
@@ -1424,7 +1419,7 @@ fn validate_form_with_options(
         .iter()
         .find(|s| s.code == form.system_code)
         .map_or(false, |s| s.has_edc);
-    if system_has_edc && form_edc_selection(form).is_none() {
+    if options.require_edc && system_has_edc && form_edc_selection(form).is_none() {
         errors.push("EDC: select Yes or No".into());
     }
 
@@ -2293,46 +2288,29 @@ async fn edit_submit(
         .filter(|s| !s.is_empty());
     let request_fingerprint = submission_fingerprint(&form);
 
-    let creation = queue_service::create_submission(
-        &state.pool,
-        SubmissionType::Edit,
-        user.id,
-        Some(id),
-        changes,
-        submission_comment.as_deref(),
-        None,
-        None,
-        Some(&form.submission_token),
-        Some(&request_fingerprint),
-    )
-    .await?;
-    let was_created = creation.created;
-    let sub = creation.submission;
-
     if can_edit_directly {
-        if !was_created && sub.status != SubmissionStatus::Pending {
-            return Ok(processed_submission_redirect(&sub));
-        }
-        match queue_service::approve_submission(
+        match queue_service::create_and_approve_submission(
             &state.pool,
-            &sub,
-            &sub.changes,
+            SubmissionType::Edit,
             user.id,
+            Some(id),
+            changes,
+            submission_comment.as_deref(),
             None,
             None,
+            Some(&form.submission_token),
+            Some(&request_fingerprint),
+            user.id,
         )
         .await?
         {
-            queue_service::ApprovalOutcome::Approved(disc_id) => {
+            queue_service::DirectSubmissionOutcome::Approved(disc_id) => {
                 Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
             }
-            queue_service::ApprovalOutcome::AlreadyProcessed => {
-                already_processed_submission_response(&state.pool, sub.id).await
+            queue_service::DirectSubmissionOutcome::Existing(submission) => {
+                Ok(processed_submission_redirect(&submission))
             }
-            queue_service::ApprovalOutcome::StaleDiscState => Err(AppError::Internal(
-                "submission target changed during approval".into(),
-            )),
-            queue_service::ApprovalOutcome::Conflicts(conflicts) => {
+            queue_service::DirectSubmissionOutcome::Conflicts(conflicts) => {
                 form.submission_token = generate_submission_token();
                 render_form_with_errors(
                     &state,
@@ -2350,6 +2328,19 @@ async fn edit_submit(
             }
         }
     } else {
+        queue_service::create_submission(
+            &state.pool,
+            SubmissionType::Edit,
+            user.id,
+            Some(id),
+            changes,
+            submission_comment.as_deref(),
+            None,
+            None,
+            Some(&form.submission_token),
+            Some(&request_fingerprint),
+        )
+        .await?;
         Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
     }
 }
@@ -2645,49 +2636,29 @@ async fn add_submit(
         .filter(|s| !s.is_empty());
     let request_fingerprint = submission_fingerprint(&form);
 
-    let creation = queue_service::create_submission(
-        &state.pool,
-        SubmissionType::Disc,
-        submitter_id,
-        target_disc_id,
-        changes,
-        submission_comment.as_deref(),
-        dump_log_text,
-        extra_upload_url_text,
-        Some(&form.submission_token),
-        Some(&request_fingerprint),
-    )
-    .await?;
-    let was_created = creation.created;
-    let sub = creation.submission;
-
-    if !was_created && sub.status != SubmissionStatus::Pending {
-        return Ok(processed_submission_redirect(&sub));
-    }
-
-    if user.role.can_edit_directly() && is_verification {
-        Ok(Redirect::to(&format!("/queue/{}", sub.id)).into_response())
-    } else if user.role.can_edit_directly() {
-        match queue_service::approve_submission(
+    if user.role.can_edit_directly() && !is_verification {
+        match queue_service::create_and_approve_submission(
             &state.pool,
-            &sub,
-            &sub.changes,
+            SubmissionType::Disc,
+            submitter_id,
+            target_disc_id,
+            changes,
+            submission_comment.as_deref(),
+            dump_log_text,
+            extra_upload_url_text,
+            Some(&form.submission_token),
+            Some(&request_fingerprint),
             user.id,
-            None,
-            None,
         )
         .await?
         {
-            queue_service::ApprovalOutcome::Approved(disc_id) => {
+            queue_service::DirectSubmissionOutcome::Approved(disc_id) => {
                 Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
             }
-            queue_service::ApprovalOutcome::AlreadyProcessed => {
-                already_processed_submission_response(&state.pool, sub.id).await
+            queue_service::DirectSubmissionOutcome::Existing(submission) => {
+                Ok(processed_submission_redirect(&submission))
             }
-            queue_service::ApprovalOutcome::StaleDiscState => Err(AppError::Internal(
-                "submission target changed during approval".into(),
-            )),
-            queue_service::ApprovalOutcome::Conflicts(conflicts) => {
+            queue_service::DirectSubmissionOutcome::Conflicts(conflicts) => {
                 form.submission_token = generate_submission_token();
                 let render_form = add_form_for_render(&form, add_match.as_ref());
                 render_form_with_errors(
@@ -2706,7 +2677,30 @@ async fn add_submit(
             }
         }
     } else {
-        Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
+        let creation = queue_service::create_submission(
+            &state.pool,
+            SubmissionType::Disc,
+            submitter_id,
+            target_disc_id,
+            changes,
+            submission_comment.as_deref(),
+            dump_log_text,
+            extra_upload_url_text,
+            Some(&form.submission_token),
+            Some(&request_fingerprint),
+        )
+        .await?;
+        let submission = creation.submission;
+
+        if !creation.created && submission.status != SubmissionStatus::Pending {
+            return Ok(processed_submission_redirect(&submission));
+        }
+
+        if user.role.can_edit_directly() {
+            Ok(Redirect::to(&format!("/queue/{}", submission.id)).into_response())
+        } else {
+            Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
+        }
     }
 }
 
@@ -3265,6 +3259,9 @@ fn build_add_submission_changes(
     if let Some(add_match) = add_match {
         if let Some(obj) = changes.as_object_mut() {
             obj.remove("dat");
+            if form_edc_selection(form).is_none() {
+                obj.remove("edc");
+            }
             remove_matching_add_change(obj, "system_code", &add_match.system_code);
             remove_matching_add_change(obj, "media_type", &add_match.media_type);
         }
@@ -3784,6 +3781,17 @@ mod operation_delta_tests {
         assert!(!errors.contains(&"Category: must be selected".to_string()));
         assert!(!errors.contains(&"Title: cannot be empty".to_string()));
         assert!(!errors.contains(&"Regions: at least one region must be selected".to_string()));
+    }
+
+    #[test]
+    fn validate_add_submission_form_allows_blank_edc_for_verification() {
+        let mut form = new_disc_form();
+        form.edc = vec![];
+
+        let errors =
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+
+        assert!(!errors.contains(&"EDC: select Yes or No".to_string()));
     }
 
     #[test]
@@ -4462,6 +4470,48 @@ mod operation_delta_tests {
         assert!(verification_changes.get("category").is_none());
         assert!(verification_changes.get("title").is_none());
         assert!(verification_changes.get("regions").is_none());
+    }
+
+    #[test]
+    fn build_add_submission_changes_omits_blank_edc_for_verification() {
+        let mut form = new_disc_form();
+        form.edc = vec![];
+        let matched = add_match(1, AddDiscMatchSource::Dat, "SYS", "DVD");
+
+        let changes = build_add_submission_changes(
+            &form,
+            &media_rows(),
+            &systems_with_edc(true),
+            Some(&matched),
+        );
+
+        assert!(changes.get("edc").is_none());
+
+        let existing = serde_json::json!({ "edc": true });
+        let verification = queue_service::resolve_submission_snapshot(&existing, &changes).unwrap();
+        assert_eq!(verification["edc"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn build_add_submission_changes_preserves_explicit_edc_for_verification() {
+        let matched = add_match(1, AddDiscMatchSource::Dat, "SYS", "DVD");
+
+        for (selection, expected) in [("true", true), ("false", false)] {
+            let mut form = new_disc_form();
+            form.edc = vec![selection.to_string()];
+
+            let changes = build_add_submission_changes(
+                &form,
+                &media_rows(),
+                &systems_with_edc(true),
+                Some(&matched),
+            );
+
+            assert_eq!(
+                changes["edc"],
+                serde_json::json!({ "add": { "new": expected } })
+            );
+        }
     }
 
     #[test]
