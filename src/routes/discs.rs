@@ -454,6 +454,10 @@ fn active_advanced_filter(value: Option<&String>) -> Option<String> {
     }
 }
 
+fn advanced_panel_explicitly_open(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
 fn active_verbatim_filter(value: Option<&String>) -> Option<String> {
     value.filter(|value| !value.trim().is_empty()).cloned()
 }
@@ -1370,28 +1374,8 @@ async fn discs_page(
         String::new()
     };
     let filter_dumper_unknown = !filter_dumper.is_empty() && filter_dumper_id.is_none();
-    let advanced_explicit = query.advanced.as_deref() == Some("1");
-    let advanced_open = advanced_explicit
-        || active_title.is_some()
-        || active_title_foreign.is_some()
-        || active_serial.is_some()
-        || active_edition.is_some()
-        || active_barcode.is_some()
-        || filter_tracks_min_value.is_some()
-        || filter_tracks_max_value.is_some()
-        || filter_errors_min_value.is_some()
-        || filter_errors_max_value.is_some()
-        || !filter_edc.is_empty()
-        || active_protection.is_some()
-        || active_comments.is_some()
-        || active_contents.is_some()
-        || active_ringcode.is_some()
-        || filter_offset_value.is_some()
-        || !filter_status.is_empty()
-        || !filter_dumper.is_empty()
-        || !filter_language.is_empty()
-        || !filter_media.is_empty()
-        || !requested_category.is_empty();
+    let advanced_explicit = advanced_panel_explicitly_open(query.advanced.as_deref());
+    let advanced_open = advanced_explicit;
 
     let reference_data = state.discs_cache.references.get(&state.pool).await?;
     let sys_rows = reference_data.systems.clone();
@@ -2734,6 +2718,14 @@ mod tests {
         );
         assert_eq!(active_advanced_filter(Some(&empty)), None);
         assert_eq!(active_advanced_filter(None), None);
+    }
+
+    #[test]
+    fn advanced_panel_opens_only_for_explicit_state() {
+        assert!(advanced_panel_explicitly_open(Some("1")));
+        assert!(!advanced_panel_explicitly_open(None));
+        assert!(!advanced_panel_explicitly_open(Some("0")));
+        assert!(!advanced_panel_explicitly_open(Some("true")));
     }
 
     #[test]
