@@ -683,6 +683,7 @@ fn build_review_template(
         current_user: Some(current_user),
         disc_id: sub.target_disc_id.unwrap_or(0),
         page_title,
+        submission_token: String::new(),
 
         systems: build_system_options(&ref_data.all_systems, system_code),
         media_types_all: build_media_options(&ref_data.all_media_types, media_type_code),
@@ -2471,6 +2472,8 @@ mod tests {
             changes: serde_json::json!({}),
             dump_log: None,
             extra_upload_url: None,
+            submission_token: None,
+            submission_fingerprint: None,
             status: SubmissionStatus::Pending,
             reviewer_id: None,
             review_comment: None,

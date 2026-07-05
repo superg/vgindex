@@ -108,6 +108,9 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
     {% when None %}
     {% endmatch %}
+    {% if !is_review_mode %}
+    <input type="hidden" name="submission_token" value="{{ submission_token }}">
+    {% endif %}
     {% if is_review_mode && disc_id > 0 && !review_base_hash.is_empty() %}
     <input type="hidden" name="review_base_hash" value="{{ review_base_hash }}">
     {% endif %}

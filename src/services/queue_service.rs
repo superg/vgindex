@@ -30,6 +30,27 @@ pub enum ApprovalOutcome {
     Conflicts(Vec<ApprovalConflict>),
 }
 
+#[derive(Debug, Clone)]
+pub struct SubmissionCreation {
+    pub submission: DiscSubmission,
+    pub created: bool,
+}
+
+fn normalize_submission_token(token: Option<&str>) -> AppResult<Option<String>> {
+    let token = token.map(str::trim).filter(|token| !token.is_empty());
+    let Some(token) = token else {
+        return Ok(None);
+    };
+
+    if token.len() != 64 || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(AppError::BadRequest(
+            "Submission token is invalid. Reload the form and try again.".into(),
+        ));
+    }
+
+    Ok(Some(token.to_ascii_lowercase()))
+}
+
 fn canonical_json(value: &serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Array(values) => serde_json::Value::Array(
@@ -91,15 +112,28 @@ pub async fn create_submission(
     submission_comment: Option<&str>,
     dump_log: Option<&str>,
     extra_upload_url: Option<&str>,
-) -> AppResult<DiscSubmission> {
+    submission_token: Option<&str>,
+    submission_fingerprint: Option<&str>,
+) -> AppResult<SubmissionCreation> {
     let normalized_submission_comment: Option<String> = submission_comment
         .map(normalize_newlines)
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
-    let sub: DiscSubmission = sqlx::query_as(
-        "INSERT INTO disc_submissions (submission_type, submitter_id, submission_comment, target_disc_id, changes, dump_log, extra_upload_url)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+    let submission_token = normalize_submission_token(submission_token)?;
+    let submission_fingerprint = if submission_token.is_some() {
+        normalize_submission_token(submission_fingerprint)?.ok_or_else(|| {
+            AppError::BadRequest(
+                "Submission fingerprint is missing. Reload the form and try again.".into(),
+            )
+        })?
+    } else {
+        String::new()
+    };
+    let inserted: Option<DiscSubmission> = sqlx::query_as(
+        "INSERT INTO disc_submissions (submission_type, submitter_id, submission_comment, target_disc_id, changes, dump_log, extra_upload_url, submission_token, submission_fingerprint)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (submission_token) WHERE submission_token IS NOT NULL DO NOTHING
          RETURNING *"
     )
     .bind(sub_type)
@@ -109,10 +143,41 @@ pub async fn create_submission(
     .bind(&changes)
     .bind(dump_log)
     .bind(extra_upload_url)
-    .fetch_one(pool)
+    .bind(submission_token.as_deref())
+    .bind(submission_token.as_ref().map(|_| &submission_fingerprint))
+    .fetch_optional(pool)
     .await?;
 
-    Ok(sub)
+    if let Some(submission) = inserted {
+        return Ok(SubmissionCreation {
+            submission,
+            created: true,
+        });
+    }
+
+    let token = submission_token.as_deref().ok_or_else(|| {
+        AppError::Internal("submission insert returned no row without an idempotency token".into())
+    })?;
+    let submission: DiscSubmission =
+        sqlx::query_as("SELECT * FROM disc_submissions WHERE submission_token = $1")
+            .bind(token)
+            .fetch_one(pool)
+            .await?;
+
+    let same_request = submission.submission_type == sub_type
+        && submission.submitter_id == submitter_id
+        && submission.submission_fingerprint.as_deref() == Some(&submission_fingerprint);
+    if !same_request {
+        return Err(AppError::BadRequest(
+            "This form was already submitted with different contents. Reload it and try again."
+                .into(),
+        ));
+    }
+
+    Ok(SubmissionCreation {
+        submission,
+        created: false,
+    })
 }
 
 struct RomEntry {
@@ -1297,6 +1362,16 @@ pub async fn approve_submission(
         .execute(&mut *approval_lock)
         .await?;
 
+    let current_status: Option<SubmissionStatus> =
+        sqlx::query_scalar("SELECT status FROM disc_submissions WHERE id = $1")
+            .bind(sub.id)
+            .fetch_optional(pool)
+            .await?;
+    if current_status != Some(SubmissionStatus::Pending) {
+        approval_lock.rollback().await?;
+        return Ok(ApprovalOutcome::AlreadyProcessed);
+    }
+
     if let Some(disc_id) = sub.target_disc_id {
         let current_hash = current_disc_snapshot_hash(pool, disc_id).await?;
         if let Some(outcome) =
@@ -1653,8 +1728,132 @@ pub async fn count_submissions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::RngCore;
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
     use std::time::Duration;
+
+    #[test]
+    fn submission_tokens_are_optional_and_strictly_validated() {
+        assert_eq!(normalize_submission_token(None).unwrap(), None);
+        assert_eq!(normalize_submission_token(Some("  ")).unwrap(), None);
+
+        let uppercase = "A".repeat(64);
+        assert_eq!(
+            normalize_submission_token(Some(&uppercase)).unwrap(),
+            Some("a".repeat(64))
+        );
+        assert!(matches!(
+            normalize_submission_token(Some("short")),
+            Err(AppError::BadRequest(_))
+        ));
+        assert!(matches!(
+            normalize_submission_token(Some(&"z".repeat(64))),
+            Err(AppError::BadRequest(_))
+        ));
+    }
+
+    #[test]
+    fn submission_token_migration_is_nullable_and_unique() {
+        let migration = include_str!("../../migrations/015_add_submission_tokens.sql");
+        assert!(migration.contains("ADD COLUMN submission_token VARCHAR(64)"));
+        assert!(migration.contains("ADD COLUMN submission_fingerprint VARCHAR(64)"));
+        assert!(migration.contains("ON disc_submissions (submission_token)"));
+        assert!(migration.contains("WHERE submission_token IS NOT NULL"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn concurrent_submission_retries_reuse_one_database_row() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let submitter_id: i32 = sqlx::query_scalar("SELECT id FROM users ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let mut token_bytes = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut token_bytes);
+        let token = hex::encode(token_bytes);
+        let fingerprint = "1".repeat(64);
+        let changes = serde_json::json!({ "title": { "add": { "new": "Idempotency test" } } });
+
+        let first = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            submitter_id,
+            None,
+            changes.clone(),
+            Some("test"),
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        );
+        let second = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            submitter_id,
+            None,
+            changes,
+            Some("test"),
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        );
+        let (first, second) = tokio::join!(first, second);
+        let first = first.unwrap();
+        let second = second.unwrap();
+
+        let row_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM disc_submissions WHERE submission_token = $1")
+                .bind(&token)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let same_form_after_state_change = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            submitter_id,
+            None,
+            serde_json::json!({ "title": { "add": { "new": "Derived differently" } } }),
+            Some("test"),
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+        let mismatched = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            submitter_id,
+            None,
+            serde_json::json!({ "title": { "add": { "new": "Changed" } } }),
+            Some("test"),
+            None,
+            None,
+            Some(&token),
+            Some(&"2".repeat(64)),
+        )
+        .await;
+
+        sqlx::query("DELETE FROM disc_submissions WHERE submission_token = $1")
+            .bind(&token)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(row_count, 1);
+        assert_eq!(first.submission.id, second.submission.id);
+        assert_eq!(
+            first.submission.id,
+            same_form_after_state_change.submission.id
+        );
+        assert_ne!(first.created, second.created);
+        assert!(!same_form_after_state_change.created);
+        assert!(matches!(mismatched, Err(AppError::BadRequest(_))));
+    }
 
     fn file(
         track_number: &str,
@@ -1782,6 +1981,8 @@ mod tests {
             changes,
             dump_log: None,
             extra_upload_url: None,
+            submission_token: None,
+            submission_fingerprint: None,
             status: SubmissionStatus::Pending,
             reviewer_id: None,
             review_comment: None,

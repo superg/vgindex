@@ -1150,9 +1150,42 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var form = document.getElementById('disc-edit-form');
     if (form) {
-        form.addEventListener('submit', function () {
+        form.addEventListener('submit', function (event) {
+            if (form.dataset.submitting === 'true') {
+                event.preventDefault();
+                return;
+            }
+
             var data = collectRingCodes();
             document.getElementById('ring-codes-json').value = JSON.stringify(data);
+
+            var submitter = event.submitter;
+            if (submitter && submitter.name) {
+                var preservedAction = document.createElement('input');
+                preservedAction.type = 'hidden';
+                preservedAction.name = submitter.name;
+                preservedAction.value = submitter.value;
+                preservedAction.dataset.preservedSubmitAction = 'true';
+                form.appendChild(preservedAction);
+            }
+
+            form.dataset.submitting = 'true';
+            form.setAttribute('aria-busy', 'true');
+            form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (button) {
+                button.disabled = true;
+            });
+        });
+
+        window.addEventListener('pageshow', function (event) {
+            if (!event.persisted) return;
+            delete form.dataset.submitting;
+            form.removeAttribute('aria-busy');
+            form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (button) {
+                button.disabled = false;
+            });
+            form.querySelectorAll('[data-preserved-submit-action="true"]').forEach(function (input) {
+                input.remove();
+            });
         });
     }
 });

@@ -7,7 +7,9 @@ use axum::{
     Router,
 };
 use axum_extra::extract::Form;
-use serde::Deserialize;
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::auth::{
     csrf,
@@ -65,12 +67,53 @@ fn user_queue_url(username: &str) -> String {
     format!("/queue?submitter={}", urlencoding::encode(username))
 }
 
+fn generate_submission_token() -> String {
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
+}
+
+fn submission_token_for_render(token: &str) -> String {
+    let token = token.trim();
+    if token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        token.to_ascii_lowercase()
+    } else {
+        generate_submission_token()
+    }
+}
+
+fn submission_fingerprint(form: &DiscEditForm) -> String {
+    let mut fingerprint_form = form.clone();
+    fingerprint_form.submission_token.clear();
+    let bytes = serde_json::to_vec(&fingerprint_form)
+        .expect("serializing a disc submission form should not fail");
+    hex::encode(Sha256::digest(bytes))
+}
+
+fn processed_submission_redirect(submission: &DiscSubmission) -> Response {
+    if submission.status == SubmissionStatus::Approved {
+        if let Some(disc_id) = submission.target_disc_id {
+            return Redirect::to(&format!("/disc/{disc_id}")).into_response();
+        }
+    }
+    Redirect::to(&format!("/queue/{}", submission.id)).into_response()
+}
+
+async fn already_processed_submission_response(
+    pool: &sqlx::PgPool,
+    submission_id: i32,
+) -> AppResult<Response> {
+    let submission = queue_service::get_submission(pool, submission_id).await?;
+    Ok(processed_submission_redirect(&submission))
+}
+
 #[derive(Template)]
 #[template(path = "disc_edit.html")]
 pub(crate) struct DiscEditTemplate {
     pub current_user: Option<AuthenticatedUser>,
     pub disc_id: i32,
     pub page_title: String,
+    pub submission_token: String,
 
     pub systems: Vec<SystemOption>,
     pub media_types_all: Vec<MediaTypeOption>,
@@ -842,6 +885,7 @@ async fn edit_page(
             current_user: Some(user.clone()),
             disc_id: id,
             page_title,
+            submission_token: generate_submission_token(),
 
             systems: build_system_options(&ref_data.all_systems, &detail.disc.system_code),
             media_types_all: build_media_options(
@@ -1070,8 +1114,10 @@ async fn edit_page(
     ))
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct DiscEditForm {
+    #[serde(default)]
+    pub submission_token: String,
     #[serde(default)]
     pub system_code: String,
     #[serde(default)]
@@ -1500,6 +1546,7 @@ async fn render_form_with_errors(
         current_user: Some(current_user.clone()),
         disc_id: id,
         page_title,
+        submission_token: submission_token_for_render(&form.submission_token),
 
         systems: if is_add_mode {
             build_add_system_options(&ref_data.all_systems, &form.system_code)
@@ -2238,8 +2285,9 @@ async fn edit_submit(
         .map(normalize_newlines)
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    let request_fingerprint = submission_fingerprint(&form);
 
-    let sub = queue_service::create_submission(
+    let creation = queue_service::create_submission(
         &state.pool,
         SubmissionType::Edit,
         user.id,
@@ -2248,10 +2296,17 @@ async fn edit_submit(
         submission_comment.as_deref(),
         None,
         None,
+        Some(&form.submission_token),
+        Some(&request_fingerprint),
     )
     .await?;
+    let was_created = creation.created;
+    let sub = creation.submission;
 
     if can_edit_directly {
+        if !was_created && sub.status != SubmissionStatus::Pending {
+            return Ok(processed_submission_redirect(&sub));
+        }
         match queue_service::approve_submission(
             &state.pool,
             &sub,
@@ -2265,13 +2320,14 @@ async fn edit_submit(
             queue_service::ApprovalOutcome::Approved(disc_id) => {
                 Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
             }
-            queue_service::ApprovalOutcome::AlreadyProcessed => Err(AppError::Internal(
-                "submission was already processed".into(),
-            )),
+            queue_service::ApprovalOutcome::AlreadyProcessed => {
+                already_processed_submission_response(&state.pool, sub.id).await
+            }
             queue_service::ApprovalOutcome::StaleDiscState => Err(AppError::Internal(
                 "submission target changed during approval".into(),
             )),
             queue_service::ApprovalOutcome::Conflicts(conflicts) => {
+                form.submission_token = generate_submission_token();
                 render_form_with_errors(
                     &state,
                     id,
@@ -2323,6 +2379,7 @@ async fn add_page(
             current_user: Some(user.clone()),
             disc_id: 0,
             page_title: String::new(),
+            submission_token: generate_submission_token(),
 
             systems: build_add_system_options(&ref_data.all_systems, &system_code),
             media_types_all: build_add_media_options(
@@ -2460,7 +2517,7 @@ async fn add_submit(
 ) -> AppResult<Response> {
     csrf::verify_token(&user, &post.csrf_token)?;
 
-    let form = post.disc;
+    let mut form = post.disc;
     let ref_data = fetch_ref_data(&state.pool).await?;
     let add_match =
         match find_add_disc_match(&state.pool, &form, user.role.can_view_disabled_discs()).await {
@@ -2578,8 +2635,9 @@ async fn add_submit(
         .map(normalize_newlines)
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
+    let request_fingerprint = submission_fingerprint(&form);
 
-    let sub = queue_service::create_submission(
+    let creation = queue_service::create_submission(
         &state.pool,
         SubmissionType::Disc,
         submitter_id,
@@ -2588,8 +2646,16 @@ async fn add_submit(
         submission_comment.as_deref(),
         dump_log_text,
         extra_upload_url_text,
+        Some(&form.submission_token),
+        Some(&request_fingerprint),
     )
     .await?;
+    let was_created = creation.created;
+    let sub = creation.submission;
+
+    if !was_created && sub.status != SubmissionStatus::Pending {
+        return Ok(processed_submission_redirect(&sub));
+    }
 
     if user.role.can_edit_directly() && is_verification {
         Ok(Redirect::to(&format!("/queue/{}", sub.id)).into_response())
@@ -2607,13 +2673,14 @@ async fn add_submit(
             queue_service::ApprovalOutcome::Approved(disc_id) => {
                 Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
             }
-            queue_service::ApprovalOutcome::AlreadyProcessed => Err(AppError::Internal(
-                "submission was already processed".into(),
-            )),
+            queue_service::ApprovalOutcome::AlreadyProcessed => {
+                already_processed_submission_response(&state.pool, sub.id).await
+            }
             queue_service::ApprovalOutcome::StaleDiscState => Err(AppError::Internal(
                 "submission target changed during approval".into(),
             )),
             queue_service::ApprovalOutcome::Conflicts(conflicts) => {
+                form.submission_token = generate_submission_token();
                 let render_form = add_form_for_render(&form, add_match.as_ref());
                 render_form_with_errors(
                     &state,
@@ -3217,6 +3284,36 @@ fn remove_matching_add_change(
 mod operation_delta_tests {
     use super::*;
 
+    #[test]
+    fn submission_tokens_are_generated_and_preserved_for_rerenders() {
+        let token = generate_submission_token();
+        assert_eq!(token.len(), 64);
+        assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(submission_token_for_render(&token), token);
+
+        let replacement = submission_token_for_render("invalid");
+        assert_eq!(replacement.len(), 64);
+        assert_ne!(replacement, "invalid");
+    }
+
+    #[test]
+    fn disc_forms_lock_submit_buttons_and_preserve_the_clicked_action() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let script = include_str!("../../static/js/disc_edit.js");
+
+        assert!(template.contains(
+            r#"<input type="hidden" name="submission_token" value="{{ submission_token }}">"#
+        ));
+        assert!(template.contains("{% if !is_review_mode %}"));
+        assert!(script.contains("if (form.dataset.submitting === 'true')"));
+        assert!(script.contains("event.preventDefault()"));
+        assert!(script.contains("var submitter = event.submitter"));
+        assert!(script.contains("preservedAction.name = submitter.name"));
+        assert!(script.contains("preservedAction.value = submitter.value"));
+        assert!(script.contains("form.setAttribute('aria-busy', 'true')"));
+        assert!(script.contains("button.disabled = true"));
+    }
+
     fn media_rows() -> Vec<EditMediaTypeRow> {
         vec![EditMediaTypeRow {
             code: "DVD".to_string(),
@@ -3391,6 +3488,7 @@ mod operation_delta_tests {
 
     fn form_from_detail(detail: &DiscDetail) -> DiscEditForm {
         DiscEditForm {
+            submission_token: generate_submission_token(),
             system_code: detail.disc.system_code.clone(),
             media_type: detail.disc.media_type.code().to_string(),
             title: detail.disc.title.clone(),
@@ -3455,6 +3553,7 @@ mod operation_delta_tests {
 
     fn new_disc_form() -> DiscEditForm {
         DiscEditForm {
+            submission_token: generate_submission_token(),
             system_code: "SYS".to_string(),
             media_type: "DVD".to_string(),
             title: "New Game".to_string(),

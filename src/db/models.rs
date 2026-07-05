@@ -489,6 +489,8 @@ pub struct DiscSubmission {
     pub changes: serde_json::Value,
     pub dump_log: Option<String>,
     pub extra_upload_url: Option<String>,
+    pub submission_token: Option<String>,
+    pub submission_fingerprint: Option<String>,
     pub status: SubmissionStatus,
     pub reviewer_id: Option<i32>,
     pub review_comment: Option<String>,
