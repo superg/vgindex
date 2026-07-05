@@ -100,7 +100,7 @@
         <tbody>
             {% for entry in entries %}
             <tr{% if self.can_open_entry(entry) %} class="clickable-row" data-href="/queue/{{ entry.id }}" tabindex="0" role="link"{% endif %}>
-                <td class="date-col"><time datetime="{{ entry.created_at.format("%Y-%m-%dT%H:%M:%SZ") }}" data-local-datetime="minute">{{ entry.created_at.format("%Y-%m-%d %H:%M UTC") }}</time></td>
+                <td class="date-col">{{ entry.created_at.format("%Y-%m-%d %H:%M UTC") }}</td>
                 <td class="type-col"><span class="{{ self.type_icon_class(entry) }}" role="img" aria-label="{{ self.type_icon_label(entry) }}" title="{{ self.type_icon_label(entry) }}"></span></td>
                 <td class="submission-title-col">{% if self.can_open_entry(entry) %}<a href="/queue/{{ entry.id }}">{{ entry.title }}</a>{% else %}{{ entry.title }}{% endif %}</td>
                 <td class="disc-id-col">{% match entry.target_disc_id %}{% when Some with (disc_id) %}<a href="/disc/{{ disc_id }}">{{ disc_id }}</a>{% when None %}{% endmatch %}</td>

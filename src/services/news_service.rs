@@ -141,7 +141,7 @@ pub(crate) fn parse_news_feed(xml: &str) -> Result<Vec<NewsItem>, NewsError> {
             .as_deref()
             .and_then(parse_atom_date);
         let published_date = published_at
-            .map(|date| date.format("%Y-%m-%d UTC").to_string())
+            .map(|date| date.format("%Y-%m-%d").to_string())
             .unwrap_or_default();
         let author = entry
             .children()
@@ -299,7 +299,7 @@ mod tests {
             title: title.to_string(),
             author: "Alice".to_string(),
             url: format!("https://forum.example/viewtopic.php?t={title}"),
-            published_date: "2026-01-01 UTC".to_string(),
+            published_date: "2026-01-01".to_string(),
             published_at: Some(Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap()),
             content_html: "<p>Hello</p>".to_string(),
         }
@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(items.len(), 5);
         assert_eq!(items[0].title, "News 6");
         assert_eq!(items[0].author, "Author 6");
-        assert_eq!(items[0].published_date, "2026-05-06 UTC");
+        assert_eq!(items[0].published_date, "2026-05-06");
         assert_eq!(items[0].url, "https://forum.example/viewtopic.php?p=6#p6");
         assert_eq!(
             items[0].content_html,
@@ -357,7 +357,7 @@ mod tests {
 
         let items = parse_news_feed(xml).unwrap();
 
-        assert_eq!(items[0].published_date, "2026-03-04 UTC");
+        assert_eq!(items[0].published_date, "2026-03-04");
     }
 
     #[tokio::test]

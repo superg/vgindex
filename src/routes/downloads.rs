@@ -404,9 +404,8 @@ mod tests {
 
         assert!(html.contains(r#"/keys/PS3"#));
         assert!(html.contains(r#"href="/downloads/database""#));
-        assert!(html.contains(
-            r#"<time datetime="2026-07-03T19:25:58Z" data-local-datetime="second">2026-07-03 19:25:58 UTC</time>"#
-        ));
+        assert!(html
+            .contains(r#"<time datetime="2026-07-03T19:25:58Z">2026-07-03 19:25:58 UTC</time>"#));
         assert!(html.contains(">SQLite</a>"));
         assert!(!html.contains("unzstd"));
         assert!(!html.contains(r#"/keys/PC"#));

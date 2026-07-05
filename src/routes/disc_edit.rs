@@ -220,9 +220,7 @@ pub(crate) struct DiscEditTemplate {
     pub review_comment_display: String,
     pub review_comment_input: String,
     pub created_at_display: String,
-    pub created_at_datetime: String,
     pub reviewed_at_display: String,
-    pub reviewed_at_datetime: String,
     pub changes_original_json: String,
     pub changes_json: String,
 }
@@ -1099,9 +1097,7 @@ async fn edit_page(
             review_comment_display: String::new(),
             review_comment_input: String::new(),
             created_at_display: String::new(),
-            created_at_datetime: String::new(),
             reviewed_at_display: String::new(),
-            reviewed_at_datetime: String::new(),
             changes_original_json: String::new(),
             changes_json: String::new(),
         }
@@ -1732,9 +1728,7 @@ async fn render_form_with_errors(
         review_comment_display: String::new(),
         review_comment_input: String::new(),
         created_at_display: String::new(),
-        created_at_datetime: String::new(),
         reviewed_at_display: String::new(),
-        reviewed_at_datetime: String::new(),
         changes_original_json: String::new(),
         changes_json: String::new(),
     };
@@ -2498,9 +2492,7 @@ async fn add_page(
             review_comment_display: String::new(),
             review_comment_input: String::new(),
             created_at_display: String::new(),
-            created_at_datetime: String::new(),
             reviewed_at_display: String::new(),
-            reviewed_at_datetime: String::new(),
             changes_original_json: String::new(),
             changes_json: String::new(),
         }

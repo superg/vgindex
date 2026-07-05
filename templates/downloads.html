@@ -66,7 +66,7 @@
         {% match database_export %}
         {% when Some with (export) %}
         <tr>
-            <td><time datetime="{{ export.datetime }}" data-local-datetime="second">{{ export.date }}</time></td>
+            <td><time datetime="{{ export.datetime }}">{{ export.date }}</time></td>
             <td class="download-links-cell"><a href="/downloads/database">SQLite</a></td>
         </tr>
         {% when None %}

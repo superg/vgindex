@@ -829,14 +829,9 @@ fn build_review_template(
         review_comment_display: sub.review_comment.clone().unwrap_or_default(),
         review_comment_input: String::new(),
         created_at_display: sub.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
-        created_at_datetime: sub.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         reviewed_at_display: sub
             .reviewed_at
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
-            .unwrap_or_default(),
-        reviewed_at_datetime: sub
-            .reviewed_at
-            .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string())
             .unwrap_or_default(),
         changes_original_json: pretty_optional_json(sub.changes_original.as_ref()),
         changes_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
@@ -1382,9 +1377,7 @@ struct QueueDetailTemplate {
     reviewer_name: String,
     review_comment_display: String,
     created_at_display: String,
-    created_at_datetime: String,
     reviewed_at_display: String,
-    reviewed_at_datetime: String,
     target_disc_id: i32,
     changes_original_json: String,
     changes_json: String,
@@ -1418,14 +1411,9 @@ async fn render_readonly_detail(
         reviewer_name: reviewer_name.to_string(),
         review_comment_display: sub.review_comment.clone().unwrap_or_default(),
         created_at_display: sub.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
-        created_at_datetime: sub.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         reviewed_at_display: sub
             .reviewed_at
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
-            .unwrap_or_default(),
-        reviewed_at_datetime: sub
-            .reviewed_at
-            .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string())
             .unwrap_or_default(),
         target_disc_id: sub.target_disc_id.unwrap_or(0),
         changes_original_json: pretty_optional_json(sub.changes_original.as_ref()),
@@ -2780,9 +2768,7 @@ mod tests {
             reviewer_name: "moderator".to_string(),
             review_comment_display: String::new(),
             created_at_display: "2026-01-01 00:00 UTC".to_string(),
-            created_at_datetime: "2026-01-01T00:00:00Z".to_string(),
             reviewed_at_display: String::new(),
-            reviewed_at_datetime: String::new(),
             target_disc_id: 3,
             changes_original_json: String::new(),
             changes_json: "{}".to_string(),
@@ -2809,9 +2795,7 @@ mod tests {
             reviewer_name: "moderator".to_string(),
             review_comment_display: String::new(),
             created_at_display: "2026-01-01 00:00 UTC".to_string(),
-            created_at_datetime: "2026-01-01T00:00:00Z".to_string(),
             reviewed_at_display: "2026-01-02 00:00 UTC".to_string(),
-            reviewed_at_datetime: "2026-01-02T00:00:00Z".to_string(),
             target_disc_id: 3,
             changes_original_json: "{\n  \"status\": \"original\"\n}".to_string(),
             changes_json: "{\n  \"status\": \"final\"\n}".to_string(),
@@ -2823,12 +2807,8 @@ mod tests {
         let final_pos = html.find("Final JSON").unwrap();
         assert!(original_pos < final_pos);
         assert!(!html.contains("Raw JSON"));
-        assert!(html.contains(
-            r#"<time datetime="2026-01-01T00:00:00Z" data-local-datetime="minute">2026-01-01 00:00 UTC</time>"#
-        ));
-        assert!(html.contains(
-            r#"<time datetime="2026-01-02T00:00:00Z" data-local-datetime="minute">2026-01-02 00:00 UTC</time>"#
-        ));
+        assert!(html.contains("2026-01-01 00:00 UTC"));
+        assert!(html.contains("2026-01-02 00:00 UTC"));
     }
 
     #[test]
@@ -2852,8 +2832,7 @@ mod tests {
 
         assert!(html.contains(r#"<form method="post" action="/queue/42/review""#));
         assert!(html.contains(r#"<input type="hidden" name="_csrf" value="test-csrf-token">"#));
-        assert!(html.contains(r#"data-local-datetime="minute""#));
-        assert!(html.contains("UTC</time>"));
+        assert!(html.contains(" UTC"));
     }
 
     #[test]

@@ -73,7 +73,6 @@ struct RecentDisc {
     system: String,
     region_flags: Vec<HomeRegionFlag>,
     created_at: String,
-    created_at_datetime: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,7 +82,6 @@ struct RecentChange {
     system: String,
     region_flags: Vec<HomeRegionFlag>,
     modified_at: String,
-    modified_at_datetime: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -258,20 +256,14 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
     for r in rows {
         let created_at = r
             .created_at
-            .map(|date| {
-                (
-                    date.format("%Y-%m-%d UTC").to_string(),
-                    date.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-                )
-            })
+            .map(|date| date.format("%Y-%m-%d").to_string())
             .unwrap_or_default();
         recent_discs.push(RecentDisc {
             id: r.id,
             title: r.title,
             system: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             region_flags: regions_by_disc.get(&r.id).cloned().unwrap_or_default(),
-            created_at: created_at.0,
-            created_at_datetime: created_at.1,
+            created_at,
         });
     }
 
@@ -279,20 +271,14 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
     for r in change_rows {
         let modified_at = r
             .modified_at
-            .map(|date| {
-                (
-                    date.format("%Y-%m-%d UTC").to_string(),
-                    date.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-                )
-            })
+            .map(|date| date.format("%Y-%m-%d").to_string())
             .unwrap_or_default();
         recent_changes.push(RecentChange {
             id: r.id,
             title: r.title,
             system: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             region_flags: regions_by_disc.get(&r.id).cloned().unwrap_or_default(),
-            modified_at: modified_at.0,
-            modified_at_datetime: modified_at.1,
+            modified_at,
         });
     }
 
@@ -422,16 +408,14 @@ mod tests {
                     code: "us".to_string(),
                     name: "USA".to_string(),
                 }],
-                created_at: "2026-01-01 UTC".to_string(),
-                created_at_datetime: "2026-01-01T01:02:03Z".to_string(),
+                created_at: "2026-01-01".to_string(),
             }],
             recent_changes: vec![RecentChange {
                 id: 2,
                 title: format!("{title} changed"),
                 system: "PS2".to_string(),
                 region_flags: vec![],
-                modified_at: "2026-01-02 UTC".to_string(),
-                modified_at_datetime: "2026-01-02T04:05:06Z".to_string(),
+                modified_at: "2026-01-02".to_string(),
             }],
         }
     }
@@ -609,7 +593,7 @@ mod tests {
                 title: "Site news".to_string(),
                 author: "admin".to_string(),
                 url: "#".to_string(),
-                published_date: "2026-01-03 UTC".to_string(),
+                published_date: "2026-01-03".to_string(),
                 published_at: Some(
                     chrono::DateTime::parse_from_rfc3339("2026-01-03T07:08:09Z")
                         .unwrap()
@@ -629,14 +613,8 @@ mod tests {
         assert!(html.contains("recent change changed"));
         assert!(html.contains("News"));
         assert!(html.contains("Site news"));
-        assert!(html.contains(
-            r#"<time datetime="2026-01-01T01:02:03Z" data-local-datetime="date">2026-01-01 UTC</time>"#
-        ));
-        assert!(html.contains(
-            r#"<time datetime="2026-01-02T04:05:06Z" data-local-datetime="date">2026-01-02 UTC</time>"#
-        ));
-        assert!(html.contains(
-            r#"<time datetime="2026-01-03T07:08:09Z" data-local-datetime="date">2026-01-03 UTC</time>"#
-        ));
+        assert!(html.contains("2026-01-01"));
+        assert!(html.contains("2026-01-02"));
+        assert!(html.contains("<time>2026-01-03</time>"));
     }
 }

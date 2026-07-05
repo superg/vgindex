@@ -88,10 +88,10 @@
                     <td><span class="status-dot {{ status_class }}"></span> {{ status_display }}</td>
                 </tr>
                 {% if !created_at.is_empty() %}
-                <tr><td><strong>Added</strong></td><td><time datetime="{{ created_at_datetime }}" data-local-datetime="minute">{{ created_at }}</time></td></tr>
+                <tr><td><strong>Added</strong></td><td>{{ created_at }}</td></tr>
                 {% endif %}
                 {% if !updated_at.is_empty() %}
-                <tr><td><strong>Modified</strong></td><td><time datetime="{{ updated_at_datetime }}" data-local-datetime="minute">{{ updated_at }}</time></td></tr>
+                <tr><td><strong>Modified</strong></td><td>{{ updated_at }}</td></tr>
                 {% endif %}
                 <tr>
                     <td><strong>{% if dumper_count <= 1 %}Dumper{% else %}Dumpers{% endif %}</strong></td>

@@ -20,7 +20,7 @@
             <tbody>
                 {% for disc in recent_discs %}
                 <tr class="clickable-row" data-href="/disc/{{ disc.id }}" tabindex="0" role="link">
-                    <td class="date-col">{% if !disc.created_at_datetime.is_empty() %}<time datetime="{{ disc.created_at_datetime }}" data-local-datetime="date">{{ disc.created_at }}</time>{% endif %}</td>
+                    <td class="date-col">{{ disc.created_at }}</td>
                     <td class="region-col"><span class="region-flags">
                         {% for rf in disc.region_flags %}
                         <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg"
@@ -56,7 +56,7 @@
             <tbody>
                 {% for disc in recent_changes %}
                 <tr class="clickable-row" data-href="/disc/{{ disc.id }}" tabindex="0" role="link">
-                    <td class="date-col">{% if !disc.modified_at_datetime.is_empty() %}<time datetime="{{ disc.modified_at_datetime }}" data-local-datetime="date">{{ disc.modified_at }}</time>{% endif %}</td>
+                    <td class="date-col">{{ disc.modified_at }}</td>
                     <td class="region-col"><span class="region-flags">
                         {% for rf in disc.region_flags %}
                         <img class="flag-icon" src="/static/flags/{{ rf.code }}.svg"
@@ -89,10 +89,7 @@
                 <header class="home-news-header">
                     <h4><a href="{{ item.url }}">{{ item.title }}</a></h4>
                     <p class="home-news-meta">
-                        {% match item.published_at %}
-                        {% when Some with (published_at) %}<time datetime="{{ published_at.format("%Y-%m-%dT%H:%M:%SZ") }}" data-local-datetime="date">{{ item.published_date }}</time>
-                        {% when None %}
-                        {% endmatch %}
+                        {% if !item.published_date.is_empty() %}<time>{{ item.published_date }}</time>{% endif %}
                         {% if !item.author.is_empty() %}
                         <span>posted by {{ item.author }}</span>
                         {% endif %}
