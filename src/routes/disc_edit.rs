@@ -1972,6 +1972,9 @@ fn normalize_hex_dump_for_render(text: Option<&str>, is_pvd: bool) -> String {
     let Some(text) = text else {
         return String::new();
     };
+    if text.trim().is_empty() {
+        return String::new();
+    }
     let Ok(bytes) = disc_service::parse_binary_hex_input(text) else {
         return text.to_string();
     };
@@ -3280,6 +3283,38 @@ fn remove_matching_add_change(
 #[cfg(test)]
 mod operation_delta_tests {
     use super::*;
+
+    #[test]
+    fn optional_binary_hex_fields_do_not_autofill_blank_values() {
+        assert_eq!(normalize_hex_dump_for_render(None, true), "");
+
+        for blank in ["", "   ", "\r\n\t"] {
+            assert_eq!(normalize_hex_dump_for_render(Some(blank), true), "", "PVD");
+            for field in ["Header", "BCA", "PIC"] {
+                assert_eq!(
+                    normalize_hex_dump_for_render(Some(blank), false),
+                    "",
+                    "{field}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nonempty_pvd_is_canonicalized_for_render() {
+        assert_eq!(
+            normalize_hex_dump_for_render(Some("a1 b2"), true),
+            format_pvd_hex_dump(&[0xa1, 0xb2])
+        );
+    }
+
+    #[test]
+    fn invalid_binary_hex_input_is_preserved_for_render() {
+        assert_eq!(
+            normalize_hex_dump_for_render(Some("not hex"), true),
+            "not hex"
+        );
+    }
 
     #[test]
     fn submission_tokens_are_generated_and_preserved_for_rerenders() {
