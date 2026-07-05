@@ -1136,7 +1136,7 @@ fn format_comments(raw: &str) -> String {
         ("[T:TID]", "<b>Taito ID</b>:"),
         ("[T:KOEI]", "<b>Koei ID</b>:"),
         ("[T:LAID]", "<b>Lucas Arts ID</b>:"),
-        ("[T:PT2]", "<b>Postgap type</b>:"),
+        ("[T:PT2]", "<b>Postgap type</b>: Form 2"),
         ("[T:ACC]", "<b>Acclaim ID</b>:"),
         ("[T:VFC]", "<b>VFC code</b>:"),
         ("[T:GTID]", "<b>GT Interactive ID</b>:"),
@@ -1587,6 +1587,11 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
     use tower::ServiceExt;
+
+    #[test]
+    fn postgap_type_form_2_tag_includes_its_value() {
+        assert_eq!(format_comments("[T:PT2]"), "<b>Postgap type</b>: Form 2");
+    }
 
     fn test_state() -> AppState {
         let database_url = "postgres://postgres:postgres@localhost/postgres".to_string();
