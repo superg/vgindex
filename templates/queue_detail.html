@@ -17,9 +17,9 @@
         {% if !reviewer_name.is_empty() %}
         <tr><td><strong>Reviewer</strong></td><td><a href="/discs?dumper={{ self.url_encode(reviewer_name) }}">{{ reviewer_name }}</a></td></tr>
         {% endif %}
-        <tr><td><strong>Created</strong></td><td>{{ created_at_display }}</td></tr>
+        <tr><td><strong>Created</strong></td><td><time datetime="{{ created_at_datetime }}" data-local-datetime="minute">{{ created_at_display }}</time></td></tr>
         {% if !reviewed_at_display.is_empty() %}
-        <tr><td><strong>Reviewed</strong></td><td>{{ reviewed_at_display }}</td></tr>
+        <tr><td><strong>Reviewed</strong></td><td><time datetime="{{ reviewed_at_datetime }}" data-local-datetime="minute">{{ reviewed_at_display }}</time></td></tr>
         {% endif %}
     </table>
 

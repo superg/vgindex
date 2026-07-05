@@ -22,6 +22,21 @@ use crate::AppState;
 /// "Added" row in the disc view.
 const NO_ADDED_SENTINEL: DateTime<Utc> = DateTime::<Utc>::UNIX_EPOCH;
 
+fn format_minute_timestamp(timestamp: Option<&DateTime<Utc>>) -> (String, String) {
+    timestamp
+        .map(|timestamp| {
+            (
+                timestamp.format("%Y-%m-%d %H:%M UTC").to_string(),
+                timestamp.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            )
+        })
+        .unwrap_or_default()
+}
+
+fn format_added_timestamp(timestamp: Option<&DateTime<Utc>>) -> (String, String) {
+    format_minute_timestamp(timestamp.filter(|timestamp| **timestamp != NO_ADDED_SENTINEL))
+}
+
 fn ring_tab_replace(s: &str) -> String {
     let escaped = s
         .replace('&', "&amp;")
@@ -105,7 +120,9 @@ struct DiscViewTemplate {
     status_display: String,
     dumper_count: usize,
     created_at: String,
+    created_at_datetime: String,
     updated_at: String,
+    updated_at_datetime: String,
     dumpers_display: String,
     ring_rows: Vec<ViewRingRow>,
     ring_vis: RingColVis,
@@ -660,6 +677,8 @@ async fn disc_view(
         detail.system.has_protection,
         user.is_logged_in(),
     );
+    let created_at = format_added_timestamp(detail.added_at.as_ref());
+    let updated_at = format_minute_timestamp(detail.modified_at.as_ref());
 
     Ok(Html(
         DiscViewTemplate {
@@ -747,15 +766,10 @@ async fn disc_view(
             file_count: detail.files.len(),
             status_class: detail.disc.status.css_class().to_string(),
             status_display: detail.disc.status.to_string(),
-            created_at: detail
-                .added_at
-                .filter(|d| *d != NO_ADDED_SENTINEL)
-                .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
-                .unwrap_or_default(),
-            updated_at: detail
-                .modified_at
-                .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
-                .unwrap_or_default(),
+            created_at: created_at.0,
+            created_at_datetime: created_at.1,
+            updated_at: updated_at.0,
+            updated_at_datetime: updated_at.1,
             dumper_count: detail.dumpers.len(),
             dumpers_display: if detail.dumpers.is_empty() {
                 "Unknown".to_string()
@@ -1740,7 +1754,9 @@ mod tests {
             status_display: "Verified".to_string(),
             dumper_count: 0,
             created_at: String::new(),
+            created_at_datetime: String::new(),
             updated_at: String::new(),
+            updated_at_datetime: String::new(),
             dumpers_display: "Unknown".to_string(),
             ring_rows: Vec::new(),
             ring_vis: RingColVis {
@@ -1785,6 +1801,32 @@ mod tests {
             bca_rows: Vec::new(),
             show_bca: false,
         }
+    }
+
+    #[test]
+    fn disc_view_renders_localizable_added_and_modified_timestamps() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.created_at = "2026-01-01 01:02 UTC".to_string();
+        template.created_at_datetime = "2026-01-01T01:02:03Z".to_string();
+        template.updated_at = "2026-01-02 04:05 UTC".to_string();
+        template.updated_at_datetime = "2026-01-02T04:05:06Z".to_string();
+
+        let html = template.render().unwrap();
+
+        assert!(html.contains(
+            r#"<time datetime="2026-01-01T01:02:03Z" data-local-datetime="minute">2026-01-01 01:02 UTC</time>"#
+        ));
+        assert!(html.contains(
+            r#"<time datetime="2026-01-02T04:05:06Z" data-local-datetime="minute">2026-01-02 04:05 UTC</time>"#
+        ));
+    }
+
+    #[test]
+    fn disc_view_omits_no_added_timestamp_sentinel() {
+        assert_eq!(
+            format_added_timestamp(Some(&NO_ADDED_SENTINEL)),
+            (String::new(), String::new())
+        );
     }
 
     #[test]

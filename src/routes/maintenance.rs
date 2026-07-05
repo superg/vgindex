@@ -76,7 +76,13 @@ impl SiteConfig for MaintenanceTemplate {}
 struct BackupFile {
     filename: String,
     created_at: String,
+    created_at_datetime: String,
     size: String,
+}
+
+struct BackupTimestamp {
+    display: String,
+    datetime: String,
 }
 
 async fn maintenance_page(
@@ -878,7 +884,8 @@ fn list_backup_files(directory: &Path) -> Vec<BackupFile> {
             let metadata = entry.metadata().ok()?;
             Some(BackupFile {
                 filename,
-                created_at,
+                created_at: created_at.display,
+                created_at_datetime: created_at.datetime,
                 size: format_file_size(metadata.len()),
             })
         })
@@ -887,7 +894,7 @@ fn list_backup_files(directory: &Path) -> Vec<BackupFile> {
     backups
 }
 
-fn backup_timestamp(filename: &str) -> Option<String> {
+fn backup_timestamp(filename: &str) -> Option<BackupTimestamp> {
     let timestamp = filename
         .strip_prefix(BACKUP_PREFIX)?
         .strip_suffix(BACKUP_SUFFIX)?;
@@ -901,15 +908,26 @@ fn backup_timestamp(filename: &str) -> Option<String> {
         return None;
     }
 
-    Some(format!(
-        "{}-{}-{} {}:{}:{} UTC",
-        &timestamp[0..4],
-        &timestamp[4..6],
-        &timestamp[6..8],
-        &timestamp[9..11],
-        &timestamp[11..13],
-        &timestamp[13..15],
-    ))
+    Some(BackupTimestamp {
+        display: format!(
+            "{}-{}-{} {}:{}:{} UTC",
+            &timestamp[0..4],
+            &timestamp[4..6],
+            &timestamp[6..8],
+            &timestamp[9..11],
+            &timestamp[11..13],
+            &timestamp[13..15],
+        ),
+        datetime: format!(
+            "{}-{}-{}T{}:{}:{}Z",
+            &timestamp[0..4],
+            &timestamp[4..6],
+            &timestamp[6..8],
+            &timestamp[9..11],
+            &timestamp[11..13],
+            &timestamp[13..15],
+        ),
+    })
 }
 
 fn format_file_size(bytes: u64) -> String {
@@ -2192,11 +2210,30 @@ mod tests {
     }
 
     #[test]
+    fn backup_tab_renders_localizable_creation_timestamp() {
+        let html = maintenance_template_for_role(
+            UserRole::Admin,
+            Some("backup"),
+            vec![BackupFile {
+                filename: "vgindex-backup-20260703T060000Z.tar.gz".to_string(),
+                created_at: "2026-07-03 06:00:00 UTC".to_string(),
+                created_at_datetime: "2026-07-03T06:00:00Z".to_string(),
+                size: "1 MiB".to_string(),
+            }],
+        )
+        .render()
+        .unwrap();
+
+        assert!(html.contains(
+            r#"<time datetime="2026-07-03T06:00:00Z" data-local-datetime="second">2026-07-03 06:00:00 UTC</time>"#
+        ));
+    }
+
+    #[test]
     fn backup_timestamp_accepts_only_completed_backup_names() {
-        assert_eq!(
-            backup_timestamp("vgindex-backup-20260703T060000Z.tar.gz").as_deref(),
-            Some("2026-07-03 06:00:00 UTC")
-        );
+        let timestamp = backup_timestamp("vgindex-backup-20260703T060000Z.tar.gz").unwrap();
+        assert_eq!(timestamp.display, "2026-07-03 06:00:00 UTC");
+        assert_eq!(timestamp.datetime, "2026-07-03T06:00:00Z");
         assert!(backup_timestamp(".vgindex-backup-20260703T060000Z.tar.gz.partial").is_none());
         assert!(backup_timestamp("vgindex-backup-20260703.tar.gz").is_none());
         assert!(backup_timestamp("../vgindex-backup-20260703T060000Z.tar.gz").is_none());

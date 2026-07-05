@@ -216,7 +216,7 @@
             <tbody>
             {% for backup in backup_files %}
                 <tr>
-                    <td>{{ backup.created_at }}</td>
+                    <td><time datetime="{{ backup.created_at_datetime }}" data-local-datetime="second">{{ backup.created_at }}</time></td>
                     <td>{{ backup.size }}</td>
                     <td><a href="/maintenance/backups/{{ backup.filename }}">{{ backup.filename }}</a></td>
                 </tr>
