@@ -24,7 +24,8 @@ use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
     build_check_options, build_flat_changes, build_lang_check_options, build_media_has_pic_json,
     build_media_is_cd_json, build_media_layers_json, build_media_options,
-    build_media_rom_extensions_json, build_new_disc_changes, build_sparse_disc_submission_changes,
+    build_media_rom_extensions_json, build_new_disc_changes,
+    build_retargeted_disc_submission_changes, build_sparse_disc_submission_changes,
     build_sparse_edit_changes, build_system_options, build_systems_json, fetch_ref_data,
     max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
     ReviewOldMultiline,
@@ -51,6 +52,11 @@ pub struct QueueQuery {
     pub sort: Option<String>,
     pub order: Option<String>,
     pub page: Option<i64>,
+}
+
+#[derive(Deserialize, Default)]
+struct SubmissionDetailQuery {
+    retargeted: Option<u8>,
 }
 
 struct SystemOption {
@@ -464,10 +470,35 @@ async fn queue_list(
 
 // ── Submission detail (GET /queue/{id}/) ───────────────────────────────
 
+fn apply_retargeted_notice(
+    template: &mut DiscEditTemplate,
+    sub: &DiscSubmission,
+    db_snapshot: &serde_json::Value,
+    show_notice: bool,
+) {
+    let Some(disc_id) = sub.target_disc_id else {
+        return;
+    };
+    if !show_notice || sub.display_kind() != SubmissionDisplayKind::Verification {
+        return;
+    }
+
+    template.validation_result = "An identical disc was added while this submission was pending. This submission was retargeted as a verification for".to_string();
+    template.validation_result_disc_id = disc_id;
+    template.validation_result_disc_title = format_display_title(
+        db_snapshot["title"].as_str().unwrap_or(""),
+        db_snapshot["disc_number"].as_str(),
+        db_snapshot["disc_title"].as_str(),
+        db_snapshot["filename_suffix"].as_str(),
+    );
+    template.validation_result_suffix = ". Review it again before approving.".to_string();
+}
+
 async fn submission_detail(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
     Path(id): Path<i32>,
+    Query(query): Query<SubmissionDetailQuery>,
 ) -> AppResult<Html<String>> {
     let current = Some(&user);
 
@@ -564,18 +595,24 @@ async fn submission_detail(
         has_sys,
     );
 
-    if let Some(db_snapshot) = db_snapshot {
-        template.review_base_hash = queue_service::disc_snapshot_hash(&db_snapshot);
+    if let Some(db_snapshot) = db_snapshot.as_ref() {
+        template.review_base_hash = queue_service::disc_snapshot_hash(db_snapshot);
         apply_review_diff_context(
             &mut template,
             &snapshot,
-            &db_snapshot,
+            db_snapshot,
             &ref_data,
             sub.submission_type,
             true,
         );
-        let highlights = compute_field_highlights(&snapshot, &db_snapshot);
+        let highlights = compute_field_highlights(&snapshot, db_snapshot);
         apply_highlights(&mut template, highlights);
+        apply_retargeted_notice(
+            &mut template,
+            &sub,
+            db_snapshot,
+            query.retargeted == Some(1),
+        );
     }
 
     Ok(Html(template.render().unwrap()))
@@ -2040,6 +2077,38 @@ async fn review_submit(
         return Ok(Html(template.render().unwrap()).into_response());
     }
 
+    if sub.submission_type == SubmissionType::Disc && sub.target_disc_id.is_none() {
+        if let Some(target_disc_id) = queue_service::find_unambiguous_exact_disc_match(
+            &state.pool,
+            form.disc.files_xml.as_deref(),
+            form.disc.universal_hash.as_deref(),
+        )
+        .await?
+        {
+            let detail = disc_service::get_disc_detail(&state.pool, target_disc_id).await?;
+            let retargeted_changes = build_retargeted_disc_submission_changes(
+                &form.disc,
+                &detail,
+                &ref_data.all_media_types,
+                &ref_data.all_systems,
+            );
+            let outcome = queue_service::retarget_pending_submission(
+                &state.pool,
+                sub.id,
+                target_disc_id,
+                form.disc.files_xml.as_deref(),
+                form.disc.universal_hash.as_deref(),
+                &retargeted_changes,
+            )
+            .await?;
+
+            if outcome {
+                return Ok(Redirect::to(&format!("/queue/{id}?retargeted=1")).into_response());
+            }
+            return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
+        }
+    }
+
     let form_snapshot = if let Some(disc_id) = sub.target_disc_id {
         let detail = disc_service::get_disc_detail(&state.pool, disc_id).await?;
         if sub.submission_type == SubmissionType::Disc {
@@ -2619,6 +2688,34 @@ mod tests {
         .unwrap();
 
         assert!(html.contains("<td><strong>Submission Type</strong></td><td>Verification</td>"));
+    }
+
+    #[test]
+    fn retargeted_notice_renders_only_for_a_verification() {
+        let mut verification = test_submission();
+        verification.submission_type = SubmissionType::Disc;
+        verification.target_disc_id = Some(123);
+        verification.changes = serde_json::json!({
+            "comments": { "add": { "new": "verification" } }
+        });
+        let snapshot = old_snapshot();
+        let mut template = build_template(&snapshot);
+
+        apply_retargeted_notice(&mut template, &verification, &snapshot, true);
+        let html = template.render().unwrap();
+
+        assert!(html.contains("An identical disc was added while this submission was pending."));
+        assert!(html.contains(r#"href="/disc/123""#));
+        assert!(html.contains("Review it again before approving."));
+        assert!(html.contains(r#"placeholder="Optional comment about this review"></textarea>"#));
+
+        let mut new_disc = verification;
+        new_disc.changes = serde_json::json!({
+            "dat": { "add": { "new": "<rom />" } }
+        });
+        let mut template = build_template(&snapshot);
+        apply_retargeted_notice(&mut template, &new_disc, &snapshot, true);
+        assert!(template.validation_result.is_empty());
     }
 
     #[test]

@@ -421,6 +421,41 @@ async fn find_matching_disc_by_universal_hash_excluding(
         .await?)
 }
 
+fn resolve_exact_disc_match(
+    dat_match: Option<i32>,
+    universal_hash_match: Option<i32>,
+) -> Option<i32> {
+    match (dat_match, universal_hash_match) {
+        (None, None) => None,
+        (Some(disc_id), None) | (None, Some(disc_id)) => Some(disc_id),
+        (Some(dat_disc_id), Some(universal_hash_disc_id))
+            if dat_disc_id == universal_hash_disc_id =>
+        {
+            Some(dat_disc_id)
+        }
+        (Some(_), Some(_)) => None,
+    }
+}
+
+pub(crate) async fn find_unambiguous_exact_disc_match(
+    pool: &PgPool,
+    files_xml: Option<&str>,
+    universal_hash: Option<&str>,
+) -> AppResult<Option<i32>> {
+    let dat_match = match files_xml.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(files_xml) => find_matching_disc(pool, files_xml).await?,
+        None => None,
+    };
+    let universal_hash_match = match universal_hash
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(universal_hash) => find_matching_disc_by_universal_hash(pool, universal_hash).await?,
+        None => None,
+    };
+    Ok(resolve_exact_disc_match(dat_match, universal_hash_match))
+}
+
 fn normalize_hash_attr(value: Option<String>) -> String {
     value
         .map(|s| s.trim().to_ascii_lowercase())
@@ -1508,6 +1543,44 @@ async fn acquire_approval_lock(conn: &mut PgConnection) -> AppResult<()> {
     Ok(())
 }
 
+pub(crate) async fn retarget_pending_submission(
+    pool: &PgPool,
+    submission_id: i32,
+    expected_target_disc_id: i32,
+    files_xml: Option<&str>,
+    universal_hash: Option<&str>,
+    changes: &serde_json::Value,
+) -> AppResult<bool> {
+    let mut tx = pool.begin().await?;
+    acquire_approval_lock(&mut tx).await?;
+
+    if find_unambiguous_exact_disc_match(pool, files_xml, universal_hash).await?
+        != Some(expected_target_disc_id)
+    {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+
+    let result = sqlx::query(
+        "UPDATE disc_submissions SET target_disc_id = $1, changes = $2
+         WHERE id = $3 AND submission_type = 'Disc' AND status = 'Pending'
+           AND target_disc_id IS NULL",
+    )
+    .bind(expected_target_disc_id)
+    .bind(changes)
+    .bind(submission_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+
+    tx.commit().await?;
+    Ok(true)
+}
+
 /// Apply approval to a submission atomically: update/create the disc, mark the
 /// submission as Approved, and commit every related mutation together.
 pub async fn approve_submission(
@@ -1952,6 +2025,15 @@ mod tests {
     }
 
     #[test]
+    fn exact_disc_match_requires_one_shared_target() {
+        assert_eq!(resolve_exact_disc_match(None, None), None);
+        assert_eq!(resolve_exact_disc_match(Some(42), None), Some(42));
+        assert_eq!(resolve_exact_disc_match(None, Some(42)), Some(42));
+        assert_eq!(resolve_exact_disc_match(Some(42), Some(42)), Some(42));
+        assert_eq!(resolve_exact_disc_match(Some(42), Some(7)), None);
+    }
+
+    #[test]
     fn submission_token_migration_is_nullable_and_unique() {
         let migration = include_str!("../../migrations/015_add_submission_tokens.sql");
         assert!(migration.contains("ADD COLUMN submission_token VARCHAR(64)"));
@@ -2118,6 +2200,139 @@ mod tests {
             .execute(pool)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn retargeted_verification_updates_existing_disc_on_second_approval() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "retarget verification").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let universal_hash = random_test_token()[..40].to_string();
+        let universal_hash_bytes = hex::decode(&universal_hash).unwrap();
+        sqlx::query("UPDATE discs SET universal_hash = $1 WHERE id = $2")
+            .bind(universal_hash_bytes)
+            .bind(fixture.disc_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let dat = "<rom name=\"Track 1.bin\" size=\"1\" crc=\"11111111\" md5=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" sha1=\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" />";
+        sqlx::query(
+            "INSERT INTO files (disc_id, track_number, size, crc32, md5, sha1)
+             VALUES ($1, '1', 1, '11111111', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')",
+        )
+        .bind(fixture.disc_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            find_unambiguous_exact_disc_match(&pool, Some(dat), Some(&universal_hash))
+                .await
+                .unwrap(),
+            Some(fixture.disc_id)
+        );
+
+        let original_changes = serde_json::json!({
+            "dat": {
+                "add": {
+                    "new": dat
+                }
+            },
+            "universal_hash": { "add": { "new": universal_hash.clone() } }
+        });
+        let creation = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            fixture.submitter_id,
+            None,
+            original_changes,
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+        let verification_changes = serde_json::json!({});
+        let retargeted = retarget_pending_submission(
+            &pool,
+            creation.submission.id,
+            fixture.disc_id,
+            Some(dat),
+            Some(&universal_hash),
+            &verification_changes,
+        )
+        .await
+        .unwrap();
+        let retargeted_submission = get_submission(&pool, creation.submission.id).await.unwrap();
+
+        assert!(retargeted);
+        assert_eq!(retargeted_submission.target_disc_id, Some(fixture.disc_id));
+        assert_eq!(retargeted_submission.status, SubmissionStatus::Pending);
+        assert_eq!(retargeted_submission.changes, verification_changes);
+        assert_eq!(retargeted_submission.changes_original, None);
+        assert_eq!(
+            retargeted_submission.display_kind(),
+            SubmissionDisplayKind::Verification
+        );
+
+        let repeated = retarget_pending_submission(
+            &pool,
+            creation.submission.id,
+            fixture.disc_id,
+            Some(dat),
+            Some(&universal_hash),
+            &verification_changes,
+        )
+        .await
+        .unwrap();
+        assert!(!repeated);
+
+        let target_hash = current_disc_snapshot_hash(&pool, fixture.disc_id)
+            .await
+            .unwrap();
+        let approval = approve_submission(
+            &pool,
+            &retargeted_submission,
+            &retargeted_submission.changes,
+            fixture.submitter_id,
+            None,
+            Some(&target_hash),
+        )
+        .await
+        .unwrap();
+        let final_submission = get_submission(&pool, creation.submission.id).await.unwrap();
+        let target_status: DiscStatus =
+            sqlx::query_scalar("SELECT status FROM discs WHERE id = $1")
+                .bind(fixture.disc_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let dumper_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM disc_dumpers WHERE disc_id = $1 AND user_id = $2",
+        )
+        .bind(fixture.disc_id)
+        .bind(fixture.submitter_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+
+        assert_eq!(approval, ApprovalOutcome::Approved(fixture.disc_id));
+        assert_eq!(final_submission.status, SubmissionStatus::Approved);
+        assert_eq!(
+            final_submission.changes_original,
+            Some(verification_changes)
+        );
+        assert_eq!(target_status, DiscStatus::Verified);
+        assert_eq!(dumper_count, 1);
     }
 
     #[tokio::test]
