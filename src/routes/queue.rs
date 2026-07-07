@@ -1038,7 +1038,7 @@ fn build_review_template(
         reviewer_id: sub.reviewer_id.unwrap_or(0),
         reviewer_name: reviewer_name.to_string(),
         review_comment_display: sub.review_comment.clone().unwrap_or_default(),
-        review_comment_input: String::new(),
+        review_comment_input: sub.review_comment.clone().unwrap_or_default(),
         created_at_display: sub.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
         reviewed_at_display: sub
             .reviewed_at
@@ -3126,11 +3126,14 @@ mod tests {
             .unwrap_or_default()
     }
 
-    fn build_template(snapshot: &serde_json::Value) -> DiscEditTemplate {
+    fn build_template_for_submission(
+        snapshot: &serde_json::Value,
+        submission: &DiscSubmission,
+    ) -> DiscEditTemplate {
         let ref_data = ref_data();
         let mut template = build_review_template(
             AuthenticatedUser::template_only("moderator"),
-            &test_submission(),
+            submission,
             "submitter",
             "",
             snapshot,
@@ -3149,6 +3152,10 @@ mod tests {
         );
         template.review_base_hash = queue_service::disc_snapshot_hash(&old_snapshot());
         template
+    }
+
+    fn build_template(snapshot: &serde_json::Value) -> DiscEditTemplate {
+        build_template_for_submission(snapshot, &test_submission())
     }
 
     #[test]
@@ -3238,6 +3245,23 @@ mod tests {
         assert!(html.contains(r#"<form method="post" action="/queue/42/review""#));
         assert!(html.contains(r#"<input type="hidden" name="_csrf" value="test-csrf-token">"#));
         assert!(html.contains(" UTC"));
+    }
+
+    #[test]
+    fn pending_submission_loads_previous_review_comment_into_input() {
+        let mut submission = test_submission();
+        submission.review_comment = Some("Please provide a complete DAT".to_string());
+        submission.reviewer_id = Some(8);
+        submission.reviewed_at = Some(chrono::Utc::now());
+
+        let template = build_template_for_submission(&submitted_snapshot(), &submission);
+        let html = template.render().unwrap();
+
+        assert_eq!(
+            template.review_comment_input,
+            "Please provide a complete DAT"
+        );
+        assert!(html.contains(r#">Please provide a complete DAT</textarea>"#));
     }
 
     #[test]
