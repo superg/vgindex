@@ -297,6 +297,7 @@ pub fn submission_display_kind(
 #[sqlx(type_name = "submission_status_enum", rename_all = "PascalCase")]
 pub enum SubmissionStatus {
     Pending,
+    Draft,
     Approved,
     Rejected,
     Legacy,
@@ -306,6 +307,7 @@ impl SubmissionStatus {
     pub fn css_class(&self) -> &'static str {
         match self {
             Self::Pending => "status-pending",
+            Self::Draft => "status-draft",
             Self::Approved => "status-approved",
             Self::Rejected => "status-rejected",
             Self::Legacy => "status-legacy",

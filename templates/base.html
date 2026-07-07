@@ -52,7 +52,7 @@
                         <ul class="submenu user-submenu">
                             <li><a href="/disc/submit">Add Disc</a></li>
                             <li><a href="/discs?dumper={{ self.url_encode(user.username) }}">My Discs</a></li>
-                            <li><a href="/queue?submitter={{ self.url_encode(user.username) }}">My Submissions</a></li>
+                            <li><a href="/queue?status=Pending%20and%20Draft&amp;submitter={{ self.url_encode(user.username) }}">My Submissions</a></li>
                             {% if user.role.can_moderate() %}
                             <li><a href="/maintenance">Maintenance</a></li>
                             {% endif %}

@@ -67,7 +67,7 @@ fn user_queue_url(username: &str) -> String {
     format!("/queue?submitter={}", urlencoding::encode(username))
 }
 
-fn generate_submission_token() -> String {
+pub(crate) fn generate_submission_token() -> String {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
@@ -106,6 +106,7 @@ pub(crate) struct DiscEditTemplate {
     pub disc_id: i32,
     pub page_title: String,
     pub submission_token: String,
+    pub draft_submission_id: i32,
 
     pub systems: Vec<SystemOption>,
     pub media_types_all: Vec<MediaTypeOption>,
@@ -517,6 +518,14 @@ fn validate_submit_as_for_add(form: &DiscEditForm, can_submit_as: bool) -> Vec<S
     }
 }
 
+fn validate_edit_submission_comment(form: &DiscEditForm, can_edit_directly: bool) -> Vec<String> {
+    if can_edit_directly || trimmed_nonempty(form.submission_comment.as_deref()).is_some() {
+        Vec::new()
+    } else {
+        vec!["Submission Comment: required when submitting an edit".to_string()]
+    }
+}
+
 fn submit_as_username_for_form(username: &str, form: &DiscEditForm, can_submit_as: bool) -> String {
     if !can_submit_as {
         return String::new();
@@ -878,6 +887,7 @@ async fn edit_page(
             disc_id: id,
             page_title,
             submission_token: generate_submission_token(),
+            draft_submission_id: 0,
 
             systems: build_system_options(&ref_data.all_systems, &detail.disc.system_code),
             media_types_all: build_media_options(
@@ -1110,6 +1120,8 @@ async fn edit_page(
 pub struct DiscEditForm {
     #[serde(default)]
     pub submission_token: String,
+    #[serde(default)]
+    pub draft_submission_id: Option<String>,
     #[serde(default)]
     pub system_code: String,
     #[serde(default)]
@@ -1503,6 +1515,36 @@ async fn render_form_with_errors(
     can_edit_directly: bool,
     can_moderate: bool,
 ) -> AppResult<Response> {
+    render_form_with_context(
+        state,
+        id,
+        current_user,
+        form,
+        errors,
+        linked_validation_errors,
+        validation_result,
+        is_add_mode,
+        can_edit_directly,
+        can_moderate,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn render_form_with_context(
+    state: &AppState,
+    id: i32,
+    current_user: AuthenticatedUser,
+    form: &DiscEditForm,
+    errors: Vec<String>,
+    linked_validation_errors: Vec<LinkedValidationError>,
+    validation_result: ValidationResultMessage,
+    is_add_mode: bool,
+    can_edit_directly: bool,
+    can_moderate: bool,
+    draft_context: Option<(&DiscSubmission, &str, &str)>,
+) -> AppResult<Response> {
     let pool = &state.pool;
     let ref_data = fetch_ref_data(pool).await?;
     let system = disc_service::get_system(pool, &form.system_code).await.ok();
@@ -1547,6 +1589,7 @@ async fn render_form_with_errors(
         disc_id: id,
         page_title,
         submission_token: submission_token_for_render(&form.submission_token),
+        draft_submission_id: draft_context.map_or(0, |(sub, _, _)| sub.id),
 
         systems: if is_add_mode {
             build_add_system_options(&ref_data.all_systems, &form.system_code)
@@ -1698,7 +1741,7 @@ async fn render_form_with_errors(
         dump_log: form.dump_log.clone().unwrap_or_default(),
         dump_log_required: is_add_mode && !can_moderate,
         extra_upload_url: form.extra_upload_url.clone().unwrap_or_default(),
-        show_submit_as: is_add_mode && can_moderate,
+        show_submit_as: is_add_mode && can_moderate && draft_context.is_none(),
         submit_as_username: submit_as_username_for_form(&current_user.username, form, can_moderate),
 
         submit_button_text: if is_add_mode {
@@ -1720,20 +1763,35 @@ async fn render_form_with_errors(
         changed_fields: vec![],
         review_annotations: vec![],
         review_old_multiline: vec![],
-        submission_id: 0,
-        submission_type_display: String::new(),
-        submitter_id: 0,
-        submitter_name: String::new(),
+        submission_id: draft_context.map_or(0, |(sub, _, _)| sub.id),
+        submission_type_display: draft_context
+            .map(|(sub, _, _)| sub.display_kind().to_string())
+            .unwrap_or_default(),
+        submitter_id: draft_context.map_or(0, |(sub, _, _)| sub.submitter_id),
+        submitter_name: draft_context
+            .map(|(_, submitter_name, _)| submitter_name.to_string())
+            .unwrap_or_default(),
         submission_comment: form.submission_comment.clone().unwrap_or_default(),
         dump_log_display: String::new(),
         extra_upload_url_display: String::new(),
-        submission_status: String::new(),
-        reviewer_id: 0,
-        reviewer_name: String::new(),
-        review_comment_display: String::new(),
+        submission_status: draft_context
+            .map(|(sub, _, _)| sub.status.to_string())
+            .unwrap_or_default(),
+        reviewer_id: draft_context.map_or(0, |(sub, _, _)| sub.reviewer_id.unwrap_or(0)),
+        reviewer_name: draft_context
+            .map(|(_, _, reviewer_name)| reviewer_name.to_string())
+            .unwrap_or_default(),
+        review_comment_display: draft_context
+            .and_then(|(sub, _, _)| sub.review_comment.clone())
+            .unwrap_or_default(),
         review_comment_input: String::new(),
-        created_at_display: String::new(),
-        reviewed_at_display: String::new(),
+        created_at_display: draft_context
+            .map(|(sub, _, _)| sub.created_at.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_default(),
+        reviewed_at_display: draft_context
+            .and_then(|(sub, _, _)| sub.reviewed_at)
+            .map(|value| value.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_default(),
         changes_original_json: String::new(),
         changes_json: String::new(),
     };
@@ -1746,6 +1804,33 @@ async fn render_form_with_errors(
         };
     let html = template.render().unwrap();
     Ok((status, Html(html)).into_response())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn render_draft_submission_form(
+    state: &AppState,
+    current_user: AuthenticatedUser,
+    form: &DiscEditForm,
+    submission: &DiscSubmission,
+    submitter_name: &str,
+    reviewer_name: &str,
+    errors: Vec<String>,
+    validation_result: ValidationResultMessage,
+) -> AppResult<Response> {
+    render_form_with_context(
+        state,
+        0,
+        current_user.clone(),
+        form,
+        errors,
+        vec![],
+        validation_result,
+        true,
+        current_user.role.can_edit_directly(),
+        current_user.role.can_moderate(),
+        Some((submission, submitter_name, reviewer_name)),
+    )
+    .await
 }
 
 fn valid_dat_for_matching(form: &DiscEditForm) -> Option<&str> {
@@ -2206,7 +2291,8 @@ async fn edit_submit(
     let can_edit_directly = user.role.can_edit_directly();
     preserve_existing_status_for_submission(&mut form, &detail, can_edit_directly);
     let ref_data = fetch_ref_data(&state.pool).await?;
-    let errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
+    let mut errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
+    errors.extend(validate_edit_submission_comment(&form, can_edit_directly));
     if !errors.is_empty() {
         return render_form_with_errors(
             &state,
@@ -2371,6 +2457,7 @@ async fn add_page(
             disc_id: 0,
             page_title: String::new(),
             submission_token: generate_submission_token(),
+            draft_submission_id: 0,
 
             systems: build_add_system_options(&ref_data.all_systems, &system_code),
             media_types_all: build_add_media_options(
@@ -2501,6 +2588,52 @@ async fn add_page(
     ))
 }
 
+async fn render_add_submission_errors(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    form: &DiscEditForm,
+    errors: Vec<String>,
+    validation_result: ValidationResultMessage,
+    draft_submission: Option<&DiscSubmission>,
+) -> AppResult<Response> {
+    if let Some(submission) = draft_submission {
+        let reviewer_name = if let Some(reviewer_id) = submission.reviewer_id {
+            sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
+                .bind(reviewer_id)
+                .fetch_optional(&state.pool)
+                .await?
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+        return render_draft_submission_form(
+            state,
+            user.clone(),
+            form,
+            submission,
+            &user.username,
+            &reviewer_name,
+            errors,
+            validation_result,
+        )
+        .await;
+    }
+
+    render_form_with_errors(
+        state,
+        0,
+        user.clone(),
+        form,
+        errors,
+        vec![],
+        validation_result,
+        true,
+        user.role.can_edit_directly(),
+        user.role.can_moderate(),
+    )
+    .await
+}
+
 async fn add_submit(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
@@ -2509,22 +2642,42 @@ async fn add_submit(
     csrf::verify_token(&user, &post.csrf_token)?;
 
     let mut form = post.disc;
+    let draft_submission_id = form
+        .draft_submission_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| {
+            value
+                .trim()
+                .parse::<i32>()
+                .map_err(|_| AppError::BadRequest("invalid Draft submission ID".into()))
+        })
+        .transpose()?;
+    let draft_submission = if let Some(submission_id) = draft_submission_id {
+        let submission = queue_service::get_submission(&state.pool, submission_id).await?;
+        if submission.submitter_id != user.id || submission.submission_type != SubmissionType::Disc
+        {
+            return Err(AppError::NotFound);
+        }
+        if submission.status != SubmissionStatus::Draft {
+            return Ok(processed_submission_redirect(&submission));
+        }
+        Some(submission)
+    } else {
+        None
+    };
     let ref_data = fetch_ref_data(&state.pool).await?;
     let add_match = match find_add_disc_match(&state.pool, &form).await {
         Ok(add_match) => add_match,
         Err(err) => {
             tracing::error!("add-disc match lookup failed: {err}");
-            return render_form_with_errors(
+            return render_add_submission_errors(
                 &state,
-                0,
-                user.clone(),
+                &user,
                 &form,
                 add_disc_match_lookup_errors(),
-                vec![],
                 ValidationResultMessage::default(),
-                true,
-                user.role.can_edit_directly(),
-                user.role.can_moderate(),
+                draft_submission.as_ref(),
             )
             .await;
         }
@@ -2537,7 +2690,7 @@ async fn add_submit(
         &ref_data.all_systems,
         is_verification,
     );
-    let can_submit_as = user.role.can_moderate();
+    let can_submit_as = user.role.can_moderate() && draft_submission.is_none();
     errors.extend(validate_submit_as_for_add(&form, can_submit_as));
     errors.extend(validate_add_submission_logs(
         &form,
@@ -2561,17 +2714,13 @@ async fn add_submit(
 
     if post.action == "validate" || !errors.is_empty() {
         let render_form = add_form_for_render(&form, add_match.as_ref());
-        return render_form_with_errors(
+        return render_add_submission_errors(
             &state,
-            0,
-            user.clone(),
+            &user,
             &render_form,
             errors,
-            vec![],
             validation_result,
-            true,
-            user.role.can_edit_directly(),
-            user.role.can_moderate(),
+            draft_submission.as_ref(),
         )
         .await;
     }
@@ -2583,7 +2732,7 @@ async fn add_submit(
         add_match.as_ref(),
     );
 
-    if user.role.can_edit_directly() && !is_verification {
+    if draft_submission.is_none() && user.role.can_edit_directly() && !is_verification {
         let linked_validation_errors = approval_conflicts_to_linked_validation_errors(
             queue_service::find_approval_conflicts(
                 &state.pool,
@@ -2626,6 +2775,27 @@ async fn add_submit(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
     let request_fingerprint = submission_fingerprint(&form);
+
+    if let Some(draft_submission) = draft_submission.as_ref() {
+        let submitted = queue_service::submit_draft_submission(
+            &state.pool,
+            draft_submission.id,
+            user.id,
+            target_disc_id,
+            changes,
+            submission_comment.as_deref(),
+            dump_log_text,
+            extra_upload_url_text,
+            Some(&form.submission_token),
+            Some(&request_fingerprint),
+        )
+        .await?;
+        return if submitted.is_some() {
+            Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
+        } else {
+            Ok(Redirect::to("/queue").into_response())
+        };
+    }
 
     if user.role.can_edit_directly() && !is_verification {
         match queue_service::create_and_approve_submission(
@@ -3544,6 +3714,7 @@ mod operation_delta_tests {
     fn form_from_detail(detail: &DiscDetail) -> DiscEditForm {
         DiscEditForm {
             submission_token: generate_submission_token(),
+            draft_submission_id: None,
             system_code: detail.disc.system_code.clone(),
             media_type: detail.disc.media_type.code().to_string(),
             title: detail.disc.title.clone(),
@@ -3609,6 +3780,7 @@ mod operation_delta_tests {
     fn new_disc_form() -> DiscEditForm {
         DiscEditForm {
             submission_token: generate_submission_token(),
+            draft_submission_id: None,
             system_code: "SYS".to_string(),
             media_type: "DVD".to_string(),
             title: "New Game".to_string(),
@@ -5160,6 +5332,32 @@ mod operation_delta_tests {
         assert!(!UserRole::UserPlus.can_moderate());
         assert!(UserRole::Moderator.can_moderate());
         assert!(UserRole::Admin.can_moderate());
+    }
+
+    #[test]
+    fn queued_edits_require_a_submission_comment() {
+        let mut form = new_disc_form();
+
+        assert_eq!(
+            validate_edit_submission_comment(&form, false),
+            vec!["Submission Comment: required when submitting an edit".to_string()]
+        );
+
+        form.submission_comment = Some(" \r\n ".to_string());
+        assert_eq!(
+            validate_edit_submission_comment(&form, false),
+            vec!["Submission Comment: required when submitting an edit".to_string()]
+        );
+
+        form.submission_comment = Some("Corrected the title spelling".to_string());
+        assert!(validate_edit_submission_comment(&form, false).is_empty());
+
+        form.submission_comment = None;
+        assert!(validate_edit_submission_comment(&form, true).is_empty());
+
+        let template = include_str!("../../templates/disc_edit.html");
+        assert!(template.contains("Required comment describing this edit"));
+        assert!(template.contains(r#"submit_button_text == "Submit" %} required{% endif %}"#));
     }
 
     #[test]

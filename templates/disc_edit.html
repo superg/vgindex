@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{% if is_review_mode %}Review Submission #{{ submission_id }}{% else if is_add_mode %}Add Disc{% else %}Edit {{ page_title }}{% endif %}{% endblock %}
+{% block title %}{% if is_review_mode %}Review Submission #{{ submission_id }}{% else if draft_submission_id > 0 %}Revise Submission #{{ draft_submission_id }}{% else if is_add_mode %}Add Disc{% else %}Edit {{ page_title }}{% endif %}{% endblock %}
 
 {% block head %}
 <script>
@@ -42,7 +42,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
 </div>
 {% endif %}
 
-{% if is_review_mode %}
+{% if is_review_mode || draft_submission_id > 0 %}
 <div class="submission-info">
     <table class="table-compact table-fit-section">
         <tr><td><strong>Submission Type</strong></td><td>{{ submission_type_display }}</td></tr>
@@ -53,7 +53,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         {% if !extra_upload_url_display.is_empty() %}
         <tr><td><strong>Logs Archive URL</strong></td><td><a href="{{ extra_upload_url_display }}" target="_blank" rel="noopener noreferrer">{{ extra_upload_url_display }}</a></td></tr>
         {% endif %}
-        <tr><td><strong>Status</strong></td><td>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</td></tr>
+        <tr><td><strong>Status</strong></td><td>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Draft" %}🟠{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</td></tr>
         {% if !reviewer_name.is_empty() %}
         <tr><td><strong>Reviewer</strong></td><td><a href="/discs?dumper={{ self.url_encode(reviewer_name) }}">{{ reviewer_name }}</a></td></tr>
         {% endif %}
@@ -78,7 +78,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     {% endif %}
 </div>
 
-{% if !dump_log_display.is_empty() %}
+{% if is_review_mode && !dump_log_display.is_empty() %}
 <section>
     <details class="dump-log-details" open>
         <summary><h3>Dump Log</h3></summary>
@@ -87,7 +87,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
 </section>
 {% endif %}
 
-{% if !submission_comment.is_empty() %}
+{% if is_review_mode && !submission_comment.is_empty() %}
 <section>
     <h3>Submission Comment</h3>
     <p class="pre-wrap section-text">{{ submission_comment }}</p>
@@ -110,6 +110,9 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     {% endmatch %}
     {% if !is_review_mode %}
     <input type="hidden" name="submission_token" value="{{ submission_token }}">
+    {% endif %}
+    {% if draft_submission_id > 0 %}
+    <input type="hidden" name="draft_submission_id" value="{{ draft_submission_id }}">
     {% endif %}
     {% if is_review_mode && disc_id > 0 && !review_base_hash.is_empty() %}
     <input type="hidden" name="review_base_hash" value="{{ review_base_hash }}">
@@ -649,10 +652,13 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     <div class="form-actions review-actions">
         <button type="submit" name="action" value="approve" class="btn-approve">Approve</button>
         <button type="submit" name="action" value="reject" class="btn-reject">Reject</button>
+        {% if submission_type_display != "Edit" %}
+        <button type="submit" name="action" value="draft" class="btn-draft">Draft</button>
+        {% endif %}
     </div>
     {% else %}
-    <label>Submission Comment
-        <textarea name="submission_comment" rows="2" class="auto-expand fixed-80" placeholder="Optional comment about this submission">{{ submission_comment }}</textarea>
+    <label>Submission Comment{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %} <span aria-hidden="true">*</span>{% endif %}
+        <textarea name="submission_comment" rows="2" class="auto-expand fixed-80" placeholder="{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %}Required comment describing this edit{% else %}Optional comment about this submission{% endif %}"{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %} required{% endif %}>{{ submission_comment }}</textarea>
     </label>
 
     {% if show_submit_as %}

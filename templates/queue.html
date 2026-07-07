@@ -16,8 +16,10 @@
             <span>Status</span>
             <select name="status" onchange="this.form.requestSubmit()" data-default-value="Pending">
                 {% if can_view_all_statuses %}
-                <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🟡🔴⚪)</option>
+                <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🟡🟠🔴⚪)</option>
+                <option value="Pending and Draft" {% if filter_status == "Pending and Draft" %}selected{% endif %}>Pending / Draft (🟡🟠)</option>
                 <option value="Pending" {% if filter_status == "Pending" %}selected{% endif %}>Pending (🟡)</option>
+                <option value="Draft" {% if filter_status == "Draft" %}selected{% endif %}>Draft (🟠)</option>
                 <option value="Approved" {% if filter_status == "Approved" %}selected{% endif %}>Approved (🟢)</option>
                 <option value="Rejected" {% if filter_status == "Rejected" %}selected{% endif %}>Rejected (🔴)</option>
                 <option value="Legacy" {% if filter_status == "Legacy" %}selected{% endif %}>Legacy (⚪)</option>
@@ -107,7 +109,7 @@
                 <td class="system-col">{{ entry.system_display }}</td>
                 <td class="submitter-col"><a href="/discs?dumper={{ self.url_encode(entry.submitter) }}">{{ entry.submitter }}</a></td>
                 <td class="reviewer-col">{% match entry.reviewer_id %}{% when Some with (_) %}<a href="/discs?dumper={{ self.url_encode(entry.reviewer.as_deref().unwrap_or("")) }}">{{ entry.reviewer.as_deref().unwrap_or("") }}</a>{% when None %}{% endmatch %}</td>
-                <td class="status-col" title="{{ entry.status }}">{% match entry.status %}{% when SubmissionStatus::Pending %}🟡{% when SubmissionStatus::Approved %}🟢{% when SubmissionStatus::Rejected %}🔴{% when SubmissionStatus::Legacy %}⚪{% endmatch %}</td>
+                <td class="status-col" title="{{ entry.status }}">{% match entry.status %}{% when SubmissionStatus::Pending %}🟡{% when SubmissionStatus::Draft %}🟠{% when SubmissionStatus::Approved %}🟢{% when SubmissionStatus::Rejected %}🔴{% when SubmissionStatus::Legacy %}⚪{% endmatch %}</td>
             </tr>
             {% endfor %}
             {% if entries.is_empty() %}

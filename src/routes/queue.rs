@@ -229,6 +229,10 @@ fn can_review_submission(user: &AuthenticatedUser, sub: &DiscSubmission) -> bool
             && sub.submitter_id == user.id)
 }
 
+fn can_view_submission(user: &AuthenticatedUser, sub: &DiscSubmission) -> bool {
+    sub.status != SubmissionStatus::Draft || sub.submitter_id == user.id || user.role.can_moderate()
+}
+
 fn normalize_queue_type_filter(sub_type: Option<&str>, is_disc_history: bool) -> String {
     if is_disc_history {
         return String::new();
@@ -260,7 +264,9 @@ fn normalize_queue_status_filter(status: Option<&str>, is_disc_history: bool) ->
         .as_str()
     {
         "all statuses" => "All Statuses".to_string(),
+        "pending and draft" => "Pending and Draft".to_string(),
         "pending" => "Pending".to_string(),
+        "draft" => "Draft".to_string(),
         "approved" => "Approved".to_string(),
         "rejected" => "Rejected".to_string(),
         "legacy" => "Legacy".to_string(),
@@ -350,6 +356,8 @@ async fn queue_list(
         disc_id_filter,
         is_disc_history,
         !can_view_disabled_discs,
+        user.id,
+        user.role.can_moderate(),
         status_for_query,
         type_for_query,
         system_for_query,
@@ -367,6 +375,8 @@ async fn queue_list(
         disc_id_filter,
         is_disc_history,
         !can_view_disabled_discs,
+        user.id,
+        user.role.can_moderate(),
         status_for_query,
         type_for_query,
         system_for_query,
@@ -494,23 +504,147 @@ fn apply_retargeted_notice(
     template.validation_result_suffix = ". Review it again before approving.".to_string();
 }
 
+fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
+    let snapshot =
+        queue_service::resolve_submission_snapshot(&serde_json::json!({}), &sub.changes)?;
+    let string = |key: &str| {
+        snapshot
+            .get(key)
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+    };
+    let strings = |key: &str| {
+        snapshot
+            .get(key)
+            .and_then(|value| value.as_array())
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|value| value.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let layerbreak = snapshot
+        .get("layerbreaks")
+        .and_then(|value| value.as_array())
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|value| value.as_i64().map(|number| number.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let sector_ranges = snapshot
+        .get("sector_ranges")
+        .and_then(|value| value.as_array())
+        .map(|ranges| {
+            ranges
+                .iter()
+                .map(|range| {
+                    format!(
+                        "{}-{}",
+                        range["start"].as_i64().unwrap_or_default(),
+                        range["end"].as_i64().unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+    let error_count = snapshot.get("error_count").and_then(|value| {
+        if value.is_null() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    });
+    let edc = snapshot
+        .get("edc")
+        .and_then(|value| value.as_bool())
+        .map(|value| vec![value.to_string()])
+        .unwrap_or_default();
+
+    Ok(DiscEditForm {
+        submission_token: sub
+            .submission_token
+            .clone()
+            .unwrap_or_else(disc_edit::generate_submission_token),
+        draft_submission_id: Some(sub.id.to_string()),
+        system_code: string("system_code").unwrap_or_default(),
+        media_type: string("media_type").unwrap_or_default(),
+        title: string("title").unwrap_or_default(),
+        title_foreign: string("title_foreign"),
+        disc_number: string("disc_number"),
+        disc_title: string("disc_title"),
+        filename_suffix: string("filename_suffix"),
+        category: string("category").unwrap_or_default(),
+        regions: strings("regions"),
+        languages: strings("languages"),
+        serial: strings("serial"),
+        version: string("version"),
+        edition: strings("edition"),
+        barcode: strings("barcode"),
+        ring_codes_json: snapshot
+            .get("ring_codes")
+            .map(|value| serde_json::to_string(value).unwrap_or_else(|_| "[]".to_string())),
+        comments: string("comments"),
+        contents: string("contents"),
+        error_count,
+        exe_date: string("exe_date"),
+        edc,
+        layerbreak,
+        pvd: string("pvd"),
+        pic: string("pic"),
+        bca: string("bca"),
+        header: string("header"),
+        protection: string("protection"),
+        sector_ranges,
+        sbi: string("sbi"),
+        protection_key_disc_key: string("disc_key"),
+        universal_hash: string("universal_hash"),
+        protection_key_disc_id: string("disc_id"),
+        cue: string("cuesheet"),
+        files_xml: string("dat"),
+        status: string("status").unwrap_or_else(|| "Unverified".to_string()),
+        submission_comment: sub.submission_comment.clone(),
+        submit_as: None,
+        dump_log: sub.dump_log.clone(),
+        extra_upload_url: sub.extra_upload_url.clone(),
+    })
+}
+
+fn apply_draft_verification_target_fields(
+    form: &mut DiscEditForm,
+    sub: &DiscSubmission,
+    target_snapshot: &serde_json::Value,
+) {
+    if sub.display_kind() != SubmissionDisplayKind::Verification {
+        return;
+    }
+
+    form.system_code = target_snapshot["system_code"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    form.media_type = target_snapshot["media_type"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    form.files_xml = target_snapshot["dat"].as_str().map(str::to_string);
+}
+
 async fn submission_detail(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
     Path(id): Path<i32>,
     Query(query): Query<SubmissionDetailQuery>,
-) -> AppResult<Html<String>> {
+) -> AppResult<Response> {
     let current = Some(&user);
 
     let sub = queue_service::get_submission(&state.pool, id).await?;
 
-    if let Some(disc_id) = sub.target_disc_id {
-        disc_service::ensure_disc_id_visible(
-            &state.pool,
-            disc_id,
-            user.role.can_view_disabled_discs(),
-        )
-        .await?;
+    if !can_view_submission(&user, &sub) {
+        return Err(AppError::NotFound);
     }
 
     let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
@@ -529,12 +663,50 @@ async fn submission_detail(
         String::new()
     };
 
+    if sub.status == SubmissionStatus::Draft && sub.submitter_id == user.id {
+        if sub.submission_type != SubmissionType::Disc {
+            return Err(AppError::NotFound);
+        }
+        let mut form = draft_add_form(&sub)?;
+        if sub.display_kind() == SubmissionDisplayKind::Verification {
+            let target_disc_id = sub.target_disc_id.ok_or_else(|| {
+                AppError::BadRequest("verification submission is missing its target disc".into())
+            })?;
+            let target_detail = disc_service::get_disc_detail(&state.pool, target_disc_id).await?;
+            let target_snapshot = disc_service::build_snapshot_from_disc(&target_detail);
+            apply_draft_verification_target_fields(&mut form, &sub, &target_snapshot);
+        }
+        return disc_edit::render_draft_submission_form(
+            &state,
+            user,
+            &form,
+            &sub,
+            &submitter_name,
+            &reviewer_name,
+            vec![],
+            disc_edit::ValidationResultMessage::default(),
+        )
+        .await;
+    }
+
+    if let Some(disc_id) = sub.target_disc_id {
+        disc_service::ensure_disc_id_visible(
+            &state.pool,
+            disc_id,
+            user.role.can_view_disabled_discs(),
+        )
+        .await?;
+    }
+
     let is_pending = sub.status == SubmissionStatus::Pending;
     let show_review_form = current.is_some_and(|u| can_review_submission(u, &sub)) && is_pending;
 
     if !show_review_form {
-        return render_readonly_detail(current.cloned(), &sub, &submitter_name, &reviewer_name)
-            .await;
+        return Ok(
+            render_readonly_detail(current.cloned(), &sub, &submitter_name, &reviewer_name)
+                .await?
+                .into_response(),
+        );
     }
 
     let current_user = current.cloned().ok_or(AppError::Unauthorized)?;
@@ -615,7 +787,7 @@ async fn submission_detail(
         );
     }
 
-    Ok(Html(template.render().unwrap()))
+    Ok(Html(template.render().unwrap()).into_response())
 }
 
 fn build_review_template(
@@ -720,6 +892,7 @@ fn build_review_template(
         disc_id: sub.target_disc_id.unwrap_or(0),
         page_title,
         submission_token: String::new(),
+        draft_submission_id: 0,
 
         systems: build_system_options(&ref_data.all_systems, system_code),
         media_types_all: build_media_options(&ref_data.all_media_types, media_type_code),
@@ -1853,6 +2026,8 @@ pub struct ReviewForm {
 }
 
 const STALE_REVIEW_ERROR: &str = "This disc changed after the review page loaded. The page has been refreshed with the latest data; review it again before approving.";
+const DRAFT_REVIEW_COMMENT_ERROR: &str =
+    "Review Comment: required when returning a submission to Draft";
 
 async fn render_latest_review_with_errors(
     state: &AppState,
@@ -1965,7 +2140,7 @@ async fn review_submit(
     }
 
     if sub.status != SubmissionStatus::Pending {
-        return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
+        return Ok(Redirect::to("/queue").into_response());
     }
 
     let review_comment = form
@@ -1975,13 +2150,39 @@ async fn review_submit(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
+    if form.action == "draft" {
+        if sub.submission_type != SubmissionType::Disc {
+            return Err(AppError::BadRequest(
+                "edit submissions cannot be returned to Draft".into(),
+            ));
+        }
+        let Some(review_comment) = review_comment.as_deref() else {
+            let ref_data = fetch_ref_data(&state.pool).await?;
+            return render_latest_review_with_errors(
+                &state,
+                &user,
+                &sub,
+                &ref_data,
+                vec![DRAFT_REVIEW_COMMENT_ERROR.to_string()],
+                None,
+            )
+            .await;
+        };
+        let drafted =
+            queue_service::draft_submission(&state.pool, id, user.id, review_comment).await?;
+        if !drafted {
+            return Ok(Redirect::to("/queue").into_response());
+        }
+        return Ok(Redirect::to("/queue").into_response());
+    }
+
     if form.action == "reject" {
         let rejected =
             queue_service::reject_submission(&state.pool, id, user.id, review_comment.as_deref())
                 .await?;
 
         if !rejected {
-            return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
+            return Ok(Redirect::to("/queue").into_response());
         }
         return Ok(Redirect::to("/queue").into_response());
     }
@@ -2150,7 +2351,7 @@ async fn review_submit(
             Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
         }
         queue_service::ApprovalOutcome::AlreadyProcessed => {
-            Ok(Redirect::to(&format!("/queue/{id}")).into_response())
+            Ok(Redirect::to("/queue").into_response())
         }
         queue_service::ApprovalOutcome::StaleDiscState => {
             render_latest_review_with_errors(
@@ -2634,12 +2835,109 @@ mod tests {
             "All Statuses"
         );
         assert_eq!(
+            normalize_queue_status_filter(Some("pending AND draft"), false),
+            "Pending and Draft"
+        );
+        assert_eq!(normalize_queue_status_filter(Some("draft"), false), "Draft");
+        assert_eq!(
             normalize_queue_status_filter(Some("approved"), true),
             "All Visible"
         );
         assert_eq!(normalize_queue_sort(Some("DISC_ID")), "disc_id");
         assert_eq!(normalize_queue_order(Some("ASC")), "asc");
         assert_eq!(normalize_queue_order(Some("DESC")), "desc");
+    }
+
+    #[test]
+    fn draft_visibility_is_limited_to_owner_and_moderators() {
+        let mut sub = test_submission();
+        sub.status = SubmissionStatus::Draft;
+        sub.submitter_id = 7;
+
+        assert!(can_view_submission(&auth_user(7, UserRole::User), &sub));
+        assert!(!can_view_submission(&auth_user(8, UserRole::User), &sub));
+        assert!(can_view_submission(
+            &auth_user(8, UserRole::Moderator),
+            &sub
+        ));
+
+        sub.status = SubmissionStatus::Rejected;
+        assert!(can_view_submission(&auth_user(8, UserRole::User), &sub));
+    }
+
+    #[test]
+    fn draft_add_form_uses_only_stored_changes_and_submission_metadata() {
+        let mut sub = test_submission();
+        sub.submission_type = SubmissionType::Disc;
+        sub.status = SubmissionStatus::Draft;
+        sub.target_disc_id = Some(999);
+        sub.submission_comment = Some("original comment".to_string());
+        sub.dump_log = Some("original log".to_string());
+        sub.extra_upload_url = Some("https://example.test/logs".to_string());
+        sub.changes = serde_json::json!({
+            "title": { "add": { "new": "Submitted Title" } },
+            "comments": { "add": { "new": "Submitted disc comments" } },
+            "regions": { "add": ["EU"] }
+        });
+
+        let form = draft_add_form(&sub).unwrap();
+
+        assert_eq!(form.draft_submission_id, Some(sub.id.to_string()));
+        assert_eq!(form.title, "Submitted Title");
+        assert_eq!(form.comments.as_deref(), Some("Submitted disc comments"));
+        assert_eq!(form.regions, vec!["EU"]);
+        assert!(form.system_code.is_empty());
+        assert!(form.media_type.is_empty());
+        assert!(form.files_xml.is_none());
+        assert_eq!(form.submission_comment.as_deref(), Some("original comment"));
+        assert_eq!(form.dump_log.as_deref(), Some("original log"));
+        assert_eq!(
+            form.extra_upload_url.as_deref(),
+            Some("https://example.test/logs")
+        );
+        assert_eq!(form.submission_token.len(), 64);
+    }
+
+    #[test]
+    fn draft_verification_prefills_only_system_media_and_dat_from_target() {
+        let mut verification = test_submission();
+        verification.submission_type = SubmissionType::Disc;
+        verification.status = SubmissionStatus::Draft;
+        verification.target_disc_id = Some(999);
+        verification.changes = serde_json::json!({
+            "title": { "add": { "new": "Submitted Title" } },
+            "comments": { "add": { "new": "Submitted comments" } }
+        });
+        let target = serde_json::json!({
+            "system_code": "TARGET-SYSTEM",
+            "media_type": "TARGET-MEDIA",
+            "title": "Target Title",
+            "comments": "Target comments",
+            "dat": "<rom name=\"Track.iso\" size=\"1\" crc=\"11111111\" md5=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" sha1=\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" />"
+        });
+
+        let mut form = draft_add_form(&verification).unwrap();
+        apply_draft_verification_target_fields(&mut form, &verification, &target);
+
+        assert_eq!(form.system_code, "TARGET-SYSTEM");
+        assert_eq!(form.media_type, "TARGET-MEDIA");
+        assert_eq!(form.files_xml.as_deref(), target["dat"].as_str());
+        assert_eq!(form.title, "Submitted Title");
+        assert_eq!(form.comments.as_deref(), Some("Submitted comments"));
+
+        let mut new_disc = verification;
+        new_disc.changes["dat"] = serde_json::json!({
+            "add": { "new": "<rom name=\"Submitted.iso\" />" }
+        });
+        let mut new_disc_form = draft_add_form(&new_disc).unwrap();
+        let submitted_system = new_disc_form.system_code.clone();
+        let submitted_media = new_disc_form.media_type.clone();
+        let submitted_dat = new_disc_form.files_xml.clone();
+        apply_draft_verification_target_fields(&mut new_disc_form, &new_disc, &target);
+
+        assert_eq!(new_disc_form.system_code, submitted_system);
+        assert_eq!(new_disc_form.media_type, submitted_media);
+        assert_eq!(new_disc_form.files_xml, submitted_dat);
     }
 
     #[tokio::test]
@@ -2940,6 +3238,32 @@ mod tests {
         assert!(html.contains(r#"<form method="post" action="/queue/42/review""#));
         assert!(html.contains(r#"<input type="hidden" name="_csrf" value="test-csrf-token">"#));
         assert!(html.contains(" UTC"));
+    }
+
+    #[test]
+    fn review_actions_offer_draft_only_for_add_disc_submissions() {
+        let edit_html = build_template(&submitted_snapshot()).render().unwrap();
+        assert!(!edit_html.contains(r#"value="draft""#));
+
+        let mut add_disc = build_template(&submitted_snapshot());
+        add_disc.submission_type_display = "New Disc".to_string();
+        let add_disc_html = add_disc.render().unwrap();
+        assert!(add_disc_html.contains(
+            r#"<button type="submit" name="action" value="draft" class="btn-draft">Draft</button>"#
+        ));
+
+        let css = include_str!("../../static/css/app.css");
+        assert!(css.contains(".review-actions .btn-draft"));
+    }
+
+    #[test]
+    fn navigation_opens_my_submissions_with_active_statuses() {
+        let base = include_str!("../../templates/base.html");
+        let queue = include_str!("../../templates/queue.html");
+        assert!(base.contains(
+            "/queue?status=Pending%20and%20Draft&amp;submitter={{ self.url_encode(user.username) }}"
+        ));
+        assert!(queue.contains(">Pending / Draft (🟡🟠)</option>"));
     }
 
     #[test]

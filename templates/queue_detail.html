@@ -13,7 +13,7 @@
         {% if !extra_upload_url_display.is_empty() %}
         <tr><td><strong>Logs Archive URL</strong></td><td><a href="{{ extra_upload_url_display }}" target="_blank" rel="noopener noreferrer">{{ extra_upload_url_display }}</a></td></tr>
         {% endif %}
-        <tr><td><strong>Status</strong></td><td>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</td></tr>
+        <tr><td><strong>Status</strong></td><td>{% if submission_status == "Pending" %}🟡{% else if submission_status == "Draft" %}🟠{% else if submission_status == "Approved" %}🟢{% else if submission_status == "Rejected" %}🔴{% else %}⚪{% endif %} {{ submission_status }}</td></tr>
         {% if !reviewer_name.is_empty() %}
         <tr><td><strong>Reviewer</strong></td><td><a href="/discs?dumper={{ self.url_encode(reviewer_name) }}">{{ reviewer_name }}</a></td></tr>
         {% endif %}

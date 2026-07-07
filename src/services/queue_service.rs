@@ -147,6 +147,58 @@ pub async fn create_submission(
     Ok(creation)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn submit_draft_submission(
+    pool: &PgPool,
+    submission_id: i32,
+    submitter_id: i32,
+    target_disc_id: Option<i32>,
+    changes: serde_json::Value,
+    submission_comment: Option<&str>,
+    dump_log: Option<&str>,
+    extra_upload_url: Option<&str>,
+    submission_token: Option<&str>,
+    submission_fingerprint: Option<&str>,
+) -> AppResult<Option<DiscSubmission>> {
+    let normalized_submission_comment = submission_comment
+        .map(normalize_newlines)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let submission_token = normalize_submission_token(submission_token)?;
+    let submission_fingerprint = if submission_token.is_some() {
+        Some(
+            normalize_submission_token(submission_fingerprint)?.ok_or_else(|| {
+                AppError::BadRequest(
+                    "Submission fingerprint is missing. Reload the form and try again.".into(),
+                )
+            })?,
+        )
+    } else {
+        None
+    };
+
+    Ok(sqlx::query_as(
+        "UPDATE disc_submissions
+         SET submission_comment = $1, target_disc_id = $2, changes = $3,
+             dump_log = $4, extra_upload_url = $5, status = 'Pending',
+             submission_token = $6, submission_fingerprint = $7
+         WHERE id = $8 AND submitter_id = $9
+           AND submission_type = 'Disc' AND status = 'Draft'
+         RETURNING *",
+    )
+    .bind(normalized_submission_comment.as_deref())
+    .bind(target_disc_id)
+    .bind(changes)
+    .bind(dump_log)
+    .bind(extra_upload_url)
+    .bind(submission_token.as_deref())
+    .bind(submission_fingerprint.as_deref())
+    .bind(submission_id)
+    .bind(submitter_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
 async fn create_submission_on(
     conn: &mut PgConnection,
     sub_type: SubmissionType,
@@ -1535,6 +1587,36 @@ pub async fn reject_submission(
     Ok(result.rows_affected() > 0)
 }
 
+/// Atomically return an add-disc submission to its submitter. Returns `true`
+/// when this reviewer won the Pending-state claim and `false` when another
+/// reviewer processed the submission first.
+pub async fn draft_submission(
+    pool: &PgPool,
+    id: i32,
+    reviewer_id: i32,
+    review_comment: &str,
+) -> AppResult<bool> {
+    let normalized_review_comment = normalize_newlines(review_comment).trim().to_string();
+    if normalized_review_comment.is_empty() {
+        return Err(AppError::BadRequest(
+            "Review Comment: required when returning a submission to Draft".into(),
+        ));
+    }
+
+    let result = sqlx::query(
+        "UPDATE disc_submissions SET status = 'Draft', reviewer_id = $1,
+         review_comment = $2, reviewed_at = NOW()
+         WHERE id = $3 AND submission_type = 'Disc' AND status = 'Pending'",
+    )
+    .bind(reviewer_id)
+    .bind(&normalized_review_comment)
+    .bind(id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 async fn acquire_approval_lock(conn: &mut PgConnection) -> AppResult<()> {
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
         .bind(APPROVAL_CONFLICT_LOCK_KEY)
@@ -1769,6 +1851,12 @@ pub async fn get_submission(pool: &PgPool, id: i32) -> AppResult<DiscSubmission>
 }
 
 const DISC_SUBMISSION_HAS_DAT_ADD_SQL: &str = "COALESCE((ds.changes->'dat') ? 'add', false)";
+const SUBMISSION_LIST_SYSTEM_CODE_SQL: &str = "CASE WHEN ds.status = 'Draft' THEN
+         COALESCE(ds.changes->'system_code'->'add'->>'new',
+                  ds.changes->'system_code'->'modify'->>'new', '')
+     ELSE COALESCE(d.system_code,
+                  ds.changes->'system_code'->'add'->>'new',
+                  ds.changes->'system_code'->'modify'->>'new', '') END";
 
 fn submission_display_kind_sql() -> String {
     format!(
@@ -1799,6 +1887,8 @@ pub async fn list_submissions(
     disc_id_filter: Option<i32>,
     restrict_to_public_statuses: bool,
     hide_disabled_disc_targets: bool,
+    viewer_id: i32,
+    can_view_all_drafts: bool,
     status_filter: Option<&str>,
     type_filter: Option<&str>,
     system_filter: Option<&str>,
@@ -1823,30 +1913,49 @@ pub async fn list_submissions(
     if restrict_to_public_statuses {
         conditions.push("ds.status IN ('Approved', 'Legacy')".to_string());
     }
-    if hide_disabled_disc_targets {
-        conditions.push("(d.id IS NULL OR d.status <> 'Disabled')".to_string());
-    }
-    if status_filter.is_some_and(|s| !s.is_empty()) {
+    let mut draft_owner_param = None;
+    if !can_view_all_drafts {
         idx += 1;
-        conditions.push(format!("ds.status::text = ${idx}"));
+        draft_owner_param = Some(idx);
+        conditions.push(format!(
+            "(ds.status <> 'Draft' OR ds.submitter_id = ${idx})"
+        ));
+    }
+    if hide_disabled_disc_targets {
+        conditions.push(match draft_owner_param {
+            Some(viewer_idx) => format!(
+                "(d.id IS NULL OR d.status <> 'Disabled' OR \
+                 (ds.status = 'Draft' AND ds.submitter_id = ${viewer_idx}))"
+            ),
+            None => "(d.id IS NULL OR d.status <> 'Disabled')".to_string(),
+        });
+    }
+    if let Some(status) = status_filter.filter(|status| !status.is_empty()) {
+        if status == "Pending and Draft" {
+            conditions.push("ds.status IN ('Pending', 'Draft')".to_string());
+        } else {
+            idx += 1;
+            conditions.push(format!("ds.status::text = ${idx}"));
+        }
     }
     if let Some(condition) = submission_type_filter_condition(type_filter) {
         conditions.push(condition);
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new') = ${idx}"));
+        conditions.push(format!("{SUBMISSION_LIST_SYSTEM_CODE_SQL} = ${idx}"));
     }
     if submitter_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
         conditions.push(format!("LOWER(u.username) = LOWER(${idx})"));
     }
 
-    let title_expr = "COALESCE(NULLIF(ds.changes->'title'->'add'->>'new', ''), \
-                      NULLIF(ds.changes->'title'->'modify'->>'new', ''), \
-                      NULLIF(d.title, ''), 'Untitled')";
-    let system_expr = "CONCAT_WS(' ', NULLIF(s.manufacturer, ''), \
-                       COALESCE(s.name, d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', ''))";
+    let title_expr = "COALESCE(NULLIF(ds.changes->'title'->'add'->>'new', ''),
+                               NULLIF(ds.changes->'title'->'modify'->>'new', ''),
+                               NULLIF(d.title, ''), 'Untitled')";
+    let system_expr = format!(
+        "CONCAT_WS(' ', NULLIF(s.manufacturer, ''), COALESCE(s.name, {SUBMISSION_LIST_SYSTEM_CODE_SQL}, ''))"
+    );
     let type_expr = submission_display_kind_sql();
     let sort_col = match sort_column {
         "date" => "ds.created_at".to_string(),
@@ -1870,26 +1979,27 @@ pub async fn list_submissions(
         "SELECT ds.id, ds.submission_type,
                 {dat_add_expr} AS submission_has_dat_add,
                 {title_expr} AS title,
-                COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new', '') AS system_code,
+                {system_code_expr} AS system_code,
                 COALESCE(s.short_name, '') AS system_short_name,
                 u.username AS submitter,
                 ds.submitter_id,
                 ur.username AS reviewer,
                 ds.reviewer_id,
                 ds.status,
-                ds.target_disc_id,
+                CASE WHEN ds.status = 'Draft' THEN NULL ELSE ds.target_disc_id END AS target_disc_id,
                 ds.created_at
          FROM disc_submissions ds
          JOIN users u ON u.id = ds.submitter_id
          LEFT JOIN users ur ON ur.id = ds.reviewer_id
          LEFT JOIN discs d ON d.id = ds.target_disc_id
          LEFT JOIN systems s
-             ON s.code = COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new')
+             ON s.code = {system_code_expr}
          WHERE {}
          ORDER BY {sort_col} {sort_dir}{nulls_order}
          LIMIT {page_size} OFFSET {offset}",
         conditions.join(" AND "),
-        dat_add_expr = DISC_SUBMISSION_HAS_DAT_ADD_SQL
+        dat_add_expr = DISC_SUBMISSION_HAS_DAT_ADD_SQL,
+        system_code_expr = SUBMISSION_LIST_SYSTEM_CODE_SQL
     );
 
     let mut query = sqlx::query_as::<_, SubmissionListRow>(&sql);
@@ -1899,8 +2009,11 @@ pub async fn list_submissions(
     if let Some(disc_id) = disc_id_filter {
         query = query.bind(disc_id);
     }
+    if !can_view_all_drafts {
+        query = query.bind(viewer_id);
+    }
     if let Some(status) = status_filter {
-        if !status.is_empty() {
+        if !status.is_empty() && status != "Pending and Draft" {
             query = query.bind(status.to_string());
         }
     }
@@ -1924,6 +2037,8 @@ pub async fn count_submissions(
     disc_id_filter: Option<i32>,
     restrict_to_public_statuses: bool,
     hide_disabled_disc_targets: bool,
+    viewer_id: i32,
+    can_view_all_drafts: bool,
     status_filter: Option<&str>,
     type_filter: Option<&str>,
     system_filter: Option<&str>,
@@ -1943,19 +2058,37 @@ pub async fn count_submissions(
     if restrict_to_public_statuses {
         conditions.push("ds.status IN ('Approved', 'Legacy')".to_string());
     }
-    if hide_disabled_disc_targets {
-        conditions.push("(d.id IS NULL OR d.status <> 'Disabled')".to_string());
-    }
-    if status_filter.is_some_and(|s| !s.is_empty()) {
+    let mut draft_owner_param = None;
+    if !can_view_all_drafts {
         idx += 1;
-        conditions.push(format!("ds.status::text = ${idx}"));
+        draft_owner_param = Some(idx);
+        conditions.push(format!(
+            "(ds.status <> 'Draft' OR ds.submitter_id = ${idx})"
+        ));
+    }
+    if hide_disabled_disc_targets {
+        conditions.push(match draft_owner_param {
+            Some(viewer_idx) => format!(
+                "(d.id IS NULL OR d.status <> 'Disabled' OR \
+                 (ds.status = 'Draft' AND ds.submitter_id = ${viewer_idx}))"
+            ),
+            None => "(d.id IS NULL OR d.status <> 'Disabled')".to_string(),
+        });
+    }
+    if let Some(status) = status_filter.filter(|status| !status.is_empty()) {
+        if status == "Pending and Draft" {
+            conditions.push("ds.status IN ('Pending', 'Draft')".to_string());
+        } else {
+            idx += 1;
+            conditions.push(format!("ds.status::text = ${idx}"));
+        }
     }
     if let Some(condition) = submission_type_filter_condition(type_filter) {
         conditions.push(condition);
     }
     if system_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
-        conditions.push(format!("COALESCE(d.system_code, ds.changes->'system_code'->'add'->>'new', ds.changes->'system_code'->'modify'->>'new') = ${idx}"));
+        conditions.push(format!("{SUBMISSION_LIST_SYSTEM_CODE_SQL} = ${idx}"));
     }
     if submitter_filter.is_some_and(|s| !s.is_empty()) {
         idx += 1;
@@ -1978,8 +2111,11 @@ pub async fn count_submissions(
     if let Some(disc_id) = disc_id_filter {
         query = query.bind(disc_id);
     }
+    if !can_view_all_drafts {
+        query = query.bind(viewer_id);
+    }
     if let Some(status) = status_filter {
-        if !status.is_empty() {
+        if !status.is_empty() && status != "Pending and Draft" {
             query = query.bind(status.to_string());
         }
     }
@@ -2040,6 +2176,20 @@ mod tests {
         assert!(migration.contains("ADD COLUMN submission_fingerprint VARCHAR(64)"));
         assert!(migration.contains("ON disc_submissions (submission_token)"));
         assert!(migration.contains("WHERE submission_token IS NOT NULL"));
+    }
+
+    #[test]
+    fn draft_status_migration_adds_enum_value_after_pending() {
+        let migration = include_str!("../../migrations/018_add_draft_submission_status.sql");
+        assert!(migration.contains("ADD VALUE 'Draft' AFTER 'Pending'"));
+    }
+
+    #[tokio::test]
+    async fn draft_requires_a_review_comment_before_database_access() {
+        let error = draft_submission(&unreachable_pool(), 1, 1, " \r\n ")
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::BadRequest(_)));
     }
 
     #[tokio::test]
@@ -2631,6 +2781,306 @@ mod tests {
             }
             other => panic!("unexpected race outcome: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn draft_round_trip_preserves_review_history_and_submission_identity() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "draft round trip").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let original_changes = serde_json::json!({
+            "title": { "add": { "new": "Original submitted title" } }
+        });
+        let creation = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            fixture.submitter_id,
+            None,
+            original_changes.clone(),
+            Some("original submission comment"),
+            Some("original dump log"),
+            Some("https://example.test/original"),
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+        let original = creation.submission;
+
+        assert!(draft_submission(
+            &pool,
+            original.id,
+            fixture.submitter_id,
+            "Please correct this submission",
+        )
+        .await
+        .unwrap());
+        let drafted = get_submission(&pool, original.id).await.unwrap();
+        assert_eq!(drafted.status, SubmissionStatus::Draft);
+        assert_eq!(drafted.changes, original_changes);
+        assert_eq!(drafted.submission_comment, original.submission_comment);
+        assert_eq!(drafted.target_disc_id, original.target_disc_id);
+        assert_eq!(drafted.dump_log, original.dump_log);
+        assert_eq!(drafted.extra_upload_url, original.extra_upload_url);
+        assert_eq!(drafted.created_at, original.created_at);
+        assert_eq!(
+            drafted.review_comment.as_deref(),
+            Some("Please correct this submission")
+        );
+
+        let revised_changes = serde_json::json!({
+            "comments": { "add": { "new": "Corrected submission" } }
+        });
+        let revised_fingerprint = random_test_token();
+        let updated = submit_draft_submission(
+            &pool,
+            drafted.id,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            revised_changes.clone(),
+            Some("revised submission comment"),
+            Some("revised dump log"),
+            Some("https://example.test/revised"),
+            Some(&token),
+            Some(&revised_fingerprint),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let overwrite_fingerprint = random_test_token();
+        let repeated = submit_draft_submission(
+            &pool,
+            drafted.id,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            serde_json::json!({"title": {"add": {"new": "overwrite"}}}),
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&overwrite_fingerprint),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(updated.id, original.id);
+        assert_eq!(updated.status, SubmissionStatus::Pending);
+        assert_eq!(updated.changes, revised_changes);
+        assert_eq!(updated.target_disc_id, Some(fixture.disc_id));
+        assert_eq!(updated.created_at, original.created_at);
+        assert_eq!(updated.reviewer_id, drafted.reviewer_id);
+        assert_eq!(updated.review_comment, drafted.review_comment);
+        assert_eq!(updated.reviewed_at, drafted.reviewed_at);
+        assert!(repeated.is_none());
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn atomic_approve_draft_race_has_one_consistent_winner() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "approve draft race").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let changed_title = format!("{} changed", fixture.title);
+        let changes = serde_json::json!({
+            "title": { "modify": { "old": fixture.title, "new": changed_title } }
+        });
+        let creation = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            changes,
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+
+        let approve = approve_submission(
+            &pool,
+            &creation.submission,
+            &creation.submission.changes,
+            fixture.submitter_id,
+            None,
+            None,
+        );
+        let draft = draft_submission(&pool, creation.submission.id, fixture.submitter_id, "race");
+        let (approve, draft) = tokio::join!(approve, draft);
+        let approve = approve.unwrap();
+        let draft = draft.unwrap();
+        let final_submission = get_submission(&pool, creation.submission.id).await.unwrap();
+        let stored_title: String = sqlx::query_scalar("SELECT title FROM discs WHERE id = $1")
+            .bind(fixture.disc_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        match final_submission.status {
+            SubmissionStatus::Approved => {
+                assert_eq!(approve, ApprovalOutcome::Approved(fixture.disc_id));
+                assert!(!draft);
+                assert_eq!(stored_title, changed_title);
+            }
+            SubmissionStatus::Draft => {
+                assert_eq!(approve, ApprovalOutcome::AlreadyProcessed);
+                assert!(draft);
+                assert_eq!(stored_title, fixture.title);
+            }
+            other => panic!("unexpected race outcome: {other:?}"),
+        }
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn draft_queue_visibility_uses_target_title_without_exposing_target_id() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "draft visibility").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let outsider_name = format!("draft-outsider-{}", &random_test_token()[..12]);
+        let outsider_id: i32 =
+            sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
+                .bind(&outsider_name)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let creation = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            serde_json::json!({
+                "comments": { "add": { "new": "Verification submission" } }
+            }),
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+        draft_submission(
+            &pool,
+            creation.submission.id,
+            fixture.submitter_id,
+            "fix it",
+        )
+        .await
+        .unwrap();
+
+        let owner_rows = list_submissions(
+            &pool,
+            None,
+            None,
+            false,
+            true,
+            fixture.submitter_id,
+            false,
+            Some("Draft"),
+            None,
+            None,
+            None,
+            "date",
+            "desc",
+            1,
+            50,
+        )
+        .await
+        .unwrap();
+        let outsider_rows = list_submissions(
+            &pool,
+            None,
+            None,
+            false,
+            true,
+            outsider_id,
+            false,
+            Some("Draft"),
+            None,
+            None,
+            None,
+            "date",
+            "desc",
+            1,
+            50,
+        )
+        .await
+        .unwrap();
+        let moderator_rows = list_submissions(
+            &pool,
+            None,
+            None,
+            false,
+            false,
+            outsider_id,
+            true,
+            Some("Draft"),
+            None,
+            None,
+            None,
+            "date",
+            "desc",
+            1,
+            50,
+        )
+        .await
+        .unwrap();
+        let active_owner_rows = list_submissions(
+            &pool,
+            None,
+            None,
+            false,
+            true,
+            fixture.submitter_id,
+            false,
+            Some("Pending and Draft"),
+            None,
+            None,
+            None,
+            "date",
+            "desc",
+            1,
+            50,
+        )
+        .await
+        .unwrap();
+
+        let owner_row = owner_rows
+            .iter()
+            .find(|row| row.id == creation.submission.id)
+            .unwrap();
+        assert_eq!(owner_row.title, fixture.title);
+        assert_eq!(owner_row.target_disc_id, None);
+        assert!(!outsider_rows
+            .iter()
+            .any(|row| row.id == creation.submission.id));
+        assert!(moderator_rows
+            .iter()
+            .any(|row| row.id == creation.submission.id));
+        assert!(active_owner_rows
+            .iter()
+            .any(|row| row.id == creation.submission.id));
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+        sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(outsider_id)
+            .execute(&pool)
+            .await
+            .unwrap();
     }
 
     fn file(
