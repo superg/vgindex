@@ -220,6 +220,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
             </div>
             {% endfor %}
         </label>
+        {% if show_filename_suffix %}
         <label class="disc-meta-row{% if !self.highlight_class("filename_suffix").is_empty() %} {{ self.highlight_class("filename_suffix") }}{% endif %}" data-add-requires-system-media>
             <span class="disc-meta-label">Filename Suffix:</span>
             <input type="text" name="filename_suffix" value="{{ filename_suffix }}">
@@ -232,6 +233,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
             </div>
             {% endfor %}
         </label>
+        {% endif %}
         {% if !is_add_mode && !is_review_mode && submit_button_text == "Save" %}
         <label class="disc-meta-row status-meta-row{% if !self.highlight_class("status").is_empty() %} {{ self.highlight_class("status") }}{% endif %}">
             <span class="disc-meta-label">Status:</span>

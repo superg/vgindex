@@ -133,6 +133,7 @@ pub(crate) struct DiscEditTemplate {
     pub show_disc_title: bool,
     pub disc_title: String,
     pub filename_suffix: String,
+    pub show_filename_suffix: bool,
 
     pub show_serial: bool,
     pub serials: Vec<HighlightedValue>,
@@ -524,6 +525,28 @@ fn validate_edit_submission_comment(form: &DiscEditForm, can_edit_directly: bool
     } else {
         vec!["Submission Comment: required when submitting an edit".to_string()]
     }
+}
+
+fn enforce_add_filename_suffix_access(
+    form: &mut DiscEditForm,
+    draft_submission: Option<&DiscSubmission>,
+    can_edit_directly: bool,
+) -> AppResult<()> {
+    if can_edit_directly {
+        return Ok(());
+    }
+
+    form.filename_suffix = match draft_submission {
+        Some(submission) => {
+            let snapshot = queue_service::resolve_submission_snapshot(
+                &serde_json::json!({}),
+                &submission.changes,
+            )?;
+            snapshot["filename_suffix"].as_str().map(str::to_string)
+        }
+        None => None,
+    };
+    Ok(())
 }
 
 fn submit_as_username_for_form(username: &str, form: &DiscEditForm, can_submit_as: bool) -> String {
@@ -920,6 +943,7 @@ async fn edit_page(
             show_disc_title: detail.system.has_disc_title,
             disc_title: detail.disc.disc_title.clone().unwrap_or_default(),
             filename_suffix: detail.disc.filename_suffix.clone().unwrap_or_default(),
+            show_filename_suffix: true,
 
             show_serial: detail.system.has_serial,
             serials: detail
@@ -1632,6 +1656,7 @@ async fn render_form_with_context(
         show_disc_title: has_sys(|s| s.has_disc_title),
         disc_title: form.disc_title.clone().unwrap_or_default(),
         filename_suffix: form.filename_suffix.clone().unwrap_or_default(),
+        show_filename_suffix: !is_add_mode || can_edit_directly,
 
         show_serial: has_sys(|s| s.has_serial),
         serials: form
@@ -2488,6 +2513,7 @@ async fn add_page(
             show_disc_title: has_sys(|s| s.has_disc_title),
             disc_title: String::new(),
             filename_suffix: String::new(),
+            show_filename_suffix: user.role.can_edit_directly(),
 
             show_serial: has_sys(|s| s.has_serial),
             serials: vec![],
@@ -2666,6 +2692,11 @@ async fn add_submit(
     } else {
         None
     };
+    enforce_add_filename_suffix_access(
+        &mut form,
+        draft_submission.as_ref(),
+        user.role.can_edit_directly(),
+    )?;
     let ref_data = fetch_ref_data(&state.pool).await?;
     let add_match = match find_add_disc_match(&state.pool, &form).await {
         Ok(add_match) => add_match,
@@ -5358,6 +5389,50 @@ mod operation_delta_tests {
         let template = include_str!("../../templates/disc_edit.html");
         assert!(template.contains("Required comment describing this edit"));
         assert!(template.contains(r#"submit_button_text == "Submit" %} required{% endif %}"#));
+    }
+
+    #[test]
+    fn add_filename_suffix_is_restricted_to_user_plus_and_higher() {
+        let mut ordinary_form = new_disc_form();
+        ordinary_form.filename_suffix = Some("forged suffix".to_string());
+        enforce_add_filename_suffix_access(&mut ordinary_form, None, false).unwrap();
+        assert_eq!(ordinary_form.filename_suffix, None);
+
+        let mut privileged_form = new_disc_form();
+        privileged_form.filename_suffix = Some("Rev 2".to_string());
+        enforce_add_filename_suffix_access(&mut privileged_form, None, true).unwrap();
+        assert_eq!(privileged_form.filename_suffix.as_deref(), Some("Rev 2"));
+
+        let draft = DiscSubmission {
+            id: 99,
+            submission_type: SubmissionType::Disc,
+            submitter_id: 1,
+            submission_comment: None,
+            target_disc_id: None,
+            changes_original: None,
+            changes: serde_json::json!({
+                "filename_suffix": { "add": { "new": "Original suffix" } }
+            }),
+            dump_log: None,
+            extra_upload_url: None,
+            submission_token: None,
+            submission_fingerprint: None,
+            status: SubmissionStatus::Draft,
+            reviewer_id: None,
+            review_comment: None,
+            created_at: chrono::Utc::now(),
+            reviewed_at: None,
+        };
+        let mut draft_form = new_disc_form();
+        draft_form.filename_suffix = Some("forged replacement".to_string());
+        enforce_add_filename_suffix_access(&mut draft_form, Some(&draft), false).unwrap();
+        assert_eq!(
+            draft_form.filename_suffix.as_deref(),
+            Some("Original suffix")
+        );
+
+        let template = include_str!("../../templates/disc_edit.html");
+        assert!(template.contains("{% if show_filename_suffix %}"));
     }
 
     #[test]

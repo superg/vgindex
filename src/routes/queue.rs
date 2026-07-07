@@ -922,6 +922,7 @@ fn build_review_template(
         show_disc_title: has_sys(|s| s.has_disc_title),
         disc_title: json_opt_str("disc_title"),
         filename_suffix: json_opt_str("filename_suffix"),
+        show_filename_suffix: true,
 
         show_serial: has_sys(|s| s.has_serial),
         serials: json_str_vec("serial")
