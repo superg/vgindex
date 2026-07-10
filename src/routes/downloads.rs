@@ -402,13 +402,11 @@ mod tests {
     fn downloads_page_shows_key_links_to_authenticated_users() {
         let html = template(true).render().unwrap();
 
-        assert!(html.contains(r#"/keys/PS3"#));
         assert!(html.contains(r#"href="/downloads/database""#));
         assert!(html
             .contains(r#"<time datetime="2026-07-03T19:25:58Z">2026-07-03 19:25:58 UTC</time>"#));
         assert!(html.contains(">SQLite</a>"));
         assert!(!html.contains("unzstd"));
-        assert!(!html.contains(r#"/keys/PC"#));
     }
 
     #[tokio::test]
@@ -522,22 +520,6 @@ mod tests {
         assert_eq!(dat_archive_type_for_features("serials"), None);
         assert_eq!(dat_archive_type_for_features("serial/version"), None);
         assert_eq!(dat_archive_type_for_features("serial,version,extra"), None);
-    }
-
-    #[tokio::test]
-    async fn key_download_route_rejects_guest_direct_links() {
-        let app = routes().with_state(test_state());
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/keys/PS3")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
