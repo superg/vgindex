@@ -251,22 +251,29 @@ impl std::fmt::Display for SubmissionType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubmissionDisplayKind {
     Edit,
+    Disc,
     NewDisc,
     Verification,
 }
 
 impl SubmissionDisplayKind {
-    pub fn from_parts(submission_type: SubmissionType, has_dat_add: bool) -> Self {
+    pub fn from_parts(
+        submission_type: SubmissionType,
+        status: SubmissionStatus,
+        has_target_disc: bool,
+    ) -> Self {
         match submission_type {
             SubmissionType::Edit => Self::Edit,
-            SubmissionType::Disc if has_dat_add => Self::NewDisc,
-            SubmissionType::Disc => Self::Verification,
+            SubmissionType::Disc if !status.is_unprocessed() => Self::Disc,
+            SubmissionType::Disc if has_target_disc => Self::Verification,
+            SubmissionType::Disc => Self::NewDisc,
         }
     }
 
     pub fn label(&self) -> &'static str {
         match self {
             Self::Edit => "Edit",
+            Self::Disc => "Disc",
             Self::NewDisc => "New Disc",
             Self::Verification => "Verification",
         }
@@ -277,20 +284,6 @@ impl std::fmt::Display for SubmissionDisplayKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.label())
     }
-}
-
-pub fn submission_changes_have_dat_add(changes: &serde_json::Value) -> bool {
-    changes
-        .get("dat")
-        .and_then(|dat| dat.as_object())
-        .is_some_and(|dat| dat.contains_key("add"))
-}
-
-pub fn submission_display_kind(
-    submission_type: SubmissionType,
-    changes: &serde_json::Value,
-) -> SubmissionDisplayKind {
-    SubmissionDisplayKind::from_parts(submission_type, submission_changes_have_dat_add(changes))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
@@ -304,6 +297,10 @@ pub enum SubmissionStatus {
 }
 
 impl SubmissionStatus {
+    pub fn is_unprocessed(self) -> bool {
+        matches!(self, Self::Pending | Self::Draft)
+    }
+
     pub fn css_class(&self) -> &'static str {
         match self {
             Self::Pending => "status-pending",
@@ -503,7 +500,11 @@ pub struct DiscSubmission {
 
 impl DiscSubmission {
     pub fn display_kind(&self) -> SubmissionDisplayKind {
-        submission_display_kind(self.submission_type, &self.changes)
+        SubmissionDisplayKind::from_parts(
+            self.submission_type,
+            self.status,
+            self.target_disc_id.is_some(),
+        )
     }
 }
 
@@ -1103,6 +1104,45 @@ mod tests {
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn submission_display_kind_uses_status_and_target_presence() {
+        for status in [
+            SubmissionStatus::Pending,
+            SubmissionStatus::Draft,
+            SubmissionStatus::Approved,
+            SubmissionStatus::Rejected,
+            SubmissionStatus::Legacy,
+        ] {
+            for has_target_disc in [false, true] {
+                let expected_disc_kind = if status.is_unprocessed() {
+                    if has_target_disc {
+                        SubmissionDisplayKind::Verification
+                    } else {
+                        SubmissionDisplayKind::NewDisc
+                    }
+                } else {
+                    SubmissionDisplayKind::Disc
+                };
+                assert_eq!(
+                    SubmissionDisplayKind::from_parts(
+                        SubmissionType::Disc,
+                        status,
+                        has_target_disc,
+                    ),
+                    expected_disc_kind
+                );
+                assert_eq!(
+                    SubmissionDisplayKind::from_parts(
+                        SubmissionType::Edit,
+                        status,
+                        has_target_disc,
+                    ),
+                    SubmissionDisplayKind::Edit
+                );
+            }
+        }
     }
 
     #[test]

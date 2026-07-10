@@ -30,6 +30,21 @@ pub enum ApprovalOutcome {
     Conflicts(Vec<ApprovalConflict>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ManualRetargetOutcome {
+    Retargeted,
+    TargetNotFound,
+    TargetDisabled,
+    Unchanged,
+    SubmissionChanged,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingTargetUpdateOutcome {
+    Updated,
+    SubmissionChanged,
+}
+
 #[derive(Debug, Clone)]
 pub struct SubmissionCreation {
     pub submission: DiscSubmission,
@@ -1625,13 +1640,36 @@ async fn acquire_approval_lock(conn: &mut PgConnection) -> AppResult<()> {
     Ok(())
 }
 
+async fn update_pending_submission_target(
+    conn: &mut PgConnection,
+    submission_id: i32,
+    expected_target_disc_id: Option<i32>,
+    target_disc_id: Option<i32>,
+) -> AppResult<PendingTargetUpdateOutcome> {
+    let result = sqlx::query(
+        "UPDATE disc_submissions SET target_disc_id = $1
+         WHERE id = $2 AND submission_type = 'Disc' AND status = 'Pending'
+           AND target_disc_id IS NOT DISTINCT FROM $3",
+    )
+    .bind(target_disc_id)
+    .bind(submission_id)
+    .bind(expected_target_disc_id)
+    .execute(&mut *conn)
+    .await?;
+
+    Ok(if result.rows_affected() == 1 {
+        PendingTargetUpdateOutcome::Updated
+    } else {
+        PendingTargetUpdateOutcome::SubmissionChanged
+    })
+}
+
 pub(crate) async fn retarget_pending_submission(
     pool: &PgPool,
     submission_id: i32,
     expected_target_disc_id: i32,
     files_xml: Option<&str>,
     universal_hash: Option<&str>,
-    changes: &serde_json::Value,
 ) -> AppResult<bool> {
     let mut tx = pool.begin().await?;
     acquire_approval_lock(&mut tx).await?;
@@ -1643,24 +1681,82 @@ pub(crate) async fn retarget_pending_submission(
         return Ok(false);
     }
 
-    let result = sqlx::query(
-        "UPDATE disc_submissions SET target_disc_id = $1, changes = $2
-         WHERE id = $3 AND submission_type = 'Disc' AND status = 'Pending'
-           AND target_disc_id IS NULL",
-    )
-    .bind(expected_target_disc_id)
-    .bind(changes)
-    .bind(submission_id)
-    .execute(&mut *tx)
-    .await?;
-
-    if result.rows_affected() == 0 {
+    if update_pending_submission_target(&mut tx, submission_id, None, Some(expected_target_disc_id))
+        .await?
+        != PendingTargetUpdateOutcome::Updated
+    {
         tx.rollback().await?;
         return Ok(false);
     }
 
     tx.commit().await?;
     Ok(true)
+}
+
+pub(crate) async fn manually_retarget_pending_submission(
+    pool: &PgPool,
+    submission_id: i32,
+    expected_target_disc_id: Option<i32>,
+    target_disc_id: Option<i32>,
+) -> AppResult<ManualRetargetOutcome> {
+    let mut tx = pool.begin().await?;
+    acquire_approval_lock(&mut tx).await?;
+
+    let current_target: Option<(Option<i32>,)> = sqlx::query_as(
+        "SELECT target_disc_id FROM disc_submissions
+         WHERE id = $1 AND submission_type = 'Disc' AND status = 'Pending'
+           AND target_disc_id IS NOT DISTINCT FROM $2
+         FOR UPDATE",
+    )
+    .bind(submission_id)
+    .bind(expected_target_disc_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((current_target,)) = current_target else {
+        tx.rollback().await?;
+        return Ok(ManualRetargetOutcome::SubmissionChanged);
+    };
+    if current_target == target_disc_id {
+        tx.rollback().await?;
+        return Ok(ManualRetargetOutcome::Unchanged);
+    }
+
+    if let Some(target_disc_id) = target_disc_id {
+        let target_status: Option<DiscStatus> =
+            sqlx::query_scalar("SELECT status FROM discs WHERE id = $1 FOR KEY SHARE")
+                .bind(target_disc_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        match target_status {
+            None => {
+                tx.rollback().await?;
+                return Ok(ManualRetargetOutcome::TargetNotFound);
+            }
+            Some(DiscStatus::Disabled) => {
+                tx.rollback().await?;
+                return Ok(ManualRetargetOutcome::TargetDisabled);
+            }
+            Some(_) => {}
+        }
+    }
+
+    let outcome = update_pending_submission_target(
+        &mut tx,
+        submission_id,
+        expected_target_disc_id,
+        target_disc_id,
+    )
+    .await?;
+    match outcome {
+        PendingTargetUpdateOutcome::Updated => {
+            tx.commit().await?;
+            Ok(ManualRetargetOutcome::Retargeted)
+        }
+        PendingTargetUpdateOutcome::SubmissionChanged => {
+            tx.rollback().await?;
+            Ok(ManualRetargetOutcome::SubmissionChanged)
+        }
+    }
 }
 
 /// Apply approval to a submission atomically: update/create the disc, mark the
@@ -1711,12 +1807,12 @@ async fn approve_submission_on(
     review_comment: Option<&str>,
     expected_review_base_hash: Option<&str>,
 ) -> AppResult<ApprovalOutcome> {
-    let current_status: Option<SubmissionStatus> =
-        sqlx::query_scalar("SELECT status FROM disc_submissions WHERE id = $1")
+    let current_state: Option<(SubmissionStatus, Option<i32>)> =
+        sqlx::query_as("SELECT status, target_disc_id FROM disc_submissions WHERE id = $1")
             .bind(sub.id)
             .fetch_optional(&mut *conn)
             .await?;
-    if current_status != Some(SubmissionStatus::Pending) {
+    if current_state != Some((SubmissionStatus::Pending, sub.target_disc_id)) {
         return Ok(ApprovalOutcome::AlreadyProcessed);
     }
 
@@ -1773,12 +1869,14 @@ async fn approve_submission_on(
     let claim = sqlx::query(
         "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1,
          review_comment = $2, reviewed_at = NOW(), changes_original = changes, changes = $3
-         WHERE id = $4 AND status = 'Pending'",
+         WHERE id = $4 AND status = 'Pending'
+           AND target_disc_id IS NOT DISTINCT FROM $5",
     )
     .bind(reviewer_id)
     .bind(normalized_review_comment.as_deref())
     .bind(&stored_data)
     .bind(sub.id)
+    .bind(sub.target_disc_id)
     .execute(&mut *conn)
     .await?;
 
@@ -1850,7 +1948,7 @@ pub async fn get_submission(pool: &PgPool, id: i32) -> AppResult<DiscSubmission>
         .ok_or(AppError::NotFound)
 }
 
-const DISC_SUBMISSION_HAS_DAT_ADD_SQL: &str = "COALESCE((ds.changes->'dat') ? 'add', false)";
+const UNPROCESSED_SUBMISSION_SQL: &str = "ds.status IN ('Pending', 'Draft')";
 const SUBMISSION_LIST_SYSTEM_CODE_SQL: &str = "CASE WHEN ds.status = 'Draft' THEN
          COALESCE(ds.changes->'system_code'->'add'->>'new',
                   ds.changes->'system_code'->'modify'->>'new', '')
@@ -1862,7 +1960,8 @@ fn submission_display_kind_sql() -> String {
     format!(
         "CASE \
          WHEN ds.submission_type = 'Edit' THEN 'Edit' \
-         WHEN {DISC_SUBMISSION_HAS_DAT_ADD_SQL} THEN 'New Disc' \
+         WHEN NOT ({UNPROCESSED_SUBMISSION_SQL}) THEN 'Disc' \
+         WHEN ds.target_disc_id IS NULL THEN 'New Disc' \
          ELSE 'Verification' \
          END"
     )
@@ -1872,10 +1971,10 @@ fn submission_type_filter_condition(type_filter: Option<&str>) -> Option<String>
     match type_filter.unwrap_or_default() {
         "Edit" => Some("ds.submission_type = 'Edit'".to_string()),
         "New Disc" => Some(format!(
-            "ds.submission_type = 'Disc' AND {DISC_SUBMISSION_HAS_DAT_ADD_SQL}"
+            "ds.submission_type = 'Disc' AND {UNPROCESSED_SUBMISSION_SQL} AND ds.target_disc_id IS NULL"
         )),
         "Verification" => Some(format!(
-            "ds.submission_type = 'Disc' AND NOT ({DISC_SUBMISSION_HAS_DAT_ADD_SQL})"
+            "ds.submission_type = 'Disc' AND (NOT ({UNPROCESSED_SUBMISSION_SQL}) OR ds.target_disc_id IS NOT NULL)"
         )),
         _ => None,
     }
@@ -1977,7 +2076,7 @@ pub async fn list_submissions(
 
     let sql = format!(
         "SELECT ds.id, ds.submission_type,
-                {dat_add_expr} AS submission_has_dat_add,
+                ds.target_disc_id IS NOT NULL AS submission_has_target_disc,
                 {title_expr} AS title,
                 {system_code_expr} AS system_code,
                 COALESCE(s.short_name, '') AS system_short_name,
@@ -1998,7 +2097,6 @@ pub async fn list_submissions(
          ORDER BY {sort_col} {sort_dir}{nulls_order}
          LIMIT {page_size} OFFSET {offset}",
         conditions.join(" AND "),
-        dat_add_expr = DISC_SUBMISSION_HAS_DAT_ADD_SQL,
         system_code_expr = SUBMISSION_LIST_SYSTEM_CODE_SQL
     );
 
@@ -2352,6 +2450,22 @@ mod tests {
             .unwrap();
     }
 
+    async fn manual_retarget(
+        pool: &PgPool,
+        submission_id: i32,
+        expected_target_disc_id: Option<i32>,
+        target_disc_id: Option<i32>,
+    ) -> ManualRetargetOutcome {
+        manually_retarget_pending_submission(
+            pool,
+            submission_id,
+            expected_target_disc_id,
+            target_disc_id,
+        )
+        .await
+        .unwrap()
+    }
+
     #[tokio::test]
     #[ignore = "requires a migrated PostgreSQL database"]
     async fn retargeted_verification_updates_existing_disc_on_second_approval() {
@@ -2362,12 +2476,34 @@ mod tests {
         let fingerprint = random_test_token();
         let universal_hash = random_test_token()[..40].to_string();
         let universal_hash_bytes = hex::decode(&universal_hash).unwrap();
-        sqlx::query("UPDATE discs SET universal_hash = $1 WHERE id = $2")
-            .bind(universal_hash_bytes)
-            .bind(fixture.disc_id)
-            .execute(&pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "UPDATE discs SET universal_hash = $1,
+                    serial = ARRAY['EXISTING-001'],
+                    edition = ARRAY['Original'],
+                    barcode = ARRAY['0000000000000']
+             WHERE id = $2",
+        )
+        .bind(universal_hash_bytes)
+        .bind(fixture.disc_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let existing_ring_id: i32 = sqlx::query_scalar(
+            "INSERT INTO disc_ring_code_entries (disc_id, offset_value, comment)
+             VALUES ($1, 0, 'existing ring') RETURNING id",
+        )
+        .bind(fixture.disc_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO disc_ring_code_layers (entry_id, layer, mastering_code)
+             VALUES ($1, 0, 'MASTER-EXISTING')",
+        )
+        .bind(existing_ring_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let dat = "<rom name=\"Track 1.bin\" size=\"1\" crc=\"11111111\" md5=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" sha1=\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" />";
         sqlx::query(
@@ -2393,8 +2529,20 @@ mod tests {
                     "new": dat
                 }
             },
-            "universal_hash": { "add": { "new": universal_hash.clone() } }
+            "universal_hash": { "add": { "new": universal_hash.clone() } },
+            "comments": { "add": { "new": "Original submission" } },
+            "serial": { "add": ["NEW-002"] },
+            "edition": { "add": ["Big Box"] },
+            "barcode": { "add": ["1111111111111"] },
+            "ring_codes": [{
+                "offset_value": { "add": { "new": "-153" } },
+                "layers": [{
+                    "index": 0,
+                    "mastering_code": { "add": { "new": "MASTER-NEW" } }
+                }]
+            }]
         });
+        let expected_changes = original_changes.clone();
         let creation = create_submission(
             &pool,
             SubmissionType::Disc,
@@ -2409,14 +2557,12 @@ mod tests {
         )
         .await
         .unwrap();
-        let verification_changes = serde_json::json!({});
         let retargeted = retarget_pending_submission(
             &pool,
             creation.submission.id,
             fixture.disc_id,
             Some(dat),
             Some(&universal_hash),
-            &verification_changes,
         )
         .await
         .unwrap();
@@ -2425,7 +2571,7 @@ mod tests {
         assert!(retargeted);
         assert_eq!(retargeted_submission.target_disc_id, Some(fixture.disc_id));
         assert_eq!(retargeted_submission.status, SubmissionStatus::Pending);
-        assert_eq!(retargeted_submission.changes, verification_changes);
+        assert_eq!(retargeted_submission.changes, expected_changes);
         assert_eq!(retargeted_submission.changes_original, None);
         assert_eq!(
             retargeted_submission.display_kind(),
@@ -2438,7 +2584,6 @@ mod tests {
             fixture.disc_id,
             Some(dat),
             Some(&universal_hash),
-            &verification_changes,
         )
         .await
         .unwrap();
@@ -2458,8 +2603,58 @@ mod tests {
         .await
         .unwrap();
         let final_submission = get_submission(&pool, creation.submission.id).await.unwrap();
+        let verification_rows = list_submissions(
+            &pool,
+            Some(fixture.submitter_id),
+            None,
+            false,
+            false,
+            fixture.submitter_id,
+            true,
+            Some("Approved"),
+            Some("Verification"),
+            None,
+            None,
+            "date",
+            "desc",
+            1,
+            50,
+        )
+        .await
+        .unwrap();
+        let new_disc_rows = list_submissions(
+            &pool,
+            Some(fixture.submitter_id),
+            None,
+            false,
+            false,
+            fixture.submitter_id,
+            true,
+            Some("Approved"),
+            Some("New Disc"),
+            None,
+            None,
+            "date",
+            "desc",
+            1,
+            50,
+        )
+        .await
+        .unwrap();
         let target_status: DiscStatus =
             sqlx::query_scalar("SELECT status FROM discs WHERE id = $1")
+                .bind(fixture.disc_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let (serial, edition, barcode): (Vec<String>, Vec<String>, Vec<String>) =
+            sqlx::query_as("SELECT serial, edition, barcode FROM discs WHERE id = $1")
+                .bind(fixture.disc_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let ring_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM disc_ring_code_entries WHERE disc_id = $1")
                 .bind(fixture.disc_id)
                 .fetch_one(&pool)
                 .await
@@ -2477,12 +2672,352 @@ mod tests {
 
         assert_eq!(approval, ApprovalOutcome::Approved(fixture.disc_id));
         assert_eq!(final_submission.status, SubmissionStatus::Approved);
-        assert_eq!(
-            final_submission.changes_original,
-            Some(verification_changes)
-        );
+        assert_eq!(final_submission.display_kind(), SubmissionDisplayKind::Disc);
+        assert!(verification_rows
+            .iter()
+            .any(|row| row.id == final_submission.id));
+        assert!(!new_disc_rows
+            .iter()
+            .any(|row| row.id == final_submission.id));
+        assert_eq!(final_submission.changes_original, Some(expected_changes));
         assert_eq!(target_status, DiscStatus::Verified);
+        assert_eq!(serial, vec!["EXISTING-001", "NEW-002"]);
+        assert_eq!(edition, vec!["Original", "Big Box"]);
+        assert_eq!(barcode, vec!["0000000000000", "1111111111111"]);
+        assert_eq!(ring_count, 2);
         assert_eq!(dumper_count, 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn manual_retarget_assigns_replaces_removes_and_overwrites_dat_on_approval() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let primary = approval_fixture(&pool, "manual retarget primary").await;
+        let alternate = approval_fixture(&pool, "manual retarget alternate").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let old_dat = "<rom name=\"Track.bin\" size=\"1\" crc=\"11111111\" md5=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" sha1=\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" />";
+        let new_dat = "<rom name=\"Track.bin\" size=\"2\" crc=\"22222222\" md5=\"cccccccccccccccccccccccccccccccc\" sha1=\"dddddddddddddddddddddddddddddddddddddddd\" />";
+        sqlx::query(
+            "INSERT INTO files (disc_id, track_number, size, crc32, md5, sha1)
+             VALUES ($1, '1', 1, '11111111', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')",
+        )
+        .bind(primary.disc_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let original_changes = serde_json::json!({
+            "dat": { "add": { "new": new_dat } },
+            "comments": { "add": { "new": "manual retarget payload" } }
+        });
+        let creation = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            primary.submitter_id,
+            None,
+            original_changes.clone(),
+            Some("stored submission comment"),
+            Some("stored dump log"),
+            Some("https://example.test/logs"),
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE disc_submissions SET reviewer_id = $1,
+                    review_comment = 'stored review comment', reviewed_at = NOW()
+             WHERE id = $2",
+        )
+        .bind(primary.submitter_id)
+        .bind(creation.submission.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let baseline = get_submission(&pool, creation.submission.id).await.unwrap();
+
+        assert_eq!(
+            manual_retarget(&pool, baseline.id, None, Some(primary.disc_id)).await,
+            ManualRetargetOutcome::Retargeted
+        );
+        let assigned = get_submission(&pool, baseline.id).await.unwrap();
+        assert_eq!(assigned.target_disc_id, Some(primary.disc_id));
+
+        assert_eq!(
+            manual_retarget(
+                &pool,
+                baseline.id,
+                Some(primary.disc_id),
+                Some(alternate.disc_id),
+            )
+            .await,
+            ManualRetargetOutcome::Retargeted
+        );
+        let reassigned = get_submission(&pool, baseline.id).await.unwrap();
+        assert_eq!(reassigned.target_disc_id, Some(alternate.disc_id));
+
+        assert_eq!(
+            manual_retarget(&pool, baseline.id, Some(alternate.disc_id), None).await,
+            ManualRetargetOutcome::Retargeted
+        );
+        let removed = get_submission(&pool, baseline.id).await.unwrap();
+        assert_eq!(removed.target_disc_id, None);
+        assert_eq!(removed.display_kind(), SubmissionDisplayKind::NewDisc);
+
+        for submission in [&assigned, &reassigned, &removed] {
+            assert_eq!(submission.changes, baseline.changes);
+            assert_eq!(submission.changes_original, baseline.changes_original);
+            assert_eq!(submission.status, baseline.status);
+            assert_eq!(submission.reviewer_id, baseline.reviewer_id);
+            assert_eq!(submission.review_comment, baseline.review_comment);
+            assert_eq!(submission.reviewed_at, baseline.reviewed_at);
+            assert_eq!(submission.created_at, baseline.created_at);
+            assert_eq!(submission.submission_comment, baseline.submission_comment);
+            assert_eq!(submission.dump_log, baseline.dump_log);
+            assert_eq!(submission.extra_upload_url, baseline.extra_upload_url);
+        }
+
+        assert_eq!(
+            manual_retarget(&pool, baseline.id, None, None).await,
+            ManualRetargetOutcome::Unchanged
+        );
+        assert_eq!(
+            manual_retarget(&pool, baseline.id, None, Some(i32::MAX)).await,
+            ManualRetargetOutcome::TargetNotFound
+        );
+        sqlx::query("UPDATE discs SET status = 'Disabled' WHERE id = $1")
+            .bind(alternate.disc_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            manual_retarget(&pool, baseline.id, None, Some(alternate.disc_id)).await,
+            ManualRetargetOutcome::TargetDisabled
+        );
+        sqlx::query("UPDATE discs SET status = 'Unverified' WHERE id = $1")
+            .bind(alternate.disc_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            manual_retarget(
+                &pool,
+                baseline.id,
+                Some(primary.disc_id),
+                Some(alternate.disc_id),
+            )
+            .await,
+            ManualRetargetOutcome::SubmissionChanged
+        );
+
+        assert_eq!(
+            manual_retarget(&pool, baseline.id, None, Some(primary.disc_id)).await,
+            ManualRetargetOutcome::Retargeted
+        );
+        let submission = get_submission(&pool, baseline.id).await.unwrap();
+        let target_hash = current_disc_snapshot_hash(&pool, primary.disc_id)
+            .await
+            .unwrap();
+        let reviewed_changes = serde_json::json!({
+            "dat": { "modify": { "old": old_dat, "new": new_dat } }
+        });
+        let approval = approve_submission(
+            &pool,
+            &submission,
+            &reviewed_changes,
+            primary.submitter_id,
+            None,
+            Some(&target_hash),
+        )
+        .await
+        .unwrap();
+        let final_submission = get_submission(&pool, baseline.id).await.unwrap();
+        let stored_file: (i64, String, String, String) =
+            sqlx::query_as("SELECT size, crc32, md5, sha1 FROM files WHERE disc_id = $1")
+                .bind(primary.disc_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let dumper_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM disc_dumpers WHERE disc_id = $1 AND user_id = $2",
+        )
+        .bind(primary.disc_id)
+        .bind(primary.submitter_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        cleanup_approval_fixture(&pool, &primary, &[&token]).await;
+        cleanup_approval_fixture(&pool, &alternate, &[]).await;
+
+        assert_eq!(approval, ApprovalOutcome::Approved(primary.disc_id));
+        assert_eq!(final_submission.changes_original, Some(original_changes));
+        assert_eq!(
+            stored_file,
+            (
+                2,
+                "22222222".to_string(),
+                "cccccccccccccccccccccccccccccccc".to_string(),
+                "dddddddddddddddddddddddddddddddddddddddd".to_string(),
+            )
+        );
+        assert_eq!(dumper_count, 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn manual_target_removal_allows_new_disc_approval() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let fixture = approval_fixture(&pool, "manual target removal").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let media_type: String =
+            sqlx::query_scalar("SELECT media_type_code FROM discs WHERE id = $1")
+                .bind(fixture.disc_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let unique_hash = random_test_token();
+        let crc32 = &unique_hash[..8];
+        let md5 = &unique_hash[..32];
+        let sha1 = &unique_hash[..40];
+        let dat = format!(
+            "<rom name=\"Track.bin\" size=\"3\" crc=\"{crc32}\" md5=\"{md5}\" sha1=\"{sha1}\" />"
+        );
+        let original_changes = serde_json::json!({
+            "system_code": { "add": { "new": fixture.system_code.clone() } },
+            "media_type": { "add": { "new": media_type } },
+            "title": { "add": { "new": format!("Removed target {}", &token[..12]) } },
+            "category": { "add": { "new": "Games" } },
+            "dat": { "add": { "new": dat } }
+        });
+        let creation = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            original_changes.clone(),
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            manual_retarget(&pool, creation.submission.id, Some(fixture.disc_id), None).await,
+            ManualRetargetOutcome::Retargeted
+        );
+        let removed = get_submission(&pool, creation.submission.id).await.unwrap();
+        assert_eq!(removed.target_disc_id, None);
+        assert_eq!(removed.display_kind(), SubmissionDisplayKind::NewDisc);
+        assert_eq!(removed.changes, original_changes);
+
+        let approval = approve_submission(
+            &pool,
+            &removed,
+            &removed.changes,
+            fixture.submitter_id,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let new_disc_id = match approval {
+            ApprovalOutcome::Approved(disc_id) => disc_id,
+            other => panic!("unexpected approval outcome: {other:?}"),
+        };
+        let final_submission = get_submission(&pool, removed.id).await.unwrap();
+        let stored_file: (i64, String, String, String) =
+            sqlx::query_as("SELECT size, crc32, md5, sha1 FROM files WHERE disc_id = $1")
+                .bind(new_disc_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+        sqlx::query("DELETE FROM discs WHERE id = $1")
+            .bind(new_disc_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert_ne!(new_disc_id, fixture.disc_id);
+        assert_eq!(final_submission.target_disc_id, Some(new_disc_id));
+        assert_eq!(final_submission.changes_original, Some(original_changes));
+        assert_eq!(stored_file.0, 3);
+        assert_eq!(stored_file.1, crc32);
+        assert_eq!(stored_file.2, md5);
+        assert_eq!(stored_file.3, sha1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn concurrent_manual_retarget_and_approval_have_one_winner() {
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        let primary = approval_fixture(&pool, "retarget approval race primary").await;
+        let alternate = approval_fixture(&pool, "retarget approval race alternate").await;
+        let token = random_test_token();
+        let fingerprint = random_test_token();
+        let creation = create_submission(
+            &pool,
+            SubmissionType::Disc,
+            primary.submitter_id,
+            Some(primary.disc_id),
+            serde_json::json!({}),
+            None,
+            None,
+            None,
+            Some(&token),
+            Some(&fingerprint),
+        )
+        .await
+        .unwrap();
+        let target_hash = current_disc_snapshot_hash(&pool, primary.disc_id)
+            .await
+            .unwrap();
+
+        let approval = approve_submission(
+            &pool,
+            &creation.submission,
+            &creation.submission.changes,
+            primary.submitter_id,
+            None,
+            Some(&target_hash),
+        );
+        let retarget = manually_retarget_pending_submission(
+            &pool,
+            creation.submission.id,
+            Some(primary.disc_id),
+            Some(alternate.disc_id),
+        );
+        let (approval, retarget) = tokio::join!(approval, retarget);
+        let approval = approval.unwrap();
+        let retarget = retarget.unwrap();
+        let final_submission = get_submission(&pool, creation.submission.id).await.unwrap();
+
+        match (approval, retarget) {
+            (ApprovalOutcome::Approved(disc_id), ManualRetargetOutcome::SubmissionChanged) => {
+                assert_eq!(disc_id, primary.disc_id);
+                assert_eq!(final_submission.status, SubmissionStatus::Approved);
+                assert_eq!(final_submission.target_disc_id, Some(primary.disc_id));
+            }
+            (ApprovalOutcome::AlreadyProcessed, ManualRetargetOutcome::Retargeted) => {
+                assert_eq!(final_submission.status, SubmissionStatus::Pending);
+                assert_eq!(final_submission.target_disc_id, Some(alternate.disc_id));
+            }
+            outcomes => panic!("unexpected race outcomes: {outcomes:?}"),
+        }
+
+        cleanup_approval_fixture(&pool, &primary, &[&token]).await;
+        cleanup_approval_fixture(&pool, &alternate, &[]).await;
     }
 
     #[tokio::test]
@@ -2991,7 +3526,7 @@ mod tests {
             fixture.submitter_id,
             false,
             Some("Draft"),
-            None,
+            Some("Verification"),
             None,
             None,
             "date",
@@ -3065,6 +3600,7 @@ mod tests {
             .unwrap();
         assert_eq!(owner_row.title, fixture.title);
         assert_eq!(owner_row.target_disc_id, None);
+        assert_eq!(owner_row.display_kind, SubmissionDisplayKind::Verification);
         assert!(!outsider_rows
             .iter()
             .any(|row| row.id == creation.submission.id));
@@ -3491,7 +4027,7 @@ mod tests {
     }
 
     #[test]
-    fn submission_type_filter_conditions_split_disc_submissions_by_dat_add() {
+    fn submission_type_filter_conditions_use_status_and_target() {
         assert_eq!(submission_type_filter_condition(None), None);
         assert_eq!(submission_type_filter_condition(Some("")), None);
         assert_eq!(
@@ -3501,17 +4037,27 @@ mod tests {
         assert_eq!(
             submission_type_filter_condition(Some("New Disc")),
             Some(format!(
-                "ds.submission_type = 'Disc' AND {DISC_SUBMISSION_HAS_DAT_ADD_SQL}"
+                "ds.submission_type = 'Disc' AND {UNPROCESSED_SUBMISSION_SQL} AND ds.target_disc_id IS NULL"
             ))
         );
         assert_eq!(
             submission_type_filter_condition(Some("Verification")),
             Some(format!(
-                "ds.submission_type = 'Disc' AND NOT ({DISC_SUBMISSION_HAS_DAT_ADD_SQL})"
+                "ds.submission_type = 'Disc' AND (NOT ({UNPROCESSED_SUBMISSION_SQL}) OR ds.target_disc_id IS NOT NULL)"
             ))
         );
         assert_eq!(submission_type_filter_condition(Some("Disc")), None);
         assert_eq!(submission_type_filter_condition(Some("Unknown")), None);
+    }
+
+    #[test]
+    fn submission_display_kind_sql_uses_status_and_target() {
+        let sql = submission_display_kind_sql();
+
+        assert!(sql.contains(UNPROCESSED_SUBMISSION_SQL));
+        assert!(sql.contains("ds.target_disc_id IS NULL"));
+        assert!(sql.contains("THEN 'Disc'"));
+        assert!(!sql.contains("ds.changes"));
     }
 
     #[test]

@@ -630,6 +630,15 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         </label>
         {% endif %}
     </div>
+    {% if can_retarget_submission %}
+    <div class="review-retarget-controls">
+        <label>Retarget to Disc ID
+            <input type="text" name="retarget_disc_id" inputmode="numeric" autocomplete="off" value="{{ retarget_disc_id_input }}">
+        </label>
+        <button type="submit" name="action" value="retarget" class="btn-retarget" formnovalidate>Retarget</button>
+        <small>Leave empty to remove the current target.</small>
+    </div>
+    {% endif %}
     </div>
 
     <div class="disc-form-section" aria-label="Submission controls">

@@ -205,6 +205,8 @@ pub(crate) struct DiscEditTemplate {
     pub validation_result_suffix: String,
 
     pub is_review_mode: bool,
+    pub can_retarget_submission: bool,
+    pub retarget_disc_id_input: String,
     pub review_base_hash: String,
     pub changed_fields: Vec<String>,
     pub review_annotations: Vec<ReviewAnnotation>,
@@ -1114,6 +1116,8 @@ async fn edit_page(
             validation_result_suffix: String::new(),
 
             is_review_mode: false,
+            can_retarget_submission: false,
+            retarget_disc_id_input: String::new(),
             review_base_hash: String::new(),
             changed_fields: vec![],
             review_annotations: vec![],
@@ -1784,6 +1788,8 @@ async fn render_form_with_context(
         validation_result_suffix: validation_result.suffix,
 
         is_review_mode: false,
+        can_retarget_submission: false,
+        retarget_disc_id_input: String::new(),
         review_base_hash: String::new(),
         changed_fields: vec![],
         review_annotations: vec![],
@@ -2588,6 +2594,8 @@ async fn add_page(
             validation_result_suffix: String::new(),
 
             is_review_mode: false,
+            can_retarget_submission: false,
+            retarget_disc_id_input: String::new(),
             review_base_hash: String::new(),
             changed_fields: vec![],
             review_annotations: vec![],
@@ -3444,20 +3452,6 @@ pub(crate) fn build_sparse_disc_submission_changes(
     all_systems: &[System],
 ) -> serde_json::Value {
     build_history_changes(form, Some(detail), all_media_types, all_systems, false)
-}
-
-pub(crate) fn build_retargeted_disc_submission_changes(
-    form: &DiscEditForm,
-    detail: &DiscDetail,
-    all_media_types: &[EditMediaTypeRow],
-    all_systems: &[System],
-) -> serde_json::Value {
-    let mut changes =
-        build_sparse_disc_submission_changes(form, detail, all_media_types, all_systems);
-    if let Some(changes) = changes.as_object_mut() {
-        changes.remove("dat");
-    }
-    changes
 }
 
 pub(crate) fn build_new_disc_changes(
@@ -5034,36 +5028,6 @@ mod operation_delta_tests {
         );
 
         assert!(changes.get("status").is_none());
-    }
-
-    #[test]
-    fn retargeted_disc_changes_omit_dat_and_preserve_metadata_edits() {
-        let detail = base_detail();
-        let mut form = form_from_detail(&detail);
-        form.title = "Retargeted Game".to_string();
-        form.files_xml = Some(
-            r#"<rom name="Different.bin" size="2" crc="22222222" md5="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" sha1="cccccccccccccccccccccccccccccccccccccccc" />"#
-                .to_string(),
-        );
-
-        let changes = build_retargeted_disc_submission_changes(
-            &form,
-            &detail,
-            &media_rows(),
-            &systems_with_edc(true),
-        );
-
-        assert!(changes.get("dat").is_none());
-        assert_eq!(
-            changes["title"],
-            serde_json::json!({
-                "modify": { "old": "Old Game", "new": "Retargeted Game" }
-            })
-        );
-        assert_eq!(
-            submission_display_kind(SubmissionType::Disc, &changes),
-            SubmissionDisplayKind::Verification
-        );
     }
 
     #[test]

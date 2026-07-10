@@ -24,8 +24,7 @@ use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
     build_check_options, build_flat_changes, build_lang_check_options, build_media_has_pic_json,
     build_media_is_cd_json, build_media_layers_json, build_media_options,
-    build_media_rom_extensions_json, build_new_disc_changes,
-    build_retargeted_disc_submission_changes, build_sparse_disc_submission_changes,
+    build_media_rom_extensions_json, build_new_disc_changes, build_sparse_disc_submission_changes,
     build_sparse_edit_changes, build_system_options, build_systems_json, fetch_ref_data,
     max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
     ReviewOldMultiline,
@@ -190,21 +189,20 @@ fn queue_type_icon_label(entry: &SubmissionListRow) -> &'static str {
 }
 
 fn queue_type_icon_class(entry: &SubmissionListRow) -> &'static str {
-    match (entry.display_kind, entry.status) {
-        (SubmissionDisplayKind::Edit, SubmissionStatus::Legacy) => {
+    match entry.display_kind {
+        SubmissionDisplayKind::Disc => {
+            "submission-type-icon submission-type-icon-disc submission-type-icon-processed"
+        }
+        SubmissionDisplayKind::Edit if !entry.status.is_unprocessed() => {
             "submission-type-icon submission-type-icon-edit submission-type-icon-processed"
         }
-        (
-            SubmissionDisplayKind::NewDisc | SubmissionDisplayKind::Verification,
-            SubmissionStatus::Legacy,
-        ) => "submission-type-icon submission-type-icon-disc submission-type-icon-processed",
-        (SubmissionDisplayKind::Edit, _) => {
+        SubmissionDisplayKind::Edit => {
             "submission-type-icon submission-type-icon-edit submission-type-icon-edit-pending"
         }
-        (SubmissionDisplayKind::NewDisc, _) => {
+        SubmissionDisplayKind::NewDisc => {
             "submission-type-icon submission-type-icon-disc submission-type-icon-new-disc"
         }
-        (SubmissionDisplayKind::Verification, _) => {
+        SubmissionDisplayKind::Verification => {
             "submission-type-icon submission-type-icon-disc submission-type-icon-verification"
         }
     }
@@ -483,25 +481,27 @@ async fn queue_list(
 fn apply_retargeted_notice(
     template: &mut DiscEditTemplate,
     sub: &DiscSubmission,
-    db_snapshot: &serde_json::Value,
+    db_snapshot: Option<&serde_json::Value>,
     show_notice: bool,
 ) {
-    let Some(disc_id) = sub.target_disc_id else {
-        return;
-    };
-    if !show_notice || sub.display_kind() != SubmissionDisplayKind::Verification {
+    if !show_notice {
         return;
     }
 
-    template.validation_result = "An identical disc was added while this submission was pending. This submission was retargeted as a verification for".to_string();
-    template.validation_result_disc_id = disc_id;
-    template.validation_result_disc_title = format_display_title(
-        db_snapshot["title"].as_str().unwrap_or(""),
-        db_snapshot["disc_number"].as_str(),
-        db_snapshot["disc_title"].as_str(),
-        db_snapshot["filename_suffix"].as_str(),
-    );
-    template.validation_result_suffix = ". Review it again before approving.".to_string();
+    if let (Some(disc_id), Some(db_snapshot)) = (sub.target_disc_id, db_snapshot) {
+        template.validation_result = "This submission was retargeted to".to_string();
+        template.validation_result_disc_id = disc_id;
+        template.validation_result_disc_title = format_display_title(
+            db_snapshot["title"].as_str().unwrap_or(""),
+            db_snapshot["disc_number"].as_str(),
+            db_snapshot["disc_title"].as_str(),
+            db_snapshot["filename_suffix"].as_str(),
+        );
+        template.validation_result_suffix = ". Review it again before approving.".to_string();
+    } else if sub.target_disc_id.is_none() {
+        template.validation_result =
+            "This submission’s target was removed. Review it again before approving.".to_string();
+    }
 }
 
 fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
@@ -779,13 +779,13 @@ async fn submission_detail(
         );
         let highlights = compute_field_highlights(&snapshot, db_snapshot);
         apply_highlights(&mut template, highlights);
-        apply_retargeted_notice(
-            &mut template,
-            &sub,
-            db_snapshot,
-            query.retargeted == Some(1),
-        );
     }
+    apply_retargeted_notice(
+        &mut template,
+        &sub,
+        db_snapshot.as_ref(),
+        query.retargeted == Some(1),
+    );
 
     Ok(Html(template.render().unwrap()).into_response())
 }
@@ -886,6 +886,9 @@ fn build_review_template(
         snapshot["disc_title"].as_str(),
         snapshot["filename_suffix"].as_str(),
     );
+    let can_retarget_submission = current_user.role.can_moderate()
+        && sub.submission_type == SubmissionType::Disc
+        && sub.status == SubmissionStatus::Pending;
 
     DiscEditTemplate {
         current_user: Some(current_user),
@@ -1024,6 +1027,8 @@ fn build_review_template(
         validation_result_suffix: String::new(),
 
         is_review_mode: true,
+        can_retarget_submission,
+        retarget_disc_id_input: String::new(),
         review_base_hash: String::new(),
         changed_fields: vec![],
         review_annotations: vec![],
@@ -2022,6 +2027,8 @@ pub struct ReviewForm {
     pub review_comment: Option<String>,
     #[serde(default)]
     pub review_base_hash: String,
+    #[serde(default)]
+    pub retarget_disc_id: String,
     #[serde(flatten)]
     pub disc: DiscEditForm,
 }
@@ -2029,6 +2036,21 @@ pub struct ReviewForm {
 const STALE_REVIEW_ERROR: &str = "This disc changed after the review page loaded. The page has been refreshed with the latest data; review it again before approving.";
 const DRAFT_REVIEW_COMMENT_ERROR: &str =
     "Review Comment: required when returning a submission to Draft";
+const RETARGET_DISC_ID_ERROR: &str =
+    "Retarget Disc ID: enter a positive whole-number disc ID, or leave it empty to remove the target";
+
+fn parse_retarget_disc_id(value: &str) -> Result<Option<i32>, &'static str> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    value
+        .parse::<i32>()
+        .ok()
+        .filter(|disc_id| *disc_id > 0)
+        .map(Some)
+        .ok_or(RETARGET_DISC_ID_ERROR)
+}
 
 async fn render_latest_review_with_errors(
     state: &AppState,
@@ -2037,6 +2059,7 @@ async fn render_latest_review_with_errors(
     ref_data: &disc_edit::EditRefData,
     validation_errors: Vec<String>,
     review_comment: Option<&str>,
+    retarget_disc_id: Option<&str>,
 ) -> AppResult<Response> {
     let submitter_name: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
         .bind(sub.submitter_id)
@@ -2109,6 +2132,7 @@ async fn render_latest_review_with_errors(
     template.review_base_hash = review_base_hash;
     template.validation_errors = validation_errors;
     template.review_comment_input = review_comment.unwrap_or_default().to_string();
+    template.retarget_disc_id_input = retarget_disc_id.unwrap_or_default().to_string();
 
     if let Some(db_snapshot) = db_snapshot {
         apply_review_diff_context(
@@ -2124,6 +2148,27 @@ async fn render_latest_review_with_errors(
     }
 
     Ok(Html(template.render().unwrap()).into_response())
+}
+
+async fn render_retarget_error(
+    state: &AppState,
+    current_user: &AuthenticatedUser,
+    sub: &DiscSubmission,
+    error: String,
+    review_comment: Option<&str>,
+    retarget_disc_id: &str,
+) -> AppResult<Response> {
+    let ref_data = fetch_ref_data(&state.pool).await?;
+    render_latest_review_with_errors(
+        state,
+        current_user,
+        sub,
+        &ref_data,
+        vec![error],
+        review_comment,
+        Some(retarget_disc_id),
+    )
+    .await
 }
 
 async fn review_submit(
@@ -2166,6 +2211,7 @@ async fn review_submit(
                 &ref_data,
                 vec![DRAFT_REVIEW_COMMENT_ERROR.to_string()],
                 None,
+                None,
             )
             .await;
         };
@@ -2187,6 +2233,87 @@ async fn review_submit(
         }
         return Ok(Redirect::to("/queue").into_response());
     }
+    if form.action == "retarget" {
+        if !user.role.can_moderate() {
+            return Err(AppError::Forbidden);
+        }
+        if sub.submission_type != SubmissionType::Disc {
+            return Err(AppError::BadRequest(
+                "only disc submissions can be retargeted".into(),
+            ));
+        }
+
+        let target_disc_id = match parse_retarget_disc_id(&form.retarget_disc_id) {
+            Ok(target_disc_id) => target_disc_id,
+            Err(error) => {
+                return render_retarget_error(
+                    &state,
+                    &user,
+                    &sub,
+                    error.to_string(),
+                    review_comment.as_deref(),
+                    &form.retarget_disc_id,
+                )
+                .await;
+            }
+        };
+        let outcome = queue_service::manually_retarget_pending_submission(
+            &state.pool,
+            sub.id,
+            sub.target_disc_id,
+            target_disc_id,
+        )
+        .await?;
+        return match outcome {
+            queue_service::ManualRetargetOutcome::Retargeted => {
+                Ok(Redirect::to(&format!("/queue/{id}?retargeted=1")).into_response())
+            }
+            queue_service::ManualRetargetOutcome::TargetNotFound => {
+                let disc_id = target_disc_id.expect("only a populated target can be missing");
+                render_retarget_error(
+                    &state,
+                    &user,
+                    &sub,
+                    format!("Retarget Disc ID: disc #{disc_id} was not found"),
+                    review_comment.as_deref(),
+                    &form.retarget_disc_id,
+                )
+                .await
+            }
+            queue_service::ManualRetargetOutcome::TargetDisabled => {
+                let disc_id = target_disc_id.expect("only a populated target can be disabled");
+                render_retarget_error(
+                    &state,
+                    &user,
+                    &sub,
+                    format!("Retarget Disc ID: disc #{disc_id} is disabled"),
+                    review_comment.as_deref(),
+                    &form.retarget_disc_id,
+                )
+                .await
+            }
+            queue_service::ManualRetargetOutcome::Unchanged => {
+                let error = match target_disc_id {
+                    Some(disc_id) => {
+                        format!("Retarget Disc ID: this submission already targets disc #{disc_id}")
+                    }
+                    None => "Retarget Disc ID: this submission already has no target".to_string(),
+                };
+                render_retarget_error(
+                    &state,
+                    &user,
+                    &sub,
+                    error,
+                    review_comment.as_deref(),
+                    &form.retarget_disc_id,
+                )
+                .await
+            }
+            queue_service::ManualRetargetOutcome::SubmissionChanged => {
+                Ok(Redirect::to(&format!("/queue/{id}")).into_response())
+            }
+        };
+    }
     if form.action != "approve" {
         return Err(AppError::BadRequest("unknown review action".into()));
     }
@@ -2202,6 +2329,7 @@ async fn review_submit(
                 &ref_data,
                 vec![STALE_REVIEW_ERROR.to_string()],
                 review_comment.as_deref(),
+                None,
             )
             .await;
         }
@@ -2287,20 +2415,12 @@ async fn review_submit(
         )
         .await?
         {
-            let detail = disc_service::get_disc_detail(&state.pool, target_disc_id).await?;
-            let retargeted_changes = build_retargeted_disc_submission_changes(
-                &form.disc,
-                &detail,
-                &ref_data.all_media_types,
-                &ref_data.all_systems,
-            );
             let outcome = queue_service::retarget_pending_submission(
                 &state.pool,
                 sub.id,
                 target_disc_id,
                 form.disc.files_xml.as_deref(),
                 form.disc.universal_hash.as_deref(),
-                &retargeted_changes,
             )
             .await?;
 
@@ -2362,6 +2482,7 @@ async fn review_submit(
                 &ref_data,
                 vec![STALE_REVIEW_ERROR.to_string()],
                 review_comment.as_deref(),
+                None,
             )
             .await
         }
@@ -2767,9 +2888,9 @@ mod tests {
     ) -> SubmissionListRow {
         let submission_type = match display_kind {
             SubmissionDisplayKind::Edit => SubmissionType::Edit,
-            SubmissionDisplayKind::NewDisc | SubmissionDisplayKind::Verification => {
-                SubmissionType::Disc
-            }
+            SubmissionDisplayKind::Disc
+            | SubmissionDisplayKind::NewDisc
+            | SubmissionDisplayKind::Verification => SubmissionType::Disc,
         };
 
         SubmissionListRow {
@@ -2927,9 +3048,11 @@ mod tests {
         assert_eq!(form.comments.as_deref(), Some("Submitted comments"));
 
         let mut new_disc = verification;
+        new_disc.target_disc_id = None;
         new_disc.changes["dat"] = serde_json::json!({
             "add": { "new": "<rom name=\"Submitted.iso\" />" }
         });
+        assert_eq!(new_disc.display_kind(), SubmissionDisplayKind::NewDisc);
         let mut new_disc_form = draft_add_form(&new_disc).unwrap();
         let submitted_system = new_disc_form.system_code.clone();
         let submitted_media = new_disc_form.media_type.clone();
@@ -2942,7 +3065,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn approved_disc_submission_with_dat_add_displays_as_new_disc() {
+    async fn approved_disc_submission_with_dat_add_displays_as_disc() {
         let mut sub = test_submission();
         sub.submission_type = SubmissionType::Disc;
         sub.target_disc_id = Some(123);
@@ -2951,7 +3074,7 @@ mod tests {
             "dat": { "add": { "new": "<rom name=\"Track.iso\" />" } }
         });
 
-        assert_eq!(sub.display_kind(), SubmissionDisplayKind::NewDisc);
+        assert_eq!(sub.display_kind(), SubmissionDisplayKind::Disc);
 
         let Html(html) = render_readonly_detail(
             Some(auth_user(8, UserRole::Moderator)),
@@ -2962,11 +3085,11 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(html.contains("<td><strong>Submission Type</strong></td><td>New Disc</td>"));
+        assert!(html.contains("<td><strong>Submission Type</strong></td><td>Disc</td>"));
     }
 
     #[tokio::test]
-    async fn disc_submission_without_dat_add_displays_as_verification() {
+    async fn approved_disc_submission_without_dat_add_displays_as_disc() {
         let mut sub = test_submission();
         sub.submission_type = SubmissionType::Disc;
         sub.target_disc_id = Some(123);
@@ -2975,7 +3098,7 @@ mod tests {
             "title": { "add": { "new": "Test Game" } }
         });
 
-        assert_eq!(sub.display_kind(), SubmissionDisplayKind::Verification);
+        assert_eq!(sub.display_kind(), SubmissionDisplayKind::Disc);
 
         let Html(html) = render_readonly_detail(
             Some(auth_user(8, UserRole::Moderator)),
@@ -2986,71 +3109,107 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(html.contains("<td><strong>Submission Type</strong></td><td>Verification</td>"));
+        assert!(html.contains("<td><strong>Submission Type</strong></td><td>Disc</td>"));
     }
 
     #[test]
-    fn retargeted_notice_renders_only_for_a_verification() {
-        let mut verification = test_submission();
-        verification.submission_type = SubmissionType::Disc;
-        verification.target_disc_id = Some(123);
-        verification.changes = serde_json::json!({
-            "comments": { "add": { "new": "verification" } }
+    fn retargeted_notice_renders_for_an_unchanged_pending_submission() {
+        let mut retargeted = test_submission();
+        retargeted.submission_type = SubmissionType::Disc;
+        retargeted.target_disc_id = Some(123);
+        retargeted.changes = serde_json::json!({
+            "dat": { "add": { "new": "<rom />" } }
         });
+        assert_eq!(
+            retargeted.display_kind(),
+            SubmissionDisplayKind::Verification
+        );
         let snapshot = old_snapshot();
         let mut template = build_template(&snapshot);
 
-        apply_retargeted_notice(&mut template, &verification, &snapshot, true);
+        apply_retargeted_notice(&mut template, &retargeted, Some(&snapshot), true);
         let html = template.render().unwrap();
 
-        assert!(html.contains("An identical disc was added while this submission was pending."));
+        assert!(html.contains("This submission was retargeted to"));
         assert!(html.contains(r#"href="/disc/123""#));
         assert!(html.contains("Review it again before approving."));
         assert!(html.contains(r#"placeholder="Optional comment about this review"></textarea>"#));
 
-        let mut new_disc = verification;
-        new_disc.changes = serde_json::json!({
-            "dat": { "add": { "new": "<rom />" } }
-        });
         let mut template = build_template(&snapshot);
-        apply_retargeted_notice(&mut template, &new_disc, &snapshot, true);
+        apply_retargeted_notice(&mut template, &retargeted, Some(&snapshot), false);
         assert!(template.validation_result.is_empty());
     }
 
     #[test]
-    fn queue_type_icon_classes_keep_type_colors_except_legacy() {
-        let approved_new_disc =
-            queue_row(SubmissionDisplayKind::NewDisc, SubmissionStatus::Approved);
-        assert_eq!(queue_type_icon_label(&approved_new_disc), "New Disc");
+    fn removed_target_notice_renders_without_a_disc_link() {
+        let mut retargeted = test_submission();
+        retargeted.submission_type = SubmissionType::Disc;
+        retargeted.target_disc_id = None;
+        retargeted.changes = serde_json::json!({
+            "dat": { "add": { "new": "<rom />" } }
+        });
+        assert_eq!(retargeted.display_kind(), SubmissionDisplayKind::NewDisc);
+        let mut template = build_template(&submitted_snapshot());
+
+        apply_retargeted_notice(&mut template, &retargeted, None, true);
+
         assert_eq!(
-            queue_type_icon_class(&approved_new_disc),
+            template.validation_result,
+            "This submission’s target was removed. Review it again before approving."
+        );
+        assert_eq!(template.validation_result_disc_id, 0);
+    }
+
+    #[test]
+    fn retarget_disc_id_parsing_accepts_empty_or_positive_ids() {
+        assert_eq!(parse_retarget_disc_id(""), Ok(None));
+        assert_eq!(parse_retarget_disc_id("  \t"), Ok(None));
+        assert_eq!(parse_retarget_disc_id(" 123 "), Ok(Some(123)));
+        assert_eq!(parse_retarget_disc_id("0"), Err(RETARGET_DISC_ID_ERROR));
+        assert_eq!(parse_retarget_disc_id("-1"), Err(RETARGET_DISC_ID_ERROR));
+        assert_eq!(
+            parse_retarget_disc_id("disc 1"),
+            Err(RETARGET_DISC_ID_ERROR)
+        );
+    }
+
+    #[test]
+    fn queue_type_icon_classes_distinguish_unprocessed_and_processed_rows() {
+        let pending_new_disc = queue_row(SubmissionDisplayKind::NewDisc, SubmissionStatus::Pending);
+        assert_eq!(queue_type_icon_label(&pending_new_disc), "New Disc");
+        assert_eq!(
+            queue_type_icon_class(&pending_new_disc),
             "submission-type-icon submission-type-icon-disc submission-type-icon-new-disc"
         );
 
-        let rejected_verification = queue_row(
+        let pending_verification = queue_row(
             SubmissionDisplayKind::Verification,
-            SubmissionStatus::Rejected,
+            SubmissionStatus::Pending,
         );
+        assert_eq!(queue_type_icon_label(&pending_verification), "Verification");
         assert_eq!(
-            queue_type_icon_label(&rejected_verification),
-            "Verification"
-        );
-        assert_eq!(
-            queue_type_icon_class(&rejected_verification),
+            queue_type_icon_class(&pending_verification),
             "submission-type-icon submission-type-icon-disc submission-type-icon-verification"
+        );
+
+        let approved_disc = queue_row(SubmissionDisplayKind::Disc, SubmissionStatus::Approved);
+        assert_eq!(queue_type_icon_label(&approved_disc), "Disc");
+        assert_eq!(
+            queue_type_icon_class(&approved_disc),
+            "submission-type-icon submission-type-icon-disc submission-type-icon-processed"
         );
 
         let approved_edit = queue_row(SubmissionDisplayKind::Edit, SubmissionStatus::Approved);
         assert_eq!(queue_type_icon_label(&approved_edit), "Edit");
         assert_eq!(
             queue_type_icon_class(&approved_edit),
-            "submission-type-icon submission-type-icon-edit submission-type-icon-edit-pending"
+            "submission-type-icon submission-type-icon-edit submission-type-icon-processed"
         );
 
-        let legacy_new_disc = queue_row(SubmissionDisplayKind::NewDisc, SubmissionStatus::Legacy);
+        let pending_edit = queue_row(SubmissionDisplayKind::Edit, SubmissionStatus::Pending);
         assert_eq!(
-            queue_type_icon_class(&legacy_new_disc),
-            "submission-type-icon submission-type-icon-disc submission-type-icon-processed"
+            queue_type_icon_class(&pending_edit),
+            "submission-type-icon submission-type-icon-edit submission-type-icon-edit-pending"
         );
     }
 
@@ -3131,9 +3290,19 @@ mod tests {
         snapshot: &serde_json::Value,
         submission: &DiscSubmission,
     ) -> DiscEditTemplate {
+        build_template_for_submission_as(snapshot, submission, UserRole::User)
+    }
+
+    fn build_template_for_submission_as(
+        snapshot: &serde_json::Value,
+        submission: &DiscSubmission,
+        role: UserRole,
+    ) -> DiscEditTemplate {
         let ref_data = ref_data();
+        let mut current_user = AuthenticatedUser::template_only("reviewer");
+        current_user.role = role;
         let mut template = build_review_template(
-            AuthenticatedUser::template_only("moderator"),
+            current_user,
             submission,
             "submitter",
             "",
@@ -3279,6 +3448,79 @@ mod tests {
 
         let css = include_str!("../../static/css/app.css");
         assert!(css.contains(".review-actions .btn-draft"));
+    }
+
+    #[test]
+    fn manual_retarget_controls_are_moderator_only_and_follow_dat() {
+        let mut submission = test_submission();
+        submission.submission_type = SubmissionType::Disc;
+        let mut moderator_template = build_template_for_submission_as(
+            &submitted_snapshot(),
+            &submission,
+            UserRole::Moderator,
+        );
+        moderator_template
+            .review_old_multiline
+            .push(ReviewOldMultiline {
+                field: "files_xml".to_string(),
+                value: "previous dat".to_string(),
+            });
+        let moderator_html = moderator_template.render().unwrap();
+
+        let dat_position = moderator_html.find(r#"name="dat""#).unwrap();
+        let previous_position = moderator_html[dat_position..]
+            .find("previous dat")
+            .map(|position| position + dat_position)
+            .unwrap();
+        let retarget_position = moderator_html
+            .find(r#"class="review-retarget-controls""#)
+            .unwrap();
+        let submission_controls_position = moderator_html
+            .find(r#"aria-label="Submission controls""#)
+            .unwrap();
+        assert!(dat_position < previous_position);
+        assert!(previous_position < retarget_position);
+        assert!(retarget_position < submission_controls_position);
+        assert!(moderator_html.contains(
+            r#"<input type="text" name="retarget_disc_id" inputmode="numeric" autocomplete="off" value="">"#
+        ));
+        assert!(moderator_html.contains(
+            r#"<button type="submit" name="action" value="retarget" class="btn-retarget" formnovalidate>Retarget</button>"#
+        ));
+        assert!(moderator_html.contains("Leave empty to remove the current target."));
+
+        let user_plus_html = build_template_for_submission_as(
+            &submitted_snapshot(),
+            &submission,
+            UserRole::UserPlus,
+        )
+        .render()
+        .unwrap();
+        assert!(!user_plus_html.contains("review-retarget-controls"));
+
+        submission.status = SubmissionStatus::Approved;
+        let processed_html = build_template_for_submission_as(
+            &submitted_snapshot(),
+            &submission,
+            UserRole::Moderator,
+        )
+        .render()
+        .unwrap();
+        assert!(!processed_html.contains("review-retarget-controls"));
+
+        submission.status = SubmissionStatus::Pending;
+        submission.submission_type = SubmissionType::Edit;
+        let edit_html = build_template_for_submission_as(
+            &submitted_snapshot(),
+            &submission,
+            UserRole::Moderator,
+        )
+        .render()
+        .unwrap();
+        assert!(!edit_html.contains("review-retarget-controls"));
+
+        let css = include_str!("../../static/css/app.css");
+        assert!(css.contains(".review-retarget-controls .btn-retarget"));
     }
 
     #[test]
@@ -3614,7 +3856,8 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
     fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
         use sqlx::Row;
         let submission_type: SubmissionType = row.try_get("submission_type")?;
-        let submission_has_dat_add: bool = row.try_get("submission_has_dat_add")?;
+        let submission_has_target_disc: bool = row.try_get("submission_has_target_disc")?;
+        let status: SubmissionStatus = row.try_get("status")?;
         let system_code: String = row.try_get("system_code")?;
         let system_short_name: Option<String> = row.try_get("system_short_name").ok();
         let system_display = crate::db::models::short_system_display(
@@ -3626,7 +3869,8 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
             submission_type,
             display_kind: SubmissionDisplayKind::from_parts(
                 submission_type,
-                submission_has_dat_add,
+                status,
+                submission_has_target_disc,
             ),
             title: row.try_get("title")?,
             system_code,
@@ -3635,7 +3879,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
             submitter_id: row.try_get("submitter_id")?,
             reviewer: row.try_get("reviewer")?,
             reviewer_id: row.try_get("reviewer_id")?,
-            status: row.try_get("status")?,
+            status,
             target_disc_id: row.try_get("target_disc_id")?,
             created_at: row.try_get("created_at")?,
         })

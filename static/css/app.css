@@ -3914,6 +3914,24 @@ body:has(.submission-info) main.container > section h3 {
 }
 
 /* Review action buttons */
+.review-retarget-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem 0.75rem;
+    margin-top: 0.75rem;
+}
+.review-retarget-controls label {
+    width: min(100%, 14rem);
+    margin: 0;
+}
+.review-retarget-controls .btn-retarget {
+    width: auto;
+    margin: 0;
+}
+.review-retarget-controls small {
+    flex-basis: 100%;
+}
 .review-actions {
     display: flex;
     gap: 1rem;
