@@ -3469,33 +3469,14 @@ fn build_add_submission_changes(
     add_match: Option<&AddDiscMatch>,
 ) -> serde_json::Value {
     let mut changes = build_new_disc_changes(form, all_media_types, all_systems);
-    if let Some(add_match) = add_match {
+    if add_match.is_some() {
         if let Some(obj) = changes.as_object_mut() {
-            obj.remove("dat");
             if form_edc_selection(form).is_none() {
                 obj.remove("edc");
             }
-            remove_matching_add_change(obj, "system_code", &add_match.system_code);
-            remove_matching_add_change(obj, "media_type", &add_match.media_type);
         }
     }
     changes
-}
-
-fn remove_matching_add_change(
-    changes: &mut serde_json::Map<String, serde_json::Value>,
-    key: &str,
-    target_value: &str,
-) {
-    let matches_target = changes
-        .get(key)
-        .and_then(|value| value.get("add"))
-        .and_then(|value| value.get("new"))
-        .and_then(|value| value.as_str())
-        .map_or(false, |new_value| new_value == target_value);
-    if matches_target {
-        changes.remove(key);
-    }
 }
 
 #[cfg(test)]
@@ -4683,37 +4664,34 @@ mod operation_delta_tests {
     }
 
     #[test]
-    fn build_add_submission_changes_omits_dat_for_verification() {
+    fn build_add_submission_changes_preserves_explicit_payload_for_verification() {
         let form = new_disc_form();
-        let matched = add_match(1, AddDiscMatchSource::Dat, "SYS", "DVD");
-
         let new_disc_changes =
             build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), None);
-        let verification_changes = build_add_submission_changes(
-            &form,
-            &media_rows(),
-            &systems_with_edc(true),
-            Some(&matched),
-        );
 
-        assert!(new_disc_changes.get("dat").is_some());
-        assert!(verification_changes.get("dat").is_none());
-        assert!(new_disc_changes.get("status").is_none());
-        assert!(verification_changes.get("status").is_none());
-        assert!(verification_changes.get("system_code").is_none());
-        assert!(verification_changes.get("media_type").is_none());
-        assert_eq!(
-            verification_changes["title"],
-            serde_json::json!({ "add": { "new": "New Game" } })
-        );
-        assert_eq!(
-            verification_changes["regions"],
-            serde_json::json!({ "add": ["Europe", "Asia", "Europe"] })
-        );
+        for source in [AddDiscMatchSource::Dat, AddDiscMatchSource::UniversalHash] {
+            let matched = add_match(1, source, "SYS", "DVD");
+            let verification_changes = build_add_submission_changes(
+                &form,
+                &media_rows(),
+                &systems_with_edc(true),
+                Some(&matched),
+            );
+
+            assert_eq!(verification_changes, new_disc_changes);
+            let restored = queue_service::resolve_submission_snapshot(
+                &serde_json::json!({}),
+                &verification_changes,
+            )
+            .unwrap();
+            assert_eq!(restored["system_code"], "SYS");
+            assert_eq!(restored["media_type"], "DVD");
+            assert_eq!(restored["dat"], new_disc_changes["dat"]["add"]["new"]);
+        }
     }
 
     #[test]
-    fn build_add_submission_changes_omits_blank_metadata_for_verification() {
+    fn build_add_submission_changes_omits_blank_metadata_but_preserves_dat() {
         let mut form = new_disc_form();
         form.system_code = String::new();
         form.media_type = String::new();
@@ -4729,7 +4707,7 @@ mod operation_delta_tests {
             Some(&matched),
         );
 
-        assert!(verification_changes.get("dat").is_none());
+        assert!(verification_changes.get("dat").is_some());
         assert!(verification_changes.get("system_code").is_none());
         assert!(verification_changes.get("media_type").is_none());
         assert!(verification_changes.get("category").is_none());
