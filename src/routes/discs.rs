@@ -2476,8 +2476,9 @@ mod tests {
     }
 
     #[test]
-    fn advanced_sort_controls_cover_all_fields_and_independent_directions() {
+    fn visible_sort_controls_follow_letters_and_keep_all_options() {
         let template = include_str!("../../templates/discs.html");
+        let css = include_str!("../../static/css/app.css");
 
         for sort in [
             "title", "region", "system", "version", "edition", "language", "serial", "status",
@@ -2485,10 +2486,18 @@ mod tests {
         ] {
             assert!(
                 template.contains(&format!("<option value=\"{sort}\"")),
-                "missing advanced sort option {sort}"
+                "missing visible sort option {sort}"
             );
         }
 
+        let sort_row = template
+            .find("class=\"advanced-search-row disc-sort-row\"")
+            .unwrap();
+        let filter_form_end = template.find("    </form>").unwrap();
+        let letter_picker = template
+            .find("        <div class=\"letter-picker\">")
+            .unwrap();
+        assert!(letter_picker < sort_row && sort_row < filter_form_end);
         assert!(!template.contains("title|asc"));
         assert!(!template.contains("added|desc"));
         assert!(template.contains("name=\"sort\""));
@@ -2497,6 +2506,38 @@ mod tests {
         assert!(template.contains("aria-label=\"Descending\""));
         assert!(template.contains("this.form.order.value='asc'"));
         assert!(template.contains("this.form.order.value='desc'"));
+        assert!(css.contains(
+            "#filter-form > .disc-sort-row {\n    grid-column: 1 / -1;\n    justify-self: center;"
+        ));
+        assert!(css.contains(
+            "#filter-form > .letter-picker {\n    grid-column: 1 / -1;\n    justify-self: center;"
+        ));
+        assert_eq!(
+            css.matches("#filter-form .disc-sort-controls .sort-select {")
+                .count(),
+            2
+        );
+        assert!(
+            !css.contains("#filter-form.advanced-search-visible .disc-sort-controls .sort-select")
+        );
+    }
+
+    #[test]
+    fn main_filter_form_preserves_the_letter_and_resets_pagination() {
+        let template = include_str!("../../templates/discs.html");
+        let filter_form = template
+            .split_once("<form method=\"get\" action=\"/discs\" id=\"filter-form\"")
+            .unwrap()
+            .1
+            .split_once("</form>")
+            .unwrap()
+            .0;
+
+        assert!(filter_form.contains("name=\"letter\" value=\"{{ filter_letter }}\""));
+        assert!(filter_form.contains("name=\"sort\""));
+        assert!(filter_form.contains("this.form.requestSubmit()"));
+        assert!(!filter_form.contains("name=\"page\""));
+        assert!(filter_form.contains("self.letter_url(\"\")"));
     }
 
     #[test]

@@ -792,7 +792,16 @@ nav[aria-label="Pagination"] ul {
     max-width: 100%;
     min-width: 0;
 }
-#filter-form.advanced-search-visible .disc-sort-controls .sort-select {
+#filter-form > .disc-sort-row {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(100%, calc(5rem + 0.35rem + var(--advanced-system-control-width, 21.875rem)));
+}
+#filter-form > .letter-picker {
+    grid-column: 1 / -1;
+    justify-self: center;
+}
+#filter-form .disc-sort-controls .sort-select {
     flex: 1 1 0;
     width: 0;
     min-width: 0;
@@ -909,7 +918,7 @@ nav[aria-label="Pagination"] ul {
         grid-column: 1 / -1;
         justify-self: end;
     }
-    #filter-form.advanced-search-visible .disc-sort-controls .sort-select {
+    #filter-form .disc-sort-controls .sort-select {
         width: 0;
     }
 }

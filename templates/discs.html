@@ -195,43 +195,43 @@
                 <span>Offset</span>
                 <input type="text" name="offset" value="{{ filter_offset }}">
             </label>
-            <div class="advanced-search-row">
-                <span id="disc-sort-label">Sort by</span>
-                <div class="disc-sort-controls">
-                    <select class="sort-select" name="sort" aria-labelledby="disc-sort-label" data-default-value="title" onchange="this.form.requestSubmit()">
-                        <option value="title" {% if sort_column == "title" %}selected{% endif %}>Title</option>
-                        <option value="region" {% if sort_column == "region" %}selected{% endif %}>Region</option>
-                        <option value="system" {% if sort_column == "system" %}selected{% endif %}>System</option>
-                        <option value="version" {% if sort_column == "version" %}selected{% endif %}>Version</option>
-                        <option value="edition" {% if sort_column == "edition" %}selected{% endif %}>Edition</option>
-                        <option value="language" {% if sort_column == "language" %}selected{% endif %}>Language</option>
-                        <option value="serial" {% if sort_column == "serial" %}selected{% endif %}>Serial</option>
-                        <option value="status" {% if sort_column == "status" %}selected{% endif %}>Status</option>
-                        <option value="added" {% if sort_column == "added" %}selected{% endif %}>Date added</option>
-                        <option value="modified" {% if sort_column == "modified" %}selected{% endif %}>Date modified</option>
-                    </select>
-                    <div class="sort-direction" role="group" aria-label="Sort direction">
-                        <button type="button" aria-label="Ascending" aria-pressed="{% if sort_order == "asc" %}true{% else %}false{% endif %}" onclick="this.form.order.value='asc';this.form.requestSubmit();">↑ Asc</button>
-                        <button type="button" aria-label="Descending" aria-pressed="{% if sort_order == "desc" %}true{% else %}false{% endif %}" onclick="this.form.order.value='desc';this.form.requestSubmit();">↓ Desc</button>
-                    </div>
-                </div>
-            </div>
             <div class="advanced-search-actions">
                 <button type="submit">Apply</button>
             </div>
         </div>
         <input type="hidden" name="q" value="{{ filter_q }}">
+        <input type="hidden" name="letter" value="{{ filter_letter }}">
         <input type="hidden" name="order" value="{{ sort_order }}" data-default-value="asc">
         <input type="hidden" name="advanced" id="advanced-flag" value="{% if advanced_explicit %}1{% else %}0{% endif %}" data-default-value="0">
+        <div class="letter-picker">
+            <a href="{{ self.letter_url("") }}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
+            <a href="{{ self.letter_url("#") }}" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
+            {% for c in letters %}
+            <a href="{{ self.letter_url(c.0) }}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
+            {% endfor %}
+        </div>
+        <div class="advanced-search-row disc-sort-row">
+            <span id="disc-sort-label">Sort by</span>
+            <div class="disc-sort-controls">
+                <select class="sort-select" name="sort" aria-labelledby="disc-sort-label" data-default-value="title" onchange="this.form.requestSubmit()">
+                    <option value="title" {% if sort_column == "title" %}selected{% endif %}>Title</option>
+                    <option value="region" {% if sort_column == "region" %}selected{% endif %}>Region</option>
+                    <option value="system" {% if sort_column == "system" %}selected{% endif %}>System</option>
+                    <option value="version" {% if sort_column == "version" %}selected{% endif %}>Version</option>
+                    <option value="edition" {% if sort_column == "edition" %}selected{% endif %}>Edition</option>
+                    <option value="language" {% if sort_column == "language" %}selected{% endif %}>Language</option>
+                    <option value="serial" {% if sort_column == "serial" %}selected{% endif %}>Serial</option>
+                    <option value="status" {% if sort_column == "status" %}selected{% endif %}>Status</option>
+                    <option value="added" {% if sort_column == "added" %}selected{% endif %}>Date added</option>
+                    <option value="modified" {% if sort_column == "modified" %}selected{% endif %}>Date modified</option>
+                </select>
+                <div class="sort-direction" role="group" aria-label="Sort direction">
+                    <button type="button" aria-label="Ascending" aria-pressed="{% if sort_order == "asc" %}true{% else %}false{% endif %}" onclick="this.form.order.value='asc';this.form.requestSubmit();">↑ Asc</button>
+                    <button type="button" aria-label="Descending" aria-pressed="{% if sort_order == "desc" %}true{% else %}false{% endif %}" onclick="this.form.order.value='desc';this.form.requestSubmit();">↓ Desc</button>
+                </div>
+            </div>
+        </div>
     </form>
-
-    <div class="letter-picker">
-        <a href="{{ self.letter_url("") }}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
-        <a href="{{ self.letter_url("#") }}" {% if filter_letter == "#" %}class="active"{% endif %}>#</a>
-        {% for c in letters %}
-        <a href="{{ self.letter_url(c.0) }}" {% if c.1 %}class="active"{% endif %}>{{ c.0 }}</a>
-        {% endfor %}
-    </div>
 </details>
 
 <p class="disc-count-line"><small>{% if total_count == 1 %}1 disc found.{% else %}{{ total_count }} discs found.{% endif %}</small></p>
