@@ -9,40 +9,17 @@ use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 use crate::hex_case::{canonicalize_disc_snapshot_hex_fields, normalize_sbi_hex_case};
 
-/// SQL predicate over submission alias `ds` and disc alias `d`: selects submission
-/// rows that represent a genuine, publicly-approved change to a disc — Approved/Legacy
-/// status, excluding the disc's initial creation row and empty "backfill" edits.
-///
-/// Single source of truth shared by the home "Recent Changes" list and the disc list
-/// "Modification date" sort, so both agree on what counts as a change.
-pub const RECENT_CHANGE_PREDICATE: &str = "
-    ds.status IN ('Approved', 'Legacy')
-    AND (
-      (
-        ds.submission_type = 'Edit'
-        AND NOT (
-          ds.changes = '{}'::jsonb
-          AND COALESCE(ds.review_comment, '') IN ('added-backfill', 'no-added-sentinel')
-        )
-      )
-      OR (
-        ds.submission_type = 'Disc'
-        AND ds.id <> (
-          SELECT MIN(ds_first.id)
-          FROM disc_submissions ds_first
-          WHERE ds_first.target_disc_id = d.id
-            AND ds_first.status IN ('Approved', 'Legacy')
-        )
-      )
-    )";
+/// SQL fragments shared by every query that exposes a disc's public modification
+/// date. Submission rows must use the `ds` alias.
+pub(crate) const PUBLIC_DISC_HISTORY_PREDICATE: &str = "ds.status IN ('Approved', 'Legacy')";
+pub(crate) const DISC_HISTORY_MODIFIED_AT_SQL: &str =
+    "MAX(COALESCE(ds.reviewed_at, ds.created_at))";
 
-/// Correlated subquery yielding a disc's most recent genuine-change timestamp
-/// (per [`RECENT_CHANGE_PREDICATE`]), or NULL if the disc has no qualifying change.
-/// Expects an outer disc aliased `d`.
-pub fn modification_date_sql() -> String {
+fn disc_modified_at_sql() -> String {
     format!(
-        "(SELECT MAX(COALESCE(ds.reviewed_at, ds.created_at)) FROM disc_submissions ds \
-         WHERE ds.target_disc_id = d.id AND {RECENT_CHANGE_PREDICATE})"
+        "SELECT {DISC_HISTORY_MODIFIED_AT_SQL} FROM disc_submissions ds
+         WHERE ds.target_disc_id = $1
+           AND {PUBLIC_DISC_HISTORY_PREDICATE}"
     )
 }
 
@@ -714,13 +691,11 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_one(pool)
     .await?;
 
-    let modified_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT MAX(COALESCE(reviewed_at, created_at)) FROM disc_submissions
-         WHERE target_disc_id = $1",
-    )
-    .bind(disc_id)
-    .fetch_one(pool)
-    .await?;
+    let modified_at: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar(&disc_modified_at_sql())
+            .bind(disc_id)
+            .fetch_one(pool)
+            .await?;
 
     let sector_ranges: Vec<ProtectionRange> = sqlx::query_as(
         "SELECT lower(r)::INT AS range_start, upper(r)::INT AS range_end \
@@ -1192,10 +1167,13 @@ mod tests {
     }
 
     #[test]
-    fn modification_date_uses_review_time_with_created_fallback() {
-        let sql = modification_date_sql();
-        assert!(sql.contains("MAX(COALESCE(ds.reviewed_at, ds.created_at))"));
-        assert!(sql.contains(RECENT_CHANGE_PREDICATE.trim()));
+    fn disc_modified_at_uses_all_public_history_rows() {
+        let sql = disc_modified_at_sql();
+        assert!(sql.contains(DISC_HISTORY_MODIFIED_AT_SQL));
+        assert!(sql.contains(PUBLIC_DISC_HISTORY_PREDICATE));
+        assert!(!sql.contains("submission_type"));
+        assert!(!sql.contains("changes"));
+        assert!(!sql.contains("review_comment"));
     }
 
     #[test]

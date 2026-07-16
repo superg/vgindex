@@ -9,26 +9,24 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
-use crate::services::disc_service::RECENT_CHANGE_PREDICATE;
+use crate::services::disc_service::{DISC_HISTORY_MODIFIED_AT_SQL, PUBLIC_DISC_HISTORY_PREDICATE};
 use crate::services::news_service::NewsItem;
 use crate::AppState;
 
 const HOME_RECENT_LIMIT: i64 = 30;
 const HOME_NEWS_LIMIT: usize = 3;
 pub const HOMEPAGE_CACHE_TTL_SECONDS: u64 = 60;
-// Shares `RECENT_CHANGE_PREDICATE` with the disc list "Modification date" sort so
-// both agree on what counts as a genuine change.
 fn home_recent_changes_sql() -> String {
     format!(
         "SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
-                MAX(COALESCE(ds.reviewed_at, ds.created_at)) AS modified_at
+                {DISC_HISTORY_MODIFIED_AT_SQL} AS modified_at
          FROM discs d
          JOIN systems s ON s.code = d.system_code
          JOIN disc_submissions ds ON ds.target_disc_id = d.id
          WHERE d.status != 'Disabled'
-           AND {RECENT_CHANGE_PREDICATE}
+           AND {PUBLIC_DISC_HISTORY_PREDICATE}
          GROUP BY d.id, d.title, s.code, s.short_name
-         ORDER BY MAX(COALESCE(ds.reviewed_at, ds.created_at)) DESC, d.id DESC
+         ORDER BY {DISC_HISTORY_MODIFIED_AT_SQL} DESC, d.id DESC
          LIMIT $1"
     )
 }
@@ -382,20 +380,12 @@ mod tests {
     }
 
     #[test]
-    fn recent_changes_query_excludes_new_disc_creation_rows() {
+    fn recent_changes_query_includes_every_public_history_row() {
         let sql = home_recent_changes_sql();
-        assert!(sql.contains("ds.changes = '{}'::jsonb"));
-        assert!(sql.contains(
-            "COALESCE(ds.review_comment, '') IN ('added-backfill', 'no-added-sentinel')"
-        ));
-        assert!(sql.contains("ds.submission_type = 'Disc'"));
-        assert!(sql.contains("ds.id <> ("));
-        assert!(sql.contains("SELECT MIN(ds_first.id)"));
-    }
-
-    #[test]
-    fn recent_changes_query_keeps_edit_rows() {
-        assert!(home_recent_changes_sql().contains("ds.submission_type = 'Edit'"));
+        assert!(!sql.contains("submission_type"));
+        assert!(!sql.contains("changes"));
+        assert!(!sql.contains("review_comment"));
+        assert!(!sql.contains("MIN(ds_first.id)"));
     }
 
     fn homepage_data(title: &str) -> HomepageData {

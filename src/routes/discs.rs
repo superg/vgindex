@@ -19,7 +19,9 @@ use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
 use crate::db::models::{format_display_title, DiscStatus};
 use crate::error::AppResult;
-use crate::services::disc_service;
+use crate::services::disc_service::{
+    self, DISC_HISTORY_MODIFIED_AT_SQL, PUBLIC_DISC_HISTORY_PREDICATE,
+};
 use crate::AppState;
 
 use super::compact_query_url;
@@ -626,6 +628,19 @@ fn protection_search_clause(bind_idx: u32, is_logged_in: bool) -> String {
 
 fn display_title_sort_sql() -> &'static str {
     "d.display_title_sort_key"
+}
+
+fn modified_sort_cte_sql() -> String {
+    format!(
+        "WITH modified_sort AS MATERIALIZED (
+            SELECT ds.target_disc_id AS disc_id,
+                   {DISC_HISTORY_MODIFIED_AT_SQL} AS sort_value
+            FROM disc_submissions ds
+            WHERE ds.target_disc_id IS NOT NULL
+              AND {PUBLIC_DISC_HISTORY_PREDICATE}
+            GROUP BY ds.target_disc_id
+        )"
+    )
 }
 
 fn disc_order_by_sql(sort_column: &str, sort_expression: &str, sort_direction: &str) -> String {
@@ -1626,38 +1641,7 @@ async fn discs_page(
             "added_sort.sort_value"
         }
         "modified" => {
-            sort_cte = "WITH first_public_submission AS NOT MATERIALIZED (
-                SELECT target_disc_id AS disc_id, MIN(id) AS first_id
-                FROM disc_submissions
-                WHERE target_disc_id IS NOT NULL
-                  AND status IN ('Approved', 'Legacy')
-                GROUP BY target_disc_id
-            ), modified_sort AS MATERIALIZED (
-                SELECT ds.target_disc_id AS disc_id,
-                       MAX(COALESCE(ds.reviewed_at, ds.created_at)) AS sort_value
-                FROM disc_submissions ds
-                JOIN first_public_submission first_submission
-                  ON first_submission.disc_id = ds.target_disc_id
-                WHERE ds.status IN ('Approved', 'Legacy')
-                  AND (
-                    (
-                      ds.submission_type = 'Edit'
-                      AND (
-                        ds.changes <> '{}'::jsonb
-                        OR COALESCE(ds.review_comment, '') <> ALL (
-                            ARRAY['added-backfill', 'no-added-sentinel']::TEXT[]
-                        )
-                      )
-                    )
-                    OR ds.submission_type = 'Disc'
-                  )
-                  AND (
-                    ds.submission_type <> 'Disc'
-                    OR ds.id <> first_submission.first_id
-                  )
-                GROUP BY ds.target_disc_id
-            )"
-            .to_string();
+            sort_cte = modified_sort_cte_sql();
             sort_join = " LEFT JOIN modified_sort ON modified_sort.disc_id = d.id";
             "modified_sort.sort_value"
         }
@@ -2980,6 +2964,17 @@ mod tests {
     }
 
     #[test]
+    fn modified_sort_uses_every_public_history_row() {
+        let sql = modified_sort_cte_sql();
+        assert!(sql.contains(DISC_HISTORY_MODIFIED_AT_SQL));
+        assert!(sql.contains(PUBLIC_DISC_HISTORY_PREDICATE));
+        assert!(!sql.contains("first_public_submission"));
+        assert!(!sql.contains("submission_type"));
+        assert!(!sql.contains("changes"));
+        assert!(!sql.contains("review_comment"));
+    }
+
+    #[test]
     fn non_title_sorts_use_title_and_id_tiebreakers_in_the_same_direction() {
         for sort_column in [
             "region", "system", "version", "edition", "language", "serial", "status", "added",
@@ -3138,15 +3133,23 @@ mod tests {
             assert!(migration.contains(expected), "missing {expected}");
         }
 
-        let modification_index =
+        let old_modification_index =
             include_str!("../../migrations/013_index_disc_modification_sort.sql");
-        assert!(modification_index.contains("idx_submissions_genuine_change_target_time"));
+        assert!(old_modification_index.contains("idx_submissions_genuine_change_target_time"));
+        assert!(old_modification_index
+            .contains("DROP INDEX idx_submissions_public_target_created_desc"));
+
+        let public_history_index =
+            include_str!("../../migrations/019_index_public_disc_history_modified.sql");
+        assert!(public_history_index.contains("idx_submissions_public_history_target_time"));
+        assert!(public_history_index.contains("INCLUDE (reviewed_at, created_at)"));
+        assert!(public_history_index.contains("status IN ('Approved', 'Legacy')"));
         assert!(
-            modification_index.contains("INCLUDE (reviewed_at, created_at, id, submission_type)")
+            public_history_index.contains("DROP INDEX idx_submissions_genuine_change_target_time")
         );
-        assert!(
-            modification_index.contains("DROP INDEX idx_submissions_public_target_created_desc")
-        );
+        assert!(!public_history_index.contains("submission_type"));
+        assert!(!public_history_index.contains("changes"));
+        assert!(!public_history_index.contains("review_comment"));
 
         let contents_index = include_str!("../../migrations/014_index_disc_contents_search.sql");
         assert!(contents_index.contains("idx_discs_contents_trgm"));
