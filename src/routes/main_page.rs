@@ -9,6 +9,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
+use crate::db::models::format_display_title;
 use crate::services::disc_service::{DISC_HISTORY_MODIFIED_AT_SQL, PUBLIC_DISC_HISTORY_PREDICATE};
 use crate::services::news_service::NewsItem;
 use crate::AppState;
@@ -16,18 +17,52 @@ use crate::AppState;
 const HOME_RECENT_LIMIT: i64 = 30;
 const HOME_NEWS_LIMIT: usize = 3;
 pub const HOMEPAGE_CACHE_TTL_SECONDS: u64 = 60;
+
+fn home_recent_discs_sql() -> &'static str {
+    "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
+            s.has_disc_number, s.has_disc_title,
+            s.code AS system_code, s.short_name AS system_short_name,
+            (SELECT MIN(ds.created_at)
+             FROM disc_submissions ds
+             WHERE ds.target_disc_id = d.id) AS created_at
+     FROM discs d
+     JOIN systems s ON s.code = d.system_code
+     WHERE d.status != 'Disabled'
+     ORDER BY d.id DESC
+     LIMIT $1"
+}
+
 fn home_recent_changes_sql() -> String {
     format!(
-        "SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
+        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
+                s.has_disc_number, s.has_disc_title,
+                s.code AS system_code, s.short_name AS system_short_name,
                 {DISC_HISTORY_MODIFIED_AT_SQL} AS modified_at
          FROM discs d
          JOIN systems s ON s.code = d.system_code
          JOIN disc_submissions ds ON ds.target_disc_id = d.id
          WHERE d.status != 'Disabled'
            AND {PUBLIC_DISC_HISTORY_PREDICATE}
-         GROUP BY d.id, d.title, s.code, s.short_name
+         GROUP BY d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
+                  s.code, s.short_name, s.has_disc_number, s.has_disc_title
          ORDER BY {DISC_HISTORY_MODIFIED_AT_SQL} DESC, d.id DESC
          LIMIT $1"
+    )
+}
+
+fn home_display_title(
+    title: &str,
+    disc_number: Option<&str>,
+    disc_title: Option<&str>,
+    filename_suffix: Option<&str>,
+    has_disc_number: bool,
+    has_disc_title: bool,
+) -> String {
+    format_display_title(
+        title,
+        if has_disc_number { disc_number } else { None },
+        if has_disc_title { disc_title } else { None },
+        filename_suffix,
     )
 }
 
@@ -221,20 +256,10 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
     let total_started = Instant::now();
 
     let recent_discs_started = Instant::now();
-    let rows: Vec<RecentDiscRow> = sqlx::query_as(
-        "SELECT d.id, d.title, s.code AS system_code, s.short_name AS system_short_name,
-                (SELECT MIN(ds.created_at)
-                 FROM disc_submissions ds
-                 WHERE ds.target_disc_id = d.id) AS created_at
-         FROM discs d
-         JOIN systems s ON s.code = d.system_code
-         WHERE d.status != 'Disabled'
-         ORDER BY d.id DESC
-         LIMIT $1",
-    )
-    .bind(HOME_RECENT_LIMIT)
-    .fetch_all(pool)
-    .await?;
+    let rows: Vec<RecentDiscRow> = sqlx::query_as(home_recent_discs_sql())
+        .bind(HOME_RECENT_LIMIT)
+        .fetch_all(pool)
+        .await?;
     let recent_discs_elapsed = recent_discs_started.elapsed();
 
     let recent_changes_started = Instant::now();
@@ -258,7 +283,14 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
             .unwrap_or_default();
         recent_discs.push(RecentDisc {
             id: r.id,
-            title: r.title,
+            title: home_display_title(
+                &r.title,
+                r.disc_number.as_deref(),
+                r.disc_title.as_deref(),
+                r.filename_suffix.as_deref(),
+                r.has_disc_number,
+                r.has_disc_title,
+            ),
             system: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             region_flags: regions_by_disc.get(&r.id).cloned().unwrap_or_default(),
             created_at,
@@ -273,7 +305,14 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
             .unwrap_or_default();
         recent_changes.push(RecentChange {
             id: r.id,
-            title: r.title,
+            title: home_display_title(
+                &r.title,
+                r.disc_number.as_deref(),
+                r.disc_title.as_deref(),
+                r.filename_suffix.as_deref(),
+                r.has_disc_number,
+                r.has_disc_title,
+            ),
             system: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             region_flags: regions_by_disc.get(&r.id).cloned().unwrap_or_default(),
             modified_at,
@@ -300,6 +339,11 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
 struct RecentDiscRow {
     id: i32,
     title: String,
+    disc_number: Option<String>,
+    disc_title: Option<String>,
+    filename_suffix: Option<String>,
+    has_disc_number: bool,
+    has_disc_title: bool,
     system_code: String,
     system_short_name: String,
     created_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -309,6 +353,11 @@ struct RecentDiscRow {
 struct RecentChangeRow {
     id: i32,
     title: String,
+    disc_number: Option<String>,
+    disc_title: Option<String>,
+    filename_suffix: Option<String>,
+    has_disc_number: bool,
+    has_disc_title: bool,
     system_code: String,
     system_short_name: String,
     modified_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -386,6 +435,48 @@ mod tests {
         assert!(!sql.contains("changes"));
         assert!(!sql.contains("review_comment"));
         assert!(!sql.contains("MIN(ds_first.id)"));
+    }
+
+    #[test]
+    fn homepage_queries_select_disc_list_title_components() {
+        let recent_changes_sql = home_recent_changes_sql();
+        for sql in [home_recent_discs_sql(), recent_changes_sql.as_str()] {
+            for field in [
+                "d.disc_number",
+                "d.disc_title",
+                "d.filename_suffix",
+                "s.has_disc_number",
+                "s.has_disc_title",
+            ] {
+                assert!(sql.contains(field), "missing {field}");
+            }
+        }
+    }
+
+    #[test]
+    fn homepage_titles_match_disc_list_display_rules() {
+        assert_eq!(
+            home_display_title(
+                "Example",
+                Some("2"),
+                Some("Bonus Disc"),
+                Some("Rev 1"),
+                true,
+                true,
+            ),
+            "Example (Disc 2) (Bonus Disc) (Rev 1)"
+        );
+        assert_eq!(
+            home_display_title(
+                "Example",
+                Some("2"),
+                Some("Bonus Disc"),
+                Some("Rev 1"),
+                false,
+                false,
+            ),
+            "Example (Rev 1)"
+        );
     }
 
     fn homepage_data(title: &str) -> HomepageData {
