@@ -5466,6 +5466,25 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn ringcode_review_highlights_follow_entries_across_structural_edits() {
+        let script = include_str!("../../static/js/disc_edit.js");
+
+        assert!(script.contains("var ringEntryHighlights = [];"));
+        assert!(script.contains("ringEntryHighlights = ringEntries.map(function (_, idx)"));
+        assert!(script.contains("var entryHighlight = ringEntryHighlights[ei] || null;"));
+        assert!(!script.contains("RING_HIGHLIGHTS[ei]"));
+        assert!(
+            script.contains("ringEntries.splice(idx, 1);\n    ringEntryHighlights.splice(idx, 1);")
+        );
+        assert!(script.contains("ringEntryHighlights.push(highlight || null);"));
+        assert!(script.contains("ringEntryHighlights = [ringEntryHighlights[keepIndex] || null];"));
+        assert_eq!(script.matches("pushRingEntry(emptyEntry").count(), 3);
+        assert!(script.contains(
+            "entryHighlight && Array.isArray(entryHighlight.layers) && entryHighlight.layers[li]"
+        ));
+    }
+
+    #[test]
     fn plain_users_may_modify_or_remove_existing_ringcodes() {
         let changes = serde_json::json!({
             "ring_codes": [

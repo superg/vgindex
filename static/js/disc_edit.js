@@ -245,6 +245,7 @@ function addArrayEntry(containerId, name) {
 
 // Ring code editor — table-based, matching disc view layout
 var ringEntries = [];
+var ringEntryHighlights = [];
 function isAddMode() {
     return typeof IS_ADD_MODE !== 'undefined' && !!IS_ADD_MODE;
 }
@@ -267,6 +268,10 @@ function ringInputClass(baseClass, status) {
 
 function initRingEditor() {
     ringEntries = (typeof RING_CODES !== 'undefined' && Array.isArray(RING_CODES)) ? RING_CODES : [];
+    var initialHighlights = (typeof RING_HIGHLIGHTS !== 'undefined' && Array.isArray(RING_HIGHLIGHTS)) ? RING_HIGHLIGHTS : [];
+    ringEntryHighlights = ringEntries.map(function (_, idx) {
+        return initialHighlights[idx] || null;
+    });
     ensureEmptyRingEntry();
     renderRingEntries();
 }
@@ -335,26 +340,37 @@ function emptyEntry(ml) {
     return { offset_value: '', offset_extra_value: '', sample_start: '', comment: '', layers: layers };
 }
 
+function pushRingEntry(entry, highlight) {
+    ringEntries.push(entry);
+    ringEntryHighlights.push(highlight || null);
+}
+
+function removeRingEntryState(idx) {
+    ringEntries.splice(idx, 1);
+    ringEntryHighlights.splice(idx, 1);
+}
+
 function ensureEmptyRingEntry() {
     var ml = getRingLayers();
     if (isAddMode()) {
         if (ringEntries.length === 0) {
-            ringEntries.push(emptyEntry(ml));
+            pushRingEntry(emptyEntry(ml), null);
         } else if (ringEntries.length > 1) {
-            var firstNonEmpty = null;
+            var keepIndex = 0;
             for (var i = 0; i < ringEntries.length; i++) {
                 if (!isEntryEmpty(ringEntries[i])) {
-                    firstNonEmpty = ringEntries[i];
+                    keepIndex = i;
                     break;
                 }
             }
-            ringEntries = [firstNonEmpty || ringEntries[0]];
+            ringEntries = [ringEntries[keepIndex]];
+            ringEntryHighlights = [ringEntryHighlights[keepIndex] || null];
         }
         return;
     }
     if (!canAddRingcodeEntries()) return;
     if (ringEntries.length === 0 || !isEntryEmpty(ringEntries[ringEntries.length - 1])) {
-        ringEntries.push(emptyEntry(ml));
+        pushRingEntry(emptyEntry(ml), null);
     }
 }
 
@@ -404,7 +420,7 @@ function renderRingEntries() {
     tbody.innerHTML = '';
     for (var ei = 0; ei < ringEntries.length; ei++) {
         var entry = ringEntries[ei];
-        var entryHighlight = (typeof RING_HIGHLIGHTS !== 'undefined' && RING_HIGHLIGHTS && RING_HIGHLIGHTS[ei]) ? RING_HIGHLIGHTS[ei] : null;
+        var entryHighlight = ringEntryHighlights[ei] || null;
         var entryStatus = '';
         if (typeof entryHighlight === 'string') {
             entryStatus = entryHighlight;
@@ -457,7 +473,7 @@ function renderRingEntries() {
 
 function removeRingEntry(idx) {
     saveRingFromDom();
-    ringEntries.splice(idx, 1);
+    removeRingEntryState(idx);
     ensureEmptyRingEntry();
     renderRingEntries();
     applyRingColumnWidths();
@@ -477,7 +493,7 @@ function addRingEntry() {
         if (firstInput) firstInput.focus();
         return;
     }
-    ringEntries.push(emptyEntry(getRingLayers()));
+    pushRingEntry(emptyEntry(getRingLayers()), null);
     renderRingEntries();
     applyRingColumnWidths();
     var newFirst = document.querySelector('#ring-tbody tr[data-entry="' + (ringEntries.length - 1) + '"] input');
