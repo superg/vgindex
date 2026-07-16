@@ -1948,7 +1948,42 @@ pub async fn get_submission(pool: &PgPool, id: i32) -> AppResult<DiscSubmission>
         .ok_or(AppError::NotFound)
 }
 
-const UNPROCESSED_SUBMISSION_SQL: &str = "ds.status IN ('Pending', 'Draft')";
+pub(crate) async fn submission_display_kind_with_history(
+    pool: &PgPool,
+    submission: &DiscSubmission,
+) -> AppResult<SubmissionDisplayKind> {
+    if submission.submission_type == SubmissionType::Edit || !submission.status.is_public_history()
+    {
+        return Ok(submission.display_kind());
+    }
+
+    let Some(target_disc_id) = submission.target_disc_id else {
+        return Ok(SubmissionDisplayKind::NewDisc);
+    };
+
+    let is_first: bool = sqlx::query_scalar(
+        "SELECT COALESCE(
+             $1 = (
+                 SELECT MIN(ds_first.id)
+                 FROM disc_submissions ds_first
+                 WHERE ds_first.target_disc_id = $2
+                   AND ds_first.submission_type = 'Disc'
+                   AND ds_first.status IN ('Approved', 'Legacy')
+             ), FALSE
+         )",
+    )
+    .bind(submission.id)
+    .bind(target_disc_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(if is_first {
+        SubmissionDisplayKind::NewDisc
+    } else {
+        SubmissionDisplayKind::Verification
+    })
+}
+
 const SUBMISSION_LIST_SYSTEM_CODE_SQL: &str = "CASE WHEN ds.status = 'Draft' THEN
          COALESCE(ds.changes->'system_code'->'add'->>'new',
                   ds.changes->'system_code'->'modify'->>'new', '')
@@ -1956,26 +1991,46 @@ const SUBMISSION_LIST_SYSTEM_CODE_SQL: &str = "CASE WHEN ds.status = 'Draft' THE
                   ds.changes->'system_code'->'add'->>'new',
                   ds.changes->'system_code'->'modify'->>'new', '') END";
 
+const SUBMISSION_LIST_SUBMITTED_TITLE_SQL: &str =
+    "COALESCE(NULLIF(ds.changes->'title'->'add'->>'new', ''),
+              NULLIF(ds.changes->'title'->'modify'->>'new', ''),
+              NULLIF(d.title, ''), 'Untitled')";
+
+const FIRST_PUBLIC_DISC_SUBMISSION_SQL: &str = "ds.id = (
+    SELECT MIN(ds_first.id)
+    FROM disc_submissions ds_first
+    WHERE ds_first.target_disc_id = ds.target_disc_id
+      AND ds_first.submission_type = 'Disc'
+      AND ds_first.status IN ('Approved', 'Legacy')
+)";
+
 fn submission_display_kind_sql() -> String {
     format!(
         "CASE \
          WHEN ds.submission_type = 'Edit' THEN 'Edit' \
-         WHEN NOT ({UNPROCESSED_SUBMISSION_SQL}) THEN 'Disc' \
+         WHEN ds.status IN ('Approved', 'Legacy') \
+              AND (ds.target_disc_id IS NULL OR {FIRST_PUBLIC_DISC_SUBMISSION_SQL}) \
+              THEN 'New Disc' \
+         WHEN ds.status IN ('Approved', 'Legacy') THEN 'Verification' \
          WHEN ds.target_disc_id IS NULL THEN 'New Disc' \
          ELSE 'Verification' \
          END"
     )
 }
 
+fn submission_title_sort_sql() -> String {
+    format!(
+        "CASE WHEN ds.target_disc_id IS NOT NULL \
+         THEN d.display_title_sort_key \
+         ELSE LOWER({SUBMISSION_LIST_SUBMITTED_TITLE_SQL}) END"
+    )
+}
+
 fn submission_type_filter_condition(type_filter: Option<&str>) -> Option<String> {
     match type_filter.unwrap_or_default() {
-        "Edit" => Some("ds.submission_type = 'Edit'".to_string()),
-        "New Disc" => Some(format!(
-            "ds.submission_type = 'Disc' AND {UNPROCESSED_SUBMISSION_SQL} AND ds.target_disc_id IS NULL"
-        )),
-        "Verification" => Some(format!(
-            "ds.submission_type = 'Disc' AND (NOT ({UNPROCESSED_SUBMISSION_SQL}) OR ds.target_disc_id IS NOT NULL)"
-        )),
+        label @ ("Edit" | "New Disc" | "Verification") => {
+            Some(format!("({}) = '{label}'", submission_display_kind_sql()))
+        }
         _ => None,
     }
 }
@@ -2049,16 +2104,13 @@ pub async fn list_submissions(
         conditions.push(format!("LOWER(u.username) = LOWER(${idx})"));
     }
 
-    let title_expr = "COALESCE(NULLIF(ds.changes->'title'->'add'->>'new', ''),
-                               NULLIF(ds.changes->'title'->'modify'->>'new', ''),
-                               NULLIF(d.title, ''), 'Untitled')";
     let system_expr = format!(
         "CONCAT_WS(' ', NULLIF(s.manufacturer, ''), COALESCE(s.name, {SUBMISSION_LIST_SYSTEM_CODE_SQL}, ''))"
     );
     let type_expr = submission_display_kind_sql();
     let sort_col = match sort_column {
         "date" => "ds.created_at".to_string(),
-        "title" => format!("LOWER({title_expr})"),
+        "title" => submission_title_sort_sql(),
         "disc_id" => "ds.target_disc_id".to_string(),
         "system" => format!("LOWER({system_expr})"),
         "submitter" => "LOWER(u.username)".to_string(),
@@ -2076,8 +2128,14 @@ pub async fn list_submissions(
 
     let sql = format!(
         "SELECT ds.id, ds.submission_type,
-                ds.target_disc_id IS NOT NULL AS submission_has_target_disc,
-                {title_expr} AS title,
+                {type_expr} AS display_kind,
+                {submitted_title_expr} AS submitted_title,
+                d.title AS target_title,
+                d.disc_number AS target_disc_number,
+                d.disc_title AS target_disc_title,
+                d.filename_suffix AS target_filename_suffix,
+                COALESCE(target_system.has_disc_number, FALSE) AS target_has_disc_number,
+                COALESCE(target_system.has_disc_title, FALSE) AS target_has_disc_title,
                 {system_code_expr} AS system_code,
                 COALESCE(s.short_name, '') AS system_short_name,
                 u.username AS submitter,
@@ -2091,12 +2149,14 @@ pub async fn list_submissions(
          JOIN users u ON u.id = ds.submitter_id
          LEFT JOIN users ur ON ur.id = ds.reviewer_id
          LEFT JOIN discs d ON d.id = ds.target_disc_id
+         LEFT JOIN systems target_system ON target_system.code = d.system_code
          LEFT JOIN systems s
              ON s.code = {system_code_expr}
          WHERE {}
          ORDER BY {sort_col} {sort_dir}{nulls_order}
          LIMIT {page_size} OFFSET {offset}",
         conditions.join(" AND "),
+        submitted_title_expr = SUBMISSION_LIST_SUBMITTED_TITLE_SQL,
         system_code_expr = SUBMISSION_LIST_SYSTEM_CODE_SQL
     );
 
@@ -2473,9 +2533,22 @@ mod tests {
         let pool = PgPool::connect(&database_url).await.unwrap();
         let fixture = approval_fixture(&pool, "retarget verification").await;
         let token = random_test_token();
+        let initial_history_token = random_test_token();
         let fingerprint = random_test_token();
         let universal_hash = random_test_token()[..40].to_string();
         let universal_hash_bytes = hex::decode(&universal_hash).unwrap();
+        let initial_history_id: i32 = sqlx::query_scalar(
+            "INSERT INTO disc_submissions
+                 (submission_type, submitter_id, target_disc_id, changes, status, submission_token)
+             VALUES ('Disc', $1, $2, '{}'::jsonb, 'Legacy', $3)
+             RETURNING id",
+        )
+        .bind(fixture.submitter_id)
+        .bind(fixture.disc_id)
+        .bind(&initial_history_token)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         sqlx::query(
             "UPDATE discs SET universal_hash = $1,
                     serial = ARRAY['EXISTING-001'],
@@ -2630,7 +2703,7 @@ mod tests {
             false,
             fixture.submitter_id,
             true,
-            Some("Approved"),
+            None,
             Some("New Disc"),
             None,
             None,
@@ -2668,14 +2741,25 @@ mod tests {
         .await
         .unwrap();
 
-        cleanup_approval_fixture(&pool, &fixture, &[&token]).await;
+        let initial_history = get_submission(&pool, initial_history_id).await.unwrap();
+        let initial_history_kind = submission_display_kind_with_history(&pool, &initial_history)
+            .await
+            .unwrap();
+        let final_submission_kind = submission_display_kind_with_history(&pool, &final_submission)
+            .await
+            .unwrap();
+
+        cleanup_approval_fixture(&pool, &fixture, &[&token, &initial_history_token]).await;
 
         assert_eq!(approval, ApprovalOutcome::Approved(fixture.disc_id));
         assert_eq!(final_submission.status, SubmissionStatus::Approved);
         assert_eq!(final_submission.display_kind(), SubmissionDisplayKind::Disc);
+        assert_eq!(initial_history_kind, SubmissionDisplayKind::NewDisc);
+        assert_eq!(final_submission_kind, SubmissionDisplayKind::Verification);
         assert!(verification_rows
             .iter()
             .any(|row| row.id == final_submission.id));
+        assert!(new_disc_rows.iter().any(|row| row.id == initial_history_id));
         assert!(!new_disc_rows
             .iter()
             .any(|row| row.id == final_submission.id));
@@ -3483,6 +3567,13 @@ mod tests {
         let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let pool = PgPool::connect(&database_url).await.unwrap();
         let fixture = approval_fixture(&pool, "draft visibility").await;
+        let target_suffix = "Current Target Suffix";
+        sqlx::query("UPDATE discs SET filename_suffix = $1 WHERE id = $2")
+            .bind(target_suffix)
+            .bind(fixture.disc_id)
+            .execute(&pool)
+            .await
+            .unwrap();
         let token = random_test_token();
         let fingerprint = random_test_token();
         let outsider_name = format!("draft-outsider-{}", &random_test_token()[..12]);
@@ -3498,6 +3589,10 @@ mod tests {
             fixture.submitter_id,
             Some(fixture.disc_id),
             serde_json::json!({
+                "title": { "modify": { "old": fixture.title, "new": "Proposed Submission Title" } },
+                "filename_suffix": {
+                    "modify": { "old": target_suffix, "new": "Proposed Submission Suffix" }
+                },
                 "comments": { "add": { "new": "Verification submission" } }
             }),
             None,
@@ -3598,7 +3693,10 @@ mod tests {
             .iter()
             .find(|row| row.id == creation.submission.id)
             .unwrap();
-        assert_eq!(owner_row.title, fixture.title);
+        assert_eq!(
+            owner_row.title,
+            format!("{} ({target_suffix})", fixture.title)
+        );
         assert_eq!(owner_row.target_disc_id, None);
         assert_eq!(owner_row.display_kind, SubmissionDisplayKind::Verification);
         assert!(!outsider_rows
@@ -4027,37 +4125,44 @@ mod tests {
     }
 
     #[test]
-    fn submission_type_filter_conditions_use_status_and_target() {
+    fn submission_type_filter_conditions_use_shared_display_kind_sql() {
         assert_eq!(submission_type_filter_condition(None), None);
         assert_eq!(submission_type_filter_condition(Some("")), None);
-        assert_eq!(
-            submission_type_filter_condition(Some("Edit")),
-            Some("ds.submission_type = 'Edit'".to_string())
-        );
-        assert_eq!(
-            submission_type_filter_condition(Some("New Disc")),
-            Some(format!(
-                "ds.submission_type = 'Disc' AND {UNPROCESSED_SUBMISSION_SQL} AND ds.target_disc_id IS NULL"
-            ))
-        );
-        assert_eq!(
-            submission_type_filter_condition(Some("Verification")),
-            Some(format!(
-                "ds.submission_type = 'Disc' AND (NOT ({UNPROCESSED_SUBMISSION_SQL}) OR ds.target_disc_id IS NOT NULL)"
-            ))
-        );
+        let display_kind_sql = submission_display_kind_sql();
+        for label in ["Edit", "New Disc", "Verification"] {
+            assert_eq!(
+                submission_type_filter_condition(Some(label)),
+                Some(format!("({display_kind_sql}) = '{label}'"))
+            );
+        }
         assert_eq!(submission_type_filter_condition(Some("Disc")), None);
         assert_eq!(submission_type_filter_condition(Some("Unknown")), None);
     }
 
     #[test]
-    fn submission_display_kind_sql_uses_status_and_target() {
+    fn submission_display_kind_sql_uses_public_history_and_target_fallback() {
         let sql = submission_display_kind_sql();
 
-        assert!(sql.contains(UNPROCESSED_SUBMISSION_SQL));
+        assert!(sql.contains("ds.status IN ('Approved', 'Legacy')"));
+        assert!(sql.contains(FIRST_PUBLIC_DISC_SUBMISSION_SQL));
+        assert!(sql.contains("SELECT MIN(ds_first.id)"));
+        assert!(sql.contains("ds_first.submission_type = 'Disc'"));
         assert!(sql.contains("ds.target_disc_id IS NULL"));
-        assert!(sql.contains("THEN 'Disc'"));
+        assert!(sql.contains("THEN 'New Disc'"));
+        assert!(sql.contains("THEN 'Verification'"));
+        assert!(!sql.contains("THEN 'Disc'"));
         assert!(!sql.contains("ds.changes"));
+    }
+
+    #[test]
+    fn submission_title_sort_uses_target_display_key_and_submitted_fallback() {
+        let sql = submission_title_sort_sql();
+
+        assert!(sql.contains("ds.target_disc_id IS NOT NULL"));
+        assert!(sql.contains("d.display_title_sort_key"));
+        assert!(sql.contains(&format!(
+            "ELSE LOWER({SUBMISSION_LIST_SUBMITTED_TITLE_SQL}) END"
+        )));
     }
 
     #[test]

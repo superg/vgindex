@@ -264,9 +264,19 @@ impl SubmissionDisplayKind {
     ) -> Self {
         match submission_type {
             SubmissionType::Edit => Self::Edit,
-            SubmissionType::Disc if !status.is_unprocessed() => Self::Disc,
+            SubmissionType::Disc if status.is_public_history() => Self::Disc,
             SubmissionType::Disc if has_target_disc => Self::Verification,
             SubmissionType::Disc => Self::NewDisc,
+        }
+    }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "Edit" => Some(Self::Edit),
+            "Disc" => Some(Self::Disc),
+            "New Disc" => Some(Self::NewDisc),
+            "Verification" => Some(Self::Verification),
+            _ => None,
         }
     }
 
@@ -299,6 +309,10 @@ pub enum SubmissionStatus {
 impl SubmissionStatus {
     pub fn is_unprocessed(self) -> bool {
         matches!(self, Self::Pending | Self::Draft)
+    }
+
+    pub fn is_public_history(self) -> bool {
+        matches!(self, Self::Approved | Self::Legacy)
     }
 
     pub fn css_class(&self) -> &'static str {
@@ -1116,14 +1130,14 @@ mod tests {
             SubmissionStatus::Legacy,
         ] {
             for has_target_disc in [false, true] {
-                let expected_disc_kind = if status.is_unprocessed() {
+                let expected_disc_kind = if status.is_public_history() {
+                    SubmissionDisplayKind::Disc
+                } else {
                     if has_target_disc {
                         SubmissionDisplayKind::Verification
                     } else {
                         SubmissionDisplayKind::NewDisc
                     }
-                } else {
-                    SubmissionDisplayKind::Disc
                 };
                 assert_eq!(
                     SubmissionDisplayKind::from_parts(
@@ -1143,6 +1157,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn submission_display_kind_labels_round_trip() {
+        for kind in [
+            SubmissionDisplayKind::Edit,
+            SubmissionDisplayKind::Disc,
+            SubmissionDisplayKind::NewDisc,
+            SubmissionDisplayKind::Verification,
+        ] {
+            assert_eq!(SubmissionDisplayKind::from_label(kind.label()), Some(kind));
+        }
+        assert_eq!(SubmissionDisplayKind::from_label("Unknown"), None);
     }
 
     #[test]

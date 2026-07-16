@@ -208,6 +208,35 @@ fn queue_type_icon_class(entry: &SubmissionListRow) -> &'static str {
     }
 }
 
+fn format_submission_list_title(
+    submitted_title: &str,
+    target_title: Option<&str>,
+    target_disc_number: Option<&str>,
+    target_disc_title: Option<&str>,
+    target_filename_suffix: Option<&str>,
+    target_has_disc_number: bool,
+    target_has_disc_title: bool,
+) -> String {
+    let Some(target_title) = target_title else {
+        return submitted_title.to_string();
+    };
+
+    format_display_title(
+        target_title,
+        if target_has_disc_number {
+            target_disc_number
+        } else {
+            None
+        },
+        if target_has_disc_title {
+            target_disc_title
+        } else {
+            None
+        },
+        target_filename_suffix,
+    )
+}
+
 #[derive(sqlx::FromRow)]
 struct SysRow {
     code: String,
@@ -702,11 +731,17 @@ async fn submission_detail(
     let show_review_form = current.is_some_and(|u| can_review_submission(u, &sub)) && is_pending;
 
     if !show_review_form {
-        return Ok(
-            render_readonly_detail(current.cloned(), &sub, &submitter_name, &reviewer_name)
-                .await?
-                .into_response(),
-        );
+        let display_kind =
+            queue_service::submission_display_kind_with_history(&state.pool, &sub).await?;
+        return Ok(render_readonly_detail(
+            current.cloned(),
+            &sub,
+            display_kind,
+            &submitter_name,
+            &reviewer_name,
+        )
+        .await?
+        .into_response());
     }
 
     let current_user = current.cloned().ok_or(AppError::Unauthorized)?;
@@ -1611,13 +1646,14 @@ fn pretty_optional_json(value: Option<&serde_json::Value>) -> String {
 async fn render_readonly_detail(
     current_user: Option<AuthenticatedUser>,
     sub: &DiscSubmission,
+    display_kind: SubmissionDisplayKind,
     submitter_name: &str,
     reviewer_name: &str,
 ) -> AppResult<Html<String>> {
     let template = QueueDetailTemplate {
         current_user,
         submission_id: sub.id,
-        submission_type_display: sub.display_kind().to_string(),
+        submission_type_display: display_kind.to_string(),
         submitter_id: sub.submitter_id,
         submitter_name: submitter_name.to_string(),
         submission_comment: sub.submission_comment.clone().unwrap_or_default(),
@@ -3065,7 +3101,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn approved_disc_submission_with_dat_add_displays_as_disc() {
+    async fn first_approved_disc_submission_displays_as_new_disc() {
         let mut sub = test_submission();
         sub.submission_type = SubmissionType::Disc;
         sub.target_disc_id = Some(123);
@@ -3079,17 +3115,18 @@ mod tests {
         let Html(html) = render_readonly_detail(
             Some(auth_user(8, UserRole::Moderator)),
             &sub,
+            SubmissionDisplayKind::NewDisc,
             "submitter",
             "moderator",
         )
         .await
         .unwrap();
 
-        assert!(html.contains("<td><strong>Submission Type</strong></td><td>Disc</td>"));
+        assert!(html.contains("<td><strong>Submission Type</strong></td><td>New Disc</td>"));
     }
 
     #[tokio::test]
-    async fn approved_disc_submission_without_dat_add_displays_as_disc() {
+    async fn later_approved_disc_submission_displays_as_verification() {
         let mut sub = test_submission();
         sub.submission_type = SubmissionType::Disc;
         sub.target_disc_id = Some(123);
@@ -3103,13 +3140,14 @@ mod tests {
         let Html(html) = render_readonly_detail(
             Some(auth_user(8, UserRole::Moderator)),
             &sub,
+            SubmissionDisplayKind::Verification,
             "submitter",
             "moderator",
         )
         .await
         .unwrap();
 
-        assert!(html.contains("<td><strong>Submission Type</strong></td><td>Disc</td>"));
+        assert!(html.contains("<td><strong>Submission Type</strong></td><td>Verification</td>"));
     }
 
     #[test]
@@ -3192,11 +3230,22 @@ mod tests {
             "submission-type-icon submission-type-icon-disc submission-type-icon-verification"
         );
 
-        let approved_disc = queue_row(SubmissionDisplayKind::Disc, SubmissionStatus::Approved);
-        assert_eq!(queue_type_icon_label(&approved_disc), "Disc");
+        let approved_new_disc =
+            queue_row(SubmissionDisplayKind::NewDisc, SubmissionStatus::Approved);
+        assert_eq!(queue_type_icon_label(&approved_new_disc), "New Disc");
         assert_eq!(
-            queue_type_icon_class(&approved_disc),
-            "submission-type-icon submission-type-icon-disc submission-type-icon-processed"
+            queue_type_icon_class(&approved_new_disc),
+            "submission-type-icon submission-type-icon-disc submission-type-icon-new-disc"
+        );
+
+        let legacy_verification = queue_row(
+            SubmissionDisplayKind::Verification,
+            SubmissionStatus::Legacy,
+        );
+        assert_eq!(queue_type_icon_label(&legacy_verification), "Verification");
+        assert_eq!(
+            queue_type_icon_class(&legacy_verification),
+            "submission-type-icon submission-type-icon-disc submission-type-icon-verification"
         );
 
         let approved_edit = queue_row(SubmissionDisplayKind::Edit, SubmissionStatus::Approved);
@@ -3210,6 +3259,50 @@ mod tests {
         assert_eq!(
             queue_type_icon_class(&pending_edit),
             "submission-type-icon submission-type-icon-edit submission-type-icon-edit-pending"
+        );
+    }
+
+    #[test]
+    fn targeted_queue_titles_match_disc_list_formatting() {
+        assert_eq!(
+            format_submission_list_title(
+                "Proposed Title",
+                Some("Current Title"),
+                Some("2"),
+                Some("Bonus Disc"),
+                Some("Rev A"),
+                true,
+                true,
+            ),
+            "Current Title (Disc 2) (Bonus Disc) (Rev A)"
+        );
+    }
+
+    #[test]
+    fn targeted_queue_titles_respect_capabilities_and_keep_suffixes() {
+        assert_eq!(
+            format_submission_list_title(
+                "Proposed Title",
+                Some("Current Title"),
+                Some("2"),
+                Some("Bonus Disc"),
+                Some("Rev A"),
+                false,
+                false,
+            ),
+            "Current Title (Rev A)"
+        );
+        assert_eq!(
+            format_submission_list_title(
+                "Submitted Title",
+                None,
+                Some("2"),
+                Some("Bonus Disc"),
+                Some("Rev A"),
+                true,
+                true,
+            ),
+            "Submitted Title"
         );
     }
 
@@ -3856,7 +3949,14 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
     fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
         use sqlx::Row;
         let submission_type: SubmissionType = row.try_get("submission_type")?;
-        let submission_has_target_disc: bool = row.try_get("submission_has_target_disc")?;
+        let display_kind_label: String = row.try_get("display_kind")?;
+        let display_kind =
+            SubmissionDisplayKind::from_label(&display_kind_label).ok_or_else(|| {
+                sqlx::Error::Decode(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unknown submission display kind: {display_kind_label}"),
+                )))
+            })?;
         let status: SubmissionStatus = row.try_get("status")?;
         let system_code: String = row.try_get("system_code")?;
         let system_short_name: Option<String> = row.try_get("system_short_name").ok();
@@ -3864,15 +3964,27 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
             system_short_name.as_deref().unwrap_or(""),
             &system_code,
         );
+        let submitted_title: String = row.try_get("submitted_title")?;
+        let target_title: Option<String> = row.try_get("target_title")?;
+        let target_disc_number: Option<String> = row.try_get("target_disc_number")?;
+        let target_disc_title: Option<String> = row.try_get("target_disc_title")?;
+        let target_filename_suffix: Option<String> = row.try_get("target_filename_suffix")?;
+        let target_has_disc_number: bool = row.try_get("target_has_disc_number")?;
+        let target_has_disc_title: bool = row.try_get("target_has_disc_title")?;
+        let title = format_submission_list_title(
+            &submitted_title,
+            target_title.as_deref(),
+            target_disc_number.as_deref(),
+            target_disc_title.as_deref(),
+            target_filename_suffix.as_deref(),
+            target_has_disc_number,
+            target_has_disc_title,
+        );
         Ok(Self {
             id: row.try_get("id")?,
             submission_type,
-            display_kind: SubmissionDisplayKind::from_parts(
-                submission_type,
-                status,
-                submission_has_target_disc,
-            ),
-            title: row.try_get("title")?,
+            display_kind,
+            title,
             system_code,
             system_display,
             submitter: row.try_get("submitter")?,
