@@ -188,8 +188,24 @@
                 <input type="text" name="contents" value="{{ filter_contents }}">
             </label>
             <label class="advanced-search-row">
-                <span>Ringcode</span>
-                <input type="text" name="ringcode" value="{{ filter_ringcode }}">
+                <span>Mastering Code</span>
+                <input type="text" name="mastering_code" value="{{ filter_mastering_code }}">
+            </label>
+            <label class="advanced-search-row">
+                <span>Mastering SID</span>
+                <input type="text" name="mastering_sid" value="{{ filter_mastering_sid }}">
+            </label>
+            <label class="advanced-search-row">
+                <span>Toolstamp</span>
+                <input type="text" name="toolstamp" value="{{ filter_toolstamp }}">
+            </label>
+            <label class="advanced-search-row">
+                <span>Mould SID</span>
+                <input type="text" name="mould_sid" value="{{ filter_mould_sid }}">
+            </label>
+            <label class="advanced-search-row">
+                <span>Additional Mould</span>
+                <input type="text" name="additional_mould" value="{{ filter_additional_mould }}">
             </label>
             <label class="advanced-search-row">
                 <span>Offset</span>
@@ -280,7 +296,11 @@
                     {% if !filter_contents.is_empty() %}
                     <input type="hidden" name="contents" value="{{ filter_contents }}">
                     {% endif %}
-                    {% if !filter_ringcode.is_empty() %}<input type="hidden" name="ringcode" value="{{ filter_ringcode }}">{% endif %}
+                    {% if !filter_mastering_code.is_empty() %}<input type="hidden" name="mastering_code" value="{{ filter_mastering_code }}">{% endif %}
+                    {% if !filter_mastering_sid.is_empty() %}<input type="hidden" name="mastering_sid" value="{{ filter_mastering_sid }}">{% endif %}
+                    {% if !filter_toolstamp.is_empty() %}<input type="hidden" name="toolstamp" value="{{ filter_toolstamp }}">{% endif %}
+                    {% if !filter_mould_sid.is_empty() %}<input type="hidden" name="mould_sid" value="{{ filter_mould_sid }}">{% endif %}
+                    {% if !filter_additional_mould.is_empty() %}<input type="hidden" name="additional_mould" value="{{ filter_additional_mould }}">{% endif %}
                     {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                     {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}
@@ -381,7 +401,11 @@
                     {% if !filter_contents.is_empty() %}
                     <input type="hidden" name="contents" value="{{ filter_contents }}">
                     {% endif %}
-                    {% if !filter_ringcode.is_empty() %}<input type="hidden" name="ringcode" value="{{ filter_ringcode }}">{% endif %}
+                    {% if !filter_mastering_code.is_empty() %}<input type="hidden" name="mastering_code" value="{{ filter_mastering_code }}">{% endif %}
+                    {% if !filter_mastering_sid.is_empty() %}<input type="hidden" name="mastering_sid" value="{{ filter_mastering_sid }}">{% endif %}
+                    {% if !filter_toolstamp.is_empty() %}<input type="hidden" name="toolstamp" value="{{ filter_toolstamp }}">{% endif %}
+                    {% if !filter_mould_sid.is_empty() %}<input type="hidden" name="mould_sid" value="{{ filter_mould_sid }}">{% endif %}
+                    {% if !filter_additional_mould.is_empty() %}<input type="hidden" name="additional_mould" value="{{ filter_additional_mould }}">{% endif %}
                     {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                     {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}

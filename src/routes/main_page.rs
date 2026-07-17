@@ -705,6 +705,8 @@ mod tests {
         assert!(html.contains("recent dump"));
         assert!(html.contains("Recent Changes"));
         assert!(html.contains("recent change changed"));
+        assert_eq!(html.matches("<th class=\"date-col\">Date</th>").count(), 2);
+        assert!(!html.contains("<th class=\"date-col\">Modified</th>"));
         assert!(html.contains("News"));
         assert!(html.contains("Site news"));
         assert!(html.contains("2026-01-01"));

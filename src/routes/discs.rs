@@ -310,7 +310,11 @@ pub struct DiscsQuery {
     pub protection: Option<String>,
     pub comments: Option<String>,
     pub contents: Option<String>,
-    pub ringcode: Option<String>,
+    pub mastering_code: Option<String>,
+    pub mastering_sid: Option<String>,
+    pub toolstamp: Option<String>,
+    pub mould_sid: Option<String>,
+    pub additional_mould: Option<String>,
     pub offset: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
@@ -584,9 +588,31 @@ fn contents_search_clause(bind_idx: u32) -> String {
     format!("LOWER(d.contents) LIKE '%' || LOWER(${bind_idx}) || '%'")
 }
 
-fn ringcode_search_clause(bind_idx: u32) -> String {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RingTextField {
+    MasteringCode,
+    MasteringSid,
+    Toolstamp,
+    MouldSid,
+    AdditionalMould,
+}
+
+impl RingTextField {
+    fn column(self) -> &'static str {
+        match self {
+            Self::MasteringCode => "mastering_code",
+            Self::MasteringSid => "mastering_sid",
+            Self::Toolstamp => "toolstamps",
+            Self::MouldSid => "mould_sids",
+            Self::AdditionalMould => "additional_moulds",
+        }
+    }
+}
+
+fn ring_text_search_clause(field: RingTextField, bind_idx: u32) -> String {
+    let column = field.column();
     format!(
-        "EXISTS (SELECT 1 FROM disc_ring_code_entries ring_entry JOIN disc_ring_code_layers ring_layer ON ring_layer.entry_id = ring_entry.id WHERE ring_entry.disc_id = d.id AND ringcode_layer_search_text(ring_layer.mastering_code, ring_layer.mastering_sid) LIKE '%' || LOWER(${bind_idx}) || '%' AND (LOWER(REGEXP_REPLACE(COALESCE(ring_layer.mastering_code, ''), '[[:blank:]]{{2,}}', CHR(9), 'g')) LIKE '%' || LOWER(${bind_idx}) || '%' OR LOWER(REGEXP_REPLACE(COALESCE(ring_layer.mastering_sid, ''), '[[:blank:]]{{2,}}', CHR(9), 'g')) LIKE '%' || LOWER(${bind_idx}) || '%'))"
+        "EXISTS (SELECT 1 FROM disc_ring_code_entries ring_entry JOIN disc_ring_code_layers ring_layer ON ring_layer.entry_id = ring_entry.id WHERE ring_entry.disc_id = d.id AND public.ringcode_field_search_text(ring_layer.{column}) LIKE '%' || LOWER(${bind_idx}) || '%')"
     )
 }
 
@@ -603,12 +629,14 @@ fn offset_search_clause(bind_idx: u32) -> String {
 fn add_ring_filter_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
-    ringcode_active: bool,
+    filters: [(RingTextField, bool); 5],
     offset_active: bool,
 ) {
-    if ringcode_active {
-        *bind_idx += 1;
-        where_clauses.push(ringcode_search_clause(*bind_idx));
+    for (field, active) in filters {
+        if active {
+            *bind_idx += 1;
+            where_clauses.push(ring_text_search_clause(field, *bind_idx));
+        }
     }
     if offset_active {
         *bind_idx += 1;
@@ -747,7 +775,11 @@ struct DiscsTemplate {
     filter_protection: String,
     filter_comments: String,
     filter_contents: String,
-    filter_ringcode: String,
+    filter_mastering_code: String,
+    filter_mastering_sid: String,
+    filter_toolstamp: String,
+    filter_mould_sid: String,
+    filter_additional_mould: String,
     filter_offset: String,
     advanced_open: bool,
     advanced_explicit: bool,
@@ -800,7 +832,11 @@ impl DiscsTemplate {
             protection: &self.filter_protection,
             comments: &self.filter_comments,
             contents: &self.filter_contents,
-            ringcode: &self.filter_ringcode,
+            mastering_code: &self.filter_mastering_code,
+            mastering_sid: &self.filter_mastering_sid,
+            toolstamp: &self.filter_toolstamp,
+            mould_sid: &self.filter_mould_sid,
+            additional_mould: &self.filter_additional_mould,
             offset: &self.filter_offset,
             q: &self.filter_q,
             sort,
@@ -856,7 +892,11 @@ struct DiscsUrlOptions<'a> {
     protection: &'a str,
     comments: &'a str,
     contents: &'a str,
-    ringcode: &'a str,
+    mastering_code: &'a str,
+    mastering_sid: &'a str,
+    toolstamp: &'a str,
+    mould_sid: &'a str,
+    additional_mould: &'a str,
     offset: &'a str,
     q: &'a str,
     sort: &'a str,
@@ -937,7 +977,11 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("protection", options.protection),
             ("comments", options.comments),
             ("contents", options.contents),
-            ("ringcode", options.ringcode),
+            ("mastering_code", options.mastering_code),
+            ("mastering_sid", options.mastering_sid),
+            ("toolstamp", options.toolstamp),
+            ("mould_sid", options.mould_sid),
+            ("additional_mould", options.additional_mould),
             ("offset", options.offset),
             ("q", options.q),
             ("sort", sort),
@@ -1321,9 +1365,29 @@ async fn discs_page(
         .unwrap_or_default()
         .trim()
         .to_string();
-    let active_ringcode = active_advanced_filter(query.ringcode.as_ref());
-    let filter_ringcode = active_ringcode.clone().unwrap_or_default();
-    let ringcode_bind = active_ringcode
+    let active_mastering_code = active_advanced_filter(query.mastering_code.as_ref());
+    let filter_mastering_code = active_mastering_code.clone().unwrap_or_default();
+    let mastering_code_bind = active_mastering_code
+        .as_deref()
+        .map(disc_service::normalize_ringcode_whitespace);
+    let active_mastering_sid = active_advanced_filter(query.mastering_sid.as_ref());
+    let filter_mastering_sid = active_mastering_sid.clone().unwrap_or_default();
+    let mastering_sid_bind = active_mastering_sid
+        .as_deref()
+        .map(disc_service::normalize_ringcode_whitespace);
+    let active_toolstamp = active_advanced_filter(query.toolstamp.as_ref());
+    let filter_toolstamp = active_toolstamp.clone().unwrap_or_default();
+    let toolstamp_bind = active_toolstamp
+        .as_deref()
+        .map(disc_service::normalize_ringcode_whitespace);
+    let active_mould_sid = active_advanced_filter(query.mould_sid.as_ref());
+    let filter_mould_sid = active_mould_sid.clone().unwrap_or_default();
+    let mould_sid_bind = active_mould_sid
+        .as_deref()
+        .map(disc_service::normalize_ringcode_whitespace);
+    let active_additional_mould = active_advanced_filter(query.additional_mould.as_ref());
+    let filter_additional_mould = active_additional_mould.clone().unwrap_or_default();
+    let additional_mould_bind = active_additional_mould
         .as_deref()
         .map(disc_service::normalize_ringcode_whitespace);
     let filter_offset_value = normalize_offset_filter(query.offset.as_deref());
@@ -1537,7 +1601,19 @@ async fn discs_page(
     add_ring_filter_clauses(
         &mut where_clauses,
         &mut bind_idx,
-        active_ringcode.is_some(),
+        [
+            (
+                RingTextField::MasteringCode,
+                active_mastering_code.is_some(),
+            ),
+            (RingTextField::MasteringSid, active_mastering_sid.is_some()),
+            (RingTextField::Toolstamp, active_toolstamp.is_some()),
+            (RingTextField::MouldSid, active_mould_sid.is_some()),
+            (
+                RingTextField::AdditionalMould,
+                active_additional_mould.is_some(),
+            ),
+        ],
         filter_offset_value.is_some(),
     );
     if filter_dumper_unknown {
@@ -1646,7 +1722,23 @@ async fn discs_page(
         .as_deref()
         .map(str::to_lowercase)
         .unwrap_or_default();
-    let count_key_ringcode = ringcode_bind
+    let count_key_mastering_code = mastering_code_bind
+        .as_deref()
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    let count_key_mastering_sid = mastering_sid_bind
+        .as_deref()
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    let count_key_toolstamp = toolstamp_bind
+        .as_deref()
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    let count_key_mould_sid = mould_sid_bind
+        .as_deref()
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    let count_key_additional_mould = additional_mould_bind
         .as_deref()
         .map(str::to_lowercase)
         .unwrap_or_default();
@@ -1679,7 +1771,11 @@ async fn discs_page(
             protection: &count_key_protection,
             comments: &count_key_comments,
             contents: &count_key_contents,
-            ringcode: &count_key_ringcode,
+            mastering_code: &count_key_mastering_code,
+            mastering_sid: &count_key_mastering_sid,
+            toolstamp: &count_key_toolstamp,
+            mould_sid: &count_key_mould_sid,
+            additional_mould: &count_key_additional_mould,
             offset: &filter_offset,
             q: &count_key_q,
             sort: &sort_column,
@@ -1822,8 +1918,20 @@ async fn discs_page(
     if let Some(contents) = &active_contents {
         bind_queries!(contents.clone());
     }
-    if let Some(ringcode) = &ringcode_bind {
-        bind_queries!(ringcode.clone());
+    if let Some(mastering_code) = &mastering_code_bind {
+        bind_queries!(mastering_code.clone());
+    }
+    if let Some(mastering_sid) = &mastering_sid_bind {
+        bind_queries!(mastering_sid.clone());
+    }
+    if let Some(toolstamp) = &toolstamp_bind {
+        bind_queries!(toolstamp.clone());
+    }
+    if let Some(mould_sid) = &mould_sid_bind {
+        bind_queries!(mould_sid.clone());
+    }
+    if let Some(additional_mould) = &additional_mould_bind {
+        bind_queries!(additional_mould.clone());
     }
     if let Some(offset) = filter_offset_value {
         bind_queries!(offset);
@@ -1960,7 +2068,11 @@ async fn discs_page(
             filter_protection,
             filter_comments,
             filter_contents,
-            filter_ringcode,
+            filter_mastering_code,
+            filter_mastering_sid,
+            filter_toolstamp,
+            filter_mould_sid,
+            filter_additional_mould,
             filter_offset,
             advanced_open,
             advanced_explicit,
@@ -2328,7 +2440,11 @@ mod tests {
         let protection = template.find("<span>Protection</span>").unwrap();
         let comments = template.find("<span>Comments</span>").unwrap();
         let contents = template.find("<span>Contents</span>").unwrap();
-        let ringcode = template.find("<span>Ringcode</span>").unwrap();
+        let mastering_code = template.find("<span>Mastering Code</span>").unwrap();
+        let mastering_sid = template.find("<span>Mastering SID</span>").unwrap();
+        let toolstamp = template.find("<span>Toolstamp</span>").unwrap();
+        let mould_sid = template.find("<span>Mould SID</span>").unwrap();
+        let additional_mould = template.find("<span>Additional Mould</span>").unwrap();
         let offset = template.find("<span>Offset</span>").unwrap();
 
         assert!(region < language && language < media && media < category);
@@ -2344,8 +2460,12 @@ mod tests {
                 && edc < protection
                 && protection < comments
                 && comments < contents
-                && contents < ringcode
-                && ringcode < offset
+                && contents < mastering_code
+                && mastering_code < mastering_sid
+                && mastering_sid < toolstamp
+                && toolstamp < mould_sid
+                && mould_sid < additional_mould
+                && additional_mould < offset
         );
         assert!(template.contains("<option value=\"\">All Languages</option>"));
         assert!(template.contains("<option value=\"\">All Media</option>"));
@@ -2371,8 +2491,13 @@ mod tests {
         assert_eq!(template.matches("name=\"protection\"").count(), 3);
         assert_eq!(template.matches("name=\"comments\"").count(), 3);
         assert_eq!(template.matches("name=\"contents\"").count(), 3);
-        assert_eq!(template.matches("name=\"ringcode\"").count(), 3);
+        assert_eq!(template.matches("name=\"mastering_code\"").count(), 3);
+        assert_eq!(template.matches("name=\"mastering_sid\"").count(), 3);
+        assert_eq!(template.matches("name=\"toolstamp\"").count(), 3);
+        assert_eq!(template.matches("name=\"mould_sid\"").count(), 3);
+        assert_eq!(template.matches("name=\"additional_mould\"").count(), 3);
         assert_eq!(template.matches("name=\"offset\"").count(), 3);
+        assert!(!template.contains("name=\"ringcode\""));
         assert!(!template.contains("edition_q"));
         assert!(!template.contains("comments_q"));
         assert!(template.contains("filterMediaOptions(true)"));
@@ -2498,6 +2623,21 @@ mod tests {
     }
 
     #[test]
+    fn advanced_filter_labels_use_a_wide_consistent_column() {
+        let css = include_str!("../../static/css/app.css");
+
+        assert!(css.contains("--advanced-filter-label-width: 7rem;"));
+        assert_eq!(
+            css.matches("grid-template-columns: var(--advanced-filter-label-width)")
+                .count(),
+            3
+        );
+        assert!(css.contains(
+            "calc(var(--advanced-filter-label-width) + 0.35rem + var(--advanced-system-control-width, 21.875rem))"
+        ));
+    }
+
+    #[test]
     fn language_column_is_compact_and_wraps_against_available_width() {
         let css = include_str!("../../static/css/app.css");
         let template = include_str!("../../templates/discs.html");
@@ -2589,7 +2729,11 @@ mod tests {
                 protection: "SecuROM 7+",
                 comments: "Disc & manual",
                 contents: "Game data & extras",
-                ringcode: "MASTER  L0",
+                mastering_code: "MASTER  L0",
+                mastering_sid: "IFPI L123",
+                toolstamp: "A 1",
+                mould_sid: "IFPI 1234",
+                additional_mould: "A2",
                 offset: "123",
                 q: "Game Name",
                 sort: "status",
@@ -2597,7 +2741,7 @@ mod tests {
                 page: 2,
                 advanced: true,
             }),
-            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&ringcode=MASTER%20%20L0&offset=123&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
+            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset=123&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
         );
 
         assert_eq!(
@@ -2914,19 +3058,28 @@ mod tests {
     }
 
     #[test]
-    fn ringcode_clause_searches_both_mastering_fields_on_any_layer() {
-        let clause = ringcode_search_clause(8);
+    fn ring_text_clauses_search_only_the_selected_field_on_any_layer() {
+        let cases = [
+            (RingTextField::MasteringCode, "mastering_code"),
+            (RingTextField::MasteringSid, "mastering_sid"),
+            (RingTextField::Toolstamp, "toolstamps"),
+            (RingTextField::MouldSid, "mould_sids"),
+            (RingTextField::AdditionalMould, "additional_moulds"),
+        ];
 
-        assert!(clause.contains("FROM disc_ring_code_entries ring_entry"));
-        assert!(clause.contains("JOIN disc_ring_code_layers ring_layer"));
-        assert!(clause.contains("ring_layer.entry_id = ring_entry.id"));
-        assert!(clause.contains("ring_entry.disc_id = d.id"));
-        assert!(clause.contains("ring_layer.mastering_code"));
-        assert!(clause.contains("ring_layer.mastering_sid"));
-        assert_eq!(clause.matches("LOWER($8)").count(), 3);
-        assert!(clause.contains("ringcode_layer_search_text"));
-        assert_eq!(clause.matches("'[[:blank:]]{2,}'").count(), 2);
-        assert_eq!(clause.matches("COALESCE(").count(), 2);
+        for (field, expected_column) in cases {
+            let clause = ring_text_search_clause(field, 8);
+
+            assert!(clause.contains("FROM disc_ring_code_entries ring_entry"));
+            assert!(clause.contains("JOIN disc_ring_code_layers ring_layer"));
+            assert!(clause.contains("ring_layer.entry_id = ring_entry.id"));
+            assert!(clause.contains("ring_entry.disc_id = d.id"));
+            assert!(clause.contains(&format!(
+                "public.ringcode_field_search_text(ring_layer.{expected_column})"
+            )));
+            assert_eq!(clause.matches("ringcode_field_search_text(").count(), 1);
+            assert_eq!(clause.matches("LOWER($8)").count(), 1);
+        }
     }
 
     #[test]
@@ -2938,17 +3091,32 @@ mod tests {
     }
 
     #[test]
-    fn contents_ringcode_and_offset_follow_comments_in_binding_order() {
+    fn contents_ring_fields_and_offset_follow_comments_in_binding_order() {
         let mut clauses = vec![comments_search_clause(7), contents_search_clause(8)];
         let mut bind_idx = 8;
 
-        add_ring_filter_clauses(&mut clauses, &mut bind_idx, true, true);
+        add_ring_filter_clauses(
+            &mut clauses,
+            &mut bind_idx,
+            [
+                (RingTextField::MasteringCode, true),
+                (RingTextField::MasteringSid, true),
+                (RingTextField::Toolstamp, true),
+                (RingTextField::MouldSid, true),
+                (RingTextField::AdditionalMould, true),
+            ],
+            true,
+        );
 
-        assert_eq!(bind_idx, 10);
-        assert_eq!(clauses.len(), 4);
+        assert_eq!(bind_idx, 14);
+        assert_eq!(clauses.len(), 8);
         assert!(clauses[1].contains("LOWER($8)"));
         assert!(clauses[2].contains("LOWER($9)"));
-        assert!(clauses[3].contains("offset_entry.offset_value = $10"));
+        assert!(clauses[3].contains("LOWER($10)"));
+        assert!(clauses[4].contains("LOWER($11)"));
+        assert!(clauses[5].contains("LOWER($12)"));
+        assert!(clauses[6].contains("LOWER($13)"));
+        assert!(clauses[7].contains("offset_entry.offset_value = $14"));
     }
 
     #[test]
@@ -2965,7 +3133,7 @@ mod tests {
 
     #[test]
     fn disc_query_uses_unsuffixed_advanced_text_parameters_only() {
-        let uri = "/discs?title=Game&title_exact=1&title_foreign=Foreign&title_foreign_exact=1&serial=SLUS-12345&serial_exact=1&edition=Limited&edition_exact=1&barcode=012345&barcode_exact=1&protection=SecuROM&comments=Note&contents=Bonus%20videos&ringcode=MASTER-L0&offset=%2B123&edition_q=Old&comments_q=Old"
+        let uri = "/discs?title=Game&title_exact=1&title_foreign=Foreign&title_foreign_exact=1&serial=SLUS-12345&serial_exact=1&edition=Limited&edition_exact=1&barcode=012345&barcode_exact=1&protection=SecuROM&comments=Note&contents=Bonus%20videos&mastering_code=MASTER-L0&mastering_sid=IFPI-L123&toolstamp=A1&mould_sid=IFPI-1234&additional_mould=A2&offset=%2B123&ringcode=OLD&edition_q=Old&comments_q=Old"
                 .parse()
                 .unwrap();
         let Query(query) = Query::<DiscsQuery>::try_from_uri(&uri).unwrap();
@@ -2983,7 +3151,11 @@ mod tests {
         assert_eq!(query.protection.as_deref(), Some("SecuROM"));
         assert_eq!(query.comments.as_deref(), Some("Note"));
         assert_eq!(query.contents.as_deref(), Some("Bonus videos"));
-        assert_eq!(query.ringcode.as_deref(), Some("MASTER-L0"));
+        assert_eq!(query.mastering_code.as_deref(), Some("MASTER-L0"));
+        assert_eq!(query.mastering_sid.as_deref(), Some("IFPI-L123"));
+        assert_eq!(query.toolstamp.as_deref(), Some("A1"));
+        assert_eq!(query.mould_sid.as_deref(), Some("IFPI-1234"));
+        assert_eq!(query.additional_mould.as_deref(), Some("A2"));
         assert_eq!(query.offset.as_deref(), Some("+123"));
 
         let legacy_uri = "/discs?edition_q=Old&comments_q=Old".parse().unwrap();
@@ -3190,6 +3362,30 @@ mod tests {
         let contents_index = include_str!("../../migrations/014_index_disc_contents_search.sql");
         assert!(contents_index.contains("idx_discs_contents_trgm"));
         assert!(contents_index.contains("LOWER(contents) gin_trgm_ops"));
+
+        let ring_field_indexes = include_str!("../../migrations/020_index_ring_code_fields.sql");
+        assert!(ring_field_indexes.contains("ringcode_field_search_text(TEXT)"));
+        for (index, column) in [
+            ("idx_ring_layers_mastering_code_trgm", "mastering_code"),
+            ("idx_ring_layers_mastering_sid_trgm", "mastering_sid"),
+            ("idx_ring_layers_toolstamps_trgm", "toolstamps"),
+            ("idx_ring_layers_mould_sids_trgm", "mould_sids"),
+            (
+                "idx_ring_layers_additional_moulds_trgm",
+                "additional_moulds",
+            ),
+        ] {
+            assert!(ring_field_indexes.contains(index), "missing {index}");
+            assert!(
+                ring_field_indexes.contains(&format!(
+                    "public.ringcode_field_search_text({column}) gin_trgm_ops"
+                )),
+                "missing index expression for {column}"
+            );
+        }
+        assert!(ring_field_indexes.contains("DROP INDEX idx_ring_layers_search_trgm"));
+        assert!(ring_field_indexes
+            .contains("DROP FUNCTION public.ringcode_layer_search_text(TEXT, TEXT)"));
     }
 
     #[tokio::test]
@@ -3245,7 +3441,7 @@ mod tests {
                 ..Default::default()
             },
             DiscsQuery {
-                ringcode: Some("IFPI L557".to_string()),
+                mastering_sid: Some("IFPI L557".to_string()),
                 ..Default::default()
             },
             DiscsQuery {

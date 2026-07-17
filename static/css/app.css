@@ -525,6 +525,7 @@ nav[aria-label="Pagination"] ul {
 
 /* Filter panel — 2×2 grid layout */
 #filter-form {
+    --advanced-filter-label-width: 7rem;
     display: grid;
     grid-template-columns: repeat(2, max-content);
     width: min(100%, var(--disc-filter-max-width));
@@ -542,7 +543,7 @@ nav[aria-label="Pagination"] ul {
 }
 #filter-form label {
     display: grid;
-    grid-template-columns: 5rem max-content;
+    grid-template-columns: var(--advanced-filter-label-width) max-content;
     align-items: center;
     column-gap: 0.35rem;
     margin: 0;
@@ -553,7 +554,7 @@ nav[aria-label="Pagination"] ul {
 }
 #filter-form.advanced-search-visible label,
 #filter-form.advanced-search-visible .advanced-search-row {
-    width: min(100%, calc(5rem + 0.35rem + var(--advanced-system-control-width, 21.875rem)));
+    width: min(100%, calc(var(--advanced-filter-label-width) + 0.35rem + var(--advanced-system-control-width, 21.875rem)));
 }
 #filter-form label span {
     align-self: center;
@@ -656,7 +657,7 @@ nav[aria-label="Pagination"] ul {
 }
 #filter-form .advanced-search-row {
     display: grid;
-    grid-template-columns: 5rem max-content;
+    grid-template-columns: var(--advanced-filter-label-width) max-content;
     align-items: center;
     column-gap: 0.35rem;
     width: 100%;
@@ -890,7 +891,7 @@ nav[aria-label="Pagination"] ul {
     #filter-form .advanced-search-row,
     #filter-form.advanced-search-visible .advanced-search-row {
         box-sizing: border-box;
-        grid-template-columns: 4.75rem minmax(0, 1fr);
+        grid-template-columns: var(--advanced-filter-label-width) minmax(0, 1fr);
         justify-self: center;
         width: min(100%, 20rem);
         max-width: 100%;
