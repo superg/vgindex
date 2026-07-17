@@ -1948,6 +1948,20 @@ pub async fn get_submission(pool: &PgPool, id: i32) -> AppResult<DiscSubmission>
         .ok_or(AppError::NotFound)
 }
 
+fn oldest_public_submission_predicate(
+    submission_id_expression: &str,
+    target_disc_id_expression: &str,
+) -> String {
+    format!(
+        "{submission_id_expression} = (
+             SELECT MIN(ds_first.id)
+             FROM disc_submissions ds_first
+             WHERE ds_first.target_disc_id = {target_disc_id_expression}
+               AND ds_first.status IN ('Approved', 'Legacy')
+         )"
+    )
+}
+
 pub(crate) async fn submission_display_kind_with_history(
     pool: &PgPool,
     submission: &DiscSubmission,
@@ -1961,23 +1975,16 @@ pub(crate) async fn submission_display_kind_with_history(
         return Ok(SubmissionDisplayKind::NewDisc);
     };
 
-    let is_first: bool = sqlx::query_scalar(
-        "SELECT COALESCE(
-             $1 = (
-                 SELECT MIN(ds_first.id)
-                 FROM disc_submissions ds_first
-                 WHERE ds_first.target_disc_id = $2
-                   AND ds_first.submission_type = 'Disc'
-                   AND ds_first.status IN ('Approved', 'Legacy')
-             ), FALSE
-         )",
-    )
+    let oldest_public_submission = oldest_public_submission_predicate("$1", "$2");
+    let is_oldest: bool = sqlx::query_scalar(&format!(
+        "SELECT COALESCE({oldest_public_submission}, FALSE)"
+    ))
     .bind(submission.id)
     .bind(target_disc_id)
     .fetch_one(pool)
     .await?;
 
-    Ok(if is_first {
+    Ok(if is_oldest {
         SubmissionDisplayKind::NewDisc
     } else {
         SubmissionDisplayKind::Verification
@@ -1996,20 +2003,13 @@ const SUBMISSION_LIST_SUBMITTED_TITLE_SQL: &str =
               NULLIF(ds.changes->'title'->'modify'->>'new', ''),
               NULLIF(d.title, ''), 'Untitled')";
 
-const FIRST_PUBLIC_DISC_SUBMISSION_SQL: &str = "ds.id = (
-    SELECT MIN(ds_first.id)
-    FROM disc_submissions ds_first
-    WHERE ds_first.target_disc_id = ds.target_disc_id
-      AND ds_first.submission_type = 'Disc'
-      AND ds_first.status IN ('Approved', 'Legacy')
-)";
-
 fn submission_display_kind_sql() -> String {
+    let oldest_public_submission = oldest_public_submission_predicate("ds.id", "ds.target_disc_id");
     format!(
         "CASE \
          WHEN ds.submission_type = 'Edit' THEN 'Edit' \
          WHEN ds.status IN ('Approved', 'Legacy') \
-              AND (ds.target_disc_id IS NULL OR {FIRST_PUBLIC_DISC_SUBMISSION_SQL}) \
+              AND (ds.target_disc_id IS NULL OR {oldest_public_submission}) \
               THEN 'New Disc' \
          WHEN ds.status IN ('Approved', 'Legacy') THEN 'Verification' \
          WHEN ds.target_disc_id IS NULL THEN 'New Disc' \
@@ -2528,7 +2528,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires a migrated PostgreSQL database"]
-    async fn retargeted_verification_updates_existing_disc_on_second_approval() {
+    async fn retargeted_verification_after_legacy_edit_updates_existing_disc() {
         let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
         let pool = PgPool::connect(&database_url).await.unwrap();
         let fixture = approval_fixture(&pool, "retarget verification").await;
@@ -2540,7 +2540,7 @@ mod tests {
         let initial_history_id: i32 = sqlx::query_scalar(
             "INSERT INTO disc_submissions
                  (submission_type, submitter_id, target_disc_id, changes, status, submission_token)
-             VALUES ('Disc', $1, $2, '{}'::jsonb, 'Legacy', $3)
+             VALUES ('Edit', $1, $2, '{}'::jsonb, 'Legacy', $3)
              RETURNING id",
         )
         .bind(fixture.submitter_id)
@@ -2754,12 +2754,12 @@ mod tests {
         assert_eq!(approval, ApprovalOutcome::Approved(fixture.disc_id));
         assert_eq!(final_submission.status, SubmissionStatus::Approved);
         assert_eq!(final_submission.display_kind(), SubmissionDisplayKind::Disc);
-        assert_eq!(initial_history_kind, SubmissionDisplayKind::NewDisc);
+        assert_eq!(initial_history_kind, SubmissionDisplayKind::Edit);
         assert_eq!(final_submission_kind, SubmissionDisplayKind::Verification);
         assert!(verification_rows
             .iter()
             .any(|row| row.id == final_submission.id));
-        assert!(new_disc_rows.iter().any(|row| row.id == initial_history_id));
+        assert!(!new_disc_rows.iter().any(|row| row.id == initial_history_id));
         assert!(!new_disc_rows
             .iter()
             .any(|row| row.id == final_submission.id));
@@ -4140,13 +4140,21 @@ mod tests {
     }
 
     #[test]
-    fn submission_display_kind_sql_uses_public_history_and_target_fallback() {
+    fn submission_display_kind_sql_uses_oldest_public_history_and_target_fallback() {
         let sql = submission_display_kind_sql();
+        let detail_predicate = oldest_public_submission_predicate("$1", "$2");
 
         assert!(sql.contains("ds.status IN ('Approved', 'Legacy')"));
-        assert!(sql.contains(FIRST_PUBLIC_DISC_SUBMISSION_SQL));
+        assert!(sql.contains(&oldest_public_submission_predicate(
+            "ds.id",
+            "ds.target_disc_id"
+        )));
         assert!(sql.contains("SELECT MIN(ds_first.id)"));
-        assert!(sql.contains("ds_first.submission_type = 'Disc'"));
+        assert!(!sql.contains("ds_first.submission_type"));
+        assert!(detail_predicate.contains("$1 = ("));
+        assert!(detail_predicate.contains("ds_first.target_disc_id = $2"));
+        assert!(detail_predicate.contains("ds_first.status IN ('Approved', 'Legacy')"));
+        assert!(!detail_predicate.contains("ds_first.submission_type"));
         assert!(sql.contains("ds.target_disc_id IS NULL"));
         assert!(sql.contains("THEN 'New Disc'"));
         assert!(sql.contains("THEN 'Verification'"));
