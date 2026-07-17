@@ -15,6 +15,67 @@ pub(crate) const PUBLIC_DISC_HISTORY_PREDICATE: &str = "ds.status IN ('Approved'
 pub(crate) const DISC_HISTORY_MODIFIED_AT_SQL: &str =
     "MAX(COALESCE(ds.reviewed_at, ds.created_at))";
 
+pub(crate) struct DiscDateSortSql {
+    pub cte: String,
+    pub join: &'static str,
+    pub expression: &'static str,
+}
+
+pub(crate) fn disc_date_sort_sql(sort_column: &str) -> Option<DiscDateSortSql> {
+    match sort_column {
+        "added" => Some(DiscDateSortSql {
+            cte: "WITH added_sort AS MATERIALIZED (
+                SELECT target_disc_id AS disc_id, MIN(created_at) AS sort_value
+                FROM disc_submissions
+                WHERE target_disc_id IS NOT NULL
+                GROUP BY target_disc_id
+            )"
+            .to_string(),
+            join: " LEFT JOIN added_sort ON added_sort.disc_id = d.id",
+            expression: "added_sort.sort_value",
+        }),
+        "modified" => Some(DiscDateSortSql {
+            cte: format!(
+                "WITH modified_sort AS MATERIALIZED (
+                    SELECT ds.target_disc_id AS disc_id,
+                           {DISC_HISTORY_MODIFIED_AT_SQL} AS sort_value
+                    FROM disc_submissions ds
+                    WHERE ds.target_disc_id IS NOT NULL
+                      AND {PUBLIC_DISC_HISTORY_PREDICATE}
+                    GROUP BY ds.target_disc_id
+                )"
+            ),
+            join: " LEFT JOIN modified_sort ON modified_sort.disc_id = d.id",
+            expression: "modified_sort.sort_value",
+        }),
+        _ => None,
+    }
+}
+
+pub(crate) fn display_title_sort_sql() -> &'static str {
+    "d.display_title_sort_key"
+}
+
+pub(crate) fn disc_order_by_sql(
+    sort_column: &str,
+    sort_expression: &str,
+    sort_direction: &str,
+) -> String {
+    let nulls_clause = match sort_column {
+        "added" | "modified" => " NULLS LAST",
+        _ => "",
+    };
+    let secondary_sort = if sort_column == "title" {
+        String::new()
+    } else {
+        format!(", {} {sort_direction}", display_title_sort_sql())
+    };
+
+    format!(
+        "{sort_expression} {sort_direction}{nulls_clause}{secondary_sort}, d.id {sort_direction}"
+    )
+}
+
 fn disc_modified_at_sql() -> String {
     format!(
         "SELECT {DISC_HISTORY_MODIFIED_AT_SQL} FROM disc_submissions ds

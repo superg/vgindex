@@ -10,7 +10,7 @@ use tokio::sync::{Mutex, RwLock};
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
 use crate::db::models::format_display_title;
-use crate::services::disc_service::{DISC_HISTORY_MODIFIED_AT_SQL, PUBLIC_DISC_HISTORY_PREDICATE};
+use crate::services::disc_service::{disc_date_sort_sql, disc_order_by_sql};
 use crate::services::news_service::NewsItem;
 use crate::AppState;
 
@@ -18,35 +18,30 @@ const HOME_RECENT_LIMIT: i64 = 30;
 const HOME_NEWS_LIMIT: usize = 3;
 pub const HOMEPAGE_CACHE_TTL_SECONDS: u64 = 60;
 
-fn home_recent_discs_sql() -> &'static str {
-    "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
-            s.has_disc_number, s.has_disc_title,
-            s.code AS system_code, s.short_name AS system_short_name,
-            (SELECT MIN(ds.created_at)
-             FROM disc_submissions ds
-             WHERE ds.target_disc_id = d.id) AS created_at
-     FROM discs d
-     JOIN systems s ON s.code = d.system_code
-     WHERE d.status != 'Disabled'
-     ORDER BY d.id DESC
-     LIMIT $1"
+fn home_recent_discs_sql() -> String {
+    home_recent_date_sql("added", "created_at")
 }
 
 fn home_recent_changes_sql() -> String {
+    home_recent_date_sql("modified", "modified_at")
+}
+
+fn home_recent_date_sql(sort_column: &str, date_alias: &str) -> String {
+    let date_sort = disc_date_sort_sql(sort_column).unwrap();
+    let order_by = disc_order_by_sql(sort_column, date_sort.expression, "DESC");
+
     format!(
-        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
+        "{}
+         SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
                 s.has_disc_number, s.has_disc_title,
                 s.code AS system_code, s.short_name AS system_short_name,
-                {DISC_HISTORY_MODIFIED_AT_SQL} AS modified_at
+                {} AS {date_alias}
          FROM discs d
-         JOIN systems s ON s.code = d.system_code
-         JOIN disc_submissions ds ON ds.target_disc_id = d.id
+         JOIN systems s ON s.code = d.system_code{}
          WHERE d.status != 'Disabled'
-           AND {PUBLIC_DISC_HISTORY_PREDICATE}
-         GROUP BY d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
-                  s.code, s.short_name, s.has_disc_number, s.has_disc_title
-         ORDER BY {DISC_HISTORY_MODIFIED_AT_SQL} DESC, d.id DESC
-         LIMIT $1"
+         ORDER BY {order_by}
+         LIMIT $1",
+        date_sort.cte, date_sort.expression, date_sort.join
     )
 }
 
@@ -256,7 +251,7 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
     let total_started = Instant::now();
 
     let recent_discs_started = Instant::now();
-    let rows: Vec<RecentDiscRow> = sqlx::query_as(home_recent_discs_sql())
+    let rows: Vec<RecentDiscRow> = sqlx::query_as(&home_recent_discs_sql())
         .bind(HOME_RECENT_LIMIT)
         .fetch_all(pool)
         .await?;
@@ -417,6 +412,23 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
+    fn homepage_date_queries_use_disc_list_sort_fragments() {
+        for (sort_column, date_alias, sql) in [
+            ("added", "created_at", home_recent_discs_sql()),
+            ("modified", "modified_at", home_recent_changes_sql()),
+        ] {
+            let date_sort = disc_date_sort_sql(sort_column).unwrap();
+            let order_by = disc_order_by_sql(sort_column, date_sort.expression, "DESC");
+
+            assert!(sql.contains(&date_sort.cte));
+            assert!(sql.contains(date_sort.join.trim()));
+            assert!(sql.contains(&format!("{} AS {date_alias}", date_sort.expression)));
+            assert!(sql.contains(&format!("ORDER BY {order_by}")));
+            assert!(sql.contains("LIMIT $1"));
+        }
+    }
+
+    #[test]
     fn recent_changes_query_only_uses_public_history_rows() {
         assert!(home_recent_changes_sql().contains("ds.status IN ('Approved', 'Legacy')"));
     }
@@ -424,8 +436,8 @@ mod tests {
     #[test]
     fn recent_changes_query_uses_review_time_with_created_fallback() {
         let sql = home_recent_changes_sql();
-        assert!(sql.contains("MAX(COALESCE(ds.reviewed_at, ds.created_at)) AS modified_at"));
-        assert!(sql.contains("ORDER BY MAX(COALESCE(ds.reviewed_at, ds.created_at)) DESC"));
+        assert!(sql.contains("MAX(COALESCE(ds.reviewed_at, ds.created_at)) AS sort_value"));
+        assert!(sql.contains("modified_sort.sort_value AS modified_at"));
     }
 
     #[test]
@@ -439,8 +451,9 @@ mod tests {
 
     #[test]
     fn homepage_queries_select_disc_list_title_components() {
+        let recent_discs_sql = home_recent_discs_sql();
         let recent_changes_sql = home_recent_changes_sql();
-        for sql in [home_recent_discs_sql(), recent_changes_sql.as_str()] {
+        for sql in [recent_discs_sql.as_str(), recent_changes_sql.as_str()] {
             for field in [
                 "d.disc_number",
                 "d.disc_title",

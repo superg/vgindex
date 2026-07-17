@@ -20,7 +20,7 @@ use crate::config::SiteConfig;
 use crate::db::models::{format_display_title, DiscStatus};
 use crate::error::AppResult;
 use crate::services::disc_service::{
-    self, DISC_HISTORY_MODIFIED_AT_SQL, PUBLIC_DISC_HISTORY_PREDICATE,
+    self, disc_date_sort_sql, disc_order_by_sql, display_title_sort_sql,
 };
 use crate::AppState;
 
@@ -624,39 +624,6 @@ fn protection_search_clause(bind_idx: u32, is_logged_in: bool) -> String {
     };
 
     format!("({visibility} AND LOWER(d.protection) LIKE '%' || LOWER(${bind_idx}) || '%')")
-}
-
-fn display_title_sort_sql() -> &'static str {
-    "d.display_title_sort_key"
-}
-
-fn modified_sort_cte_sql() -> String {
-    format!(
-        "WITH modified_sort AS MATERIALIZED (
-            SELECT ds.target_disc_id AS disc_id,
-                   {DISC_HISTORY_MODIFIED_AT_SQL} AS sort_value
-            FROM disc_submissions ds
-            WHERE ds.target_disc_id IS NOT NULL
-              AND {PUBLIC_DISC_HISTORY_PREDICATE}
-            GROUP BY ds.target_disc_id
-        )"
-    )
-}
-
-fn disc_order_by_sql(sort_column: &str, sort_expression: &str, sort_direction: &str) -> String {
-    let nulls_clause = match sort_column {
-        "added" | "modified" => " NULLS LAST",
-        _ => "",
-    };
-    let secondary_sort = if sort_column == "title" {
-        String::new()
-    } else {
-        format!(", {} {sort_direction}", display_title_sort_sql())
-    };
-
-    format!(
-        "{sort_expression} {sort_direction}{nulls_clause}{secondary_sort}, d.id {sort_direction}"
-    )
 }
 
 fn normalize_status_filter(status: Option<&str>, can_view_disabled_discs: bool) -> String {
@@ -1629,21 +1596,11 @@ async fn discs_page(
         "status" => {
             "CASE d.status WHEN 'Verified' THEN 1 WHEN 'Unverified' THEN 2 WHEN 'Questionable' THEN 3 ELSE 4 END"
         }
-        "added" => {
-            sort_cte = "WITH added_sort AS MATERIALIZED (
-                SELECT target_disc_id AS disc_id, MIN(created_at) AS sort_value
-                FROM disc_submissions
-                WHERE target_disc_id IS NOT NULL
-                GROUP BY target_disc_id
-            )"
-            .to_string();
-            sort_join = " LEFT JOIN added_sort ON added_sort.disc_id = d.id";
-            "added_sort.sort_value"
-        }
-        "modified" => {
-            sort_cte = modified_sort_cte_sql();
-            sort_join = " LEFT JOIN modified_sort ON modified_sort.disc_id = d.id";
-            "modified_sort.sort_value"
+        "added" | "modified" => {
+            let date_sort = disc_date_sort_sql(&sort_column).unwrap();
+            sort_cte = date_sort.cte;
+            sort_join = date_sort.join;
+            date_sort.expression
         }
         _ => display_title_sort_sql(),
     };
@@ -2541,6 +2498,44 @@ mod tests {
     }
 
     #[test]
+    fn language_column_is_compact_and_wraps_against_available_width() {
+        let css = include_str!("../../static/css/app.css");
+        let template = include_str!("../../templates/discs.html");
+        let language_rule = css
+            .split_once(".disc-table .language-col {")
+            .unwrap()
+            .1
+            .split_once('}')
+            .unwrap()
+            .0;
+        let flags_rule = css
+            .split_once(".disc-table .language-flags {")
+            .unwrap()
+            .1
+            .split_once('}')
+            .unwrap()
+            .0;
+
+        assert!(language_rule.contains("white-space: normal;"));
+        assert!(language_rule.contains("line-height: 1;"));
+        assert!(!language_rule
+            .lines()
+            .any(|line| line.trim_start().starts_with("max-width:")));
+        assert!(language_rule
+            .lines()
+            .any(|line| line.trim() == "width: 1%;"));
+        assert!(css.contains(".disc-table-scaler {\n    container-type: inline-size;"));
+        assert!(flags_rule.contains("width: max-content;"));
+        assert!(flags_rule.contains("max-width: 40vw;"));
+        assert!(flags_rule.contains("max-width: 40cqi;"));
+        assert!(flags_rule.contains("flex-wrap: wrap;"));
+        assert!(flags_rule.contains("justify-content: flex-start;"));
+        assert!(css.contains(".disc-table td.language-col {\n    text-align: left;"));
+        assert!(template
+            .contains("<span class=\"language-flags\">{% for lang in disc.language_flags %}"));
+    }
+
+    #[test]
     fn compact_disc_urls_omit_empty_and_default_state() {
         assert_eq!(
             build_discs_url(DiscsUrlOptions {
@@ -3006,9 +3001,9 @@ mod tests {
 
     #[test]
     fn modified_sort_uses_every_public_history_row() {
-        let sql = modified_sort_cte_sql();
-        assert!(sql.contains(DISC_HISTORY_MODIFIED_AT_SQL));
-        assert!(sql.contains(PUBLIC_DISC_HISTORY_PREDICATE));
+        let sql = disc_date_sort_sql("modified").unwrap().cte;
+        assert!(sql.contains(disc_service::DISC_HISTORY_MODIFIED_AT_SQL));
+        assert!(sql.contains(disc_service::PUBLIC_DISC_HISTORY_PREDICATE));
         assert!(!sql.contains("first_public_submission"));
         assert!(!sql.contains("submission_type"));
         assert!(!sql.contains("changes"));

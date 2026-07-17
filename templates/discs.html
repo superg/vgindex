@@ -326,7 +326,7 @@
                 <td class="system-col">{{ disc.system_display }}</td>
                 <td class="truncate version-col" title="{{ disc.version }}"><small>{{ disc.version }}</small></td>
                 <td class="truncate edition-col" title="{{ disc.edition_display }}">{{ disc.edition_display }}</td>
-                <td class="language-col">{% for lang in disc.language_flags %}<img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">{% endfor %}</td>
+                <td class="language-col"><span class="language-flags">{% for lang in disc.language_flags %}<img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">{% endfor %}</span></td>
                 <td class="truncate serial-col" title="{{ disc.serial }}"><small>{{ disc.serial }}</small></td>
                 <td class="status-col" title="{{ disc.status_display }}"><span class="status-dot {{ disc.status_class }}"></span></td>
             </tr>

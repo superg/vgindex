@@ -128,6 +128,10 @@ main > h3 {
     width: 100%;
 }
 
+.disc-table-scaler {
+    container-type: inline-size;
+}
+
 /* Reusable horizontal scroll wrapper for tables */
 .table-scroll {
     overflow-x: auto;
@@ -269,14 +273,25 @@ main > h3 {
 }
 
 .disc-table .language-col {
-    width: 5.75rem;
-    max-width: 5.75rem;
+    width: 1%;
     white-space: normal;
     line-height: 1;
 }
 
 .disc-table td.language-col {
-    text-align: center;
+    text-align: left;
+}
+
+.disc-table .language-flags {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-items: center;
+    width: max-content;
+    max-width: 40vw;
+    max-width: 40cqi;
+    line-height: 1;
+    vertical-align: middle;
 }
 
 .disc-table td.region-col {
