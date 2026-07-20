@@ -4,10 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Home{% endblock %} - {{ self.site_name() }}</title>
-    <meta property="og:title" content="{% block title %}Home{% endblock %} - {{ self.site_name() }}">
-    <meta property="og:description" content="{% block description %}Disc Preservation Project{% endblock %}">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://redump.info">
+    <meta name="description" content="{% block description %}Disc Preservation Project{% endblock %}">
+    <meta property="og:title" content="{% block title %}Home{% endblock %} - {{ self.site_name() }}" />
+    <meta property="og:description" content="{% block description %}Disc Preservation Project{% endblock %}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://redump.info" />
+    <meta property="og:site_name" content="{{ self.site_name() }}" />
     <link rel="icon" href="/static/favicon.ico" sizes="any">
     <link rel="shortcut icon" href="/static/favicon.ico">
     <link rel="stylesheet" href="/static/css/pico.min.css">
