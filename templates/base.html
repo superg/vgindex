@@ -1,12 +1,13 @@
+{% let fallback_description = block description %}Disc Preservation Project{% endblock %}
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Home{% endblock %} - {{ self.site_name() }}</title>
-    <meta name="description" content="{% block description %}Disc Preservation Project{% endblock %}">
+    <meta name="description" content="{{ fallback_description }}">
     <meta property="og:title" content="{% block title %}Home{% endblock %} - {{ self.site_name() }}">
-    <meta property="og:description" content="{% block description %}Disc Preservation Project{% endblock %}">
+    <meta property="og:description" content="{{ fallback_description }}">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://redump.info">
     <link rel="icon" href="/static/favicon.ico" sizes="any">
