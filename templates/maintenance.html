@@ -248,6 +248,20 @@
                 <button type="submit" class="outline secondary" id="maintenance-user-logout-button" disabled>Logout</button>
             </form>
         </div>
+
+        <div class="maintenance-user-delete">
+            <p class="maintenance-user-delete-note"><strong>Permanent deletion:</strong> Transfers all disc credits and submission/review attribution to Deleted, revokes all app sessions, and removes this user.</p>
+            <label for="maintenance-delete-confirmation">Retype Username</label>
+            <input type="text" name="confirm_username" id="maintenance-delete-confirmation" form="maintenance-user-delete-form" required autocomplete="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true">
+            <form method="post" action="/maintenance" id="maintenance-user-delete-form">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <button type="submit" class="contrast" id="maintenance-user-delete-button" disabled>Transfer Attribution and Delete User</button>
+            </form>
+        </div>
     </div>
     {% endif %}
 </section>

@@ -3584,6 +3584,50 @@ textarea.full-width-textarea {
     margin: 0;
 }
 
+.maintenance-user-delete {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.8rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+    padding-top: 0.8rem;
+}
+
+.maintenance-user-delete-note {
+    grid-column: 1 / -1;
+    margin-bottom: 0.35rem;
+    color: var(--pico-muted-color);
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+.maintenance-user-delete label {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.1;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.maintenance-user-delete input[type="text"] {
+    height: auto;
+    margin: 0;
+    padding: 0.15rem 0.35rem;
+    font-size: 0.75rem;
+}
+
+.maintenance-user-delete form {
+    grid-column: 1 / -1;
+    margin: 0;
+    text-align: center;
+}
+
+.maintenance-user-delete button {
+    margin: 0;
+}
+
 .maintenance-user-rename-row input[type="text"] {
     height: auto;
     margin: 0;

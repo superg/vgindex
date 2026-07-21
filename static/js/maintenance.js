@@ -57,9 +57,13 @@ function initMaintenanceUserPicker() {
     var renameButton = document.getElementById('maintenance-user-rename-button');
     var logoutForm = document.getElementById('maintenance-user-logout-form');
     var logoutButton = document.getElementById('maintenance-user-logout-button');
-    if (!input || !select || !actions || !renameForm || !logoutForm) return;
+    var deleteForm = document.getElementById('maintenance-user-delete-form');
+    var deleteConfirmation = document.getElementById('maintenance-delete-confirmation');
+    var deleteButton = document.getElementById('maintenance-user-delete-button');
+    if (!input || !select || !actions || !renameForm || !logoutForm || !deleteForm || !deleteConfirmation || !deleteButton) return;
 
     var usersByName = Object.create(null);
+    var selectedDeleteUsername = '';
     Array.prototype.forEach.call(select.options, function (option) {
         var username = option.getAttribute('data-username');
         if (username) usersByName[username] = option;
@@ -69,8 +73,19 @@ function initMaintenanceUserPicker() {
         actions.hidden = true;
         renameForm.action = '/maintenance';
         logoutForm.action = '/maintenance';
+        deleteForm.action = '/maintenance';
         renameButton.disabled = true;
         logoutButton.disabled = true;
+        selectedDeleteUsername = '';
+        deleteConfirmation.value = '';
+        deleteConfirmation.disabled = true;
+        deleteButton.disabled = true;
+    }
+
+    function updateDeleteButton() {
+        deleteButton.disabled = selectedDeleteUsername === '' ||
+            selectedDeleteUsername === 'Deleted' ||
+            deleteConfirmation.value !== selectedDeleteUsername;
     }
 
     function selectUser(option) {
@@ -86,8 +101,13 @@ function initMaintenanceUserPicker() {
         renameInput.value = username;
         renameForm.action = '/maintenance/users/' + option.value + '/rename';
         logoutForm.action = '/maintenance/users/' + option.value + '/logout';
+        deleteForm.action = '/maintenance/users/' + option.value + '/delete';
         renameButton.disabled = false;
         logoutButton.disabled = false;
+        selectedDeleteUsername = username;
+        deleteConfirmation.value = '';
+        deleteConfirmation.disabled = username === 'Deleted';
+        updateDeleteButton();
         actions.hidden = false;
     }
 
@@ -103,6 +123,8 @@ function initMaintenanceUserPicker() {
     input.addEventListener('input', function () {
         selectUser(usersByName[input.value]);
     });
+
+    deleteConfirmation.addEventListener('input', updateDeleteButton);
 
     clearSelection();
 }

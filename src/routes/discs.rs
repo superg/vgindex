@@ -56,6 +56,12 @@ impl DiscsCache {
     pub fn production() -> Self {
         Self::new(REFERENCE_CACHE_TTL, COUNT_CACHE_TTL, DUMPER_CACHE_TTL)
     }
+
+    pub async fn invalidate_dumper_data(&self) {
+        let _refresh = self.dumpers.refresh.lock().await;
+        *self.dumpers.value.write().await = None;
+        self.counts.values.write().await.clear();
+    }
 }
 
 #[derive(Clone)]
@@ -3273,6 +3279,25 @@ mod tests {
         cache.insert("four".to_string(), 4).await;
         assert_eq!(cache.values.read().await.len(), 2);
         assert_eq!(cache.get("two").await, None);
+    }
+
+    #[tokio::test]
+    async fn invalidating_dumper_data_clears_directory_and_count_caches() {
+        let cache = DiscsCache::new(
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+        );
+        cache.counts.insert("dumper=Alice".to_string(), 3).await;
+        *cache.dumpers.value.write().await = Some(TimedValue::new(Arc::new(DumperDirectory {
+            body: r#"["Alice"]"#.to_string(),
+            etag: "test-etag".to_string(),
+        })));
+
+        cache.invalidate_dumper_data().await;
+
+        assert!(cache.counts.values.read().await.is_empty());
+        assert!(cache.dumpers.value.read().await.is_none());
     }
 
     #[test]

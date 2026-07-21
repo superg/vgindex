@@ -36,12 +36,14 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/maintenance/users/{user_id}/logout", post(logout_user))
         .route("/maintenance/users/{user_id}/rename", post(rename_user))
+        .route("/maintenance/users/{user_id}/delete", post(delete_user))
         .route("/maintenance/backups/{filename}", get(download_backup))
 }
 
 const BACKUP_DIR: &str = "./data/backups";
 const BACKUP_PREFIX: &str = "vgindex-backup-";
 const BACKUP_SUFFIX: &str = ".tar.gz";
+const DELETED_USERNAME: &str = "Deleted";
 
 #[derive(Deserialize, Default)]
 struct MaintenanceQuery {
@@ -102,6 +104,14 @@ struct RenameUserForm {
     csrf_token: String,
     #[serde(default)]
     new_username: String,
+}
+
+#[derive(Deserialize)]
+struct DeleteUserForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    confirm_username: String,
 }
 
 async fn maintenance_page(
@@ -214,6 +224,77 @@ async fn rename_user(
     }
 }
 
+struct DeletedUserSummary {
+    username: String,
+    disc_credits: u64,
+    duplicate_disc_credits: u64,
+    submission_attributions: u64,
+    review_attributions: u64,
+    sessions_revoked: i64,
+}
+
+enum DeleteUserResult {
+    Deleted(DeletedUserSummary),
+    NotFound,
+    Protected,
+    ConfirmationMismatch { username: String },
+}
+
+async fn delete_user(
+    State(state): State<AppState>,
+    RequireAdmin(admin): RequireAdmin,
+    AxumPath(user_id): AxumPath<i32>,
+    Form(form): Form<DeleteUserForm>,
+) -> AppResult<Response> {
+    csrf::verify_token(&admin, &form.csrf_token)?;
+
+    match delete_app_user(&state.pool, user_id, &form.confirm_username).await? {
+        DeleteUserResult::Deleted(summary) => {
+            state.discs_cache.invalidate_dumper_data().await;
+            tracing::info!(
+                administrator_id = admin.id,
+                administrator_username = %admin.username,
+                target_user_id = user_id,
+                target_username = %summary.username,
+                disc_credits_transferred = summary.disc_credits,
+                duplicate_disc_credits_merged = summary.duplicate_disc_credits,
+                submission_attributions_transferred = summary.submission_attributions,
+                review_attributions_transferred = summary.review_attributions,
+                sessions_revoked = summary.sessions_revoked,
+                "Administrator transferred user attribution and deleted app user"
+            );
+            Ok(redirect_with_message(
+                "users",
+                "status",
+                &format!(
+                    "Deleted {}. Transferred {} disc credit(s) ({} duplicate(s) merged), {} submission attribution(s), and {} review attribution(s); revoked {} app session(s).",
+                    summary.username,
+                    summary.disc_credits,
+                    summary.duplicate_disc_credits,
+                    summary.submission_attributions,
+                    summary.review_attributions,
+                    summary.sessions_revoked,
+                ),
+            ))
+        }
+        DeleteUserResult::NotFound => Ok(redirect_with_message(
+            "users",
+            "error",
+            "User was not found.",
+        )),
+        DeleteUserResult::Protected => Ok(redirect_with_message(
+            "users",
+            "error",
+            "The Deleted user cannot be deleted.",
+        )),
+        DeleteUserResult::ConfirmationMismatch { username } => Ok(redirect_with_message(
+            "users",
+            "error",
+            &format!("Confirmation must exactly match {username}."),
+        )),
+    }
+}
+
 fn normalize_maintenance_username(value: &str) -> Result<String, &'static str> {
     let username = value.trim();
     if username.is_empty() {
@@ -279,6 +360,127 @@ async fn rename_app_user(
     Ok(RenameUserResult::Renamed {
         old_username: target.username,
     })
+}
+
+async fn delete_app_user(
+    pool: &sqlx::PgPool,
+    user_id: i32,
+    confirm_username: &str,
+) -> Result<DeleteUserResult, sqlx::Error> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut *transaction)
+        .await?;
+
+    let result = delete_app_user_on(&mut transaction, user_id, confirm_username).await?;
+    if matches!(result, DeleteUserResult::Deleted(_)) {
+        transaction.commit().await?;
+    } else {
+        transaction.rollback().await?;
+    }
+    Ok(result)
+}
+
+async fn delete_app_user_on(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: i32,
+    confirm_username: &str,
+) -> Result<DeleteUserResult, sqlx::Error> {
+    let target = sqlx::query_as::<_, UserIdentity>(
+        "SELECT id, username FROM users WHERE id = $1 FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut **transaction)
+    .await?;
+    let Some(target) = target else {
+        return Ok(DeleteUserResult::NotFound);
+    };
+
+    if target.username == DELETED_USERNAME {
+        return Ok(DeleteUserResult::Protected);
+    }
+    if target.username != confirm_username {
+        return Ok(DeleteUserResult::ConfirmationMismatch {
+            username: target.username,
+        });
+    }
+
+    let deleted = sqlx::query_as::<_, UserIdentity>(
+        "INSERT INTO users (username)
+         VALUES ($1)
+         ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
+         RETURNING id, username",
+    )
+    .bind(DELETED_USERNAME)
+    .fetch_one(&mut **transaction)
+    .await?;
+
+    let duplicate_disc_credits = sqlx::query(
+        "UPDATE disc_dumpers AS destination
+         SET position = LEAST(destination.position, source.position)
+         FROM disc_dumpers AS source
+         WHERE source.user_id = $1
+           AND destination.user_id = $2
+           AND destination.disc_id = source.disc_id",
+    )
+    .bind(target.id)
+    .bind(deleted.id)
+    .execute(&mut **transaction)
+    .await?
+    .rows_affected();
+
+    sqlx::query(
+        "DELETE FROM disc_dumpers AS source
+         USING disc_dumpers AS destination
+         WHERE source.user_id = $1
+           AND destination.user_id = $2
+           AND destination.disc_id = source.disc_id",
+    )
+    .bind(target.id)
+    .bind(deleted.id)
+    .execute(&mut **transaction)
+    .await?;
+
+    let moved_disc_credits = sqlx::query("UPDATE disc_dumpers SET user_id = $2 WHERE user_id = $1")
+        .bind(target.id)
+        .bind(deleted.id)
+        .execute(&mut **transaction)
+        .await?
+        .rows_affected();
+
+    let submission_attributions =
+        sqlx::query("UPDATE disc_submissions SET submitter_id = $2 WHERE submitter_id = $1")
+            .bind(target.id)
+            .bind(deleted.id)
+            .execute(&mut **transaction)
+            .await?
+            .rows_affected();
+    let review_attributions =
+        sqlx::query("UPDATE disc_submissions SET reviewer_id = $2 WHERE reviewer_id = $1")
+            .bind(target.id)
+            .bind(deleted.id)
+            .execute(&mut **transaction)
+            .await?
+            .rows_affected();
+    let sessions_revoked: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE user_id = $1")
+            .bind(target.id)
+            .fetch_one(&mut **transaction)
+            .await?;
+
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(target.id)
+        .execute(&mut **transaction)
+        .await?;
+
+    Ok(DeleteUserResult::Deleted(DeletedUserSummary {
+        username: target.username,
+        disc_credits: moved_disc_credits + duplicate_disc_credits,
+        duplicate_disc_credits,
+        submission_attributions,
+        review_attributions,
+        sessions_revoked,
+    }))
 }
 
 async fn fetch_user_identity(
@@ -2447,9 +2649,12 @@ mod tests {
         assert!(html.contains(r#"value="42" data-username="Alice" data-session-count="3""#));
         assert!(html.contains(r#"id="maintenance-user-rename-form""#));
         assert!(html.contains(r#"id="maintenance-user-logout-form""#));
+        assert!(html.contains(r#"id="maintenance-user-delete-form""#));
+        assert!(html.contains(r#"id="maintenance-delete-confirmation""#));
+        assert!(html.contains(r#"name="confirm_username""#));
         assert!(html.contains(r#"form="maintenance-user-rename-form""#));
-        assert_eq!(html.matches(r#"data-lpignore="true""#).count(), 2);
-        assert!(!html.contains("data-maintenance-confirm"));
+        assert!(html.contains(r#"form="maintenance-user-delete-form""#));
+        assert_eq!(html.matches(r#"data-lpignore="true""#).count(), 3);
         assert!(!html.contains("maintenance-users-search"));
     }
 
@@ -2463,6 +2668,10 @@ mod tests {
         assert!(script.contains("input.addEventListener('input'"));
         assert!(script.contains("'/maintenance/users/' + option.value + '/rename'"));
         assert!(script.contains("'/maintenance/users/' + option.value + '/logout'"));
+        assert!(script.contains("'/maintenance/users/' + option.value + '/delete'"));
+        assert!(script.contains("deleteConfirmation.value !== selectedDeleteUsername"));
+        assert!(script.contains("selectedDeleteUsername === 'Deleted'"));
+        assert!(script.contains("deleteConfirmation.addEventListener('input'"));
         assert!(!script.contains("fetch("));
     }
 
@@ -2915,6 +3124,7 @@ mod tests {
         for uri in [
             "/maintenance/users/42/logout",
             "/maintenance/users/42/rename",
+            "/maintenance/users/42/delete",
         ] {
             let response = routes()
                 .with_state(test_state())
@@ -2944,6 +3154,10 @@ mod tests {
                 "/maintenance/users/42/rename",
                 "_csrf=wrong&new_username=Renamed",
             ),
+            (
+                "/maintenance/users/42/delete",
+                "_csrf=wrong&confirm_username=Alice",
+            ),
         ] {
             let response = routes()
                 .with_state(test_state())
@@ -2963,6 +3177,282 @@ mod tests {
 
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
         }
+    }
+
+    async fn migrated_test_pool() -> sqlx::PgPool {
+        dotenvy::dotenv().ok();
+        let database_url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for database tests");
+        sqlx::PgPool::connect(&database_url).await.unwrap()
+    }
+
+    async fn insert_test_disc(
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        title: &str,
+    ) -> i32 {
+        sqlx::query_scalar(
+            "INSERT INTO discs (system_code, media_type_code, category_id, title)
+             SELECT s.code, mt.code, c.id, $1
+             FROM systems s
+             CROSS JOIN media_types mt
+             CROSS JOIN categories c
+             ORDER BY s.code, mt.code, c.id
+             LIMIT 1
+             RETURNING id",
+        )
+        .bind(title)
+        .fetch_one(&mut **transaction)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn deleting_user_creates_deleted_and_transfers_all_attribution() {
+        let pool = migrated_test_pool().await;
+        let mut transaction = pool.begin().await.unwrap();
+        sqlx::query("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        sqlx::query("UPDATE users SET username = $1 WHERE username = $2")
+            .bind(format!("Deleted-test-hidden-{token}"))
+            .bind(DELETED_USERNAME)
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+        let source_name = format!("delete-source-{token}");
+        let source_id: i32 =
+            sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
+                .bind(&source_name)
+                .fetch_one(&mut *transaction)
+                .await
+                .unwrap();
+        let other_id: i32 =
+            sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
+                .bind(format!("delete-other-{token}"))
+                .fetch_one(&mut *transaction)
+                .await
+                .unwrap();
+        let disc_id = insert_test_disc(&mut transaction, &format!("Delete test {token}")).await;
+
+        sqlx::query("INSERT INTO disc_dumpers (disc_id, user_id, position) VALUES ($1, $2, 3)")
+            .bind(disc_id)
+            .bind(source_id)
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO disc_submissions
+                (submission_type, submitter_id, changes, status)
+             VALUES ('Disc', $1, '{}'::jsonb, 'Pending'),
+                    ('Disc', $1, '{}'::jsonb, 'Draft')",
+        )
+        .bind(source_id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO disc_submissions
+                (submission_type, submitter_id, changes, status, reviewer_id)
+             VALUES ('Edit', $1, '{}'::jsonb, 'Approved', $2)",
+        )
+        .bind(other_id)
+        .bind(source_id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+        let session_id = format!("delete-session-{token}");
+        sqlx::query("INSERT INTO sessions (id, user_id, role) VALUES ($1, $2, 'Admin')")
+            .bind(&session_id)
+            .bind(source_id)
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+
+        let result = delete_app_user_on(&mut transaction, source_id, &source_name)
+            .await
+            .unwrap();
+        let DeleteUserResult::Deleted(summary) = result else {
+            panic!("expected successful deletion");
+        };
+        assert_eq!(summary.disc_credits, 1);
+        assert_eq!(summary.duplicate_disc_credits, 0);
+        assert_eq!(summary.submission_attributions, 2);
+        assert_eq!(summary.review_attributions, 1);
+        assert_eq!(summary.sessions_revoked, 1);
+
+        let deleted_id: i32 = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
+            .bind(DELETED_USERNAME)
+            .fetch_one(&mut *transaction)
+            .await
+            .unwrap();
+        let source_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+                .bind(source_id)
+                .fetch_one(&mut *transaction)
+                .await
+                .unwrap();
+        assert!(!source_exists);
+        let credit_position: i32 = sqlx::query_scalar(
+            "SELECT position FROM disc_dumpers WHERE disc_id = $1 AND user_id = $2",
+        )
+        .bind(disc_id)
+        .bind(deleted_id)
+        .fetch_one(&mut *transaction)
+        .await
+        .unwrap();
+        assert_eq!(credit_position, 3);
+        let active_statuses: Vec<String> = sqlx::query_scalar(
+            "SELECT status::text FROM disc_submissions
+             WHERE submitter_id = $1 AND status IN ('Pending', 'Draft')
+             ORDER BY status::text",
+        )
+        .bind(deleted_id)
+        .fetch_all(&mut *transaction)
+        .await
+        .unwrap();
+        assert_eq!(active_statuses, vec!["Draft", "Pending"]);
+        let review_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM disc_submissions WHERE reviewer_id = $1")
+                .bind(deleted_id)
+                .fetch_one(&mut *transaction)
+                .await
+                .unwrap();
+        assert_eq!(review_count, 1);
+        let session_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sessions WHERE id = $1)")
+                .bind(&session_id)
+                .fetch_one(&mut *transaction)
+                .await
+                .unwrap();
+        assert!(!session_exists);
+        assert!(matches!(
+            delete_app_user_on(&mut transaction, deleted_id, DELETED_USERNAME)
+                .await
+                .unwrap(),
+            DeleteUserResult::Protected
+        ));
+
+        transaction.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn deleting_user_merges_duplicate_disc_credit_at_earliest_position() {
+        let pool = migrated_test_pool().await;
+        let mut transaction = pool.begin().await.unwrap();
+        sqlx::query("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        let deleted_id: i32 = sqlx::query_scalar(
+            "INSERT INTO users (username) VALUES ($1)
+             ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
+             RETURNING id",
+        )
+        .bind(DELETED_USERNAME)
+        .fetch_one(&mut *transaction)
+        .await
+        .unwrap();
+        let source_name = format!("delete-duplicate-{token}");
+        let source_id: i32 =
+            sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
+                .bind(&source_name)
+                .fetch_one(&mut *transaction)
+                .await
+                .unwrap();
+        let disc_id = insert_test_disc(&mut transaction, &format!("Delete merge {token}")).await;
+        sqlx::query(
+            "INSERT INTO disc_dumpers (disc_id, user_id, position)
+             VALUES ($1, $2, 7), ($1, $3, 2)",
+        )
+        .bind(disc_id)
+        .bind(deleted_id)
+        .bind(source_id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+        let result = delete_app_user_on(&mut transaction, source_id, &source_name)
+            .await
+            .unwrap();
+        let DeleteUserResult::Deleted(summary) = result else {
+            panic!("expected successful deletion");
+        };
+        assert_eq!(summary.disc_credits, 1);
+        assert_eq!(summary.duplicate_disc_credits, 1);
+        let positions: Vec<i32> = sqlx::query_scalar(
+            "SELECT position FROM disc_dumpers WHERE disc_id = $1 AND user_id = $2",
+        )
+        .bind(disc_id)
+        .bind(deleted_id)
+        .fetch_all(&mut *transaction)
+        .await
+        .unwrap();
+        assert_eq!(positions, vec![2]);
+
+        transaction.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a migrated PostgreSQL database"]
+    async fn deletion_confirmation_failure_leaves_user_unchanged() {
+        let pool = migrated_test_pool().await;
+        let mut transaction = pool.begin().await.unwrap();
+        sqlx::query("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        sqlx::query("UPDATE users SET username = $1 WHERE username = $2")
+            .bind(format!("Deleted-test-hidden-{token}"))
+            .bind(DELETED_USERNAME)
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+        let source_name = format!("delete-confirm-{token}");
+        let source_id: i32 =
+            sqlx::query_scalar("INSERT INTO users (username) VALUES ($1) RETURNING id")
+                .bind(&source_name)
+                .fetch_one(&mut *transaction)
+                .await
+                .unwrap();
+
+        let result = delete_app_user_on(&mut transaction, source_id, "wrong case")
+            .await
+            .unwrap();
+        assert!(matches!(
+            result,
+            DeleteUserResult::ConfirmationMismatch { username } if username == source_name
+        ));
+        let source_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+                .bind(source_id)
+                .fetch_one(&mut *transaction)
+                .await
+                .unwrap();
+        assert!(source_exists);
+        let deleted_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = $1)")
+                .bind(DELETED_USERNAME)
+                .fetch_one(&mut *transaction)
+                .await
+                .unwrap();
+        assert!(!deleted_exists);
+        assert!(matches!(
+            delete_app_user_on(&mut transaction, i32::MAX, "missing")
+                .await
+                .unwrap(),
+            DeleteUserResult::NotFound
+        ));
+
+        transaction.rollback().await.unwrap();
     }
 
     #[tokio::test]
@@ -2991,6 +3481,7 @@ mod tests {
             "/maintenance/trigger-archive-generation",
             "/maintenance/users/42/logout",
             "/maintenance/users/42/rename",
+            "/maintenance/users/42/delete",
         ] {
             let response = routes()
                 .with_state(test_state())
