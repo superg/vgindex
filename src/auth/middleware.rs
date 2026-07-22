@@ -104,16 +104,10 @@ fn is_top_level_navigation(method: &Method, headers: &HeaderMap) -> bool {
     if headers.contains_key("hx-request") {
         return false;
     }
-    match headers
+    headers
         .get("sec-fetch-mode")
         .and_then(|value| value.to_str().ok())
-    {
-        Some(mode) => mode.eq_ignore_ascii_case("navigate"),
-        None => headers
-            .get(header::ACCEPT)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|accept| accept.contains("text/html")),
-    }
+        .is_some_and(|mode| mode.eq_ignore_ascii_case("navigate"))
 }
 
 fn is_api_request(uri: &Uri, headers: &HeaderMap) -> bool {
@@ -356,12 +350,12 @@ mod tests {
     }
 
     #[test]
-    fn browser_navigation_requires_navigation_fetch_or_html_accept() {
+    fn browser_navigation_requires_navigation_fetch() {
         assert!(is_top_level_navigation(
             &Method::GET,
             &headers(&[("sec-fetch-mode", "navigate")])
         ));
-        assert!(is_top_level_navigation(
+        assert!(!is_top_level_navigation(
             &Method::GET,
             &headers(&[("accept", "text/html,application/xhtml+xml")])
         ));
