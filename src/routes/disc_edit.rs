@@ -1261,6 +1261,7 @@ struct FormValidationOptions {
     require_regions: bool,
     require_edc: bool,
     require_cuesheet: bool,
+    require_disc_offsets: bool,
 }
 
 impl FormValidationOptions {
@@ -1273,6 +1274,7 @@ impl FormValidationOptions {
             require_regions: true,
             require_edc: true,
             require_cuesheet: true,
+            require_disc_offsets: false,
         }
     }
 
@@ -1285,6 +1287,7 @@ impl FormValidationOptions {
             require_regions: !is_verification,
             require_edc: !is_verification,
             require_cuesheet: !is_verification,
+            require_disc_offsets: true,
         }
     }
 }
@@ -1311,6 +1314,10 @@ fn validate_form_with_options(
     let system_code = form.system_code.trim();
     let media_code = form.media_type.trim();
     let category = form.category.trim();
+    let is_cd_media = all_media_types
+        .iter()
+        .find(|m| m.code == media_code)
+        .map_or(false, |m| is_cd_rom_extension(&m.rom_extension));
 
     if options.require_system && system_code.is_empty() {
         errors.push("System: must be selected".into());
@@ -1372,6 +1379,9 @@ fn validate_form_with_options(
     if let Some(ref json_str) = form.ring_codes_json {
         let ring_errors = validation::validate_ring_code_offsets(json_str);
         errors.extend(ring_errors);
+        if options.require_disc_offsets && is_cd_media {
+            errors.extend(validate_required_disc_offsets(json_str));
+        }
     }
 
     if let Some(ref text) = form.sector_ranges {
@@ -1462,11 +1472,6 @@ fn validate_form_with_options(
         errors.push("EDC: select Yes or No".into());
     }
 
-    let is_cd_media = all_media_types
-        .iter()
-        .find(|m| m.code == media_code)
-        .map_or(false, |m| is_cd_rom_extension(&m.rom_extension));
-
     if is_cd_media {
         match form.cue.as_deref().map(|s| s.trim()) {
             None | Some("") => {
@@ -1529,6 +1534,24 @@ fn validate_add_submission_form(
         all_systems,
         FormValidationOptions::add_submission(is_verification),
     )
+}
+
+fn validate_required_disc_offsets(json: &str) -> Vec<String> {
+    let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(json) else {
+        return Vec::new();
+    };
+
+    entries
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            entry
+                .get("offset_value")
+                .and_then(serde_json::Value::as_str)
+                .is_none_or(|offset| offset.trim().is_empty())
+                .then(|| format!("Ring Code #{}: Offset: must be a valid integer", index + 1))
+        })
+        .collect()
 }
 
 async fn render_form_with_errors(
@@ -3990,6 +4013,20 @@ mod operation_delta_tests {
         assert!(errors.contains(&"Category: must be selected".to_string()));
         assert!(errors.contains(&"Title: cannot be empty".to_string()));
         assert!(errors.contains(&"Regions: at least one region must be selected".to_string()));
+    }
+
+    #[test]
+    fn validate_add_submission_form_requires_disc_offsets_for_cd() {
+        let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
+        let json = r#"[{"offset_value":"","offset_extra_value":"","sample_start":"","layers":[]}]"#;
+        form.ring_codes_json = Some(json.to_string());
+        let media = media_rows_with_cd();
+        let systems = systems_with_sbi_media(true, &["CD"]);
+        let error = "Ring Code #1: Offset: must be a valid integer".to_string();
+
+        assert!(validate_add_submission_form(&form, &media, &systems, false).contains(&error));
+        assert!(!validate_form(&form, &media, &systems).contains(&error));
     }
 
     #[test]
