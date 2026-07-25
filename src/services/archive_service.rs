@@ -680,6 +680,7 @@ mod tests {
             has_sbi,
             has_pvd: false,
             has_edc: false,
+            has_error_count: false,
             has_disc_id: false,
             has_key,
             has_universal_hash: false,

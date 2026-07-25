@@ -66,6 +66,7 @@ CREATE TABLE systems (
     has_version INTEGER NOT NULL,
     has_exe_date INTEGER NOT NULL,
     has_edc INTEGER NOT NULL,
+    has_error_count INTEGER NOT NULL,
     has_disc_id INTEGER NOT NULL,
     has_key INTEGER NOT NULL,
     has_universal_hash INTEGER NOT NULL,
@@ -208,6 +209,7 @@ struct SystemRow {
     has_version: bool,
     has_exe_date: bool,
     has_edc: bool,
+    has_error_count: bool,
     has_disc_id: bool,
     has_key: bool,
     has_universal_hash: bool,
@@ -650,7 +652,7 @@ async fn export_systems(
                 to_json(media_types)::text AS media_types,
                 has_title_foreign, has_disc_number, has_disc_title, has_serial,
                 has_edition, has_barcode, has_version, has_exe_date, has_edc,
-                has_disc_id, has_key, has_universal_hash, has_protection,
+                has_error_count, has_disc_id, has_key, has_universal_hash, has_protection,
                 has_sector_ranges, has_sbi, has_pvd, has_header, has_bca,
                 has_sample_start, has_offset_extra
          FROM systems ORDER BY code",
@@ -658,7 +660,7 @@ async fn export_systems(
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.code)
         .bind(row.system_type)
@@ -675,6 +677,7 @@ async fn export_systems(
         .bind(row.has_version)
         .bind(row.has_exe_date)
         .bind(row.has_edc)
+        .bind(row.has_error_count)
         .bind(row.has_disc_id)
         .bind(row.has_key)
         .bind(row.has_universal_hash)
@@ -1007,6 +1010,7 @@ mod tests {
                 .await
                 .unwrap();
         assert!(!disc_columns.iter().any(|name| name == "search_vector"));
+        assert!(system_columns.iter().any(|name| name == "has_error_count"));
         assert!(!system_columns.iter().any(|name| name == "archives_dirty"));
     }
 

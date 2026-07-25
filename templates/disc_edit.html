@@ -399,7 +399,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         </div>
     </div>
 
-    <div id="error-count-field" class="inline-field{% if !self.highlight_class("error_count").is_empty() %} {{ self.highlight_class("error_count") }}{% endif %}" data-add-requires-system-media{% if !show_error_count %} style="display:none"{% endif %}>
+    <div id="error-count-field" class="inline-field{% if !self.highlight_class("error_count").is_empty() %} {{ self.highlight_class("error_count") }}{% endif %}" data-add-requires-system-media data-field-flag="has_error_count"{% if !show_error_count %} style="display:none"{% endif %}>
         <span class="inline-field-label">Error Count</span>
         <div class="inline-field-values">
             <input type="number" name="error_count" class="short-code-input" value="{{ error_count }}">

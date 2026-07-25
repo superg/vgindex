@@ -352,6 +352,7 @@ pub struct System {
     pub has_sbi: bool,
     pub has_pvd: bool,
     pub has_edc: bool,
+    pub has_error_count: bool,
     pub has_disc_id: bool,
     pub has_key: bool,
     pub has_universal_hash: bool,
@@ -384,6 +385,10 @@ impl System {
 
     pub fn has_sbi_for_media_type(&self, media_type: &MediaType) -> bool {
         self.has_sbi && media_type.is_cd() && self.supports_media_type(media_type)
+    }
+
+    pub fn has_error_count_for_media_type(&self, media_type: &MediaType) -> bool {
+        self.has_error_count && media_type.is_cd() && self.supports_media_type(media_type)
     }
 }
 
@@ -1096,6 +1101,7 @@ mod tests {
             has_sbi: false,
             has_pvd: false,
             has_edc: false,
+            has_error_count: false,
             has_disc_id: false,
             has_key: false,
             has_universal_hash: false,
@@ -1188,6 +1194,19 @@ mod tests {
         assert!(sys.has_cue_for_media_type(&media_type("gdrom", "BIN")));
         assert!(!sys.has_cue_for_media_type(&media_type("dvd5", "iso")));
         assert!(!sys.has_cue_for_media_type(&media_type("other", "bin")));
+    }
+
+    #[test]
+    fn error_count_capability_requires_flag_bin_media_and_system_media() {
+        let mut sys = system_with_media(&["cd", "dvd5"]);
+        let cd = media_type("cd", "bin");
+
+        assert!(!sys.has_error_count_for_media_type(&cd));
+
+        sys.has_error_count = true;
+        assert!(sys.has_error_count_for_media_type(&cd));
+        assert!(!sys.has_error_count_for_media_type(&media_type("dvd5", "iso")));
+        assert!(!sys.has_error_count_for_media_type(&media_type("other", "bin")));
     }
 
     #[test]

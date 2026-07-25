@@ -1420,6 +1420,7 @@ mod tests {
                 has_sbi: false,
                 has_pvd: false,
                 has_edc: false,
+                has_error_count: false,
                 has_disc_id: false,
                 has_key: false,
                 has_universal_hash: false,

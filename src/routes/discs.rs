@@ -1247,6 +1247,9 @@ fn add_track_count_clauses(
     }
 }
 
+const ERROR_COUNT_APPLICABLE_SQL: &str = "s.has_error_count AND d.media_type_code IN \
+    (SELECT code FROM media_types WHERE LOWER(rom_extension) = 'bin')";
+
 fn add_error_count_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
@@ -1255,11 +1258,17 @@ fn add_error_count_clauses(
 ) {
     if errors_min.is_some() {
         *bind_idx += 1;
-        where_clauses.push(format!("d.error_count >= ${}", *bind_idx));
+        where_clauses.push(format!(
+            "({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count >= ${})",
+            *bind_idx
+        ));
     }
     if errors_max.is_some() {
         *bind_idx += 1;
-        where_clauses.push(format!("d.error_count <= ${}", *bind_idx));
+        where_clauses.push(format!(
+            "({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count <= ${})",
+            *bind_idx
+        ));
     }
 }
 
@@ -1809,6 +1818,8 @@ async fn discs_page(
         || active_serial.is_some()
         || active_edition.is_some()
         || active_barcode.is_some()
+        || filter_errors_min_value.is_some()
+        || filter_errors_max_value.is_some()
         || !filter_edc.is_empty()
         || active_protection.is_some()
         || filter_offset_value.is_some();
@@ -2350,8 +2361,8 @@ mod tests {
             clauses,
             vec![
                 format!("{TRACK_COUNT_SQL} BETWEEN $5 AND $6"),
-                "d.error_count >= $7".to_string(),
-                "d.error_count <= $8".to_string(),
+                format!("({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count >= $7)"),
+                format!("({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count <= $8)"),
             ]
         );
         assert_eq!(bind_idx, 8);
@@ -2360,23 +2371,44 @@ mod tests {
     #[test]
     fn error_count_clauses_support_open_bounded_exact_and_reversed_ranges() {
         let cases = [
-            (None, None, Vec::<&str>::new()),
-            (Some(3), None, vec!["d.error_count >= $5"]),
-            (None, Some(9), vec!["d.error_count <= $5"]),
+            (None, None, Vec::<String>::new()),
+            (
+                Some(3),
+                None,
+                vec![format!(
+                    "({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count >= $5)"
+                )],
+            ),
+            (
+                None,
+                Some(9),
+                vec![format!(
+                    "({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count <= $5)"
+                )],
+            ),
             (
                 Some(3),
                 Some(9),
-                vec!["d.error_count >= $5", "d.error_count <= $6"],
+                vec![
+                    format!("({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count >= $5)"),
+                    format!("({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count <= $6)"),
+                ],
             ),
             (
                 Some(7),
                 Some(7),
-                vec!["d.error_count >= $5", "d.error_count <= $6"],
+                vec![
+                    format!("({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count >= $5)"),
+                    format!("({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count <= $6)"),
+                ],
             ),
             (
                 Some(9),
                 Some(3),
-                vec!["d.error_count >= $5", "d.error_count <= $6"],
+                vec![
+                    format!("({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count >= $5)"),
+                    format!("({ERROR_COUNT_APPLICABLE_SQL} AND d.error_count <= $6)"),
+                ],
             ),
         ];
 

@@ -110,6 +110,7 @@ struct DiscViewTemplate {
     protection: String,
     show_protection: bool,
     error_count: String,
+    show_error_count: bool,
     file_count: usize,
     status_class: String,
     status_display: String,
@@ -756,6 +757,9 @@ async fn disc_view(
                 .error_count
                 .map(|e| e.to_string())
                 .unwrap_or_default(),
+            show_error_count: detail
+                .system
+                .has_error_count_for_media_type(&detail.disc.media_type),
             file_count: detail.files.len(),
             status_class: detail.disc.status.css_class().to_string(),
             status_display: detail.disc.status.to_string(),
@@ -1745,6 +1749,7 @@ mod tests {
             protection: String::new(),
             show_protection: false,
             error_count: String::new(),
+            show_error_count: false,
             file_count: 0,
             status_class: "verified".to_string(),
             status_display: "Verified".to_string(),
@@ -1913,6 +1918,20 @@ mod tests {
 
         assert!(html.contains("Protection"));
         assert!(html.contains("Visible protection"));
+    }
+
+    #[test]
+    fn disc_view_error_count_respects_system_capability() {
+        let mut template = disc_view_template(false, false, "", "");
+        template.error_count = "3".to_string();
+
+        let hidden = template.render().unwrap();
+        assert!(!hidden.contains("<strong>Errors</strong>"));
+
+        template.show_error_count = true;
+        let visible = template.render().unwrap();
+        assert!(visible.contains("<strong>Errors</strong>"));
+        assert!(visible.contains(">3</td>"));
     }
 
     #[test]

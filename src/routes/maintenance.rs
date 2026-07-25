@@ -970,6 +970,10 @@ const SYSTEM_FLAGS: &[SystemFlagDefinition] = &[
         label: "EDC",
     },
     SystemFlagDefinition {
+        field: "has_error_count",
+        label: "Error Count",
+    },
+    SystemFlagDefinition {
         field: "has_disc_id",
         label: "Disc ID",
     },
@@ -1103,16 +1107,16 @@ const INSERT_SYSTEM_SQL: &str = "
         (code, type, manufacturer, name, short_name, media_types,
          has_title_foreign, has_disc_number, has_disc_title, has_serial,
          has_edition, has_barcode, has_version, has_exe_date, has_edc,
-         has_disc_id, has_key, has_universal_hash, has_protection,
+         has_error_count, has_disc_id, has_key, has_universal_hash, has_protection,
          has_sector_ranges, has_sbi, has_pvd, has_header, has_bca,
          has_sample_start, has_offset_extra, archives_dirty)
     VALUES
         ($1, $2, $3, $4, $5, $6,
          $7, $8, $9, $10,
          $11, $12, $13, $14, $15,
-         $16, $17, $18, $19,
-         $20, $21, $22, $23, $24,
-         $25, $26, TRUE)";
+         $16, $17, $18, $19, $20,
+         $21, $22, $23, $24, $25,
+         $26, $27, TRUE)";
 
 const UPDATE_SYSTEM_SQL: &str = "
     UPDATE systems
@@ -1130,17 +1134,18 @@ const UPDATE_SYSTEM_SQL: &str = "
         has_version = $13,
         has_exe_date = $14,
         has_edc = $15,
-        has_disc_id = $16,
-        has_key = $17,
-        has_universal_hash = $18,
-        has_protection = $19,
-        has_sector_ranges = $20,
-        has_sbi = $21,
-        has_pvd = $22,
-        has_header = $23,
-        has_bca = $24,
-        has_sample_start = $25,
-        has_offset_extra = $26,
+        has_error_count = $16,
+        has_disc_id = $17,
+        has_key = $18,
+        has_universal_hash = $19,
+        has_protection = $20,
+        has_sector_ranges = $21,
+        has_sbi = $22,
+        has_pvd = $23,
+        has_header = $24,
+        has_bca = $25,
+        has_sample_start = $26,
+        has_offset_extra = $27,
         archives_dirty = TRUE
     WHERE code = $1";
 
@@ -1426,6 +1431,7 @@ fn system_editor_row(system: &System) -> SystemEditorRow {
 }
 
 fn blank_system_editor_row() -> SystemEditorRow {
+    let flags = HashSet::from(["has_error_count".to_string()]);
     SystemEditorRow {
         original_code: String::new(),
         code: String::new(),
@@ -1434,7 +1440,7 @@ fn blank_system_editor_row() -> SystemEditorRow {
         name: String::new(),
         short_name: String::new(),
         media_types_csv: String::new(),
-        flags: flag_options_from_set(&HashSet::new()),
+        flags: flag_options_from_set(&flags),
     }
 }
 
@@ -1575,6 +1581,7 @@ fn system_flag_value(system: &System, field: &str) -> bool {
         "has_version" => system.has_version,
         "has_exe_date" => system.has_exe_date,
         "has_edc" => system.has_edc,
+        "has_error_count" => system.has_error_count,
         "has_disc_id" => system.has_disc_id,
         "has_key" => system.has_key,
         "has_universal_hash" => system.has_universal_hash,
@@ -1677,7 +1684,6 @@ impl ValidatedSystemRow {
             && self.name.is_empty()
             && self.short_name.is_empty()
             && self.media_types.is_empty()
-            && self.flags.is_empty()
     }
 
     fn row_label(&self, index: usize) -> String {
@@ -2078,6 +2084,7 @@ fn bind_system_fields<'q>(
         .bind(row.flag("has_version"))
         .bind(row.flag("has_exe_date"))
         .bind(row.flag("has_edc"))
+        .bind(row.flag("has_error_count"))
         .bind(row.flag("has_disc_id"))
         .bind(row.flag("has_key"))
         .bind(row.flag("has_universal_hash"))
@@ -2369,6 +2376,7 @@ mod tests {
             has_sbi: false,
             has_pvd: false,
             has_edc: false,
+            has_error_count: false,
             has_disc_id: false,
             has_key: false,
             has_universal_hash: false,
@@ -2764,9 +2772,31 @@ mod tests {
         assert!(html.contains(r#"data-system-field="media_types""#));
         assert!(html.contains(r#"maxlength="16""#));
         assert!(html.contains(r#"data-system-flag="has_title_foreign""#));
+        assert!(html.contains(r#"data-system-flag="has_error_count""#));
         assert!(!html.contains("Add System"));
         assert!(!html.contains("<details"));
         assert!(!html.contains(r#"data-media-list"#));
+    }
+
+    #[test]
+    fn new_systems_default_to_supporting_error_count() {
+        let row = blank_system_editor_row();
+        let error_count = row
+            .flags
+            .iter()
+            .find(|flag| flag.field == "has_error_count")
+            .unwrap();
+
+        assert!(error_count.checked);
+    }
+
+    #[test]
+    fn error_count_migration_defaults_enabled_except_for_audio_cd() {
+        let migration = include_str!("../../migrations/021_add_system_error_count_flag.sql");
+
+        assert!(migration.contains("has_error_count BOOLEAN NOT NULL DEFAULT TRUE"));
+        assert!(migration.contains("WHERE code = 'AUDIO-CD'"));
+        assert!(migration.contains("SET has_error_count = FALSE"));
     }
 
     #[test]
@@ -2789,9 +2819,9 @@ mod tests {
 
     #[test]
     fn systems_validation_ignores_blank_add_row() {
-        let payload = SystemsPayload {
-            rows: vec![SystemPayloadRow::default()],
-        };
+        let mut blank = SystemPayloadRow::default();
+        blank.flags = vec!["has_error_count".to_string()];
+        let payload = SystemsPayload { rows: vec![blank] };
 
         let rows = validate_systems_payload(
             &payload,

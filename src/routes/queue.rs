@@ -995,11 +995,12 @@ fn build_review_template(
         comments: json_opt_str("comments"),
         contents: json_opt_str("contents"),
 
-        show_error_count: ref_data
-            .all_media_types
-            .iter()
-            .find(|m| m.code == media_type_code)
-            .map_or(false, |m| is_cd_rom_extension(&m.rom_extension)),
+        show_error_count: disc_edit::error_count_available_for_selection(
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            system_code,
+            media_type_code,
+        ),
         error_count,
         show_exe_date: has_sys(|s| s.has_exe_date),
         exe_date: json_opt_str("exe_date"),
@@ -1559,11 +1560,6 @@ fn apply_review_diff_context(
             template.media_types_all =
                 build_media_options(&ref_data.all_media_types, &old_media_type);
             template.max_layers = max_layers_for_media(&ref_data.all_media_types, &old_media_type);
-            template.show_error_count = ref_data
-                .all_media_types
-                .iter()
-                .find(|media| media.code == old_media_type)
-                .map_or(false, |media| is_cd_rom_extension(&media.rom_extension));
             template.show_pic = ref_data
                 .all_media_types
                 .iter()
@@ -1571,6 +1567,12 @@ fn apply_review_diff_context(
                 .map_or(false, |media| media.pic);
         }
 
+        template.show_error_count = disc_edit::error_count_available_for_selection(
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            &template.system_code,
+            &template.media_type_code,
+        );
         template.show_sbi = disc_edit::sbi_available_for_selection(
             &ref_data.all_systems,
             &ref_data.all_media_types,
@@ -2730,6 +2732,7 @@ mod tests {
             has_sbi: true,
             has_pvd: true,
             has_edc: true,
+            has_error_count: true,
             has_disc_id: true,
             has_key: true,
             has_universal_hash: true,

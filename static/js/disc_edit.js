@@ -653,7 +653,7 @@ function applyMediaFieldVisibility() {
     if (!mediaSel || typeof MEDIA_HAS_PIC === 'undefined' || typeof MEDIA_IS_CD === 'undefined') return;
     var code = mediaSel.value;
     var showPic = !!MEDIA_HAS_PIC[code];
-    var showErrorCount = !!MEDIA_IS_CD[code];
+    var showErrorCount = !!MEDIA_IS_CD[code] && systemHasFlag('has_error_count');
     document.querySelectorAll('[data-media-flag="has_pic"]').forEach(function (el) {
         var wasHidden = el.style.display === 'none';
         el.style.display = showPic ? '' : 'none';

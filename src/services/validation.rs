@@ -515,6 +515,32 @@ pub fn validate_ring_code_offsets(json_str: &str) -> Vec<String> {
     errors
 }
 
+pub fn validate_required_ring_code_offsets(json_str: &str) -> Vec<String> {
+    let entries: Vec<serde_json::Value> = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(_) => {
+            return vec!["Ring Code #1: Offset: cannot be empty".to_string()];
+        }
+    };
+    if entries.is_empty() {
+        return vec!["Ring Code #1: Offset: cannot be empty".to_string()];
+    }
+
+    entries
+        .iter()
+        .enumerate()
+        .filter_map(|(i, entry)| {
+            let offset_is_empty = entry
+                .get("offset_value")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .map(str::is_empty)
+                .unwrap_or(true);
+            offset_is_empty.then(|| format!("Ring Code #{}: Offset: cannot be empty", i + 1))
+        })
+        .collect()
+}
+
 fn check_optional_signed_int(
     obj: &serde_json::Value,
     key: &str,
@@ -860,6 +886,28 @@ FILE "Track 02.bin" BINARY
         let bad =
             r#"[{"offset_value":"abc","offset_extra_value":"","sample_start":"","layers":[]}]"#;
         assert!(!validate_ring_code_offsets(bad).is_empty());
+    }
+
+    #[test]
+    fn test_required_ring_code_offsets() {
+        let entries = r#"[
+            {"offset_value":"0","layers":[]},
+            {"offset_value":"  ","layers":[]},
+            {"layers":[]},
+            {"offset_value":"-5","layers":[]}
+        ]"#;
+
+        assert_eq!(
+            validate_required_ring_code_offsets(entries),
+            vec![
+                "Ring Code #2: Offset: cannot be empty",
+                "Ring Code #3: Offset: cannot be empty"
+            ]
+        );
+        assert_eq!(
+            validate_required_ring_code_offsets("[]"),
+            vec!["Ring Code #1: Offset: cannot be empty"]
+        );
     }
 
     #[test]

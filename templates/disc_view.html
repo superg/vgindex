@@ -55,7 +55,7 @@
             {% if show_version && !version.is_empty() %}
             <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>
             {% endif %}
-            {% if !error_count.is_empty() %}
+            {% if show_error_count && !error_count.is_empty() %}
             <tr><td><strong>Errors</strong></td><td>{{ error_count }}</td></tr>
             {% endif %}
             {% if show_exe_date && !exe_date.is_empty() %}

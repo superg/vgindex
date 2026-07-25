@@ -389,6 +389,7 @@ pub(crate) fn build_systems_json(all_systems: &[System]) -> (String, String) {
                 "has_barcode": s.has_barcode,
                 "has_exe_date": s.has_exe_date,
                 "has_edc": s.has_edc,
+                "has_error_count": s.has_error_count,
                 "has_disc_id": s.has_disc_id,
                 "has_key": s.has_key,
                 "has_universal_hash": s.has_universal_hash,
@@ -603,18 +604,26 @@ pub(crate) fn build_media_has_pic_json(all_media_types: &[EditMediaTypeRow]) -> 
     serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
 }
 
-fn media_shows_error_count(all_media_types: &[EditMediaTypeRow], media_code: &str) -> bool {
+pub(crate) fn media_code_is_cd(all_media_types: &[EditMediaTypeRow], media_code: &str) -> bool {
     all_media_types
         .iter()
         .find(|m| m.code == media_code)
         .map_or(false, |m| is_cd_rom_extension(&m.rom_extension))
 }
 
-pub(crate) fn media_code_is_cd(all_media_types: &[EditMediaTypeRow], media_code: &str) -> bool {
-    all_media_types
-        .iter()
-        .find(|m| m.code == media_code)
-        .map_or(false, |m| is_cd_rom_extension(&m.rom_extension))
+pub(crate) fn error_count_available_for_selection(
+    all_systems: &[System],
+    all_media_types: &[EditMediaTypeRow],
+    system_code: &str,
+    media_code: &str,
+) -> bool {
+    let Some(system) = all_systems.iter().find(|s| s.code == system_code) else {
+        return false;
+    };
+
+    system.has_error_count
+        && system.media_types.iter().any(|code| code == media_code)
+        && media_code_is_cd(all_media_types, media_code)
 }
 
 pub(crate) fn sbi_available_for_selection(
@@ -989,7 +998,9 @@ async fn edit_page(
             comments: detail.disc.comments.clone().unwrap_or_default(),
             contents: detail.disc.contents.clone().unwrap_or_default(),
 
-            show_error_count: detail.disc.media_type.is_cd(),
+            show_error_count: detail
+                .system
+                .has_error_count_for_media_type(&detail.disc.media_type),
             error_count: detail
                 .disc
                 .error_count
@@ -1531,6 +1542,51 @@ fn validate_add_submission_form(
     )
 }
 
+fn validate_add_submission_ring_offsets(
+    form: &DiscEditForm,
+    all_media_types: &[EditMediaTypeRow],
+    matched_media_type: Option<&str>,
+    can_moderate: bool,
+) -> Vec<String> {
+    if matched_media_type.is_some() && can_moderate {
+        return Vec::new();
+    }
+
+    let media_code = matched_media_type.unwrap_or_else(|| form.media_type.trim());
+    let is_cd_media = all_media_types
+        .iter()
+        .find(|media| media.code == media_code)
+        .map_or(false, |media| is_cd_rom_extension(&media.rom_extension));
+    if !is_cd_media {
+        return Vec::new();
+    }
+
+    validation::validate_required_ring_code_offsets(form.ring_codes_json.as_deref().unwrap_or("[]"))
+}
+
+fn validate_add_submission_error_count(
+    form: &DiscEditForm,
+    all_systems: &[System],
+    all_media_types: &[EditMediaTypeRow],
+    matched_selection: Option<(&str, &str)>,
+    can_moderate: bool,
+) -> Vec<String> {
+    if matched_selection.is_some() && can_moderate {
+        return Vec::new();
+    }
+
+    let (system_code, media_code) =
+        matched_selection.unwrap_or_else(|| (form.system_code.trim(), form.media_type.trim()));
+    if !error_count_available_for_selection(all_systems, all_media_types, system_code, media_code) {
+        return Vec::new();
+    }
+
+    match form.error_count.as_deref().map(str::trim) {
+        None | Some("") => vec!["Error Count: cannot be empty".to_string()],
+        Some(_) => Vec::new(),
+    }
+}
+
 async fn render_form_with_errors(
     state: &AppState,
     id: i32,
@@ -1597,7 +1653,12 @@ async fn render_form_with_context(
         .iter()
         .find(|m| m.code == form.media_type)
         .map_or(false, |m| m.pic);
-    let show_error_count = media_shows_error_count(&ref_data.all_media_types, &form.media_type);
+    let show_error_count = error_count_available_for_selection(
+        &ref_data.all_systems,
+        &ref_data.all_media_types,
+        &form.system_code,
+        &form.media_type,
+    );
     let show_sbi = sbi_available_for_selection(
         &ref_data.all_systems,
         &ref_data.all_media_types,
@@ -2479,7 +2540,7 @@ async fn add_page(
     let add_requires_system_media = add_requires_system_media(true, &system_code, &media_type_code);
     let has_sys = |_f: fn(&System) -> bool| true;
     let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
-    let show_error_count = media_shows_error_count(&ref_data.all_media_types, &media_type_code);
+    let show_error_count = false;
     let show_pic = false;
 
     Ok(Html(
@@ -2729,6 +2790,23 @@ async fn add_submit(
         &ref_data.all_systems,
         is_verification,
     );
+    errors.extend(validate_add_submission_ring_offsets(
+        &form,
+        &ref_data.all_media_types,
+        add_match
+            .as_ref()
+            .map(|matched| matched.media_type.as_str()),
+        user.role.can_moderate(),
+    ));
+    errors.extend(validate_add_submission_error_count(
+        &form,
+        &ref_data.all_systems,
+        &ref_data.all_media_types,
+        add_match
+            .as_ref()
+            .map(|matched| (matched.system_code.as_str(), matched.media_type.as_str())),
+        user.role.can_moderate(),
+    ));
     let can_submit_as = user.role.can_moderate() && draft_submission.is_none();
     errors.extend(validate_submit_as_for_add(&form, can_submit_as));
     errors.extend(validate_add_submission_logs(
@@ -3353,6 +3431,12 @@ fn build_history_changes(
 
     let mut changes = serde_json::Map::new();
     let allow_removal = detail.is_some();
+    let error_count_applicable = error_count_available_for_selection(
+        all_systems,
+        all_media_types,
+        &form.system_code,
+        &form.media_type,
+    );
 
     for key in [
         "system_code",
@@ -3384,6 +3468,9 @@ fn build_history_changes(
         "layerbreaks",
     ] {
         if key == "status" && !include_status {
+            continue;
+        }
+        if key == "error_count" && !error_count_applicable {
             continue;
         }
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
@@ -3600,6 +3687,7 @@ mod operation_delta_tests {
             has_sbi: true,
             has_pvd: true,
             has_edc: true,
+            has_error_count: true,
             has_disc_id: true,
             has_key: true,
             has_universal_hash: true,
@@ -3874,13 +3962,21 @@ mod operation_delta_tests {
         vec![system]
     }
 
+    fn systems_with_error_count_media(has_error_count: bool, media_types: &[&str]) -> Vec<System> {
+        let mut system = test_system();
+        system.has_error_count = has_error_count;
+        system.media_types = media_types.iter().map(|code| code.to_string()).collect();
+        vec![system]
+    }
+
     #[test]
     fn build_systems_json_preserves_media_type_preference_order() {
         let mut system = test_system();
         system.media_types = vec!["bd50".to_string(), "cd".to_string(), "dvd9".to_string()];
 
-        let (systems_media_json, _) = build_systems_json(&[system]);
+        let (systems_media_json, systems_flags_json) = build_systems_json(&[system]);
         let systems_media: serde_json::Value = serde_json::from_str(&systems_media_json).unwrap();
+        let systems_flags: serde_json::Value = serde_json::from_str(&systems_flags_json).unwrap();
         let media_codes: Vec<_> = systems_media["SYS"]
             .as_array()
             .unwrap()
@@ -3889,6 +3985,38 @@ mod operation_delta_tests {
             .collect();
 
         assert_eq!(media_codes, vec!["bd50", "cd", "dvd9"]);
+        assert_eq!(systems_flags["SYS"]["has_error_count"], true);
+    }
+
+    #[test]
+    fn error_count_availability_requires_system_flag_and_cd_media() {
+        let media = media_rows_with_cd();
+        let supported = systems_with_error_count_media(true, &["DVD", "CD"]);
+        let unsupported = systems_with_error_count_media(false, &["DVD", "CD"]);
+
+        assert!(error_count_available_for_selection(
+            &supported, &media, "SYS", "CD"
+        ));
+        assert!(!error_count_available_for_selection(
+            &supported, &media, "SYS", "DVD"
+        ));
+        assert!(!error_count_available_for_selection(
+            &unsupported,
+            &media,
+            "SYS",
+            "CD"
+        ));
+    }
+
+    #[test]
+    fn error_count_field_combines_system_and_media_visibility() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let script = include_str!("../../static/js/disc_edit.js");
+
+        assert!(template.contains(r#"data-field-flag="has_error_count""#));
+        assert!(script.contains(
+            "var showErrorCount = !!MEDIA_IS_CD[code] && systemHasFlag('has_error_count');"
+        ));
     }
 
     #[test]
@@ -4039,6 +4167,168 @@ mod operation_delta_tests {
 
         let edit_errors = validate_form(&form, &media, &systems);
         assert!(edit_errors.contains(&required_error));
+    }
+
+    #[test]
+    fn add_disc_requires_ring_offset_for_new_cd_regardless_of_role() {
+        let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
+        form.ring_codes_json = Some(
+            serde_json::json!([{
+                "offset_value": " ",
+                "layers": [{"mastering_code": "MASTER-N"}]
+            }])
+            .to_string(),
+        );
+        let media = media_rows_with_cd();
+        let required_error = "Ring Code #1: Offset: cannot be empty".to_string();
+
+        for can_moderate in [false, true] {
+            let errors = validate_add_submission_ring_offsets(&form, &media, None, can_moderate);
+            assert_eq!(errors, vec![required_error.clone()]);
+        }
+    }
+
+    #[test]
+    fn add_disc_requires_ring_offset_for_non_moderator_cd_verification() {
+        let mut form = new_disc_form();
+        form.media_type = String::new();
+        form.ring_codes_json = Some(
+            serde_json::json!([{
+                "offset_value": "",
+                "layers": [{"mastering_code": "MASTER-N"}]
+            }])
+            .to_string(),
+        );
+        let media = media_rows_with_cd();
+
+        assert_eq!(
+            validate_add_submission_ring_offsets(&form, &media, Some("CD"), false),
+            vec!["Ring Code #1: Offset: cannot be empty".to_string()]
+        );
+        assert!(validate_add_submission_ring_offsets(&form, &media, Some("CD"), true).is_empty());
+    }
+
+    #[test]
+    fn add_disc_ring_offset_validation_requires_an_entry_with_offset() {
+        let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
+        form.ring_codes_json = Some("[]".to_string());
+        let required_error = "Ring Code #1: Offset: cannot be empty".to_string();
+
+        assert_eq!(
+            validate_add_submission_ring_offsets(&form, &media_rows_with_cd(), None, false),
+            vec![required_error.clone()]
+        );
+
+        form.ring_codes_json = None;
+        assert_eq!(
+            validate_add_submission_ring_offsets(&form, &media_rows_with_cd(), None, false),
+            vec![required_error]
+        );
+    }
+
+    #[test]
+    fn ring_offset_is_not_required_for_non_cd_adds_or_disc_edits() {
+        let mut form = new_disc_form();
+        form.ring_codes_json = Some(
+            serde_json::json!([{
+                "offset_value": "",
+                "layers": [{"mastering_code": "MASTER-N"}]
+            }])
+            .to_string(),
+        );
+
+        assert!(validate_add_submission_ring_offsets(&form, &media_rows(), None, false).is_empty());
+
+        form.media_type = "CD".to_string();
+        let media = media_rows_with_cd();
+        let systems = systems_with_sbi_media(true, &["DVD", "CD"]);
+        assert!(!validate_form(&form, &media, &systems)
+            .contains(&"Ring Code #1: Offset: cannot be empty".to_string()));
+    }
+
+    #[test]
+    fn add_disc_requires_error_count_for_new_cd_regardless_of_role() {
+        let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
+        form.error_count = None;
+        let systems = systems_with_error_count_media(true, &["DVD", "CD"]);
+        let media = media_rows_with_cd();
+        let required_error = "Error Count: cannot be empty".to_string();
+
+        for can_moderate in [false, true] {
+            assert_eq!(
+                validate_add_submission_error_count(&form, &systems, &media, None, can_moderate),
+                vec![required_error.clone()]
+            );
+        }
+    }
+
+    #[test]
+    fn moderator_verification_may_omit_error_count() {
+        let mut form = new_disc_form();
+        form.system_code = String::new();
+        form.media_type = String::new();
+        form.error_count = Some(" ".to_string());
+        let systems = systems_with_error_count_media(true, &["DVD", "CD"]);
+        let media = media_rows_with_cd();
+        let matched_selection = Some(("SYS", "CD"));
+
+        assert_eq!(
+            validate_add_submission_error_count(&form, &systems, &media, matched_selection, false),
+            vec!["Error Count: cannot be empty".to_string()]
+        );
+        assert!(validate_add_submission_error_count(
+            &form,
+            &systems,
+            &media,
+            matched_selection,
+            true
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn add_disc_does_not_require_inapplicable_error_count() {
+        let mut form = new_disc_form();
+        form.error_count = None;
+        let media = media_rows_with_cd();
+
+        assert!(validate_add_submission_error_count(
+            &form,
+            &systems_with_error_count_media(true, &["DVD", "CD"]),
+            &media,
+            None,
+            false
+        )
+        .is_empty());
+
+        form.media_type = "CD".to_string();
+        assert!(validate_add_submission_error_count(
+            &form,
+            &systems_with_error_count_media(false, &["DVD", "CD"]),
+            &media,
+            None,
+            false
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn ordinary_edits_keep_error_count_optional_and_validate_supplied_values() {
+        let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
+        form.error_count = None;
+        let media = media_rows_with_cd();
+        let systems = systems_with_error_count_media(true, &["DVD", "CD"]);
+        let required_error = "Error Count: cannot be empty".to_string();
+
+        assert!(!validate_form(&form, &media, &systems).contains(&required_error));
+
+        form.error_count = Some("-1".to_string());
+        assert!(validate_form(&form, &media, &systems)
+            .contains(&"Error Count: must be a non-negative integer".to_string()));
     }
 
     #[test]
@@ -4529,8 +4819,10 @@ mod operation_delta_tests {
     #[test]
     fn build_new_disc_changes_writes_explicit_add_delta_without_db_dedup() {
         let form = new_disc_form();
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
 
-        let changes = build_new_disc_changes(&form, &media_rows(), &systems_with_edc(true));
+        let changes = build_new_disc_changes(&form, &media, &systems_with_edc(true));
 
         assert_eq!(
             changes["title"],
@@ -4578,7 +4870,7 @@ mod operation_delta_tests {
             changes["dat"],
             serde_json::json!({
                 "add": {
-                    "new": r#"<rom name="Track.iso" size="1" crc="11111111" md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" />"#
+                    "new": r#"<rom name="Track.bin" size="1" crc="11111111" md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" />"#
                 }
             })
         );
@@ -4875,6 +5167,18 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn hidden_error_count_is_preserved_when_capability_is_inapplicable() {
+        let detail = base_detail();
+        let mut form = form_from_detail(&detail);
+        form.error_count = None;
+
+        let changes =
+            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+
+        assert!(changes.get("error_count").is_none());
+    }
+
+    #[test]
     fn build_sparse_edit_changes_ignores_hexadecimal_case_only_differences() {
         let mut detail = base_detail();
         detail.disc.media_type = MediaTypeRow {
@@ -5012,6 +5316,8 @@ mod operation_delta_tests {
     fn build_sparse_edit_changes_writes_modify_remove_and_set_deltas() {
         let detail = base_detail();
         let mut form = form_from_detail(&detail);
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
         form.title = "Edited Game".to_string();
         form.version = Some("2.0".to_string());
         form.comments = None;
@@ -5025,8 +5331,7 @@ mod operation_delta_tests {
         form.barcode = vec![];
         form.universal_hash = Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string());
 
-        let changes =
-            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+        let changes = build_sparse_edit_changes(&form, &detail, &media, &systems_with_edc(true));
 
         assert_eq!(
             changes["title"],
