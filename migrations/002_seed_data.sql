@@ -10,7 +10,7 @@ INSERT INTO media_types
     ('hdvd15',   'HD DVD (SL)',                 1, FALSE, 'iso'),
     ('hdvd30',   'HD DVD (DL)',                 2, FALSE, 'iso'),
     ('bd25',     'BD-25',                       1, TRUE,  'iso'),
-    ('bd25wiiu', 'Wii U Optical Disc (SL)',     1, TRUE,  'iso'),
+    ('bd25wiiu', 'Wii U Optical Disc (SL)',     1, FALSE, 'iso'),
     ('bd50',     'BD-50',                       2, TRUE,  'iso'),
     ('bd66',     'BD-66',                       2, TRUE,  'iso'),
     ('bd100',    'BD-100',                      3, TRUE,  'iso'),
