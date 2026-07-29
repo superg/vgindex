@@ -783,7 +783,11 @@ async fn disc_view(
                         )
                     })
                     .collect::<Vec<_>>()
-                    .join(", ")
+                    .join(if detail.dumpers.len() <= 10 {
+                        "<br>"
+                    } else {
+                        ", "
+                    })
             },
             ring_vis: RingColVis::from_rows(
                 &ring_rows,
