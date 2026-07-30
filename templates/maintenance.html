@@ -3,7 +3,7 @@
 {% block title %}Maintenance{% endblock %}
 
 {% block head %}
-<script src="/static/js/maintenance.js" defer></script>
+<script src="{{ self.versioned_asset_url("/static/js/maintenance.js") }}" defer></script>
 {% endblock %}
 
 {% block content %}

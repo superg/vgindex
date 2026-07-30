@@ -6,11 +6,13 @@ pub const DATA_DIR: &str = "./data";
 static SITE_NAME: OnceLock<String> = OnceLock::new();
 static WIKI_URL: OnceLock<String> = OnceLock::new();
 static FORUM_URL: OnceLock<String> = OnceLock::new();
+static ASSET_VERSION: OnceLock<String> = OnceLock::new();
 
 pub fn init_site_config(config: &Config) {
     SITE_NAME.set(config.site_name.clone()).ok();
     WIKI_URL.set(config.wiki_url.clone()).ok();
     FORUM_URL.set(config.forum_url.clone()).ok();
+    ASSET_VERSION.set(config.asset_version.clone()).ok();
 }
 
 pub trait SiteConfig {
@@ -22,6 +24,12 @@ pub trait SiteConfig {
     }
     fn forum_url(&self) -> &str {
         FORUM_URL.get().map(|s| s.as_str()).unwrap_or("#")
+    }
+    fn asset_version(&self) -> &str {
+        ASSET_VERSION.get().map(String::as_str).unwrap_or("dev")
+    }
+    fn versioned_asset_url(&self, path: &str) -> String {
+        versioned_asset_url(path, self.asset_version())
     }
     fn url_encode(&self, value: &str) -> String {
         urlencoding::encode(value).into_owned()
@@ -37,6 +45,7 @@ pub struct Config {
     pub wiki_url: String,
     pub forum_url: String,
     pub news_feed_url: String,
+    pub asset_version: String,
     pub port: u16,
     pub oidc_provider_url: String,
     pub oidc_client_id: String,
@@ -45,6 +54,17 @@ pub struct Config {
 
 fn env_nonempty(name: &str) -> Option<String> {
     env::var(name).ok().filter(|value| !value.trim().is_empty())
+}
+
+fn resolve_asset_version(value: Option<String>) -> String {
+    value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "dev".to_owned())
+}
+
+fn versioned_asset_url(path: &str, version: &str) -> String {
+    format!("{path}?v={}", urlencoding::encode(version))
 }
 
 fn trim_url(value: String) -> String {
@@ -88,6 +108,7 @@ impl Config {
                 .unwrap_or_else(|| format!("{}/feed.php?mode=news", forum_url)),
         );
         let site_name = env_nonempty("SITE_NAME").unwrap_or_else(|| host_from_url(&base_url));
+        let asset_version = resolve_asset_version(env::var("ASSET_VERSION").ok());
 
         Self {
             site_name,
@@ -96,6 +117,7 @@ impl Config {
             wiki_url,
             forum_url,
             news_feed_url,
+            asset_version,
             oidc_provider_url,
             oidc_client_id: env::var("APP_OIDC_CLIENT_ID").unwrap_or_else(|_| "vgindex-app".into()),
             oidc_client_secret: env::var("APP_OIDC_CLIENT_SECRET")
@@ -115,5 +137,56 @@ impl Config {
                 .parse()
                 .expect("APP_PORT must be a valid port number"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asset_version_uses_configured_value_or_dev_fallback() {
+        assert_eq!(
+            resolve_asset_version(Some(" sha-abc123 ".to_owned())),
+            "sha-abc123"
+        );
+        assert_eq!(resolve_asset_version(Some("  ".to_owned())), "dev");
+        assert_eq!(resolve_asset_version(None), "dev");
+    }
+
+    #[test]
+    fn asset_url_changes_with_the_deployment_version() {
+        assert_eq!(
+            versioned_asset_url("/static/js/disc_edit.js", "sha-abc123"),
+            "/static/js/disc_edit.js?v=sha-abc123"
+        );
+        assert_ne!(
+            versioned_asset_url("/static/js/disc_edit.js", "sha-abc123"),
+            versioned_asset_url("/static/js/disc_edit.js", "sha-def456")
+        );
+    }
+
+    #[test]
+    fn every_static_css_and_javascript_template_url_is_versioned() {
+        let templates = [
+            include_str!("../templates/base.html"),
+            include_str!("../templates/disc_edit.html"),
+            include_str!("../templates/maintenance.html"),
+        ];
+        let mut asset_urls = 0;
+
+        for template in templates {
+            for line in template.lines().filter(|line| {
+                line.contains("/static/") && (line.contains(".css") || line.contains(".js"))
+            }) {
+                asset_urls += 1;
+                assert!(
+                    line.contains("self.versioned_asset_url("),
+                    "unversioned CSS or JavaScript template URL: {line}"
+                );
+            }
+        }
+
+        assert_eq!(asset_urls, 5);
     }
 }

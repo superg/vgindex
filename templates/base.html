@@ -12,8 +12,8 @@
     <meta property="og:site_name" content="{{ self.site_name() }}" />
     <link rel="icon" href="/static/favicon.ico" sizes="any">
     <link rel="shortcut icon" href="/static/favicon.ico">
-    <link rel="stylesheet" href="/static/css/pico.min.css">
-    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="{{ self.versioned_asset_url("/static/css/pico.min.css") }}">
+    <link rel="stylesheet" href="{{ self.versioned_asset_url("/static/css/app.css") }}">
     {% match current_user %}
     {% when Some with (user) %}
     <meta name="csrf-token" content="{{ user.csrf_token }}">
@@ -25,7 +25,7 @@
             if (t) document.documentElement.setAttribute('data-theme', t);
         })();
     </script>
-    <script src="/static/js/htmx.min.js" defer></script>
+    <script src="{{ self.versioned_asset_url("/static/js/htmx.min.js") }}" defer></script>
     {% block head %}{% endblock %}
 </head>
 <body>

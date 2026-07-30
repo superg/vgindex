@@ -675,6 +675,7 @@ mod tests {
             wiki_url: "#".to_string(),
             forum_url: "#".to_string(),
             news_feed_url: "#".to_string(),
+            asset_version: "template-test".to_string(),
             port: 0,
             oidc_provider_url: "#".to_string(),
             oidc_client_id: "test".to_string(),
@@ -712,5 +713,7 @@ mod tests {
         assert!(html.contains("2026-01-01"));
         assert!(html.contains("2026-01-02"));
         assert!(html.contains("<time>2026-01-03</time>"));
+        assert!(html.contains("/static/css/app.css?v=template-test"));
+        assert!(html.contains("/static/js/htmx.min.js?v=template-test"));
     }
 }

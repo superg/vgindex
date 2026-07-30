@@ -13,6 +13,10 @@ Three custom images are built and published to a container registry on every pus
 
 Each image is tagged with `sha-<commit>` (immutable) and `main` (moving).
 
+The app container also receives `ASSET_VERSION` from `IMAGE_TAG`. Askama adds
+this value to every CSS and JavaScript URL so browsers fetch the matching files
+after each SHA-based deployment. Local `dev` builds use `ASSET_VERSION=dev`.
+
 ## Prerequisites
 
 ### Server setup
@@ -82,6 +86,9 @@ Go to Actions → CD → Run workflow.
 ssh deploy@<server-ip>
 IMAGE_TAG=sha-abc1234 bash /opt/app/scripts/deployment/deploy.sh
 ```
+
+Always deploy the app with an immutable `sha-<commit>` tag. A moving tag such as
+`main` does not change the CSS and JavaScript asset version between releases.
 
 ## Rollback
 

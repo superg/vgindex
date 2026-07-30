@@ -19,7 +19,7 @@ const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
 const IS_ADD_MODE = {{ is_add_mode }};
 const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
 </script>
-<script src="/static/js/disc_edit.js" defer></script>
+<script src="{{ self.versioned_asset_url("/static/js/disc_edit.js") }}" defer></script>
 {% endblock %}
 
 {% block content %}

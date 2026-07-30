@@ -55,6 +55,7 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - APP_PORT=${APP_PORT:-3000}
+      - ASSET_VERSION=${IMAGE_TAG:-dev}
       - SITE_APEX_URL=${SITE_APEX_URL:-http://redump.test:${SITE_PORT_HTTP:-18000}}
       - APP_PUBLIC_URL=${APP_PUBLIC_URL:-http://redump.test:${LOCAL_SITE_PORT:-18000}}
       - PHPBB_PUBLIC_URL=${PHPBB_PUBLIC_URL:-http://forum.redump.test:${LOCAL_SITE_PORT:-18000}}
