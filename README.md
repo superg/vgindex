@@ -2,7 +2,7 @@
 
 vgindex is the source code behind [redump.info](https://redump.info/), a disc preservation database dedicated to collecting and sharing verified information about optical media.
 
-The project was developed from scratch to meet the needs of optical disc preservation and to support the redump.info community's work.
+The website was developed from scratch as a replacement for redump.org after the old site became unreliable under constant bot traffic and there was no practical way for the community to maintain or improve its aging codebase. Rather than carrying those limitations forward, vgindex provides a reliable, maintainable foundation shaped around modern optical disc preservation workflows and the long-term needs of the redump.info community.
 
 ## 🛠️ Technical Stack
 
