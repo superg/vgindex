@@ -8,7 +8,7 @@ The website was developed from scratch as a replacement for redump.org after the
 
 - **Rust 2021**, **Axum**, and **Tokio**
 - **Askama** server-rendered HTML templates
-- **Vanilla JavaScript** and **CSS**
+- **Pico CSS**, **HTMX**, and **Vanilla JavaScript**
 - **PostgreSQL** with **SQLx**
 - **Docker Compose** and **Caddy**
 
