@@ -998,9 +998,28 @@ fn find_matching_ring_entry(
     None
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RingCodeApplicationMode {
+    MergeCompatibleAdditions,
+    PreserveDistinctAdditions,
+}
+
+#[cfg(test)]
 fn apply_ring_codes_history(
     old_value: &serde_json::Value,
     change_node: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    apply_ring_codes_history_with_mode(
+        old_value,
+        change_node,
+        RingCodeApplicationMode::MergeCompatibleAdditions,
+    )
+}
+
+fn apply_ring_codes_history_with_mode(
+    old_value: &serde_json::Value,
+    change_node: &serde_json::Value,
+    mode: RingCodeApplicationMode,
 ) -> AppResult<serde_json::Value> {
     let mut rings = old_value.as_array().cloned().unwrap_or_default();
     let before_layers = ring_layers_max(&rings);
@@ -1055,7 +1074,9 @@ fn apply_ring_codes_history(
             continue;
         }
 
-        let merge_idx = if resolved_idx == usize::MAX {
+        let merge_idx = if resolved_idx == usize::MAX
+            && mode == RingCodeApplicationMode::MergeCompatibleAdditions
+        {
             find_matching_ring_entry(&rings, change, &removed_ring_ids)
         } else {
             None
@@ -1139,6 +1160,18 @@ pub fn resolve_submission_snapshot(
     db_snapshot: &serde_json::Value,
     changes: &serde_json::Value,
 ) -> AppResult<serde_json::Value> {
+    resolve_submission_snapshot_with_mode(
+        db_snapshot,
+        changes,
+        RingCodeApplicationMode::MergeCompatibleAdditions,
+    )
+}
+
+fn resolve_submission_snapshot_with_mode(
+    db_snapshot: &serde_json::Value,
+    changes: &serde_json::Value,
+    ring_code_mode: RingCodeApplicationMode,
+) -> AppResult<serde_json::Value> {
     let mut resolved = db_snapshot.clone();
     let Some(change_obj) = changes.as_object() else {
         canonicalize_disc_snapshot_hex_fields(&mut resolved);
@@ -1161,7 +1194,7 @@ pub fn resolve_submission_snapshot(
                     .get(key)
                     .cloned()
                     .unwrap_or_else(|| serde_json::json!([]));
-                let updated = apply_ring_codes_history(&old, value)?;
+                let updated = apply_ring_codes_history_with_mode(&old, value, ring_code_mode)?;
                 resolved_obj.insert(key.clone(), updated);
             }
             _ => {
@@ -1237,7 +1270,11 @@ fn resolve_approval_from_snapshot(
             changes_obj.insert("status".to_string(), status_change);
         }
     }
-    let effective_data = resolve_submission_snapshot(db_snapshot, &approved_changes)?;
+    let effective_data = resolve_submission_snapshot_with_mode(
+        db_snapshot,
+        &approved_changes,
+        RingCodeApplicationMode::PreserveDistinctAdditions,
+    )?;
     Ok(ApprovalResolution {
         changes: approved_changes,
         effective_data,
@@ -4019,6 +4056,58 @@ mod tests {
     }
 
     #[test]
+    fn review_resolution_merges_ring_codes_but_final_application_preserves_them() {
+        let db = serde_json::json!({
+            "status": "Unverified",
+            "ring_codes": [ring_merge_candidate(
+                ("MASTER", "SID-1"),
+                ["10", "20", "30"],
+                "same comment",
+                "IFPI 1111",
+            )]
+        });
+        let changes = serde_json::json!({
+            "ring_codes": [ring_merge_change(
+                ("MASTER", "SID-1"),
+                ["10", "20", "30"],
+                "same comment",
+                "IFPI 3333, IFPI 2222, IFPI 3333",
+            )]
+        });
+
+        let review = resolve_submission_snapshot(&db, &changes).unwrap();
+        let review_entries = review["ring_codes"].as_array().unwrap();
+        assert_eq!(review_entries.len(), 1);
+        assert_eq!(
+            review_entries[0]["layers"][0]["mould_sids"],
+            "IFPI 1111, IFPI 2222, IFPI 3333"
+        );
+
+        for submission_type in [SubmissionType::Disc, SubmissionType::Edit] {
+            let approval = resolve_approval_from_snapshot(
+                submission_type,
+                Some(DiscStatus::Unverified),
+                &db,
+                &changes,
+            )
+            .unwrap();
+            let final_entries = approval.effective_data["ring_codes"].as_array().unwrap();
+
+            assert_eq!(final_entries.len(), 2);
+            let existing = final_entries
+                .iter()
+                .find(|entry| entry.get("id").and_then(|id| id.as_i64()) == Some(1))
+                .unwrap();
+            let addition = final_entries
+                .iter()
+                .find(|entry| entry.get("id").is_none())
+                .unwrap();
+            assert_eq!(existing["layers"][0]["mould_sids"], "IFPI 1111");
+            assert_eq!(addition["layers"][0]["mould_sids"], "IFPI 2222, IFPI 3333");
+        }
+    }
+
+    #[test]
     fn disabled_targets_block_only_verification_approval() {
         assert!(disabled_verification_target(
             SubmissionType::Disc,
@@ -4820,6 +4909,62 @@ mod tests {
         let entries = result.as_array().unwrap();
         assert_eq!(entries[0]["id"], 10);
         assert_eq!(entries[0]["layers"][0]["mastering_code"], "A");
+        assert_eq!(entries[0]["comment"], "updated");
+    }
+
+    #[test]
+    fn final_ring_code_application_still_modifies_and_removes_by_id() {
+        let old = serde_json::json!([
+            {
+                "id": 1,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "keep",
+                "layers": [{
+                    "mastering_code": "A",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            },
+            {
+                "id": 2,
+                "offset_value": "",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "remove",
+                "layers": [{
+                    "mastering_code": "B",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            }
+        ]);
+        let changes = serde_json::json!([
+            {
+                "id": 1,
+                "comment": { "modify": { "old": "keep", "new": "updated" } }
+            },
+            {
+                "id": 2,
+                "remove": true
+            }
+        ]);
+
+        let result = apply_ring_codes_history_with_mode(
+            &old,
+            &changes,
+            RingCodeApplicationMode::PreserveDistinctAdditions,
+        )
+        .unwrap();
+        let entries = result.as_array().unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["id"], 1);
         assert_eq!(entries[0]["comment"], "updated");
     }
 
