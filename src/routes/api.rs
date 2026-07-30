@@ -1,6 +1,13 @@
-use axum::{extract::State, http::HeaderMap, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::post,
+    Json, Router,
+};
 
 use crate::auth::{csrf, middleware::RequireAuth};
+use crate::db::models::UserRole;
 use crate::error::AppError;
 use crate::services::{disc_service, redumper_log};
 use crate::transliteration::{Script, TransliterationError};
@@ -62,12 +69,34 @@ async fn parse_redumper_log(
     RequireAuth(user): RequireAuth,
     headers: HeaderMap,
     Json(req): Json<ParseRedumperLogRequest>,
-) -> Result<Json<redumper_log::ParsedRedumperLog>, AppError> {
+) -> Result<Response, AppError> {
     csrf::verify_headers(&user, &headers)?;
+
+    if !can_use_redumper_autofill(user.role, &req.log) {
+        return Ok(unsupported_redumper_build_response());
+    }
 
     let systems = disc_service::get_all_systems(&state.pool).await?;
     let system_codes: Vec<String> = systems.into_iter().map(|system| system.code).collect();
-    Ok(Json(redumper_log::parse(&req.log, &system_codes)))
+    Ok(Json(redumper_log::parse(&req.log, &system_codes)).into_response())
+}
+
+fn can_use_redumper_autofill(role: UserRole, log: &str) -> bool {
+    role.can_moderate() || redumper_log::has_supported_autofill_builds(log)
+}
+
+const UNSUPPORTED_REDUMPER_BUILD_MESSAGE: &str =
+    "Autofill is not supported for this version of redumper. Please update to the latest redumper build.";
+
+fn unsupported_redumper_build_response() -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        Json(ParseRedumperLogError {
+            error: "unsupported_redumper_build",
+            message: UNSUPPORTED_REDUMPER_BUILD_MESSAGE,
+        }),
+    )
+        .into_response()
 }
 
 #[derive(serde::Deserialize)]
@@ -75,8 +104,16 @@ struct ParseRedumperLogRequest {
     log: String,
 }
 
+#[derive(serde::Serialize)]
+struct ParseRedumperLogError {
+    error: &'static str,
+    message: &'static str,
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn redumper_parser_route_is_authenticated_and_csrf_protected() {
         let source = include_str!("api.rs");
@@ -92,5 +129,31 @@ mod tests {
         assert!(handler.contains("RequireAuth(user): RequireAuth"));
         assert!(handler.contains("csrf::verify_headers(&user, &headers)?"));
         assert!(handler.contains("redumper_log::parse(&req.log, &system_codes)"));
+        assert!(
+            handler.find("can_use_redumper_autofill").unwrap()
+                < handler.find("get_all_systems").unwrap()
+        );
+    }
+
+    #[test]
+    fn moderators_bypass_the_redumper_build_requirement() {
+        let unsupported = "redumper (build: LOCAL)";
+        assert!(!can_use_redumper_autofill(UserRole::User, unsupported));
+        assert!(!can_use_redumper_autofill(UserRole::UserPlus, unsupported));
+        assert!(can_use_redumper_autofill(UserRole::Moderator, unsupported));
+        assert!(can_use_redumper_autofill(UserRole::Admin, ""));
+    }
+
+    #[tokio::test]
+    async fn unsupported_redumper_build_response_is_structured_422() {
+        let response = unsupported_redumper_build_response();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["error"], "unsupported_redumper_build");
+        assert_eq!(body["message"], UNSUPPORTED_REDUMPER_BUILD_MESSAGE);
     }
 }

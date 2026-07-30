@@ -5781,6 +5781,9 @@ mod operation_delta_tests {
         assert!(script.contains("className = 'validation-result validation-result-new'"));
         assert!(script.contains("preserveDumpLogFillStatus(message);"));
         assert!(script.contains("form.requestSubmit(validateButton);"));
+        assert!(script.contains("response.status === 422"));
+        assert!(script.contains("data.error === 'unsupported_redumper_build'"));
+        assert!(script.contains("error.dumpLogFillMessage = data.message"));
         assert!(script.contains("restoreDumpLogFillStatus();"));
         assert!(script.contains("initDumpLogFill();"));
         assert!(css.contains(".disc-edit .dump-log-fill-controls"));

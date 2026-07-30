@@ -1268,6 +1268,17 @@ function initDumpLogFill() {
             },
             body: JSON.stringify({ log: textarea.value })
         }).then(function (response) {
+            if (response.status === 422) {
+                return response.json().then(function (data) {
+                    var error = new Error('Unsupported redumper build');
+                    if (data
+                        && data.error === 'unsupported_redumper_build'
+                        && typeof data.message === 'string') {
+                        error.dumpLogFillMessage = data.message;
+                    }
+                    throw error;
+                });
+            }
             if (!response.ok) {
                 throw new Error('HTTP ' + response.status);
             }
@@ -1290,8 +1301,10 @@ function initDumpLogFill() {
             }
             preserveDumpLogFillStatus(message);
             form.requestSubmit(validateButton);
-        }).catch(function () {
-            setDumpLogFillStatus('Could not read the log. Please try again.');
+        }).catch(function (error) {
+            setDumpLogFillStatus(error && error.dumpLogFillMessage
+                ? error.dumpLogFillMessage
+                : 'Could not read the log. Please try again.');
         }).finally(function () {
             button.disabled = false;
         });

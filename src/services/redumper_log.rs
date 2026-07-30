@@ -4,6 +4,8 @@ use serde::Serialize;
 
 use crate::services::validation;
 
+pub const MINIMUM_AUTOFILL_BUILD: u64 = 737;
+
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ParsedRedumperLog {
     pub system_code: Option<String>,
@@ -23,6 +25,35 @@ pub struct ParsedRedumperLog {
     /// `None` means no protection information was found. `Some("")` means
     /// `protection: none` was explicitly reported and the field should clear.
     pub protection: Option<String>,
+}
+
+pub fn has_supported_autofill_builds(log: &str) -> bool {
+    let mut found_header = false;
+
+    for line in log.lines() {
+        let Some(value) = line.trim().strip_prefix("redumper (build:") else {
+            continue;
+        };
+        found_header = true;
+
+        let Some(value) = value.strip_suffix(')').map(str::trim) else {
+            return false;
+        };
+        let Some(number) = value.strip_prefix('b') else {
+            return false;
+        };
+        if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+        let Ok(number) = number.parse::<u64>() else {
+            return false;
+        };
+        if number < MINIMUM_AUTOFILL_BUILD {
+            return false;
+        }
+    }
+
+    found_header
 }
 
 pub fn parse(log: &str, known_system_codes: &[String]) -> ParsedRedumperLog {
@@ -419,6 +450,52 @@ dat:
             Some("FILE \"first.bin\" BINARY\n  TRACK 01 MODE1/2352")
         );
         assert_eq!(parsed.dat.as_deref().unwrap().lines().count(), 2);
+    }
+
+    #[test]
+    fn autofill_requires_every_redumper_build_to_be_supported() {
+        let header = |build: &str| format!("redumper (build: {build})");
+
+        assert!(!has_supported_autofill_builds(&header("b736")));
+        assert!(has_supported_autofill_builds(&header("b737")));
+        assert!(has_supported_autofill_builds(&header("b1000")));
+        assert!(has_supported_autofill_builds(
+            "  redumper (build: b737)  \r\nredumper (build: b900)"
+        ));
+
+        for unsupported in [
+            "",
+            "redumper (build: LOCAL)",
+            "redumper (build:)",
+            "redumper (build: b)",
+            "redumper (build: b7x7)",
+            "redumper (build: b737",
+            "redumper (build: b18446744073709551616)",
+            "redumper (build: b900)\nredumper (build: b736)",
+            "redumper (build: b900)\nredumper (build: LOCAL)",
+        ] {
+            assert!(
+                !has_supported_autofill_builds(unsupported),
+                "unexpectedly supported: {unsupported:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn dat_extra_entries_are_excluded_without_a_blank_separator() {
+        let log = r#"*** HASH (time check: 0s)
+dat:
+<rom name="xbox47.iso" size="7825162240" crc="ffaf1dcc" md5="e057504a77b4e0ad6271ea76f352a68f" sha1="4c4377a74a07ec2af8c7ef11ae30490f48d0ef13" />
+dat (extra):
+<rom name="xbox47.dmi" size="2048" crc="043bf884" md5="efe2e7d26f6a375ea6a5e17074bcc908" sha1="ab7246ac85974768f7f3fb79bd6f7bad33e818c8" />
+<rom name="xbox47.pfi" size="2048" crc="8fc52135" md5="51badb1da2cc5fb0b272061dab9ef75b" sha1="1b1c6e61835799dd182dea5b3f3f35447216a8ac" />"#;
+
+        assert_eq!(
+            parse(log, &[]).dat.as_deref(),
+            Some(
+                r#"<rom name="xbox47.iso" size="7825162240" crc="ffaf1dcc" md5="e057504a77b4e0ad6271ea76f352a68f" sha1="4c4377a74a07ec2af8c7ef11ae30490f48d0ef13" />"#
+            )
+        );
     }
 
     #[test]
