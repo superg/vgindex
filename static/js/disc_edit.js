@@ -1130,8 +1130,177 @@ function initTransliterate() {
     });
 }
 
+var DUMP_LOG_FILL_STATUS_KEY = 'vgindex.dumpLogFillStatus';
+
+function setDumpLogFillStatus(message) {
+    var status = document.getElementById('dump-log-fill-status');
+    if (!message) {
+        if (status) status.remove();
+        return;
+    }
+    if (!status) {
+        status = document.createElement('div');
+        status.id = 'dump-log-fill-status';
+        status.className = 'validation-result validation-result-new';
+        status.setAttribute('role', 'status');
+        var anchor = document.querySelector('.validation-result, .validation-errors, #disc-edit-form');
+        if (!anchor || !anchor.parentNode) return;
+        anchor.parentNode.insertBefore(status, anchor);
+    }
+    status.textContent = message;
+}
+
+function preserveDumpLogFillStatus(message) {
+    try {
+        window.sessionStorage.setItem(DUMP_LOG_FILL_STATUS_KEY, message);
+    } catch (_error) {
+        setDumpLogFillStatus(message);
+    }
+}
+
+function restoreDumpLogFillStatus() {
+    try {
+        var message = window.sessionStorage.getItem(DUMP_LOG_FILL_STATUS_KEY);
+        if (!message) return;
+        window.sessionStorage.removeItem(DUMP_LOG_FILL_STATUS_KEY);
+        setDumpLogFillStatus(message);
+    } catch (_error) {
+        // Storage can be unavailable in privacy-restricted browser contexts.
+    }
+}
+
+function applyParsedField(name, value) {
+    if (value === null || value === undefined) return 0;
+    var input = document.querySelector('[name="' + name + '"]');
+    if (!input) return 0;
+    input.value = String(value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    fitInlineGroupForInput(input);
+    return 1;
+}
+
+function applyParsedRedumperLog(data) {
+    var applied = 0;
+    saveRingFromDom();
+    var systemSelect = document.getElementById('system-select');
+    if (data.system_code !== null && data.system_code !== undefined && systemSelect) {
+        var optionExists = Array.prototype.some.call(systemSelect.options, function (option) {
+            return option.value === data.system_code;
+        });
+        if (optionExists) {
+            systemSelect.value = data.system_code;
+            systemSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            applied += 1;
+        }
+    }
+
+    [
+        'version',
+        'exe_date',
+        'error_count',
+        'universal_hash',
+        'sector_ranges',
+        'sbi',
+        'pvd',
+        'header',
+        'cuesheet',
+        'dat',
+        'protection'
+    ].forEach(function (name) {
+        applied += applyParsedField(name, data[name]);
+    });
+
+    if (data.edc !== null && data.edc !== undefined) {
+        var edc = document.querySelector('input[name="edc"][value="' + (data.edc ? 'true' : 'false') + '"]');
+        if (edc) {
+            edc.checked = true;
+            edc.dispatchEvent(new Event('change', { bubbles: true }));
+            applied += 1;
+        }
+    }
+
+    if ((data.offset_value !== null && data.offset_value !== undefined)
+        || (data.sample_start !== null && data.sample_start !== undefined)) {
+        saveRingFromDom();
+        ensureEmptyRingEntry();
+        if (ringEntries.length > 0) {
+            if (data.offset_value !== null && data.offset_value !== undefined) {
+                ringEntries[0].offset_value = String(data.offset_value);
+                applied += 1;
+            }
+            if (data.sample_start !== null && data.sample_start !== undefined) {
+                ringEntries[0].sample_start = String(data.sample_start);
+                applied += 1;
+            }
+            renderRingEntries();
+            fitRingColumns();
+        }
+    }
+
+    fitDiscMetaFields();
+    fitAllInlineGroups();
+    return applied;
+}
+
+function initDumpLogFill() {
+    var button = document.getElementById('dump-log-fill-btn');
+    var textarea = document.querySelector('textarea[name="dump_log"]');
+    if (!button || !textarea) return;
+
+    button.addEventListener('click', function () {
+        if (!textarea.value.trim()) {
+            setDumpLogFillStatus('Paste a redumper log first.');
+            textarea.focus();
+            return;
+        }
+
+        var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        var csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
+        button.disabled = true;
+        setDumpLogFillStatus('Reading log…');
+
+        fetch('/api/parse-redumper-log', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken || ''
+            },
+            body: JSON.stringify({ log: textarea.value })
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+            return response.json();
+        }).then(function (data) {
+            var applied = applyParsedRedumperLog(data);
+            if (applied === 0) {
+                setDumpLogFillStatus('No supported values were found.');
+                return;
+            }
+
+            var message = 'Filled ' + applied + (applied === 1 ? ' field.' : ' fields.');
+            var form = document.getElementById('disc-edit-form');
+            var validateButton = form
+                ? form.querySelector('button[type="submit"][name="action"][value="validate"]')
+                : null;
+            if (!form || !validateButton) {
+                setDumpLogFillStatus(message);
+                return;
+            }
+            preserveDumpLogFillStatus(message);
+            form.requestSubmit(validateButton);
+        }).catch(function () {
+            setDumpLogFillStatus('Could not read the log. Please try again.');
+        }).finally(function () {
+            button.disabled = false;
+        });
+    });
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', function () {
+    restoreDumpLogFillStatus();
     filterMediaTypes();
     refreshSelectionDependentUi();
     initRingEditor();
@@ -1142,6 +1311,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initSubmitAsSelector();
     initFlagListToggle();
     initTransliterate();
+    initDumpLogFill();
     initIndependentInlineResizing();
     fitDiscMetaFields();
     fitAllInlineGroups();

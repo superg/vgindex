@@ -3810,6 +3810,25 @@ textarea.full-width-textarea {
 .disc-edit .disc-form-section:last-of-type .form-actions {
     margin-bottom: 0.35rem;
 }
+.disc-edit .dump-log-fill-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 1rem;
+    width: min(100%, 32rem);
+}
+.disc-edit .dump-log-fill-controls button {
+    display: block;
+    width: calc((100% - 1rem) / 2);
+    margin: 0 auto;
+    padding: 0.35rem 1rem;
+    font-size: 0.8rem;
+    text-align: center;
+}
 .disc-edit .disc-form-section:last-of-type > button[type="submit"] {
     display: block;
     width: min(100%, calc((32rem - 1rem) / 2));

@@ -5753,6 +5753,46 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn add_disc_dump_log_has_fill_helper() {
+        let template = include_str!("../../templates/disc_edit.html");
+        let script = include_str!("../../static/js/disc_edit.js");
+        let css = include_str!("../../static/css/app.css");
+
+        let dump_log_pos = template.find(r#"textarea name="dump_log""#).unwrap();
+        let fill_pos = template
+            .find(r#"<button type="button" id="dump-log-fill-btn">Fill from Dump Log</button>"#)
+            .unwrap();
+        let upload_pos = template.find(r#"<label>Logs Archive URL"#).unwrap();
+        assert!(dump_log_pos < fill_pos);
+        assert!(fill_pos < upload_pos);
+        assert!(!template.contains(r#"<small id="dump-log-fill-status""#));
+
+        assert!(script.contains("function initDumpLogFill()"));
+        assert!(script.contains("fetch('/api/parse-redumper-log'"));
+        assert!(script.contains("body: JSON.stringify({ log: textarea.value })"));
+        assert!(script.contains("function applyParsedRedumperLog(data)"));
+        assert!(script.contains("saveRingFromDom();"));
+        assert!(script.contains("ringEntries[0].offset_value = String(data.offset_value)"));
+        assert!(script.contains("ringEntries[0].sample_start = String(data.sample_start)"));
+        assert!(script.contains("systemSelect.dispatchEvent(new Event('change'"));
+        assert!(script.contains("data.edc ? 'true' : 'false'"));
+        assert!(script.contains("'protection'"));
+        assert!(script.contains("function restoreDumpLogFillStatus()"));
+        assert!(script.contains("className = 'validation-result validation-result-new'"));
+        assert!(script.contains("preserveDumpLogFillStatus(message);"));
+        assert!(script.contains("form.requestSubmit(validateButton);"));
+        assert!(script.contains("restoreDumpLogFillStatus();"));
+        assert!(script.contains("initDumpLogFill();"));
+        assert!(css.contains(".disc-edit .dump-log-fill-controls"));
+        assert!(css.contains(
+            ".disc-edit .dump-log-fill-controls {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 0.75rem;\n    margin-top: 1rem;"
+        ));
+        assert!(css.contains(
+            ".disc-edit .dump-log-fill-controls button {\n    display: block;\n    width: calc((100% - 1rem) / 2);\n    margin: 0 auto;\n    padding: 0.35rem 1rem;\n    font-size: 0.8rem;\n    text-align: center;"
+        ));
+    }
+
+    #[test]
     fn ringcode_add_controls_follow_template_capability() {
         let template = include_str!("../../templates/disc_edit.html");
         let script = include_str!("../../static/js/disc_edit.js");

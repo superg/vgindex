@@ -351,6 +351,23 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn cuesheet_has_only_audio_tracks(text: &str) -> bool {
+    if validate_cuesheet(text).is_err() {
+        return false;
+    }
+
+    let mut found_track = false;
+    for line in text.lines() {
+        if let Some((_number, mode)) = parse_cue_track_line(&line.trim().to_uppercase()) {
+            found_track = true;
+            if mode != "AUDIO" {
+                return false;
+            }
+        }
+    }
+    found_track
+}
+
 fn is_cue_file_line(line: &str) -> bool {
     if !line.starts_with("FILE \"") {
         return false;
@@ -851,6 +868,27 @@ FILE "Track 02.bin" BINARY
     INDEX 00 00:00:00
     INDEX 01 00:60:00"#;
         assert!(validate_cuesheet(bad_secs).is_err());
+    }
+
+    #[test]
+    fn test_cuesheet_has_only_audio_tracks() {
+        let audio = "FILE \"Track 01.bin\" BINARY\n\
+  TRACK 01 AUDIO\n\
+    INDEX 01 00:00:00\n\
+FILE \"Track 02.bin\" BINARY\n\
+  TRACK 02 AUDIO\n\
+    INDEX 01 00:00:00";
+        assert!(cuesheet_has_only_audio_tracks(audio));
+
+        let mixed = "FILE \"Track 01.bin\" BINARY\n\
+  TRACK 01 MODE1/2352\n\
+    INDEX 01 00:00:00\n\
+FILE \"Track 02.bin\" BINARY\n\
+  TRACK 02 AUDIO\n\
+    INDEX 01 00:00:00";
+        assert!(!cuesheet_has_only_audio_tracks(mixed));
+        assert!(!cuesheet_has_only_audio_tracks(""));
+        assert!(!cuesheet_has_only_audio_tracks("TRACK 01 AUDIO"));
     }
 
     #[test]
