@@ -122,6 +122,27 @@ fn is_top_level_navigation(method: &Method, headers: &HeaderMap) -> bool {
     fetch_mode_is_navigation || accepts_html
 }
 
+fn is_confirmed_browser_navigation(method: &Method, headers: &HeaderMap) -> bool {
+    (method == Method::GET || method == Method::HEAD)
+        && !headers.contains_key("hx-request")
+        && headers
+            .get("sec-fetch-mode")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|mode| mode.eq_ignore_ascii_case("navigate"))
+}
+
+fn is_automatic_sso_navigation(
+    method: &Method,
+    headers: &HeaderMap,
+    has_authenticated_session: bool,
+) -> bool {
+    if has_authenticated_session {
+        is_top_level_navigation(method, headers)
+    } else {
+        is_confirmed_browser_navigation(method, headers)
+    }
+}
+
 fn is_api_request(uri: &Uri, headers: &HeaderMap) -> bool {
     uri.path().starts_with("/api/")
         || headers
@@ -205,7 +226,8 @@ pub async fn session_auth_middleware(
         .extensions_mut()
         .insert(CurrentUser(loaded.as_ref().map(|(user, _)| user.clone())));
 
-    let navigation = is_top_level_navigation(request.method(), request.headers());
+    let navigation =
+        is_automatic_sso_navigation(request.method(), request.headers(), loaded.is_some());
     let return_to = root_relative_uri(request.uri());
     let exempt = automatic_sso_exempt_path(request.uri().path());
 
@@ -362,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_navigation_accepts_fetch_metadata_or_html_accept_fallback() {
+    fn html_navigation_accepts_fetch_metadata_or_html_accept_fallback() {
         assert!(is_top_level_navigation(
             &Method::GET,
             &headers(&[("sec-fetch-mode", "navigate")])
@@ -383,6 +405,76 @@ mod tests {
             &Method::GET,
             &headers(&[("hx-request", "true"), ("accept", "text/html")])
         ));
+    }
+
+    #[test]
+    fn automatic_sso_requires_fetch_metadata_only_for_anonymous_requests() {
+        let fetch_navigation = headers(&[("sec-fetch-mode", "navigate")]);
+        let local_html_navigation = headers(&[("accept", "text/html,application/xhtml+xml")]);
+
+        assert!(is_automatic_sso_navigation(
+            &Method::GET,
+            &fetch_navigation,
+            false
+        ));
+        assert!(!is_automatic_sso_navigation(
+            &Method::GET,
+            &local_html_navigation,
+            false
+        ));
+        assert!(is_automatic_sso_navigation(
+            &Method::GET,
+            &local_html_navigation,
+            true
+        ));
+    }
+
+    #[test]
+    fn confirmed_browser_navigation_excludes_non_navigation_requests() {
+        assert!(!is_confirmed_browser_navigation(
+            &Method::GET,
+            &headers(&[("accept", "text/html")])
+        ));
+        assert!(!is_confirmed_browser_navigation(
+            &Method::POST,
+            &headers(&[("sec-fetch-mode", "navigate")])
+        ));
+        assert!(!is_confirmed_browser_navigation(
+            &Method::GET,
+            &headers(&[("hx-request", "true"), ("sec-fetch-mode", "navigate")])
+        ));
+    }
+
+    #[test]
+    fn authentication_required_keeps_html_accept_fallback_for_local_browsers() {
+        let request = Request::builder()
+            .uri("/disc/1234/edit")
+            .header(header::ACCEPT, "text/html,application/xhtml+xml")
+            .body(())
+            .unwrap();
+        let (parts, _) = request.into_parts();
+
+        let response = authentication_required(&parts);
+
+        assert_eq!(response.status(), axum::http::StatusCode::SEE_OTHER);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/login?return_to=%2Fdisc%2F1234%2Fedit"
+        );
+    }
+
+    #[test]
+    fn authentication_required_keeps_api_requests_as_unauthorized() {
+        let request = Request::builder()
+            .uri("/api/example")
+            .header(header::ACCEPT, "application/json")
+            .body(())
+            .unwrap();
+        let (parts, _) = request.into_parts();
+
+        let response = authentication_required(&parts);
+
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
     }
 
     #[test]
