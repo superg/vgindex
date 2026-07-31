@@ -903,10 +903,6 @@ fn ring_layer_has_mastering_identity(layer: &serde_json::Value) -> bool {
         .any(|field| !layer[*field].as_str().unwrap_or("").is_empty())
 }
 
-fn ring_layers_have_mastering_identity(layers: Option<&Vec<serde_json::Value>>) -> bool {
-    layers.is_some_and(|layers| layers.iter().any(ring_layer_has_mastering_identity))
-}
-
 fn ring_change_layers_have_mastering_identity(layers: &[serde_json::Value]) -> bool {
     layers.iter().any(|layer| {
         ["mastering_code", "mastering_sid"]
@@ -915,26 +911,106 @@ fn ring_change_layers_have_mastering_identity(layers: &[serde_json::Value]) -> b
     })
 }
 
-fn find_matching_ring_entry(
+fn ring_is_scheduled_for_removal(
+    ring: &serde_json::Value,
+    removed_ring_ids: &std::collections::HashSet<i32>,
+) -> bool {
+    ring.get("id")
+        .and_then(|v| v.as_i64())
+        .map(|v| removed_ring_ids.contains(&(v as i32)))
+        .unwrap_or(false)
+}
+
+fn identityless_ring_change_is_contained(
+    ring: &serde_json::Value,
+    change: &serde_json::Value,
+) -> bool {
+    let mut has_nonempty_value = false;
+
+    for (change_field, ring_field) in [
+        ("offset_value", "offset_value"),
+        ("offset_extra_value", "offset_extra_value"),
+        ("sample_data_start", "sample_start"),
+        ("comment", "comment"),
+    ] {
+        let change_value = operation_new_str(change, change_field);
+        if change_value.is_empty() {
+            continue;
+        }
+        has_nonempty_value = true;
+        if ring[ring_field].as_str().unwrap_or("") != change_value {
+            return false;
+        }
+    }
+
+    let change_layers = change
+        .get("layers")
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let ring_layers = ring.get("layers").and_then(serde_json::Value::as_array);
+    for change_layer in change_layers {
+        let layer_has_nonempty_value = ["toolstamps", "mould_sids", "additional_moulds"]
+            .iter()
+            .any(|field| !operation_new_str(change_layer, field).is_empty());
+        if !layer_has_nonempty_value {
+            continue;
+        }
+        has_nonempty_value = true;
+
+        let Some(layer_index) = change_layer
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .map(|index| index as usize)
+        else {
+            return false;
+        };
+        let Some(ring_layer) = ring_layers.and_then(|layers| layers.get(layer_index)) else {
+            return false;
+        };
+
+        for field in ["toolstamps", "mould_sids", "additional_moulds"] {
+            let submitted_values = parse_csv_ids(&operation_new_str(change_layer, field));
+            if submitted_values.is_empty() {
+                continue;
+            }
+            let existing_values = parse_csv_ids(ring_layer[field].as_str().unwrap_or(""));
+            if !submitted_values
+                .iter()
+                .all(|submitted| existing_values.contains(submitted))
+            {
+                return false;
+            }
+        }
+    }
+
+    has_nonempty_value
+}
+
+fn find_containing_identityless_ring_entry(
     rings: &[serde_json::Value],
     change: &serde_json::Value,
     removed_ring_ids: &std::collections::HashSet<i32>,
 ) -> Option<usize> {
-    let change_layers = change.get("layers").and_then(|v| v.as_array())?;
+    rings.iter().position(|ring| {
+        !ring_is_scheduled_for_removal(ring, removed_ring_ids)
+            && identityless_ring_change_is_contained(ring, change)
+    })
+}
 
+fn find_matching_identified_ring_entry(
+    rings: &[serde_json::Value],
+    change: &serde_json::Value,
+    change_layers: &[serde_json::Value],
+    removed_ring_ids: &std::collections::HashSet<i32>,
+) -> Option<usize> {
     let change_offset = operation_new_str(change, "offset_value");
     let change_offset_extra = operation_new_str(change, "offset_extra_value");
     let change_sample_start = operation_new_str(change, "sample_data_start");
     let change_comment = operation_new_str(change, "comment");
-    let change_has_mastering_identity = ring_change_layers_have_mastering_identity(change_layers);
 
     'outer: for (ring_idx, ring) in rings.iter().enumerate() {
-        if ring
-            .get("id")
-            .and_then(|v| v.as_i64())
-            .map(|v| removed_ring_ids.contains(&(v as i32)))
-            .unwrap_or(false)
-        {
+        if ring_is_scheduled_for_removal(ring, removed_ring_ids) {
             continue;
         }
 
@@ -943,20 +1019,10 @@ fn find_matching_ring_entry(
         let ring_sample_start = ring["sample_start"].as_str().unwrap_or("");
         let ring_comment = ring["comment"].as_str().unwrap_or("");
         let ring_layers = ring["layers"].as_array();
-        let require_exact_numeric_match =
-            !change_has_mastering_identity && !ring_layers_have_mastering_identity(ring_layers);
 
-        if !ring_numeric_values_match(ring_offset, &change_offset, require_exact_numeric_match)
-            || !ring_numeric_values_match(
-                ring_offset_extra,
-                &change_offset_extra,
-                require_exact_numeric_match,
-            )
-            || !ring_numeric_values_match(
-                ring_sample_start,
-                &change_sample_start,
-                require_exact_numeric_match,
-            )
+        if !ring_numeric_values_match(ring_offset, &change_offset, false)
+            || !ring_numeric_values_match(ring_offset_extra, &change_offset_extra, false)
+            || !ring_numeric_values_match(ring_sample_start, &change_sample_start, false)
             || ring_comment != change_comment
         {
             continue;
@@ -996,6 +1062,23 @@ fn find_matching_ring_entry(
         return Some(ring_idx);
     }
     None
+}
+
+fn find_matching_ring_entry(
+    rings: &[serde_json::Value],
+    change: &serde_json::Value,
+    removed_ring_ids: &std::collections::HashSet<i32>,
+) -> Option<usize> {
+    let change_layers = change
+        .get("layers")
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    if ring_change_layers_have_mastering_identity(change_layers) {
+        find_matching_identified_ring_entry(rings, change, change_layers, removed_ring_ids)
+    } else {
+        find_containing_identityless_ring_entry(rings, change, removed_ring_ids)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5129,6 +5212,238 @@ mod tests {
     }
 
     #[test]
+    fn identityless_offset_only_entry_merges_into_richer_existing_entry() {
+        let old = serde_json::json!([ring_merge_candidate(
+            ("MASTER", "SID-1"),
+            ["12", "", ""],
+            "",
+            "IFPI AABB",
+        )]);
+        let changes = serde_json::json!([{
+            "offset_value": { "add": { "new": "12" } }
+        }]);
+
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["layers"][0]["mastering_code"], "MASTER");
+        assert_eq!(entries[0]["layers"][0]["mastering_sid"], "SID-1");
+        assert_eq!(entries[0]["layers"][0]["mould_sids"], "IFPI AABB");
+    }
+
+    #[test]
+    fn identityless_scalar_values_require_exact_containment_when_submitted() {
+        for (change_field, ring_field) in [
+            ("offset_value", "offset_value"),
+            ("offset_extra_value", "offset_extra_value"),
+            ("sample_data_start", "sample_start"),
+            ("comment", "comment"),
+        ] {
+            let mut existing =
+                ring_merge_candidate(("MASTER", "SID-1"), ["", "", ""], "", "IFPI AABB");
+            existing[ring_field] = serde_json::json!("Exact");
+            let old = serde_json::json!([existing]);
+
+            for (submitted, expected_count) in [("Exact", 1), ("exact", 2), ("Different", 2)] {
+                let mut change = serde_json::json!({});
+                change[change_field] = serde_json::json!({ "add": { "new": submitted } });
+                let changes = serde_json::json!([change]);
+
+                assert_eq!(
+                    apply_ring_codes_history(&old, &changes)
+                        .unwrap()
+                        .as_array()
+                        .unwrap()
+                        .len(),
+                    expected_count,
+                    "{change_field} should match only by exact equality"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn identityless_csv_subset_merges_only_when_every_value_is_contained() {
+        let old = serde_json::json!([{
+            "id": 1,
+            "offset_value": "",
+            "offset_extra_value": "",
+            "sample_start": "",
+            "comment": "",
+            "layers": [{
+                "mastering_code": "ASDF",
+                "mastering_sid": "IFPI 1234",
+                "toolstamps": "",
+                "mould_sids": "IFPI AABB",
+                "additional_moulds": "A1, A2"
+            }]
+        }]);
+        let contained = serde_json::json!([{
+            "layers": [{
+                "index": 0,
+                "mould_sids": { "add": { "new": "IFPI AABB" } },
+                "additional_moulds": { "add": { "new": "A2" } }
+            }]
+        }]);
+        let novel = serde_json::json!([{
+            "layers": [{
+                "index": 0,
+                "mould_sids": { "add": { "new": "IFPI CCDD" } },
+                "additional_moulds": { "add": { "new": "A1" } }
+            }]
+        }]);
+
+        assert_eq!(
+            apply_ring_codes_history(&old, &contained)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            apply_ring_codes_history(&old, &novel)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn identityless_containment_is_case_sensitive_layer_specific_and_not_substring_based() {
+        let old = serde_json::json!([{
+            "id": 1,
+            "offset_value": "",
+            "offset_extra_value": "",
+            "sample_start": "",
+            "comment": "",
+            "layers": [
+                {
+                    "mastering_code": "",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "IFPI AABB",
+                    "additional_moulds": ""
+                },
+                {
+                    "mastering_code": "",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "IFPI CCDD",
+                    "additional_moulds": ""
+                }
+            ]
+        }]);
+
+        for submitted in ["ifpi aabb", "AABB"] {
+            let changes = serde_json::json!([{
+                "layers": [{
+                    "index": 0,
+                    "mould_sids": { "add": { "new": submitted } }
+                }]
+            }]);
+            assert_eq!(
+                apply_ring_codes_history(&old, &changes)
+                    .unwrap()
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                2
+            );
+        }
+
+        let wrong_layer = serde_json::json!([{
+            "layers": [{
+                "index": 1,
+                "mould_sids": { "add": { "new": "IFPI AABB" } }
+            }]
+        }]);
+        assert_eq!(
+            apply_ring_codes_history(&old, &wrong_layer)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn empty_identityless_entry_does_not_match() {
+        let old = serde_json::json!([ring_entry("MASTER", "")]);
+        let changes = serde_json::json!([{}]);
+
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+
+        assert_eq!(result.as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn identityless_containment_uses_first_candidate_and_skips_removed_entries() {
+        let candidates = serde_json::json!([
+            {
+                "id": 1,
+                "offset_value": "12",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{
+                    "mastering_code": "Z-MASTER",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            },
+            {
+                "id": 2,
+                "offset_value": "12",
+                "offset_extra_value": "",
+                "sample_start": "",
+                "comment": "",
+                "layers": [{
+                    "mastering_code": "A-MASTER",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            }
+        ]);
+        let change = serde_json::json!({
+            "offset_value": { "add": { "new": "12" } }
+        });
+
+        let mut normalized_candidates = candidates.as_array().unwrap().clone();
+        disc_service::sort_ring_codes_json(&mut normalized_candidates, 1);
+        assert_eq!(
+            find_matching_ring_entry(
+                &normalized_candidates,
+                &change,
+                &std::collections::HashSet::new(),
+            )
+            .and_then(|index| normalized_candidates[index]["id"].as_i64()),
+            Some(2)
+        );
+
+        let changes = serde_json::json!([
+            {
+                "id": 2,
+                "remove": true
+            },
+            change
+        ]);
+        let result = apply_ring_codes_history(&candidates, &changes).unwrap();
+        let entries = result.as_array().unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["id"], 1);
+    }
+
+    #[test]
     fn no_merge_when_mastering_code_differs() {
         let old = serde_json::json!([{
             "id": 1,
@@ -5328,7 +5643,7 @@ mod tests {
     }
 
     #[test]
-    fn unidentified_merge_requires_exact_numeric_values() {
+    fn identityless_entry_with_novel_csv_value_does_not_merge() {
         let numbers = ["10", "20", "30"];
         let old = serde_json::json!([ring_merge_candidate(
             ("", ""),
@@ -5345,11 +5660,7 @@ mod tests {
 
         let result = apply_ring_codes_history(&old, &changes).unwrap();
         let entries = result.as_array().unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0]["layers"][0]["mould_sids"],
-            "IFPI 1111, IFPI 2222"
-        );
+        assert_eq!(entries.len(), 2);
 
         for field_index in 0..3 {
             for empty_database_value in [false, true] {
@@ -5378,7 +5689,7 @@ mod tests {
                 assert_eq!(
                     result.as_array().unwrap().len(),
                     2,
-                    "field {field_index} should require exact values without mastering identity"
+                    "novel CSV data must remain separate without mastering identity"
                 );
             }
         }
@@ -5433,23 +5744,21 @@ mod tests {
     }
 
     #[test]
-    fn matching_nonempty_comments_merge_in_both_modes() {
-        for mastering in [("MASTER", "SID-1"), ("", "")] {
-            let old = serde_json::json!([ring_merge_candidate(
-                mastering,
-                ["10", "20", "30"],
-                "same comment",
-                "IFPI 1111",
-            )]);
-            let changes = serde_json::json!([ring_merge_change(
-                mastering,
-                ["10", "20", "30"],
-                "same comment",
-                "IFPI 2222",
-            )]);
+    fn matching_nonempty_comments_merge_with_mastering_identity() {
+        let old = serde_json::json!([ring_merge_candidate(
+            ("MASTER", "SID-1"),
+            ["10", "20", "30"],
+            "same comment",
+            "IFPI 1111",
+        )]);
+        let changes = serde_json::json!([ring_merge_change(
+            ("MASTER", "SID-1"),
+            ["10", "20", "30"],
+            "same comment",
+            "IFPI 2222",
+        )]);
 
-            let result = apply_ring_codes_history(&old, &changes).unwrap();
-            assert_eq!(result.as_array().unwrap().len(), 1);
-        }
+        let result = apply_ring_codes_history(&old, &changes).unwrap();
+        assert_eq!(result.as_array().unwrap().len(), 1);
     }
 }
