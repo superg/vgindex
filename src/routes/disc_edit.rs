@@ -5019,14 +5019,34 @@ mod operation_delta_tests {
         let mut form = new_disc_form();
         form.system_code = "WRONG".to_string();
         form.media_type = "BAD".to_string();
+        form.version = Some("v1.23".to_string());
+        form.pvd = Some("0000: 00".to_string());
         let matched = add_match(44, AddDiscMatchSource::Dat, "SYS", "DVD");
 
         let render_form = add_form_for_render(&form, Some(&matched));
 
         assert_eq!(render_form.system_code, "SYS");
         assert_eq!(render_form.media_type, "DVD");
+        assert_eq!(render_form.version.as_deref(), Some("v1.23"));
+        assert_eq!(render_form.pvd.as_deref(), Some("0000: 00"));
         assert_eq!(form.system_code, "WRONG");
         assert_eq!(form.media_type, "BAD");
+    }
+
+    #[test]
+    fn add_form_for_render_preserves_payload_without_a_match() {
+        let mut form = new_disc_form();
+        form.system_code.clear();
+        form.media_type.clear();
+        form.version = Some("v1.23".to_string());
+        form.protection = Some("SafeDisc".to_string());
+
+        let render_form = add_form_for_render(&form, None);
+
+        assert!(render_form.system_code.is_empty());
+        assert!(render_form.media_type.is_empty());
+        assert_eq!(render_form.version.as_deref(), Some("v1.23"));
+        assert_eq!(render_form.protection.as_deref(), Some("SafeDisc"));
     }
 
     #[test]
@@ -6204,6 +6224,21 @@ mod operation_delta_tests {
         assert!(script.contains("className = 'validation-result validation-result-new'"));
         assert!(script.contains("preserveDumpLogFillStatus(message);"));
         assert!(script.contains("form.requestSubmit(validateButton);"));
+        assert!(script.contains("function enableAddMinimalFieldsForSubmit(form)"));
+        assert!(script.contains("[data-add-requires-system-media] input:disabled"));
+        assert!(script.contains("[data-add-requires-system-media] select:disabled"));
+        assert!(script.contains("[data-add-requires-system-media] textarea:disabled"));
+        assert!(script.contains("if (!systemSelect || !(systemSelect.value || '').trim())"));
+        assert!(script.contains("enableAddMinimalFieldsForSubmit(form);"));
+        assert!(
+            script
+                .find("enableAddMinimalFieldsForSubmit(form);")
+                .unwrap()
+                < script.find("form.requestSubmit(validateButton);").unwrap()
+        );
+        assert!(
+            !script.contains("System was not detected; choose the system, then click Validate.")
+        );
         assert!(script.contains("response.status === 422"));
         assert!(script.contains("data.error === 'unsupported_redumper_build'"));
         assert!(script.contains("error.dumpLogFillMessage = data.message"));

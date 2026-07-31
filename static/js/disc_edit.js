@@ -1243,6 +1243,16 @@ function applyParsedRedumperLog(data) {
     return applied;
 }
 
+function enableAddMinimalFieldsForSubmit(form) {
+    form.querySelectorAll(
+        '[data-add-requires-system-media] input:disabled, '
+        + '[data-add-requires-system-media] select:disabled, '
+        + '[data-add-requires-system-media] textarea:disabled'
+    ).forEach(function (control) {
+        control.disabled = false;
+    });
+}
+
 function initDumpLogFill() {
     var button = document.getElementById('dump-log-fill-btn');
     var textarea = document.querySelector('textarea[name="dump_log"]');
@@ -1298,6 +1308,10 @@ function initDumpLogFill() {
             if (!form || !validateButton) {
                 setDumpLogFillStatus(message);
                 return;
+            }
+            var systemSelect = document.getElementById('system-select');
+            if (!systemSelect || !(systemSelect.value || '').trim()) {
+                enableAddMinimalFieldsForSubmit(form);
             }
             preserveDumpLogFillStatus(message);
             form.requestSubmit(validateButton);
