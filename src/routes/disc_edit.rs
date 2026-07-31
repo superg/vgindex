@@ -3410,6 +3410,199 @@ fn ring_codes_history_changes(
     serde_json::json!(changes)
 }
 
+fn ring_layer_is_empty(layer: &serde_json::Value) -> bool {
+    [
+        "mastering_code",
+        "mastering_sid",
+        "toolstamps",
+        "mould_sids",
+        "additional_moulds",
+    ]
+    .iter()
+    .all(|field| {
+        layer
+            .get(*field)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .unwrap_or("")
+            .is_empty()
+    })
+}
+
+fn ring_entry_is_empty(entry: &serde_json::Value) -> bool {
+    [
+        "offset_value",
+        "offset_extra_value",
+        "sample_start",
+        "comment",
+    ]
+    .iter()
+    .all(|field| {
+        entry
+            .get(*field)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .unwrap_or("")
+            .is_empty()
+    }) && entry
+        .get("layers")
+        .and_then(serde_json::Value::as_array)
+        .map(|layers| layers.iter().all(ring_layer_is_empty))
+        .unwrap_or(true)
+}
+
+fn filter_ring_codes_for_capabilities(
+    ring_codes_json: Option<&str>,
+    media_layers: usize,
+    media_is_cd: bool,
+    has_offset_extra: bool,
+    has_sample_start: bool,
+) -> Option<String> {
+    let raw = ring_codes_json?;
+    let Ok(mut ring_codes) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Some(raw.to_string());
+    };
+    let Some(entries) = ring_codes.as_array_mut() else {
+        return Some(raw.to_string());
+    };
+
+    for entry in entries.iter_mut() {
+        let Some(entry_obj) = entry.as_object_mut() else {
+            continue;
+        };
+        if !media_is_cd {
+            entry_obj.insert("offset_value".to_string(), serde_json::json!(""));
+        }
+        if !media_is_cd || !has_offset_extra {
+            entry_obj.insert("offset_extra_value".to_string(), serde_json::json!(""));
+        }
+        if !media_is_cd || !has_sample_start {
+            entry_obj.insert("sample_start".to_string(), serde_json::json!(""));
+        }
+
+        let Some(layers) = entry_obj
+            .get_mut("layers")
+            .and_then(serde_json::Value::as_array_mut)
+        else {
+            continue;
+        };
+        let supported_layer_count = media_layers.saturating_add(1);
+        if layers.len() > supported_layer_count {
+            let label_side = layers.pop().expect("non-empty layers");
+            layers.truncate(media_layers);
+            layers.push(label_side);
+        }
+    }
+    entries.retain(|entry| !ring_entry_is_empty(entry));
+
+    Some(ring_codes.to_string())
+}
+
+fn filter_unsupported_fields_for_changes(
+    form: &DiscEditForm,
+    all_media_types: &[EditMediaTypeRow],
+    all_systems: &[System],
+) -> DiscEditForm {
+    let mut filtered = form.clone();
+    let Some(system) = all_systems
+        .iter()
+        .find(|system| system.code == form.system_code)
+    else {
+        return filtered;
+    };
+    let Some(media) = all_media_types
+        .iter()
+        .find(|media| media.code == form.media_type)
+    else {
+        return filtered;
+    };
+    if !system
+        .media_types
+        .iter()
+        .any(|media_code| media_code == &media.code)
+    {
+        return filtered;
+    }
+
+    if !system.has_title_foreign {
+        filtered.title_foreign = None;
+    }
+    if !system.has_disc_number {
+        filtered.disc_number = None;
+    }
+    if !system.has_disc_title {
+        filtered.disc_title = None;
+    }
+    if !system.has_serial {
+        filtered.serial.clear();
+    }
+    if !system.has_version {
+        filtered.version = None;
+    }
+    if !system.has_edition {
+        filtered.edition.clear();
+    }
+    if !system.has_barcode {
+        filtered.barcode.clear();
+    }
+    if !system.has_exe_date {
+        filtered.exe_date = None;
+    }
+    if !system.has_edc {
+        filtered.edc.clear();
+    }
+    if !system.has_pvd {
+        filtered.pvd = None;
+    }
+    if !system.has_header {
+        filtered.header = None;
+    }
+    if !system.has_bca {
+        filtered.bca = None;
+    }
+    if !system.has_disc_id {
+        filtered.protection_key_disc_id = None;
+    }
+    if !system.has_key {
+        filtered.protection_key_disc_key = None;
+    }
+    if !system.has_universal_hash {
+        filtered.universal_hash = None;
+    }
+    if !system.has_protection {
+        filtered.protection = None;
+    }
+    if !system.has_sector_ranges {
+        filtered.sector_ranges = None;
+    }
+
+    let media_is_cd = is_cd_rom_extension(&media.rom_extension);
+    if !(system.has_error_count && media_is_cd) {
+        filtered.error_count = None;
+    }
+    if !(system.has_sbi && media_is_cd) {
+        filtered.sbi = None;
+    }
+    if !media.pic {
+        filtered.pic = None;
+    }
+    if !media_is_cd {
+        filtered.cue = None;
+    }
+
+    let media_layers = media.layer_count.max(1) as usize;
+    filtered.layerbreak.truncate(media_layers.saturating_sub(1));
+    filtered.ring_codes_json = filter_ring_codes_for_capabilities(
+        filtered.ring_codes_json.as_deref(),
+        media_layers,
+        media_is_cd,
+        system.has_offset_extra,
+        system.has_sample_start,
+    );
+
+    filtered
+}
+
 fn build_history_changes(
     form: &DiscEditForm,
     detail: Option<&DiscDetail>,
@@ -3420,7 +3613,8 @@ fn build_history_changes(
     let db_snapshot = detail
         .map(disc_service::build_snapshot_from_disc)
         .unwrap_or_else(|| serde_json::json!({}));
-    let form_snapshot = build_flat_changes(form, all_media_types, all_systems);
+    let filtered_form = filter_unsupported_fields_for_changes(form, all_media_types, all_systems);
+    let form_snapshot = build_flat_changes(&filtered_form, all_media_types, all_systems);
 
     let Some(db_obj) = db_snapshot.as_object() else {
         return serde_json::json!({});
@@ -3431,12 +3625,6 @@ fn build_history_changes(
 
     let mut changes = serde_json::Map::new();
     let allow_removal = detail.is_some();
-    let error_count_applicable = error_count_available_for_selection(
-        all_systems,
-        all_media_types,
-        &form.system_code,
-        &form.media_type,
-    );
 
     for key in [
         "system_code",
@@ -3468,9 +3656,6 @@ fn build_history_changes(
         "layerbreaks",
     ] {
         if key == "status" && !include_status {
-            continue;
-        }
-        if key == "error_count" && !error_count_applicable {
             continue;
         }
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
@@ -3967,6 +4152,33 @@ mod operation_delta_tests {
         system.has_error_count = has_error_count;
         system.media_types = media_types.iter().map(|code| code.to_string()).collect();
         vec![system]
+    }
+
+    fn system_without_optional_fields(media_types: &[&str]) -> System {
+        let mut system = test_system();
+        system.media_types = media_types.iter().map(|code| code.to_string()).collect();
+        system.has_exe_date = false;
+        system.has_sbi = false;
+        system.has_pvd = false;
+        system.has_edc = false;
+        system.has_error_count = false;
+        system.has_disc_id = false;
+        system.has_key = false;
+        system.has_universal_hash = false;
+        system.has_title_foreign = false;
+        system.has_disc_title = false;
+        system.has_disc_number = false;
+        system.has_serial = false;
+        system.has_barcode = false;
+        system.has_version = false;
+        system.has_edition = false;
+        system.has_protection = false;
+        system.has_sector_ranges = false;
+        system.has_header = false;
+        system.has_bca = false;
+        system.has_sample_start = false;
+        system.has_offset_extra = false;
+        system
     }
 
     #[test]
@@ -4533,6 +4745,201 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn final_change_filter_preserves_live_form_and_unsanitized_flat_snapshot() {
+        let mut form = new_disc_form();
+        form.media_type = "CD".to_string();
+        form.ring_codes_json = Some(
+            serde_json::json!([{
+                "offset_value": "12",
+                "offset_extra_value": "34",
+                "sample_start": "56",
+                "comment": "",
+                "layers": [{
+                    "mastering_code": "MASTER",
+                    "mastering_sid": "",
+                    "toolstamps": "",
+                    "mould_sids": "",
+                    "additional_moulds": ""
+                }]
+            }])
+            .to_string(),
+        );
+        let mut system = test_system();
+        system.media_types = vec!["CD".to_string()];
+        system.has_offset_extra = false;
+        system.has_sample_start = false;
+        let media = media_rows_with_cd();
+
+        let flat_snapshot = build_flat_changes(&form, &media, &[system.clone()]);
+        let final_changes = build_new_disc_changes(&form, &media, &[system]);
+        let original_rings: serde_json::Value =
+            serde_json::from_str(form.ring_codes_json.as_deref().unwrap()).unwrap();
+        let final_ring = &final_changes["ring_codes"][0];
+
+        assert_eq!(original_rings[0]["offset_extra_value"], "34");
+        assert_eq!(original_rings[0]["sample_start"], "56");
+        assert_eq!(flat_snapshot["ring_codes"][0]["offset_extra_value"], "34");
+        assert_eq!(flat_snapshot["ring_codes"][0]["sample_start"], "56");
+        assert_eq!(
+            final_ring["offset_value"],
+            serde_json::json!({ "add": { "new": "12" } })
+        );
+        assert!(final_ring.get("offset_extra_value").is_none());
+        assert!(final_ring.get("sample_data_start").is_none());
+    }
+
+    #[test]
+    fn final_change_filter_clears_unsupported_system_and_media_fields() {
+        let mut form = new_disc_form();
+        form.pvd = Some("00000000  00".to_string());
+        form.pic = Some("AA".to_string());
+        form.bca = Some("BB".to_string());
+        form.header = Some("CC".to_string());
+        form.sector_ranges = Some("1-2".to_string());
+        form.cue = Some("FILE \"Track.bin\" BINARY".to_string());
+        form.ring_codes_json = Some(
+            serde_json::json!([
+                {
+                    "offset_value": "1",
+                    "offset_extra_value": "2",
+                    "sample_start": "3",
+                    "comment": "keep",
+                    "layers": [
+                        {
+                            "mastering_code": "L0",
+                            "mastering_sid": "",
+                            "toolstamps": "",
+                            "mould_sids": "",
+                            "additional_moulds": ""
+                        },
+                        {
+                            "mastering_code": "L1",
+                            "mastering_sid": "",
+                            "toolstamps": "",
+                            "mould_sids": "",
+                            "additional_moulds": ""
+                        },
+                        {
+                            "mastering_code": "UNSUPPORTED",
+                            "mastering_sid": "",
+                            "toolstamps": "",
+                            "mould_sids": "",
+                            "additional_moulds": ""
+                        },
+                        {
+                            "mastering_code": "LABEL",
+                            "mastering_sid": "",
+                            "toolstamps": "",
+                            "mould_sids": "",
+                            "additional_moulds": ""
+                        }
+                    ]
+                },
+                {
+                    "offset_value": "",
+                    "offset_extra_value": "",
+                    "sample_start": "99",
+                    "comment": "",
+                    "layers": []
+                }
+            ])
+            .to_string(),
+        );
+        let system = system_without_optional_fields(&["DVD"]);
+
+        let filtered = filter_unsupported_fields_for_changes(&form, &media_rows(), &[system]);
+        let rings: serde_json::Value =
+            serde_json::from_str(filtered.ring_codes_json.as_deref().unwrap()).unwrap();
+
+        assert!(filtered.title_foreign.is_none());
+        assert!(filtered.disc_number.is_none());
+        assert!(filtered.disc_title.is_none());
+        assert!(filtered.serial.is_empty());
+        assert!(filtered.version.is_none());
+        assert!(filtered.edition.is_empty());
+        assert!(filtered.barcode.is_empty());
+        assert!(filtered.error_count.is_none());
+        assert!(filtered.exe_date.is_none());
+        assert!(filtered.edc.is_empty());
+        assert!(filtered.pvd.is_none());
+        assert!(filtered.pic.is_none());
+        assert!(filtered.bca.is_none());
+        assert!(filtered.header.is_none());
+        assert!(filtered.protection.is_none());
+        assert!(filtered.sector_ranges.is_none());
+        assert!(filtered.sbi.is_none());
+        assert!(filtered.protection_key_disc_id.is_none());
+        assert!(filtered.protection_key_disc_key.is_none());
+        assert!(filtered.universal_hash.is_none());
+        assert!(filtered.cue.is_none());
+        assert_eq!(filtered.layerbreak, vec!["12345"]);
+        assert_eq!(rings.as_array().unwrap().len(), 1);
+        assert_eq!(rings[0]["offset_value"], "");
+        assert_eq!(rings[0]["offset_extra_value"], "");
+        assert_eq!(rings[0]["sample_start"], "");
+        assert_eq!(rings[0]["layers"].as_array().unwrap().len(), 3);
+        assert_eq!(rings[0]["layers"][0]["mastering_code"], "L0");
+        assert_eq!(rings[0]["layers"][1]["mastering_code"], "L1");
+        assert_eq!(rings[0]["layers"][2]["mastering_code"], "LABEL");
+
+        assert_eq!(form.title_foreign.as_deref(), Some("New Foreign"));
+        assert!(form.ring_codes_json.as_deref().unwrap().contains("\"99\""));
+    }
+
+    #[test]
+    fn edit_and_approval_changes_remove_existing_unsupported_data() {
+        let mut detail = base_detail();
+        detail.ring_entries[0].offset_value = Some(1);
+        detail.ring_entries[0].offset_extra_value = Some(2);
+        detail.ring_entries[0].sample_data_start = Some(3);
+        let form = form_from_detail(&detail);
+        let systems = [system_without_optional_fields(&["DVD"])];
+        let media = media_rows();
+
+        let edit_changes = build_sparse_edit_changes(&form, &detail, &media, &systems);
+        let approval_changes =
+            build_sparse_disc_submission_changes(&form, &detail, &media, &systems);
+
+        for changes in [&edit_changes, &approval_changes] {
+            assert_eq!(
+                changes["title_foreign"],
+                serde_json::json!({ "remove": { "old": "Old Foreign" } })
+            );
+            assert_eq!(
+                changes["serial"],
+                serde_json::json!({ "remove": ["OLD-001", "KEEP-002"] })
+            );
+            assert_eq!(
+                changes["error_count"],
+                serde_json::json!({ "remove": { "old": 1 } })
+            );
+            assert_eq!(
+                changes["disc_id"],
+                serde_json::json!({ "remove": { "old": "old-disc-id" } })
+            );
+
+            let ring_change = changes["ring_codes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|entry| entry["id"].as_i64() == Some(10))
+                .unwrap();
+            assert_eq!(
+                ring_change["offset_value"],
+                serde_json::json!({ "remove": { "old": "1" } })
+            );
+            assert_eq!(
+                ring_change["offset_extra_value"],
+                serde_json::json!({ "remove": { "old": "2" } })
+            );
+            assert_eq!(
+                ring_change["sample_data_start"],
+                serde_json::json!({ "remove": { "old": "3" } })
+            );
+        }
+    }
+
+    #[test]
     fn build_sparse_edit_changes_removes_legacy_non_cd_sbi_on_edit() {
         let mut detail = base_detail();
         detail.disc.sbi =
@@ -4799,7 +5206,9 @@ mod operation_delta_tests {
         layer["additional_moulds"] = serde_json::json!("additional, ADDITIONAL, additional");
         form.ring_codes_json = Some(ring_codes.to_string());
 
-        let changes = build_new_disc_changes(&form, &media_rows(), &systems_with_edc(true));
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
+        let changes = build_new_disc_changes(&form, &media, &systems_with_edc(true));
         let layer = &changes["ring_codes"][0]["layers"][0];
 
         assert_eq!(
@@ -4846,7 +5255,7 @@ mod operation_delta_tests {
         );
         assert_eq!(
             changes["layerbreaks"],
-            serde_json::json!({ "add": { "new": [12345, 67890] } })
+            serde_json::json!({ "add": { "new": [12345] } })
         );
         assert_eq!(
             changes["regions"],
@@ -4896,7 +5305,9 @@ mod operation_delta_tests {
             .to_string(),
         );
 
-        let changes = build_new_disc_changes(&form, &media_rows(), &systems_with_edc(true));
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
+        let changes = build_new_disc_changes(&form, &media, &systems_with_edc(true));
         let layer = &changes["ring_codes"][0]["layers"][0];
 
         assert_eq!(
@@ -4941,7 +5352,9 @@ mod operation_delta_tests {
             .to_string(),
         );
 
-        let changes = build_new_disc_changes(&form, &media_rows(), &systems_with_edc(true));
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
+        let changes = build_new_disc_changes(&form, &media, &systems_with_edc(true));
         let ring = &changes["ring_codes"][0];
 
         assert_eq!(
@@ -5159,15 +5572,17 @@ mod operation_delta_tests {
     fn build_sparse_edit_changes_returns_empty_delta_for_identical_form() {
         let detail = base_detail();
         let form = form_from_detail(&detail);
+        let mut media = media_rows();
+        media[0].layer_count = 3;
+        media[0].rom_extension = "bin".to_string();
 
-        let changes =
-            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+        let changes = build_sparse_edit_changes(&form, &detail, &media, &systems_with_edc(true));
 
         assert_eq!(changes, serde_json::json!({}));
     }
 
     #[test]
-    fn hidden_error_count_is_preserved_when_capability_is_inapplicable() {
+    fn final_edit_changes_remove_error_count_when_capability_is_inapplicable() {
         let detail = base_detail();
         let mut form = form_from_detail(&detail);
         form.error_count = None;
@@ -5175,7 +5590,10 @@ mod operation_delta_tests {
         let changes =
             build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
 
-        assert!(changes.get("error_count").is_none());
+        assert_eq!(
+            changes["error_count"],
+            serde_json::json!({ "remove": { "old": 1 } })
+        );
     }
 
     #[test]
@@ -5189,6 +5607,7 @@ mod operation_delta_tests {
             rom_extension: "bin".to_string(),
         }
         .into();
+        detail.disc.layerbreaks = None;
         detail.disc.disc_id = Some("AABBCCDD".to_string());
         detail.disc.disc_key = Some(vec![0xaa, 0xbb, 0xcc, 0xdd]);
         detail.disc.sbi =
@@ -5236,9 +5655,10 @@ mod operation_delta_tests {
         ring_codes[0]["layers"][0]["mastering_code"] = serde_json::json!("AB  CD");
         ring_codes[0]["layers"][0]["toolstamps"] = serde_json::json!("TS  01");
         form.ring_codes_json = Some(ring_codes.to_string());
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
 
-        let changes =
-            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+        let changes = build_sparse_edit_changes(&form, &detail, &media, &systems_with_edc(true));
 
         assert!(changes.get("ring_codes").is_none());
     }
@@ -5256,9 +5676,10 @@ mod operation_delta_tests {
         ring_codes[0]["offset_extra_value"] = serde_json::json!("1");
         ring_codes[0]["sample_start"] = serde_json::json!("+1");
         form.ring_codes_json = Some(ring_codes.to_string());
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
 
-        let changes =
-            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+        let changes = build_sparse_edit_changes(&form, &detail, &media, &systems_with_edc(true));
 
         assert!(changes.get("ring_codes").is_none());
     }
@@ -5273,8 +5694,9 @@ mod operation_delta_tests {
 
         assert_eq!(form.status, "Unverified");
         assert!(form_status_is_active(&form));
-        let changes =
-            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
+        let changes = build_sparse_edit_changes(&form, &detail, &media, &systems_with_edc(true));
         assert!(changes.get("status").is_none());
     }
 
@@ -5318,6 +5740,7 @@ mod operation_delta_tests {
         let mut form = form_from_detail(&detail);
         let mut media = media_rows();
         media[0].rom_extension = "bin".to_string();
+        media[0].layer_count = 3;
         form.title = "Edited Game".to_string();
         form.version = Some("2.0".to_string());
         form.comments = None;
@@ -5879,8 +6302,9 @@ mod operation_delta_tests {
         ring_codes[0]["comment"] = serde_json::json!("unknown ring");
         form.ring_codes_json = Some(ring_codes.to_string());
 
-        let changes =
-            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
+        let changes = build_sparse_edit_changes(&form, &detail, &media, &systems_with_edc(true));
 
         assert_eq!(
             validate_edit_ringcode_additions(&changes, UserRole::User.can_edit_directly()),
@@ -5930,8 +6354,9 @@ mod operation_delta_tests {
             .to_string(),
         );
 
-        let changes =
-            build_sparse_edit_changes(&form, &detail, &media_rows(), &systems_with_edc(true));
+        let mut media = media_rows();
+        media[0].rom_extension = "bin".to_string();
+        let changes = build_sparse_edit_changes(&form, &detail, &media, &systems_with_edc(true));
         let rings = changes["ring_codes"].as_array().unwrap();
 
         let modified = rings
