@@ -368,6 +368,41 @@ pub fn cuesheet_has_only_audio_tracks(text: &str) -> bool {
     found_track
 }
 
+pub fn cuesheet_is_enhanced_cd(text: &str) -> bool {
+    if validate_cuesheet(text).is_err() {
+        return false;
+    }
+
+    let mut sessions: Vec<Vec<bool>> = Vec::new();
+    for line in text.lines() {
+        let upper = line.trim().to_uppercase();
+        if is_cue_session_line(&upper) {
+            sessions.push(Vec::new());
+            continue;
+        }
+        if let Some((_number, mode)) = parse_cue_track_line(&upper) {
+            let Some(session) = sessions.last_mut() else {
+                return false;
+            };
+            session.push(mode == "AUDIO");
+        }
+    }
+
+    sessions.len() >= 2
+        && !sessions[0].is_empty()
+        && sessions[0].iter().all(|is_audio| *is_audio)
+        && sessions[1..]
+            .iter()
+            .all(|session| session.first().is_some_and(|is_audio| !is_audio))
+}
+
+fn is_cue_session_line(line: &str) -> bool {
+    let Some(number) = line.strip_prefix("REM SESSION ") else {
+        return false;
+    };
+    !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 fn is_cue_file_line(line: &str) -> bool {
     if !line.starts_with("FILE \"") {
         return false;
@@ -889,6 +924,58 @@ FILE \"Track 02.bin\" BINARY\n\
         assert!(!cuesheet_has_only_audio_tracks(mixed));
         assert!(!cuesheet_has_only_audio_tracks(""));
         assert!(!cuesheet_has_only_audio_tracks("TRACK 01 AUDIO"));
+    }
+
+    #[test]
+    fn test_cuesheet_is_enhanced_cd() {
+        let enhanced = "REM SESSION 01\n\
+FILE \"Track 01.bin\" BINARY\n\
+  TRACK 01 AUDIO\n\
+    INDEX 01 00:00:00\n\
+FILE \"Track 02.bin\" BINARY\n\
+  TRACK 02 AUDIO\n\
+    INDEX 01 00:00:00\n\
+REM SESSION 02\n\
+FILE \"Track 03.bin\" BINARY\n\
+  TRACK 03 MODE2/2352\n\
+    INDEX 01 00:00:00";
+        assert!(cuesheet_is_enhanced_cd(enhanced));
+        assert!(cuesheet_is_enhanced_cd(&enhanced.replacen(
+            "MODE2/2352",
+            "MODE1/2352",
+            1
+        )));
+
+        let later_session_with_audio = format!(
+            "{enhanced}\nFILE \"Track 04.bin\" BINARY\n  TRACK 04 AUDIO\n    INDEX 01 00:00:00"
+        );
+        assert!(cuesheet_is_enhanced_cd(&later_session_with_audio));
+
+        let three_sessions = format!(
+            "{enhanced}\nREM SESSION 03\nFILE \"Track 04.bin\" BINARY\n  TRACK 04 MODE1/2352\n    INDEX 01 00:00:00"
+        );
+        assert!(cuesheet_is_enhanced_cd(&three_sessions));
+
+        assert!(!cuesheet_is_enhanced_cd(&enhanced.replacen(
+            "TRACK 02 AUDIO",
+            "TRACK 02 MODE2/2352",
+            1
+        )));
+        assert!(!cuesheet_is_enhanced_cd(&enhanced.replacen(
+            "TRACK 03 MODE2/2352",
+            "TRACK 03 AUDIO",
+            1
+        )));
+        assert!(!cuesheet_is_enhanced_cd(&enhanced.replacen(
+            "REM SESSION 02\n",
+            "",
+            1
+        )));
+        assert!(!cuesheet_is_enhanced_cd(&enhanced.replacen(
+            "FILE \"Track 03.bin\"",
+            "REM SESSION 03\nFILE \"Track 03.bin\"",
+            1
+        )));
     }
 
     #[test]

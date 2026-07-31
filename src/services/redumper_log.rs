@@ -108,13 +108,22 @@ pub fn parse(log: &str, known_system_codes: &[String]) -> ParsedRedumperLog {
         result.sample_start = signed_value_after(split, "non-zero data sample range:");
         result.offset_value = signed_value_after(split, "disc write offset:");
         result.cuesheet = block_after_prefix(split, "CUE [");
-        if result
-            .cuesheet
-            .as_deref()
-            .is_some_and(validation::cuesheet_has_only_audio_tracks)
-            && known_system_codes.iter().any(|code| code == "AUDIO-CD")
-        {
-            result.system_code = Some("AUDIO-CD".to_owned());
+        if result.system_code.is_none() {
+            if result
+                .cuesheet
+                .as_deref()
+                .is_some_and(validation::cuesheet_is_enhanced_cd)
+                && known_system_codes.iter().any(|code| code == "ENHANCED-CD")
+            {
+                result.system_code = Some("ENHANCED-CD".to_owned());
+            } else if result
+                .cuesheet
+                .as_deref()
+                .is_some_and(validation::cuesheet_has_only_audio_tracks)
+                && known_system_codes.iter().any(|code| code == "AUDIO-CD")
+            {
+                result.system_code = Some("AUDIO-CD".to_owned());
+            }
         }
     }
 
@@ -126,6 +135,15 @@ pub fn parse(log: &str, known_system_codes: &[String]) -> ParsedRedumperLog {
     }
 
     result.protection = protection(protection_section.as_deref(), info.as_deref());
+    if matches!(result.system_code.as_deref(), Some("GC" | "WII")) {
+        result.version = result.version.map(|version| {
+            if version == "0" {
+                String::new()
+            } else {
+                format!("Rev {version}")
+            }
+        });
+    }
     result
 }
 
@@ -379,10 +397,19 @@ mod tests {
     use super::*;
 
     fn systems() -> Vec<String> {
-        ["PSX", "PS2", "SS", "PC", "AUDIO-CD"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect()
+        [
+            "PSX",
+            "PS2",
+            "SS",
+            "PC",
+            "GC",
+            "WII",
+            "AUDIO-CD",
+            "ENHANCED-CD",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
     }
 
     #[test]
@@ -450,6 +477,28 @@ dat:
             Some("FILE \"first.bin\" BINARY\n  TRACK 01 MODE1/2352")
         );
         assert_eq!(parsed.dat.as_deref().unwrap().lines().count(), 2);
+    }
+
+    #[test]
+    fn gc_and_wii_versions_are_revision_labels() {
+        let parse_version = |system: &str, version: &str| {
+            let log =
+                format!("*** INFO (time check: 0s)\n{system} [disc.bin]:\nversion: {version}");
+            parse(&log, &systems())
+        };
+
+        let gc_zero = parse_version("GC", "0");
+        assert_eq!(gc_zero.system_code.as_deref(), Some("GC"));
+        assert_eq!(gc_zero.version.as_deref(), Some(""));
+
+        let gc_revision = parse_version("GC", "2");
+        assert_eq!(gc_revision.version.as_deref(), Some("Rev 2"));
+
+        let wii_string_revision = parse_version("WII", "B");
+        assert_eq!(wii_string_revision.version.as_deref(), Some("Rev B"));
+
+        let other_system = parse_version("PSX", "1.00");
+        assert_eq!(other_system.version.as_deref(), Some("1.00"));
     }
 
     #[test]
@@ -595,9 +644,7 @@ protection: PS2/Datel FakeTOC, lead-out: 305571";
 
     #[test]
     fn all_audio_cue_maps_to_audio_cd_system() {
-        let audio = "*** INFO (time check: 0s)\n\
-PSX [disc.bin]:\n\
-*** SPLIT (time check: 0s)\n\
+        let audio = "*** SPLIT (time check: 0s)\n\
 CUE [disc.cue]:\n\
 FILE \"Track 01.bin\" BINARY\n\
   TRACK 01 AUDIO\n\
@@ -612,16 +659,49 @@ FILE \"Track 02.bin\" BINARY\n\
         );
 
         let mixed = audio.replacen("TRACK 01 AUDIO", "TRACK 01 MODE1/2352", 1);
+        assert_eq!(parse(&mixed, &systems()).system_code, None);
+
+        let without_audio_cd = ["PSX".to_owned()];
+        assert_eq!(parse(audio, &without_audio_cd).system_code, None);
+
+        let detected = format!("*** INFO (time check: 0s)\nPSX [disc.bin]:\n{audio}");
         assert_eq!(
-            parse(&mixed, &systems()).system_code.as_deref(),
+            parse(&detected, &systems()).system_code.as_deref(),
+            Some("PSX")
+        );
+    }
+
+    #[test]
+    fn multisession_audio_then_data_cue_maps_to_enhanced_cd_system() {
+        let enhanced = "*** SPLIT (time check: 0s)\n\
+CUE [disc.cue]:\n\
+REM SESSION 01\n\
+FILE \"Track 01.bin\" BINARY\n\
+  TRACK 01 AUDIO\n\
+    INDEX 01 00:00:00\n\
+FILE \"Track 02.bin\" BINARY\n\
+  TRACK 02 AUDIO\n\
+    INDEX 01 00:00:00\n\
+REM SESSION 02\n\
+REM LEAD-IN 01:00:00\n\
+REM PREGAP 00:02:00\n\
+FILE \"Track 03.bin\" BINARY\n\
+  TRACK 03 MODE2/2352\n\
+    INDEX 01 00:00:00\n\
+*** END (time check: 0s)";
+        assert_eq!(
+            parse(enhanced, &systems()).system_code.as_deref(),
+            Some("ENHANCED-CD")
+        );
+
+        let detected = format!("*** INFO (time check: 0s)\nPSX [disc.bin]:\n{enhanced}");
+        assert_eq!(
+            parse(&detected, &systems()).system_code.as_deref(),
             Some("PSX")
         );
 
-        let without_audio_cd = ["PSX".to_owned()];
-        assert_eq!(
-            parse(audio, &without_audio_cd).system_code.as_deref(),
-            Some("PSX")
-        );
+        let without_enhanced_cd = ["AUDIO-CD".to_owned()];
+        assert_eq!(parse(enhanced, &without_enhanced_cd).system_code, None);
     }
 
     #[test]
