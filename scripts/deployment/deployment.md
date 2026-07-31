@@ -15,7 +15,10 @@ Each image is tagged with `sha-<commit>` (immutable) and `main` (moving).
 
 The app container also receives `ASSET_VERSION` from `IMAGE_TAG`. Askama adds
 this value to every CSS and JavaScript URL so browsers fetch the matching files
-after each SHA-based deployment. Local `dev` builds use `ASSET_VERSION=dev`.
+after each SHA-based deployment. Docker Compose `dev` builds use
+`ASSET_VERSION=dev`; when the app is started directly with `cargo run`, a unique
+local version is generated on every process start so rebuilds cannot reuse stale
+browser assets.
 
 ## Prerequisites
 

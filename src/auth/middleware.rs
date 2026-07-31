@@ -104,10 +104,22 @@ fn is_top_level_navigation(method: &Method, headers: &HeaderMap) -> bool {
     if headers.contains_key("hx-request") {
         return false;
     }
-    headers
+    let fetch_mode_is_navigation = headers
         .get("sec-fetch-mode")
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|mode| mode.eq_ignore_ascii_case("navigate"))
+        .is_some_and(|mode| mode.eq_ignore_ascii_case("navigate"));
+    let accepts_html = headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|accept| {
+            accept
+                .split(',')
+                .filter_map(|entry| entry.split(';').next())
+                .map(str::trim)
+                .any(|media_type| media_type.eq_ignore_ascii_case("text/html"))
+        });
+
+    fetch_mode_is_navigation || accepts_html
 }
 
 fn is_api_request(uri: &Uri, headers: &HeaderMap) -> bool {
@@ -350,14 +362,18 @@ mod tests {
     }
 
     #[test]
-    fn browser_navigation_requires_navigation_fetch() {
+    fn browser_navigation_accepts_fetch_metadata_or_html_accept_fallback() {
         assert!(is_top_level_navigation(
             &Method::GET,
             &headers(&[("sec-fetch-mode", "navigate")])
         ));
-        assert!(!is_top_level_navigation(
+        assert!(is_top_level_navigation(
             &Method::GET,
             &headers(&[("accept", "text/html,application/xhtml+xml")])
+        ));
+        assert!(!is_top_level_navigation(
+            &Method::GET,
+            &headers(&[("accept", "application/json")])
         ));
         assert!(!is_top_level_navigation(
             &Method::POST,

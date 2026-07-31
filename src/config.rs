@@ -60,7 +60,11 @@ fn resolve_asset_version(value: Option<String>) -> String {
     value
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "dev".to_owned())
+        .unwrap_or_else(local_asset_version)
+}
+
+fn local_asset_version() -> String {
+    format!("local-{}", uuid::Uuid::new_v4())
 }
 
 fn versioned_asset_url(path: &str, version: &str) -> String {
@@ -145,13 +149,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn asset_version_uses_configured_value_or_dev_fallback() {
+    fn asset_version_uses_configured_value_or_unique_local_fallback() {
         assert_eq!(
             resolve_asset_version(Some(" sha-abc123 ".to_owned())),
             "sha-abc123"
         );
-        assert_eq!(resolve_asset_version(Some("  ".to_owned())), "dev");
-        assert_eq!(resolve_asset_version(None), "dev");
+
+        let blank = resolve_asset_version(Some("  ".to_owned()));
+        let missing = resolve_asset_version(None);
+        for version in [&blank, &missing] {
+            let uuid = version.strip_prefix("local-").unwrap();
+            assert!(uuid::Uuid::parse_str(uuid).is_ok());
+        }
+        assert_ne!(blank, missing);
     }
 
     #[test]
