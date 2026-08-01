@@ -77,8 +77,15 @@ async fn parse_redumper_log(
     }
 
     let systems = disc_service::get_all_systems(&state.pool).await?;
-    let system_codes: Vec<String> = systems.into_iter().map(|system| system.code).collect();
-    Ok(Json(redumper_log::parse(&req.log, &system_codes)).into_response())
+    let known_systems: Vec<(String, Vec<String>)> = systems
+        .into_iter()
+        .map(|system| (system.code, system.media_types))
+        .collect();
+    Ok(Json(redumper_log::parse_with_system_media(
+        &req.log,
+        &known_systems,
+    ))
+    .into_response())
 }
 
 fn can_use_redumper_autofill(role: UserRole, log: &str) -> bool {
@@ -128,7 +135,7 @@ mod tests {
             .0;
         assert!(handler.contains("RequireAuth(user): RequireAuth"));
         assert!(handler.contains("csrf::verify_headers(&user, &headers)?"));
-        assert!(handler.contains("redumper_log::parse(&req.log, &system_codes)"));
+        assert!(handler.contains("redumper_log::parse_with_system_media("));
         assert!(
             handler.find("can_use_redumper_autofill").unwrap()
                 < handler.find("get_all_systems").unwrap()

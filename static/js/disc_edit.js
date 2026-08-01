@@ -1194,6 +1194,7 @@ function applyParsedRedumperLog(data) {
             applied += 1;
         }
     }
+    applied += applyParsedField('media_type', data.media_type);
 
     [
         'version',

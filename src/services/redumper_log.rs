@@ -9,6 +9,7 @@ pub const MINIMUM_AUTOFILL_BUILD: u64 = 737;
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ParsedRedumperLog {
     pub system_code: Option<String>,
+    pub media_type: Option<String>,
     pub version: Option<String>,
     pub exe_date: Option<String>,
     pub edc: Option<bool>,
@@ -57,6 +58,23 @@ pub fn has_supported_autofill_builds(log: &str) -> bool {
 }
 
 pub fn parse(log: &str, known_system_codes: &[String]) -> ParsedRedumperLog {
+    parse_internal(log, known_system_codes, &[])
+}
+
+pub fn parse_with_system_media(
+    log: &str,
+    known_systems: &[(String, Vec<String>)],
+) -> ParsedRedumperLog {
+    let known_system_codes: Vec<String> =
+        known_systems.iter().map(|(code, _)| code.clone()).collect();
+    parse_internal(log, &known_system_codes, known_systems)
+}
+
+fn parse_internal(
+    log: &str,
+    known_system_codes: &[String],
+    known_systems: &[(String, Vec<String>)],
+) -> ParsedRedumperLog {
     let normalized = log.replace("\r\n", "\n").replace('\r', "\n");
     let lines: Vec<&str> = normalized.lines().collect();
     let info = latest_section(&lines, "INFO");
@@ -135,6 +153,14 @@ pub fn parse(log: &str, known_system_codes: &[String]) -> ParsedRedumperLog {
     }
 
     result.protection = protection(protection_section.as_deref(), info.as_deref());
+    result.media_type = result.system_code.as_deref().and_then(|system_code| {
+        let profile = latest_profile(&lines)?;
+        let media_types = known_systems
+            .iter()
+            .find(|(code, _)| code == system_code)
+            .map(|(_, media_types)| media_types.as_slice())?;
+        media_type_for_profile(profile, media_types)
+    });
     if matches!(result.system_code.as_deref(), Some("GC" | "WII")) {
         result.version = result.version.map(|version| {
             if version == "0" {
@@ -145,6 +171,38 @@ pub fn parse(log: &str, known_system_codes: &[String]) -> ParsedRedumperLog {
         });
     }
     result
+}
+
+fn latest_profile<'a>(lines: &[&'a str]) -> Option<&'a str> {
+    lines.iter().rev().find_map(|line| {
+        line.trim()
+            .strip_prefix("profile:")
+            .map(str::trim)
+            .filter(|profile| !profile.is_empty())
+    })
+}
+
+fn media_type_for_profile(profile: &str, system_media_types: &[String]) -> Option<String> {
+    let candidates: &[&str] = match profile {
+        "CD-ROM" | "CD-R" | "CD-RW" => &["cd", "gdrom"],
+        "DVD-ROM" | "DVD-R" | "DVD-RAM" | "DVD-RW RO" | "DVD-RW" | "DVD+RW" | "DVD+R" => {
+            &["dvd5", "dvd5gc", "dvd5wii"]
+        }
+        "DVD-R DL" | "DVD-R DL LJR" | "DVD+RW DL" | "DVD+R DL" => &["dvd9", "dvd9wii"],
+        "BD-ROM" | "BD-R" | "BD-R RRM" | "BD-RW" => &["bd25", "bd25wiiu"],
+        "HD DVD-ROM" | "HD DVD-R" | "HD DVD-RAM" | "HD DVD-RW" => &["hdvd15"],
+        "HD DVD-R DL" | "HD DVD-RW DL" => &["hdvd30"],
+        _ => return None,
+    };
+
+    system_media_types
+        .iter()
+        .find(|media_type| {
+            candidates
+                .iter()
+                .any(|candidate| media_type.eq_ignore_ascii_case(candidate))
+        })
+        .cloned()
 }
 
 fn section_name(line: &str) -> Option<&str> {
@@ -410,6 +468,111 @@ mod tests {
         .into_iter()
         .map(str::to_owned)
         .collect()
+    }
+
+    fn systems_with_media() -> Vec<(String, Vec<String>)> {
+        vec![
+            (
+                "PS2".to_owned(),
+                vec!["dvd5".to_owned(), "dvd9".to_owned(), "cd".to_owned()],
+            ),
+            ("GC".to_owned(), vec!["dvd5gc".to_owned(), "cd".to_owned()]),
+            (
+                "WII".to_owned(),
+                vec!["dvd9wii".to_owned(), "dvd5wii".to_owned()],
+            ),
+            ("WIIU".to_owned(), vec!["bd25wiiu".to_owned()]),
+            ("DC".to_owned(), vec!["gdrom".to_owned(), "cd".to_owned()]),
+            (
+                "XBOX".to_owned(),
+                vec!["dvd9".to_owned(), "dvd5".to_owned()],
+            ),
+            ("PS3".to_owned(), vec!["bd25".to_owned()]),
+            (
+                "HDDVD".to_owned(),
+                vec!["hdvd30".to_owned(), "hdvd15".to_owned()],
+            ),
+        ]
+    }
+
+    #[test]
+    fn profile_selects_first_compatible_media_in_system_priority_order() {
+        let log = r#"drive information
+  profile: CD-ROM
+*** INFO (time check: 0s)
+PS2 [disc.bin]:"#;
+
+        let parsed = parse_with_system_media(log, &systems_with_media());
+
+        assert_eq!(parsed.system_code.as_deref(), Some("PS2"));
+        assert_eq!(parsed.media_type.as_deref(), Some("cd"));
+    }
+
+    #[test]
+    fn profile_media_mapping_covers_supported_optical_profiles() {
+        let cases = [
+            ("CD-R", "DC", "gdrom"),
+            ("DVD-ROM", "GC", "dvd5gc"),
+            ("DVD-R DL LJR", "WII", "dvd9wii"),
+            ("BD-R RRM", "WIIU", "bd25wiiu"),
+            ("HD DVD-RAM", "HDDVD", "hdvd15"),
+            ("HD DVD-RW DL", "HDDVD", "hdvd30"),
+        ];
+
+        for (profile, system, expected) in cases {
+            let log = format!(
+                "drive information\n  profile: {profile}\n*** INFO (time check: 0s)\n{system} [disc.bin]:"
+            );
+            assert_eq!(
+                parse_with_system_media(&log, &systems_with_media())
+                    .media_type
+                    .as_deref(),
+                Some(expected),
+                "profile {profile} for {system}"
+            );
+        }
+    }
+
+    #[test]
+    fn profile_does_not_select_media_without_a_detected_compatible_system() {
+        let missing_system = "drive information\n  profile: CD-ROM\n*** INFO (time check: 0s)";
+        assert_eq!(
+            parse_with_system_media(missing_system, &systems_with_media()).media_type,
+            None
+        );
+
+        let incompatible =
+            "drive information\n  profile: BD-ROM\n*** INFO (time check: 0s)\nPS2 [disc.bin]:";
+        assert_eq!(
+            parse_with_system_media(incompatible, &systems_with_media()).media_type,
+            None
+        );
+
+        let unknown =
+            "drive information\n  profile: UNKNOWN\n*** INFO (time check: 0s)\nPS2 [disc.bin]:";
+        assert_eq!(
+            parse_with_system_media(unknown, &systems_with_media()).media_type,
+            None
+        );
+    }
+
+    #[test]
+    fn latest_profile_is_used_for_combined_logs() {
+        let log = r#"profile: DVD-ROM
+redumper (build: b738)
+*** INFO (time check: 0s)
+PS2 [old.bin]:
+profile: CD-ROM
+redumper (build: b739)
+*** INFO (time check: 0s)
+PS2 [new.bin]:"#;
+
+        assert_eq!(
+            parse_with_system_media(log, &systems_with_media())
+                .media_type
+                .as_deref(),
+            Some("cd")
+        );
     }
 
     #[test]

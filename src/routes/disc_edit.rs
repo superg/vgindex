@@ -6218,6 +6218,15 @@ mod operation_delta_tests {
         assert!(script.contains("ringEntries[0].offset_value = String(data.offset_value)"));
         assert!(script.contains("ringEntries[0].sample_start = String(data.sample_start)"));
         assert!(script.contains("systemSelect.dispatchEvent(new Event('change'"));
+        assert!(script.contains("applyParsedField('media_type', data.media_type)"));
+        assert!(
+            script
+                .find("systemSelect.dispatchEvent(new Event('change'")
+                .unwrap()
+                < script
+                    .find("applyParsedField('media_type', data.media_type)")
+                    .unwrap()
+        );
         assert!(script.contains("data.edc ? 'true' : 'false'"));
         assert!(script.contains("'protection'"));
         assert!(script.contains("function restoreDumpLogFillStatus()"));
