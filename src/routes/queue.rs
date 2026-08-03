@@ -2946,7 +2946,7 @@ mod tests {
             reviewer_id: Some(8),
             status,
             target_disc_id: Some(123),
-            created_at: chrono::Utc::now(),
+            date_at: chrono::Utc::now(),
         }
     }
 
@@ -3631,6 +3631,14 @@ mod tests {
     }
 
     #[test]
+    fn queue_date_column_keeps_its_label_and_renders_the_selected_date() {
+        let queue = include_str!("../../templates/queue.html");
+        assert!(queue.contains(">Date{% if sort_column == \"date\" %}"));
+        assert!(queue.contains("entry.date_at.format(\"%Y-%m-%d %H:%M UTC\")"));
+        assert!(!queue.contains(">Reviewed{% if sort_column == \"date\" %}"));
+    }
+
+    #[test]
     fn review_disc_edit_form_includes_base_hash_for_target_disc() {
         let hash = queue_service::disc_snapshot_hash(&old_snapshot());
         let html = build_template(&submitted_snapshot()).render().unwrap();
@@ -3997,7 +4005,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
             reviewer_id: row.try_get("reviewer_id")?,
             status,
             target_disc_id: row.try_get("target_disc_id")?,
-            created_at: row.try_get("created_at")?,
+            date_at: row.try_get("date_at")?,
         })
     }
 }

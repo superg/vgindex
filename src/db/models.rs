@@ -1072,7 +1072,7 @@ pub struct SubmissionListRow {
     pub reviewer_id: Option<i32>,
     pub status: SubmissionStatus,
     pub target_disc_id: Option<i32>,
-    pub created_at: DateTime<Utc>,
+    pub date_at: DateTime<Utc>,
 }
 
 #[cfg(test)]

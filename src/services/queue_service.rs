@@ -2155,6 +2155,14 @@ fn submission_type_filter_condition(type_filter: Option<&str>) -> Option<String>
     }
 }
 
+fn submission_list_date_sql(is_disc_history: bool) -> &'static str {
+    if is_disc_history {
+        "ds.reviewed_at"
+    } else {
+        "ds.created_at"
+    }
+}
+
 pub async fn list_submissions(
     pool: &PgPool,
     user_id_filter: Option<i32>,
@@ -2228,8 +2236,9 @@ pub async fn list_submissions(
         "CONCAT_WS(' ', NULLIF(s.manufacturer, ''), COALESCE(s.name, {SUBMISSION_LIST_SYSTEM_CODE_SQL}, ''))"
     );
     let type_expr = submission_display_kind_sql();
+    let date_expr = submission_list_date_sql(restrict_to_public_statuses);
     let sort_col = match sort_column {
-        "date" => "ds.created_at".to_string(),
+        "date" => date_expr.to_string(),
         "title" => submission_title_sort_sql(),
         "disc_id" => "ds.target_disc_id".to_string(),
         "system" => format!("LOWER({system_expr})"),
@@ -2237,7 +2246,7 @@ pub async fn list_submissions(
         "reviewer" => "LOWER(COALESCE(ur.username, ''))".to_string(),
         "type" => type_expr.clone(),
         "status" => "ds.status".to_string(),
-        _ => "ds.created_at".to_string(),
+        _ => date_expr.to_string(),
     };
     let sort_dir = if sort_order == "asc" { "ASC" } else { "DESC" };
     let nulls_order = if sort_column == "disc_id" {
@@ -2264,7 +2273,7 @@ pub async fn list_submissions(
                 ds.reviewer_id,
                 ds.status,
                 CASE WHEN ds.status = 'Draft' THEN NULL ELSE ds.target_disc_id END AS target_disc_id,
-                ds.created_at
+                {date_expr} AS date_at
          FROM disc_submissions ds
          JOIN users u ON u.id = ds.submitter_id
          LEFT JOIN users ur ON ur.id = ds.reviewer_id
@@ -2659,8 +2668,9 @@ mod tests {
         let universal_hash_bytes = hex::decode(&universal_hash).unwrap();
         let initial_history_id: i32 = sqlx::query_scalar(
             "INSERT INTO disc_submissions
-                 (submission_type, submitter_id, target_disc_id, changes, status, submission_token)
-             VALUES ('Edit', $1, $2, '{}'::jsonb, 'Legacy', $3)
+                 (submission_type, submitter_id, target_disc_id, changes, status,
+                  submission_token, reviewed_at)
+             VALUES ('Edit', $1, $2, '{}'::jsonb, 'Legacy', $3, NOW())
              RETURNING id",
         )
         .bind(fixture.submitter_id)
@@ -4309,6 +4319,12 @@ mod tests {
         }
         assert_eq!(submission_type_filter_condition(Some("Disc")), None);
         assert_eq!(submission_type_filter_condition(Some("Unknown")), None);
+    }
+
+    #[test]
+    fn disc_history_uses_review_time_while_queue_uses_creation_time() {
+        assert_eq!(submission_list_date_sql(true), "ds.reviewed_at");
+        assert_eq!(submission_list_date_sql(false), "ds.created_at");
     }
 
     #[test]

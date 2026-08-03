@@ -3221,6 +3221,16 @@ mod tests {
     }
 
     #[test]
+    fn added_and_modified_sorts_only_use_public_review_times() {
+        for sort_column in ["added", "modified"] {
+            let sql = disc_date_sort_sql(sort_column).unwrap().cte;
+            assert!(sql.contains(disc_service::PUBLIC_DISC_HISTORY_PREDICATE));
+            assert!(sql.contains("ds.reviewed_at"));
+            assert!(!sql.contains("created_at"));
+        }
+    }
+
+    #[test]
     fn non_title_sorts_use_title_and_id_tiebreakers_in_the_same_direction() {
         for sort_column in [
             "region", "system", "version", "edition", "language", "serial", "status", "added",
@@ -3415,6 +3425,15 @@ mod tests {
         assert!(!public_history_index.contains("submission_type"));
         assert!(!public_history_index.contains("changes"));
         assert!(!public_history_index.contains("review_comment"));
+
+        let reviewed_dates =
+            include_str!("../../migrations/022_use_reviewed_at_for_public_dates.sql");
+        assert!(reviewed_dates.contains("SET reviewed_at = created_at"));
+        assert!(reviewed_dates.contains("disc_submissions_public_reviewed_at_check"));
+        assert!(reviewed_dates.contains("DROP INDEX idx_submissions_target_created"));
+        assert!(reviewed_dates.contains("DROP INDEX idx_submissions_public_history_target_time"));
+        assert!(reviewed_dates.contains("ON disc_submissions (target_disc_id, reviewed_at)"));
+        assert!(reviewed_dates.contains("status IN ('Approved', 'Legacy')"));
 
         let contents_index = include_str!("../../migrations/014_index_disc_contents_search.sql");
         assert!(contents_index.contains("idx_discs_contents_trgm"));

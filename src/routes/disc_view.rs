@@ -14,12 +14,10 @@ use crate::error::{AppError, AppResult};
 use crate::services::disc_service;
 use crate::AppState;
 
-/// Sentinel `created_at` for `disc_submissions` rows that mark discs which had
-/// no `added` timestamp on redump.org. The import script
-/// (`scripts/generate_import_sql.py`, constant `NO_ADDED_SENTINEL_TS`) emits
-/// one such row per affected disc; `MIN(created_at)` then surfaces this exact
-/// value as the disc's `added_at`, which we recognize here to suppress the
-/// "Added" row in the disc view.
+/// Sentinel timestamp on imported public-history rows for discs which had no
+/// `added` timestamp on redump.org. Migration 022 copies the historical
+/// created-time anchor into `reviewed_at`; the public Added aggregate then
+/// surfaces this exact value so the disc view can suppress the "Added" row.
 const NO_ADDED_SENTINEL: DateTime<Utc> = DateTime::<Utc>::UNIX_EPOCH;
 
 fn format_minute_timestamp(timestamp: Option<&DateTime<Utc>>) -> String {
@@ -115,7 +113,7 @@ struct DiscViewTemplate {
     status_class: String,
     status_display: String,
     dumper_count: usize,
-    created_at: String,
+    added_at: String,
     updated_at: String,
     dumpers_display: String,
     ring_rows: Vec<ViewRingRow>,
@@ -671,7 +669,7 @@ async fn disc_view(
         detail.system.has_protection,
         user.is_logged_in(),
     );
-    let created_at = format_added_timestamp(detail.added_at.as_ref());
+    let added_at = format_added_timestamp(detail.added_at.as_ref());
     let updated_at = format_minute_timestamp(detail.modified_at.as_ref());
 
     Ok(Html(
@@ -763,7 +761,7 @@ async fn disc_view(
             file_count: detail.files.len(),
             status_class: detail.disc.status.css_class().to_string(),
             status_display: detail.disc.status.to_string(),
-            created_at,
+            added_at,
             updated_at,
             dumper_count: detail.dumpers.len(),
             dumpers_display: if detail.dumpers.is_empty() {
@@ -1755,7 +1753,7 @@ mod tests {
             status_class: "verified".to_string(),
             status_display: "Verified".to_string(),
             dumper_count: 0,
-            created_at: String::new(),
+            added_at: String::new(),
             updated_at: String::new(),
             dumpers_display: "Unknown".to_string(),
             ring_rows: Vec::new(),
@@ -1806,7 +1804,7 @@ mod tests {
     #[test]
     fn disc_view_renders_added_and_modified_timestamps_in_utc() {
         let mut template = disc_view_template(false, false, "", "");
-        template.created_at = "2026-01-01 01:02 UTC".to_string();
+        template.added_at = "2026-01-01 01:02 UTC".to_string();
         template.updated_at = "2026-01-02 04:05 UTC".to_string();
 
         let html = template.render().unwrap();

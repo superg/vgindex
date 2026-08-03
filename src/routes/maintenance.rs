@@ -3287,8 +3287,8 @@ mod tests {
         .unwrap();
         sqlx::query(
             "INSERT INTO disc_submissions
-                (submission_type, submitter_id, changes, status, reviewer_id)
-             VALUES ('Edit', $1, '{}'::jsonb, 'Approved', $2)",
+                (submission_type, submitter_id, changes, status, reviewer_id, reviewed_at)
+             VALUES ('Edit', $1, '{}'::jsonb, 'Approved', $2, NOW())",
         )
         .bind(other_id)
         .bind(source_id)

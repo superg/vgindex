@@ -9,11 +9,11 @@ use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 use crate::hex_case::{canonicalize_disc_snapshot_hex_fields, normalize_sbi_hex_case};
 
-/// SQL fragments shared by every query that exposes a disc's public modification
-/// date. Submission rows must use the `ds` alias.
+/// SQL fragments shared by every query that exposes a disc's public dates.
+/// Submission rows must use the `ds` alias.
 pub(crate) const PUBLIC_DISC_HISTORY_PREDICATE: &str = "ds.status IN ('Approved', 'Legacy')";
-pub(crate) const DISC_HISTORY_MODIFIED_AT_SQL: &str =
-    "MAX(COALESCE(ds.reviewed_at, ds.created_at))";
+pub(crate) const DISC_HISTORY_ADDED_AT_SQL: &str = "MIN(ds.reviewed_at)";
+pub(crate) const DISC_HISTORY_MODIFIED_AT_SQL: &str = "MAX(ds.reviewed_at)";
 
 pub(crate) struct DiscDateSortSql {
     pub cte: String,
@@ -24,13 +24,16 @@ pub(crate) struct DiscDateSortSql {
 pub(crate) fn disc_date_sort_sql(sort_column: &str) -> Option<DiscDateSortSql> {
     match sort_column {
         "added" => Some(DiscDateSortSql {
-            cte: "WITH added_sort AS MATERIALIZED (
-                SELECT target_disc_id AS disc_id, MIN(created_at) AS sort_value
-                FROM disc_submissions
-                WHERE target_disc_id IS NOT NULL
-                GROUP BY target_disc_id
-            )"
-            .to_string(),
+            cte: format!(
+                "WITH added_sort AS MATERIALIZED (
+                    SELECT ds.target_disc_id AS disc_id,
+                           {DISC_HISTORY_ADDED_AT_SQL} AS sort_value
+                    FROM disc_submissions ds
+                    WHERE ds.target_disc_id IS NOT NULL
+                      AND {PUBLIC_DISC_HISTORY_PREDICATE}
+                    GROUP BY ds.target_disc_id
+                )"
+            ),
             join: " LEFT JOIN added_sort ON added_sort.disc_id = d.id",
             expression: "added_sort.sort_value",
         }),
@@ -76,12 +79,20 @@ pub(crate) fn disc_order_by_sql(
     )
 }
 
-fn disc_modified_at_sql() -> String {
+fn disc_public_date_sql(aggregate: &str) -> String {
     format!(
-        "SELECT {DISC_HISTORY_MODIFIED_AT_SQL} FROM disc_submissions ds
+        "SELECT {aggregate} FROM disc_submissions ds
          WHERE ds.target_disc_id = $1
            AND {PUBLIC_DISC_HISTORY_PREDICATE}"
     )
+}
+
+fn disc_added_at_sql() -> String {
+    disc_public_date_sql(DISC_HISTORY_ADDED_AT_SQL)
+}
+
+fn disc_modified_at_sql() -> String {
+    disc_public_date_sql(DISC_HISTORY_MODIFIED_AT_SQL)
 }
 
 fn is_horizontal_whitespace(ch: char) -> bool {
@@ -744,13 +755,10 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_one(pool)
     .await?;
 
-    let added_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT MIN(created_at) FROM disc_submissions
-         WHERE target_disc_id = $1",
-    )
-    .bind(disc_id)
-    .fetch_one(pool)
-    .await?;
+    let added_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(&disc_added_at_sql())
+        .bind(disc_id)
+        .fetch_one(pool)
+        .await?;
 
     let modified_at: Option<chrono::DateTime<chrono::Utc>> =
         sqlx::query_scalar(&disc_modified_at_sql())
@@ -1228,13 +1236,18 @@ mod tests {
     }
 
     #[test]
-    fn disc_modified_at_uses_all_public_history_rows() {
-        let sql = disc_modified_at_sql();
-        assert!(sql.contains(DISC_HISTORY_MODIFIED_AT_SQL));
-        assert!(sql.contains(PUBLIC_DISC_HISTORY_PREDICATE));
-        assert!(!sql.contains("submission_type"));
-        assert!(!sql.contains("changes"));
-        assert!(!sql.contains("review_comment"));
+    fn disc_public_dates_use_review_time_from_all_public_history_rows() {
+        for (sql, aggregate) in [
+            (disc_added_at_sql(), DISC_HISTORY_ADDED_AT_SQL),
+            (disc_modified_at_sql(), DISC_HISTORY_MODIFIED_AT_SQL),
+        ] {
+            assert!(sql.contains(aggregate));
+            assert!(sql.contains(PUBLIC_DISC_HISTORY_PREDICATE));
+            assert!(!sql.contains("created_at"));
+            assert!(!sql.contains("submission_type"));
+            assert!(!sql.contains("changes"));
+            assert!(!sql.contains("review_comment"));
+        }
     }
 
     #[test]

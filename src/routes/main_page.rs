@@ -19,7 +19,7 @@ const HOME_NEWS_LIMIT: usize = 3;
 pub const HOMEPAGE_CACHE_TTL_SECONDS: u64 = 60;
 
 fn home_recent_discs_sql() -> String {
-    home_recent_date_sql("added", "created_at")
+    home_recent_date_sql("added", "added_at")
 }
 
 fn home_recent_changes_sql() -> String {
@@ -100,7 +100,7 @@ struct RecentDisc {
     title: String,
     system: String,
     region_flags: Vec<HomeRegionFlag>,
-    created_at: String,
+    added_at: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -272,8 +272,8 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
 
     let mut recent_discs = Vec::with_capacity(rows.len());
     for r in rows {
-        let created_at = r
-            .created_at
+        let added_at = r
+            .added_at
             .map(|date| date.format("%Y-%m-%d").to_string())
             .unwrap_or_default();
         recent_discs.push(RecentDisc {
@@ -288,7 +288,7 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
             ),
             system: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             region_flags: regions_by_disc.get(&r.id).cloned().unwrap_or_default(),
-            created_at,
+            added_at,
         });
     }
 
@@ -341,7 +341,7 @@ struct RecentDiscRow {
     has_disc_title: bool,
     system_code: String,
     system_short_name: String,
-    created_at: Option<chrono::DateTime<chrono::Utc>>,
+    added_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn homepage_date_queries_use_disc_list_sort_fragments() {
         for (sort_column, date_alias, sql) in [
-            ("added", "created_at", home_recent_discs_sql()),
+            ("added", "added_at", home_recent_discs_sql()),
             ("modified", "modified_at", home_recent_changes_sql()),
         ] {
             let date_sort = disc_date_sort_sql(sort_column).unwrap();
@@ -434,9 +434,13 @@ mod tests {
     }
 
     #[test]
-    fn recent_changes_query_uses_review_time_with_created_fallback() {
+    fn homepage_public_date_queries_only_use_review_time() {
+        let added_sql = home_recent_discs_sql();
         let sql = home_recent_changes_sql();
-        assert!(sql.contains("MAX(COALESCE(ds.reviewed_at, ds.created_at)) AS sort_value"));
+        assert!(added_sql.contains("MIN(ds.reviewed_at) AS sort_value"));
+        assert!(sql.contains("MAX(ds.reviewed_at) AS sort_value"));
+        assert!(!added_sql.contains("created_at"));
+        assert!(!sql.contains("created_at"));
         assert!(sql.contains("modified_sort.sort_value AS modified_at"));
     }
 
@@ -502,7 +506,7 @@ mod tests {
                     code: "us".to_string(),
                     name: "USA".to_string(),
                 }],
-                created_at: "2026-01-01".to_string(),
+                added_at: "2026-01-01".to_string(),
             }],
             recent_changes: vec![RecentChange {
                 id: 2,

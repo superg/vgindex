@@ -87,8 +87,8 @@
                     <td><strong>Status</strong></td>
                     <td><span class="status-dot {{ status_class }}"></span> {{ status_display }}</td>
                 </tr>
-                {% if !created_at.is_empty() %}
-                <tr><td><strong>Added</strong></td><td>{{ created_at }}</td></tr>
+                {% if !added_at.is_empty() %}
+                <tr><td><strong>Added</strong></td><td>{{ added_at }}</td></tr>
                 {% endif %}
                 {% if !updated_at.is_empty() %}
                 <tr><td><strong>Modified</strong></td><td>{{ updated_at }}</td></tr>
