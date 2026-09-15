@@ -433,7 +433,7 @@ fn parse_cue_track_line(line: &str) -> Option<(u32, &str)> {
     let num: u32 = rest[..2].parse().ok()?;
     let mode = &rest[3..];
     match mode {
-        "MODE1/2352" | "MODE2/2352" | "AUDIO" => Some((num, mode)),
+        "MODE1/2352" | "MODE2/2352" | "CDI/2352" | "AUDIO" => Some((num, mode)),
         _ => None,
     }
 }
