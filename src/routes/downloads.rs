@@ -19,6 +19,7 @@ use crate::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/downloads", get(downloads_page))
+        .route("/bios/{system}", get(download_bios_dat))
         .route("/datfile/{system}", get(download_dat))
         .route("/datfile/{system}/{features}", get(download_dat_variant))
         .route("/cues/{system}", get(download_cue))
@@ -50,7 +51,7 @@ struct SystemDownload {
 
 struct BiosDownload {
     name: String,
-    href: &'static str,
+    href: String,
 }
 
 struct DatabaseDownload {
@@ -61,29 +62,29 @@ struct DatabaseDownload {
 struct BiosDownloadSpec {
     code: &'static str,
     fallback_name: &'static str,
-    href: &'static str,
+    path: &'static str,
 }
 
 const BIOS_DOWNLOADS: &[BiosDownloadSpec] = &[
     BiosDownloadSpec {
         code: "XBOX",
         fallback_name: "Microsoft Xbox",
-        href: "/static/bios/Microsoft%20-%20Xbox%20-%20BIOS%20Images%20%289%29%20%282026-06-16%29.dat",
+        path: "static/bios/Microsoft - Xbox - BIOS Images (9) (2026-06-16).dat",
     },
     BiosDownloadSpec {
         code: "GC",
         fallback_name: "Nintendo GameCube",
-        href: "/static/bios/Nintendo%20-%20GameCube%20-%20BIOS%20Images%20%2817%29%20%282026-06-16%29.dat",
+        path: "static/bios/Nintendo - GameCube - BIOS Images (17) (2026-06-16).dat",
     },
     BiosDownloadSpec {
         code: "PSX",
         fallback_name: "Sony PlayStation",
-        href: "/static/bios/Sony%20-%20PlayStation%20-%20BIOS%20Images%20%2824%29%20%282026-06-16%29.dat",
+        path: "static/bios/Sony - PlayStation - BIOS Images (24) (2026-06-16).dat",
     },
     BiosDownloadSpec {
         code: "PS2",
         fallback_name: "Sony PlayStation 2",
-        href: "/static/bios/Sony%20-%20PlayStation%202%20-%20BIOS%20Datfile%20%28140%29%20%282026-06-16%29.dat",
+        path: "static/bios/Sony - PlayStation 2 - BIOS Datfile (140) (2026-06-16).dat",
     },
 ];
 
@@ -95,9 +96,35 @@ fn bios_downloads(system_names: &HashMap<String, String>) -> Vec<BiosDownload> {
                 .get(spec.code)
                 .cloned()
                 .unwrap_or_else(|| spec.fallback_name.to_string()),
-            href: spec.href,
+            href: format!("/bios/{}", spec.code),
         })
         .collect()
+}
+
+async fn download_bios_dat(Path(system): Path<String>, request: Request) -> Response {
+    let system = normalize_archive_system_code(&system);
+    let Some(spec) = BIOS_DOWNLOADS.iter().find(|s| s.code == system) else {
+        return AppError::NotFound.into_response();
+    };
+    let filename = std::path::Path::new(spec.path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut response = ServeFile::new(spec.path)
+        .oneshot(request)
+        .await
+        .expect("ServeFile is infallible")
+        .into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    response.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename))
+            .expect("validated bios filename is a valid header value"),
+    );
+    response
 }
 
 async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
@@ -478,21 +505,13 @@ mod tests {
 
         assert!(html.contains(">BIOS<"));
         assert!(html.contains("Microsoft Xbox"));
-        assert!(html.contains(
-            r#"/static/bios/Microsoft%20-%20Xbox%20-%20BIOS%20Images%20%289%29%20%282026-06-16%29.dat"#
-        ));
+        assert!(html.contains(r#"/bios/XBOX"#));
         assert!(html.contains("Nintendo GameCube"));
-        assert!(html.contains(
-            r#"/static/bios/Nintendo%20-%20GameCube%20-%20BIOS%20Images%20%2817%29%20%282026-06-16%29.dat"#
-        ));
+        assert!(html.contains(r#"/bios/GC"#));
         assert!(html.contains("Sony PlayStation"));
-        assert!(html.contains(
-            r#"/static/bios/Sony%20-%20PlayStation%20-%20BIOS%20Images%20%2824%29%20%282026-06-16%29.dat"#
-        ));
+        assert!(html.contains(r#"/bios/PSX"#));
         assert!(html.contains("Sony PlayStation 2"));
-        assert!(html.contains(
-            r#"/static/bios/Sony%20-%20PlayStation%202%20-%20BIOS%20Datfile%20%28140%29%20%282026-06-16%29.dat"#
-        ));
+        assert!(html.contains(r#"/bios/PS2"#));
     }
 
     #[test]
