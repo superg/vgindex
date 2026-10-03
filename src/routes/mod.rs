@@ -58,11 +58,23 @@ pub(crate) fn compact_query_url(path: &str, params: &[(&str, &str)]) -> String {
 }
 
 pub async fn canonical_url_middleware(request: Request, next: Next) -> Response {
+    if !is_safe_root_relative_url(request.uri().path()) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
     if let Some(target) = canonical_url_target(request.uri()) {
         return (StatusCode::PERMANENT_REDIRECT, [(header::LOCATION, target)]).into_response();
     }
 
     next.run(request).await
+}
+
+pub(crate) fn is_safe_root_relative_url(url: &str) -> bool {
+    url.starts_with('/')
+        && !url.starts_with("//")
+        && !url.contains('\\')
+        && !url.contains('\r')
+        && !url.contains('\n')
 }
 
 pub(crate) fn canonicalize_root_relative_url(url: &str) -> String {
@@ -273,6 +285,24 @@ mod tests {
             response.headers().get(header::LOCATION).unwrap(),
             "/disc/1/cue?keep=Yes"
         );
+    }
+
+    #[tokio::test]
+    async fn canonical_url_middleware_rejects_ambiguous_redirect_paths() {
+        let app = Router::new()
+            .route("/", get(|| async { "ok" }))
+            .layer(middleware::from_fn(canonical_url_middleware));
+
+        for path in ["//google.com/", "///google.com/", "/\\google.com/"] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
+            assert!(response.headers().get(header::LOCATION).is_none(), "{path}");
+        }
     }
 
     #[test]

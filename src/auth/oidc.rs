@@ -576,11 +576,7 @@ fn sanitize_return_to(return_to: Option<&str>) -> String {
     let Some(return_to) = return_to else {
         return "/".to_string();
     };
-    if return_to.starts_with('/')
-        && !return_to.starts_with("//")
-        && !return_to.contains('\r')
-        && !return_to.contains('\n')
-    {
+    if crate::routes::is_safe_root_relative_url(return_to) {
         return crate::routes::canonicalize_root_relative_url(return_to);
     }
     "/".to_string()
@@ -622,6 +618,7 @@ mod tests {
     fn sanitize_return_to_rejects_external_or_header_like_values() {
         assert_eq!(sanitize_return_to(Some("https://example.com")), "/");
         assert_eq!(sanitize_return_to(Some("//example.com/path")), "/");
+        assert_eq!(sanitize_return_to(Some("/\\example.com/path")), "/");
         assert_eq!(sanitize_return_to(Some("/ok\r\nSet-Cookie: nope")), "/");
         assert_eq!(sanitize_return_to(None), "/");
     }
