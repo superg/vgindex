@@ -28,7 +28,7 @@ RUN set -eux; \
         composer/installers:2.3.0 \
         paragonie/constant_time_encoding:3.1.3 \
         paragonie/random_compat:9.99.100 \
-        phpseclib/phpseclib:3.0.55; \
+        phpseclib/phpseclib:3.0.57; \
     COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction; \
     rm -rf /var/www/html/extensions/*/.git
 
