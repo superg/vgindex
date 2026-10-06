@@ -36,8 +36,16 @@
                     <img src="/static/images/branding/logo_v2.png" alt="{{ self.site_name() }}">
                 </a>
                 <form class="quick-search" method="get" action="/discs" data-compact-get>
-                    <input type="text" name="q" placeholder="Search discs..." aria-label="Search">
+                    <input type="text" name="q" placeholder="Search discs..." aria-label="Search" id="quick-search-input">
                 </form>
+                <script>
+                    (function() {
+                        var q = new URLSearchParams(window.location.search).get('q');
+                        if (q && window.location.pathname === '/discs') {
+                            document.getElementById('quick-search-input').value = q;
+                        }
+                    })();
+                </script>
                 <ul class="site-nav-auth">
                     {% match current_user %}
                     {% when Some with (user) %}
