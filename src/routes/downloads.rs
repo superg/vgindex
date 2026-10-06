@@ -124,6 +124,10 @@ async fn download_bios_dat(Path(system): Path<String>, request: Request) -> Resp
         HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename))
             .expect("validated bios filename is a valid header value"),
     );
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-cache"),
+    );
     response
 }
 
@@ -497,6 +501,49 @@ mod tests {
 
         assert!(html.contains(r#"/datfile/PS3/serial,version"#));
         assert!(html.contains(">Dat + Serial/Version<"));
+    }
+
+    #[tokio::test]
+    async fn bios_download_serves_file_with_attachment_headers() {
+        let response = routes()
+            .with_state(test_state())
+            .oneshot(
+                Request::builder()
+                    .uri("/bios/PSX")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/octet-stream"
+        );
+        assert!(
+            response.headers()[header::CONTENT_DISPOSITION]
+                .to_str()
+                .unwrap()
+                .starts_with("attachment; filename=\"Sony - PlayStation - BIOS Images")
+        );
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
+    }
+
+    #[tokio::test]
+    async fn bios_download_returns_not_found_for_unknown_code() {
+        let response = routes()
+            .with_state(test_state())
+            .oneshot(
+                Request::builder()
+                    .uri("/bios/UNKNOWN")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]
