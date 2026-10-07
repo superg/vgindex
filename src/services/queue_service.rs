@@ -2246,6 +2246,11 @@ pub async fn list_submissions(
         "reviewer" => "LOWER(COALESCE(ur.username, ''))".to_string(),
         "type" => type_expr.clone(),
         "status" => "ds.status".to_string(),
+        "region" => "(
+            SELECT MIN(r.sort_order)
+            FROM regions r
+            WHERE r.code = ANY(ARRAY(SELECT jsonb_array_elements_text(ds.changes->'regions'->'add')))
+        )".to_string(),
         _ => date_expr.to_string(),
     };
     let sort_dir = if sort_order == "asc" { "ASC" } else { "DESC" };
@@ -2273,7 +2278,12 @@ pub async fn list_submissions(
                 ds.reviewer_id,
                 ds.status,
                 CASE WHEN ds.status = 'Draft' THEN NULL ELSE ds.target_disc_id END AS target_disc_id,
-                {date_expr} AS date_at
+                {date_expr} AS date_at,
+                COALESCE((
+                    SELECT array_agg(TRIM(r.flag_code) || '|' || r.name ORDER BY r.sort_order)
+                    FROM regions r
+                    WHERE r.code = ANY(ARRAY(SELECT jsonb_array_elements_text(ds.changes->'regions'->'add')))
+                ), ARRAY[]::TEXT[]) AS region_flag_codes
          FROM disc_submissions ds
          JOIN users u ON u.id = ds.submitter_id
          LEFT JOIN users ur ON ur.id = ds.reviewer_id
