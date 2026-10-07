@@ -1073,6 +1073,7 @@ pub struct SubmissionListRow {
     pub status: SubmissionStatus,
     pub target_disc_id: Option<i32>,
     pub date_at: DateTime<Utc>,
+    pub region_flags: Vec<FlagInfo>,
 }
 
 #[cfg(test)]
