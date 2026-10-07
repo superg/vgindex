@@ -1266,6 +1266,10 @@ fn add_language_clause(where_clauses: &mut Vec<String>, bind_idx: &mut u32, lang
     if language.is_empty() {
         return;
     }
+    if language == "none" {
+        where_clauses.push("NOT EXISTS (SELECT 1 FROM disc_languages dl_filter WHERE dl_filter.disc_id = d.id)".to_string());
+        return;
+    }
 
     *bind_idx += 1;
     where_clauses.push(format!(
@@ -1956,7 +1960,7 @@ async fn discs_page(
     if !filter_region.is_empty() {
         bind_queries!(filter_region.clone());
     }
-    if !filter_language.is_empty() {
+    if !filter_language.is_empty() && filter_language != "none" {
         bind_queries!(filter_language.clone());
     }
     if filter_letter != "#"
@@ -2372,6 +2376,12 @@ mod tests {
         add_language_clause(&mut clauses, &mut bind_idx, "");
         assert_eq!(bind_idx, 0);
         assert_eq!(clauses, vec!["FALSE"]);
+
+        let mut clauses = Vec::new();
+        let mut bind_idx = 0;
+        add_language_clause(&mut clauses, &mut bind_idx, "none");
+        assert_eq!(bind_idx, 0);
+        assert_eq!(clauses, vec!["NOT EXISTS (SELECT 1 FROM disc_languages dl_filter WHERE dl_filter.disc_id = d.id)"]);
     }
 
     #[test]
@@ -2585,6 +2595,8 @@ mod tests {
                 && additional_mould < offset
         );
         assert!(template.contains("<option value=\"\">All Languages</option>"));
+        assert!(template.contains("<option value=\"none\""));
+        assert!(template.contains(">No Language</option>"));
         assert!(template.contains("<option value=\"\">All Media</option>"));
         assert!(template.contains("<option value=\"\">All Categories</option>"));
         assert_eq!(template.matches("name=\"language\"").count(), 3);
