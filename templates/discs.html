@@ -38,6 +38,7 @@
                 <span>Language</span>
                 <select name="language" onchange="this.form.requestSubmit()">
                     <option value="">All Languages</option>
+                    <option value="none" {% if filter_language == "none" %}selected{% endif %}>No Language</option>
                     {% for language in languages %}
                     <option value="{{ language.code }}" {% if language.selected %}selected{% endif %}>{{ language.name }}</option>
                     {% endfor %}
