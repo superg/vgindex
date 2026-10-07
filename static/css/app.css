@@ -193,6 +193,9 @@ main > h3 {
 [data-theme="dark"] .disc-table td:not(.title-col):not(.submission-title-col) a:hover {
     color: #DDEFF7;
 }
+[data-theme="dark"] .disc-table.files-table td:not(.title-col) a {
+    color: #a2d6f9;
+}
 
 .submission-type-icon {
     display: inline-block;
