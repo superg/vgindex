@@ -245,6 +245,14 @@ fn ring_layer_has_data(layer: Option<&DiscRingCodeLayer>) -> bool {
         .unwrap_or(false)
 }
 
+fn merge_mould_rings(a: &str, b: &str) -> String {
+    match (a.is_empty(), b.is_empty()) {
+        (true, _) => b.to_string(),
+        (_, true) => a.to_string(),
+        _ => format!("{a}, {b}"),
+    }
+}
+
 fn build_ring_rows(entries: &[RingEntryView], ring_display_layers: usize) -> Vec<ViewRingRow> {
     entries
         .iter()
@@ -256,10 +264,25 @@ fn build_ring_rows(entries: &[RingEntryView], ring_display_layers: usize) -> Vec
             let comment = e.comment.clone().unwrap_or_default();
             let entry_num = i + 1;
             let entry_even = entry_num % 2 == 0;
+            let ls_index = ring_display_layers.saturating_sub(1);
+            let overflow_mould_sids: String = (1..ls_index)
+                .filter_map(|li| e.layers.iter().find(|l| l.layer == li as i32))
+                .map(|l| l.mould_sids.as_str())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let overflow_additional_moulds: String = (1..ls_index)
+                .filter_map(|li| e.layers.iter().find(|l| l.layer == li as i32))
+                .map(|l| l.additional_moulds.as_str())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(", ");
+
             let visible_layers: Vec<_> = (0..ring_display_layers)
                 .filter_map(|li| {
                     let layer = e.layers.iter().find(|l| l.layer == li as i32);
-                    if ring_layer_has_data(layer) {
+                    if ring_layer_has_data(layer)|| (li == ls_index && (!overflow_mould_sids.is_empty() || !overflow_additional_moulds.is_empty()))
+                    {
                         Some((li, layer))
                     } else {
                         None
@@ -311,12 +334,28 @@ fn build_ring_rows(entries: &[RingEntryView], ring_display_layers: usize) -> Vec
                             .unwrap_or_default(),
                     ),
                     mould_sids: ring_tab_replace(
-                        &layer.map(|l| l.mould_sids.clone()).unwrap_or_default(),
+                        &if li == ls_index && !overflow_mould_sids.is_empty() {
+                            merge_mould_rings(
+                                &layer.map(|l| l.mould_sids.clone()).unwrap_or_default(),
+                                &overflow_mould_sids,
+                            )
+                        } else if li > 0 && li < ls_index {
+                            String::new()
+                        } else {
+                            layer.map(|l| l.mould_sids.clone()).unwrap_or_default()
+                        },
                     ),
                     additional_moulds: ring_tab_replace(
-                        &layer
-                            .map(|l| l.additional_moulds.clone())
-                            .unwrap_or_default(),
+                        &if li == ls_index && !overflow_additional_moulds.is_empty() {
+                            merge_mould_rings(
+                                &layer.map(|l| l.additional_moulds.clone()).unwrap_or_default(),
+                                &overflow_additional_moulds,
+                            )
+                        } else if li > 0 && li < ls_index {
+                            String::new()
+                        } else {
+                            layer.map(|l| l.additional_moulds.clone()).unwrap_or_default()
+                        },
                     ),
                     toolstamps: ring_tab_replace(
                         &layer.map(|l| l.toolstamps.clone()).unwrap_or_default(),
