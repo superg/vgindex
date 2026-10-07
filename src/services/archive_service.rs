@@ -205,7 +205,8 @@ pub async fn regenerate_system_archives(
         .await?;
     let Some(sys) = sys else { return Ok(()) };
 
-    let datfiles = generate_datfile_archives(pool, metadata, &sys).await?;
+    let ts = timestamp_now();
+    let datfiles = generate_datfile_archives(pool, metadata, &sys, &ts).await?;
     store_archive(&sys.code, "dat", &datfiles.standard)
         .map_err(|e| AppError::Internal(e.to_string()))?;
     store_archive(
@@ -217,17 +218,17 @@ pub async fn regenerate_system_archives(
 
     let has_bin_media = system_has_bin_media(pool, &sys.media_types).await;
     if archive_type_supported_by_system(&sys, "cue", has_bin_media).unwrap_or(false) {
-        let result = generate_cuesheet_archive(pool, &sys.code).await?;
+        let result = generate_cuesheet_archive(pool, &sys.code, &ts).await?;
         store_archive(&sys.code, "cue", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     if archive_type_supported_by_system(&sys, "key", false).unwrap_or(false) {
-        let result = generate_key_archive(pool, &sys.code).await?;
+        let result = generate_key_archive(pool, &sys.code, &ts).await?;
         store_archive(&sys.code, "key", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     if archive_type_supported_by_system(&sys, "sbi", has_bin_media).unwrap_or(false) {
-        let result = generate_sbi_archive(pool, &sys.code).await?;
+        let result = generate_sbi_archive(pool, &sys.code, &ts).await?;
         store_archive(&sys.code, "sbi", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
@@ -389,6 +390,7 @@ async fn generate_datfile_archives(
     pool: &PgPool,
     metadata: &ArchiveMetadata,
     sys: &System,
+    ts: &str,
 ) -> AppResult<DatfileArchives> {
     let discs: Vec<DatfileDisc> = sqlx::query_as(
         "SELECT d.id, d.title,
@@ -407,7 +409,6 @@ async fn generate_datfile_archives(
     .fetch_all(pool)
     .await?;
 
-    let ts = timestamp_now();
     let disc_count = discs.len();
     let dat_name = sys.dat_system_name();
     let games = build_datfile_games(pool, sys, &discs).await?;
@@ -984,7 +985,7 @@ struct CueDisc {
     cue: String,
 }
 
-async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveResult> {
+async fn generate_cuesheet_archive(pool: &PgPool, system: &str, ts: &str) -> AppResult<ArchiveResult> {
     let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
@@ -1010,7 +1011,6 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str) -> AppResult<Arc
     .fetch_all(pool)
     .await?;
 
-    let ts = timestamp_now();
     let cue_count = discs.len();
 
     let mut buf = Vec::new();
@@ -1067,7 +1067,7 @@ struct KeyArchiveDisc {
     disc_key: Vec<u8>,
 }
 
-async fn generate_key_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveResult> {
+async fn generate_key_archive(pool: &PgPool, system: &str, ts: &str) -> AppResult<ArchiveResult> {
     let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
@@ -1089,7 +1089,6 @@ async fn generate_key_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveR
     .fetch_all(pool)
     .await?;
 
-    let ts = timestamp_now();
     let key_count = discs.len();
 
     let mut buf = Vec::new();
@@ -1146,7 +1145,7 @@ struct SbiArchiveDisc {
     sbi: String,
 }
 
-async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveResult> {
+async fn generate_sbi_archive(pool: &PgPool, system: &str, ts: &str) -> AppResult<ArchiveResult> {
     let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
@@ -1170,7 +1169,6 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str) -> AppResult<ArchiveR
     .fetch_all(pool)
     .await?;
 
-    let ts = timestamp_now();
     let sbi_count = discs.len();
 
     let mut buf = Vec::new();
