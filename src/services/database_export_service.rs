@@ -709,7 +709,7 @@ async fn export_discs(
                 to_json(barcode)::text AS barcode,
                 version, error_count, exe_date, edc,
                 to_json(layerbreaks)::text AS layerbreaks,
-                disc_id, disc_key, universal_hash, comments, contents, protection,
+                disc_id, NULL as disc_key, universal_hash, comments, contents, protection,
                 to_json(sector_ranges)::text AS sector_ranges,
                 sbi, pvd, header, bca, pic, cue, status::text AS status
          FROM discs
