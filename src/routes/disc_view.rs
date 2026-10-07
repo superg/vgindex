@@ -1169,6 +1169,7 @@ fn format_comments(raw: &str) -> String {
     for &(tag, replacement) in TAG_MAP {
         s = s.replace(tag, replacement);
     }
+    s = s.replace("<xmp>", "<code>").replace("</xmp>", "</code>");
 
     let mut result = String::with_capacity(s.len() * 2);
     let mut i = 0;
@@ -1177,15 +1178,7 @@ fn format_comments(raw: &str) -> String {
     while i < bytes.len() {
         match bytes[i] {
             b'<' => {
-                if s[i..].starts_with("<xmp>") {
-                    result.push_str("<xmp>");
-                    i += 5;
-                    if let Some(end) = s[i..].find("</xmp>") {
-                        result.push_str(&s[i..i + end]);
-                        result.push_str("</xmp>");
-                        i += end + 6;
-                    }
-                } else if let Some(tag_len) = allowed_html_tag(&s[i..]) {
+                if let Some(tag_len) = allowed_html_tag(&s[i..]) {
                     result.push_str(&s[i..i + tag_len]);
                     i += tag_len;
                 } else {
@@ -1234,8 +1227,6 @@ fn allowed_html_tag(s: &str) -> Option<usize> {
         "</code>",
         "<tt>",
         "</tt>",
-        "<xmp>",
-        "</xmp>",
         "<li>",
         "</li>",
         "<ul>",
