@@ -94,6 +94,7 @@ struct QueueTemplate {
     sort_order: String,
     next_date_order: String,
     next_title_order: String,
+    next_region_order: String,
     next_system_order: String,
     next_submitter_order: String,
     next_reviewer_order: String,
@@ -303,7 +304,7 @@ fn normalize_queue_status_filter(status: Option<&str>, is_disc_history: bool) ->
 
 fn normalize_queue_sort(sort: Option<&str>) -> String {
     match sort.unwrap_or("date").trim().to_ascii_lowercase().as_str() {
-        "date" | "title" | "disc_id" | "system" | "submitter" | "reviewer" | "type" | "status" => {
+        "date" | "region" | "title" | "disc_id" | "system" | "submitter" | "reviewer" | "type" | "status" => {
             sort.unwrap_or("date").trim().to_ascii_lowercase()
         }
         _ => "date".to_string(),
@@ -493,6 +494,7 @@ async fn queue_list(
             sort_order,
             next_date_order: next_order("date"),
             next_title_order: next_order("title"),
+            next_region_order: next_order("region"),
             next_system_order: next_order("system"),
             next_submitter_order: next_order("submitter"),
             next_reviewer_order: next_order("reviewer"),
@@ -2947,6 +2949,7 @@ mod tests {
             status,
             target_disc_id: Some(123),
             date_at: chrono::Utc::now(),
+            region_flags: vec![],
         }
     }
 
@@ -3992,6 +3995,17 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
             target_has_disc_number,
             target_has_disc_title,
         );
+        let region_flag_codes: Vec<String> = row.try_get("region_flag_codes").unwrap_or_default();
+        let region_flags = region_flag_codes
+            .into_iter()
+            .filter_map(|s| {
+                let (code, name) = s.split_once('|')?;
+                Some(crate::db::models::FlagInfo {
+                    code: code.to_lowercase(),
+                    name: name.to_string(),
+                })
+            })
+            .collect();
         Ok(Self {
             id: row.try_get("id")?,
             submission_type,
@@ -4006,6 +4020,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
             status,
             target_disc_id: row.try_get("target_disc_id")?,
             date_at: row.try_get("date_at")?,
+            region_flags,
         })
     }
 }
