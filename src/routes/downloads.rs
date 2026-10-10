@@ -84,7 +84,7 @@ const BIOS_DOWNLOADS: &[BiosDownloadSpec] = &[
     BiosDownloadSpec {
         code: "PS2",
         fallback_name: "Sony PlayStation 2",
-        path: "static/bios/Sony - PlayStation 2 - BIOS Datfile (140) (2026-06-16).dat",
+        path: "static/bios/Sony - PlayStation 2 - BIOS Datfile (175) (2026-10-10).dat",
     },
 ];
 
