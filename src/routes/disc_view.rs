@@ -836,7 +836,7 @@ fn default_xgd_layerbreak(iso_size: Option<i64>, pvd: Option<&[u8]>) -> &'static
     match iso_size {
         Some(0x1D26A8000) => "1913776 (default)",
         Some(0x1D3301800 | 0x1D2FEF800 | 0x1D3082000) => "1913760 (default)",
-        Some(0x1D3390000) if xgd2_wave_from_pvd(pvd) != "XGD2 (Unknown)" => "1913760 (default)",
+        Some(0x1D3390000) if xgd2_wave_from_pvd(pvd).is_some() => "1913760 (default)",
         Some(0x208E03800) => "2133520 (default)",
         _ => "",
     }
@@ -849,7 +849,7 @@ fn xgd_type_from_iso(size: Option<i64>, pvd: Option<&[u8]>) -> &'static str {
         Some(0x1D3301800) => "XGD2 (Wave 0)",
         Some(0x1D2FEF800) => "XGD2 (Wave 1)",
         Some(0x1D3082000) => "XGD2 (Wave 2)",
-        Some(0x1D3390000) => xgd2_wave_from_pvd(pvd),
+        Some(0x1D3390000) => xgd2_wave_from_pvd(pvd).unwrap_or("XGD2 (Unknown)"),
         Some(0x1D31A0000) => "XGD2 (Hybrid)",
         Some(0x208E05800) => "XGD3 (Beta)",
         Some(0x208E03800) => "XGD3",
@@ -857,7 +857,7 @@ fn xgd_type_from_iso(size: Option<i64>, pvd: Option<&[u8]>) -> &'static str {
     }
 }
 
-fn xgd2_wave_from_pvd(pvd: Option<&[u8]>) -> &'static str {
+fn xgd2_wave_from_pvd(pvd: Option<&[u8]>) -> Option<&'static str> {
     const WAVE_DATES: &[(&str, &str)] = &[
         ("2009011416000000", "XGD2 (Wave 3)"),
         ("2009082417000000", "XGD2 (Wave 4)"),
@@ -881,18 +881,17 @@ fn xgd2_wave_from_pvd(pvd: Option<&[u8]>) -> &'static str {
 
     let pvd = match pvd {
         Some(p) if p.len() >= 13 + 16 => p,
-        _ => return "XGD2 (Unknown)",
+        _ => return None,
     };
     let field = &pvd[13..13 + 16];
-    let creation: String = field[..16]
-        .iter()
-        .map(|&b| if b.is_ascii_digit() { b as char } else { '0' })
-        .collect();
+    if !field[..16].iter().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let creation: String = field[..16].iter().map(|&b| b as char).collect();
     WAVE_DATES
         .iter()
         .find(|(date, _)| *date == creation)
         .map(|(_, label)| *label)
-        .unwrap_or("XGD2 (Unknown)")
 }
 
 fn format_signed_offset(offset: Option<i32>) -> String {
