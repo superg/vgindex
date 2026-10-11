@@ -165,11 +165,16 @@ fn parse_internal(
         info.as_deref(),
     );
     result.media_type = result.system_code.as_deref().and_then(|system_code| {
-        let profile = latest_profile(&lines)?;
         let media_types = known_systems
             .iter()
             .find(|(code, _)| code == system_code)
             .map(|(_, media_types)| media_types.as_slice())?;
+        if matches!(system_code, "XBOX" | "XBOX360")
+            && media_types.iter().any(|m| m.eq_ignore_ascii_case("xgd"))
+        {
+            return Some("xgd".to_owned());
+        }
+        let profile = latest_profile(&lines)?;
         media_type_for_profile(profile, media_types)
     });
     if matches!(result.system_code.as_deref(), Some("GC" | "WII")) {
@@ -567,7 +572,11 @@ mod tests {
             ("DC".to_owned(), vec!["gdrom".to_owned(), "cd".to_owned()]),
             (
                 "XBOX".to_owned(),
-                vec!["dvd9".to_owned(), "dvd5".to_owned()],
+                vec!["xgd".to_owned(), "dvd9".to_owned(), "dvd5".to_owned()],
+            ),
+            (
+                "XBOX360".to_owned(),
+                vec!["xgd".to_owned(), "dvd9".to_owned(), "dvd5".to_owned()],
             ),
             ("PS3".to_owned(), vec!["bd25".to_owned()]),
             (

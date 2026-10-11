@@ -136,6 +136,8 @@ struct DiscViewTemplate {
     disc_id_text: String,
     sector_ranges: Vec<ProtectionRangeRow>,
     show_sector_ranges: bool,
+    xgd_type: String,
+    show_xgd_type: bool,
     header_rows: Vec<HeaderRow>,
     show_header: bool,
     bca_rows: Vec<HeaderRow>,
@@ -672,6 +674,12 @@ async fn disc_view(
     );
     let added_at = format_added_timestamp(detail.added_at.as_ref());
     let updated_at = format_minute_timestamp(detail.modified_at.as_ref());
+    let is_xgd = detail.disc.media_type.code() == "xgd";
+    let xgd_iso_size = is_xgd.then(|| {
+        detail.files.iter()
+            .find(|f| f.track_number.as_deref() == Some("0"))
+            .map(|f| f.size)
+    });
 
     Ok(Html(
         DiscViewTemplate {
@@ -733,15 +741,14 @@ async fn disc_view(
             show_barcode: detail.system.has_barcode,
             barcode_count: detail.disc.barcode.len(),
             barcode: join_sorted_identifier_values(&detail.disc.barcode),
-            layerbreaks: detail
-                .disc
-                .layerbreaks
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-                .map(|v| v.to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
+            layerbreaks: {
+                let breaks = detail.disc.layerbreaks.as_deref().unwrap_or_default();
+                if breaks.is_empty() && is_xgd {
+                    default_xgd_layerbreak(xgd_iso_size.flatten(), detail.disc.pvd.as_deref()).to_string()
+                } else {
+                    breaks.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")
+                }
+            },
             comments: format_comments(&detail.disc.comments.clone().unwrap_or_default()),
             contents: format_comments(&detail.disc.contents.clone().unwrap_or_default()),
             edc_display: if detail.disc.edc { "Yes" } else { "No" }.to_string(),
@@ -809,6 +816,12 @@ async fn disc_view(
             disc_id_text,
             sector_ranges,
             show_sector_ranges: detail.system.has_sector_ranges,
+            xgd_type: if is_xgd {
+                xgd_type_from_iso(xgd_iso_size.flatten(), detail.disc.pvd.as_deref()).to_string()
+            } else {
+                String::new()
+            },
+            show_xgd_type: is_xgd,
             header_rows,
             show_header: detail.system.has_header,
             bca_rows,
@@ -817,6 +830,68 @@ async fn disc_view(
         .render()
         .unwrap(),
     ))
+}
+
+fn default_xgd_layerbreak(iso_size: Option<i64>, pvd: Option<&[u8]>) -> &'static str {
+    match iso_size {
+        Some(0x1D26A8000) => "1913776 (default)",
+        Some(0x1D3301800 | 0x1D2FEF800 | 0x1D3082000) => "1913760 (default)",
+        Some(0x1D3390000) if xgd2_wave_from_pvd(pvd).is_some() => "1913760 (default)",
+        Some(0x208E03800) => "2133520 (default)",
+        _ => "",
+    }
+}
+
+fn xgd_type_from_iso(size: Option<i64>, pvd: Option<&[u8]>) -> &'static str {
+    match size {
+        Some(0x1D330C000) => "XGD1 (Beta)",
+        Some(0x1D26A8000) => "XGD1",
+        Some(0x1D3301800) => "XGD2 (Wave 0)",
+        Some(0x1D2FEF800) => "XGD2 (Wave 1)",
+        Some(0x1D3082000) => "XGD2 (Wave 2)",
+        Some(0x1D3390000) => xgd2_wave_from_pvd(pvd).unwrap_or("XGD2 (Unknown)"),
+        Some(0x1D31A0000) => "XGD2 (Hybrid)",
+        Some(0x208E05800) => "XGD3 (Beta)",
+        Some(0x208E03800) => "XGD3",
+        _ => "Unknown",
+    }
+}
+
+fn xgd2_wave_from_pvd(pvd: Option<&[u8]>) -> Option<&'static str> {
+    const WAVE_DATES: &[(&str, &str)] = &[
+        ("2009011416000000", "XGD2 (Wave 3)"),
+        ("2009082417000000", "XGD2 (Wave 4)"),
+        ("2009100517000000", "XGD2 (Wave 5)"),
+        ("2009102917000000", "XGD2 (Wave 6)"),
+        ("2010022116000000", "XGD2 (Wave 7)"),
+        ("2010090417000000", "XGD2 (Wave 8)"),
+        ("2010091517000000", "XGD2 (Wave 9)"),
+        ("2010102817000000", "XGD2 (Wave 10)"),
+        ("2011011816000000", "XGD2 (Wave 11)"),
+        ("2011061217000000", "XGD2 (Wave 12)"),
+        ("2011071217000000", "XGD2 (Wave 13)"),
+        ("2011120716000000", "XGD2 (Wave 14)"),
+        ("2012022116000000", "XGD2 (Wave 15)"),
+        ("2012062117000000", "XGD2 (Wave 16)"),
+        ("2012110716000000", "XGD2 (Wave 17)"),
+        ("2012111816000000", "XGD2 (Wave 18)"),
+        ("2013082617000000", "XGD2 (Wave 19)"),
+        ("2015042617000000", "XGD2 (Wave 20)"),
+    ];
+
+    let pvd = match pvd {
+        Some(p) if p.len() >= 13 + 16 => p,
+        _ => return None,
+    };
+    let field = &pvd[13..13 + 16];
+    if !field[..16].iter().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let creation: String = field[..16].iter().map(|&b| b as char).collect();
+    WAVE_DATES
+        .iter()
+        .find(|(date, _)| *date == creation)
+        .map(|(_, label)| *label)
 }
 
 fn format_signed_offset(offset: Option<i32>) -> String {
@@ -1786,6 +1861,8 @@ mod tests {
             disc_id_text: disc_id_text.to_string(),
             sector_ranges: Vec::new(),
             show_sector_ranges: false,
+            xgd_type: String::new(),
+            show_xgd_type: false,
             header_rows: Vec::new(),
             show_header: false,
             bca_rows: Vec::new(),
