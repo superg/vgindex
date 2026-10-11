@@ -369,13 +369,27 @@ fn block_header_code(line: &str) -> Option<&str> {
 
 fn system_code(lines: &[&str], known_system_codes: &[String]) -> Option<String> {
     let known: HashSet<&str> = known_system_codes.iter().map(String::as_str).collect();
-    lines.iter().find_map(|line| {
+    let code = lines.iter().find_map(|line| {
         let code = block_header_code(line)?;
         if code == "SecuROM" && known.contains("PC") {
             return Some("PC".to_owned());
         }
         known.contains(code).then(|| code.to_owned())
-    })
+    })?;
+    if code == "XBOX" && known.contains("XBOX360") {
+        let index = lines.iter().position(|line| block_header_code(line) == Some("XBOX"))?;
+        let block_end = lines[index + 1..]
+            .iter()
+            .position(|line| block_header_code(line).is_some())
+            .map(|offset| index + 1 + offset)
+            .unwrap_or(lines.len());
+        if scalar_value(&lines[index + 1..block_end], "system:")
+            .is_some_and(|value| value.starts_with("Xbox 360"))
+        {
+            return Some("XBOX360".to_owned());
+        }
+    }
+    Some(code)
 }
 
 fn protection_system_code(lines: &[&str], known_system_codes: &[String]) -> Option<String> {
@@ -833,6 +847,19 @@ SS [disc.bin]:\n\
         assert_eq!(
             parse(both, &systems()).exe_date.as_deref(),
             Some("2004-04-21")
+        );
+    }
+
+    #[test]
+    fn detect_xbox360_system_code() {
+        let systems = vec!["XBOX".to_owned(), "XBOX360".to_owned()];
+
+        let xbox360 = "*** INFO (time check: 0s)\n\
+XBOX [disc.iso]:\n\
+  system: Xbox 360 (XGD2)";
+        assert_eq!(
+            parse(xbox360, &systems).system_code.as_deref(),
+            Some("XBOX360")
         );
     }
 
