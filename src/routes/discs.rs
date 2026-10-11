@@ -474,12 +474,22 @@ fn hash_field_for_term(term: &str) -> Option<HashField> {
     }
 }
 
+fn like_escaped(expr: &str) -> String {
+    format!(r#"replace(replace(replace({expr}, '\', '\\'), '%', '\%'), '_', '\_')"#)
+}
+
+fn like_contains(expr: &str) -> String {
+    format!(r#"LIKE '%' || {} || '%' ESCAPE '\'"#, like_escaped(expr))
+}
+
 fn quick_search_clause(bind_idx: u32, hash_candidate_bind_idx: Option<u32>) -> String {
     let bind = format!("${bind_idx}");
+    let title_like = like_contains(&bind);
+    let serial_like = like_contains(&bind);
     let mut clause = format!(
-        r#"(LOWER(d.title) LIKE '%' || {bind} || '%'
-             OR LOWER(d.title_foreign) LIKE '%' || {bind} || '%'
-             OR compact_disc_array_search(d.serial) LIKE '%' || {bind} || '%'"#
+        r#"(LOWER(d.title) {title_like}
+             OR LOWER(d.title_foreign) {title_like}
+             OR compact_disc_array_search(d.serial) {serial_like}"#
     );
 
     if let Some(candidate_bind_idx) = hash_candidate_bind_idx {
@@ -573,7 +583,10 @@ fn title_text_search_clause(field: TitleTextField, bind_idx: u32, exact: bool) -
     let predicate = if exact {
         format!("d.{column} = ${bind_idx}")
     } else {
-        format!("LOWER(d.{column}) LIKE '%' || LOWER(${bind_idx}) || '%'")
+        format!(
+            "LOWER(d.{column}) {}",
+            like_contains(&format!("LOWER(${bind_idx})"))
+        )
     };
 
     match capability {
@@ -628,8 +641,10 @@ fn array_text_search_clause(field: ArrayTextField, bind_idx: u32, exact: bool) -
             "(s.{capability} AND compact_disc_array_search(d.{column}) LIKE '%' || compact_disc_array_search(ARRAY[${bind_idx}]::TEXT[]) || '%' AND EXISTS (SELECT 1 FROM unnest(d.{column}) AS filter_value(value) WHERE filter_value.value = ${bind_idx}))"
         )
     } else {
+        let compact_like = like_contains(&format!("${bind_idx}"));
+        let entry_like = like_contains(&format!("${bind_idx}"));
         format!(
-            "(s.{capability} AND compact_disc_array_search(d.{column}) LIKE '%' || ${bind_idx} || '%' AND EXISTS (SELECT 1 FROM unnest(d.{column}) AS filter_value(value) WHERE LOWER(REGEXP_REPLACE(filter_value.value, '[[:space:]]+', '', 'g')) LIKE '%' || ${bind_idx} || '%'))"
+            "(s.{capability} AND compact_disc_array_search(d.{column}) {compact_like} AND EXISTS (SELECT 1 FROM unnest(d.{column}) AS filter_value(value) WHERE LOWER(REGEXP_REPLACE(filter_value.value, '[[:space:]]+', '', 'g')) {entry_like}))"
         )
     }
 }
@@ -648,11 +663,17 @@ fn add_array_text_clauses(
 }
 
 fn comments_search_clause(bind_idx: u32) -> String {
-    format!("LOWER(d.comments) LIKE '%' || LOWER(${bind_idx}) || '%'")
+    format!(
+        "LOWER(d.comments) {}",
+        like_contains(&format!("LOWER(${bind_idx})"))
+    )
 }
 
 fn contents_search_clause(bind_idx: u32) -> String {
-    format!("LOWER(d.contents) LIKE '%' || LOWER(${bind_idx}) || '%'")
+    format!(
+        "LOWER(d.contents) {}",
+        like_contains(&format!("LOWER(${bind_idx})"))
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -678,8 +699,9 @@ impl RingTextField {
 
 fn ring_text_search_clause(field: RingTextField, bind_idx: u32) -> String {
     let column = field.column();
+    let ring_like = like_contains(&format!("LOWER(${bind_idx})"));
     format!(
-        "EXISTS (SELECT 1 FROM disc_ring_code_entries ring_entry JOIN disc_ring_code_layers ring_layer ON ring_layer.entry_id = ring_entry.id WHERE ring_entry.disc_id = d.id AND public.ringcode_field_search_text(ring_layer.{column}) LIKE '%' || LOWER(${bind_idx}) || '%')"
+        "EXISTS (SELECT 1 FROM disc_ring_code_entries ring_entry JOIN disc_ring_code_layers ring_layer ON ring_layer.entry_id = ring_entry.id WHERE ring_entry.disc_id = d.id AND public.ringcode_field_search_text(ring_layer.{column}) {ring_like})"
     )
 }
 
@@ -718,7 +740,10 @@ fn protection_search_clause(bind_idx: u32, is_logged_in: bool) -> String {
         "s.has_protection AND s.code NOT IN ('BD-VIDEO', 'HDDVD-VIDEO')"
     };
 
-    format!("({visibility} AND LOWER(d.protection) LIKE '%' || LOWER(${bind_idx}) || '%')")
+    format!(
+        "({visibility} AND LOWER(d.protection) {})",
+        like_contains(&format!("LOWER(${bind_idx})"))
+    )
 }
 
 fn normalize_status_filter(status: Option<&str>, can_view_disabled_discs: bool) -> String {
@@ -3178,7 +3203,9 @@ mod tests {
             assert_eq!(
                 array_text_search_clause(field, bind_idx, false),
                 format!(
-                    "(s.{capability} AND compact_disc_array_search(d.{column}) LIKE '%' || ${bind_idx} || '%' AND EXISTS (SELECT 1 FROM unnest(d.{column}) AS filter_value(value) WHERE LOWER(REGEXP_REPLACE(filter_value.value, '[[:space:]]+', '', 'g')) LIKE '%' || ${bind_idx} || '%'))"
+                    "(s.{capability} AND compact_disc_array_search(d.{column}) {compact} AND EXISTS (SELECT 1 FROM unnest(d.{column}) AS filter_value(value) WHERE LOWER(REGEXP_REPLACE(filter_value.value, '[[:space:]]+', '', 'g')) {entry}))",
+                    compact = like_contains(&format!("${bind_idx}")),
+                    entry = like_contains(&format!("${bind_idx}")),
                 )
             );
             assert_eq!(
@@ -3194,7 +3221,7 @@ mod tests {
     fn title_text_clauses_use_base_columns_and_gate_foreign_titles() {
         assert_eq!(
             title_text_search_clause(TitleTextField::Title, 5, false),
-            "LOWER(d.title) LIKE '%' || LOWER($5) || '%'"
+            format!("LOWER(d.title) {}", like_contains("LOWER($5)"))
         );
         assert_eq!(
             title_text_search_clause(TitleTextField::Title, 5, true),
@@ -3202,7 +3229,10 @@ mod tests {
         );
         assert_eq!(
             title_text_search_clause(TitleTextField::ForeignTitle, 6, false),
-            "(s.has_title_foreign AND LOWER(d.title_foreign) LIKE '%' || LOWER($6) || '%')"
+            format!(
+                "(s.has_title_foreign AND LOWER(d.title_foreign) {})",
+                like_contains("LOWER($6)")
+            )
         );
         assert_eq!(
             title_text_search_clause(TitleTextField::ForeignTitle, 6, true),
@@ -3236,7 +3266,10 @@ mod tests {
         );
 
         assert_eq!(bind_idx, 7);
-        assert_eq!(clauses[0], "LOWER(d.title) LIKE '%' || LOWER($5) || '%'");
+        assert_eq!(
+            clauses[0],
+            format!("LOWER(d.title) {}", like_contains("LOWER($5)"))
+        );
         assert_eq!(clauses[1], "(s.has_title_foreign AND d.title_foreign = $6)");
         assert!(clauses[2].contains("unnest(d.serial)"));
         assert!(clauses[2].contains("$7"));
@@ -3274,11 +3307,11 @@ mod tests {
 
         assert_eq!(
             comments_clause,
-            "LOWER(d.comments) LIKE '%' || LOWER($7) || '%'"
+            format!("LOWER(d.comments) {}", like_contains("LOWER($7)"))
         );
         assert_eq!(
             contents_clause,
-            "LOWER(d.contents) LIKE '%' || LOWER($8) || '%'"
+            format!("LOWER(d.contents) {}", like_contains("LOWER($8)"))
         );
     }
 
@@ -3361,11 +3394,17 @@ mod tests {
     fn protection_search_respects_system_and_guest_visibility() {
         assert_eq!(
             protection_search_clause(6, true),
-            "(s.has_protection AND LOWER(d.protection) LIKE '%' || LOWER($6) || '%')"
+            format!(
+                "(s.has_protection AND LOWER(d.protection) {})",
+                like_contains("LOWER($6)")
+            )
         );
         assert_eq!(
             protection_search_clause(6, false),
-            "(s.has_protection AND s.code NOT IN ('BD-VIDEO', 'HDDVD-VIDEO') AND LOWER(d.protection) LIKE '%' || LOWER($6) || '%')"
+            format!(
+                "(s.has_protection AND s.code NOT IN ('BD-VIDEO', 'HDDVD-VIDEO') AND LOWER(d.protection) {})",
+                like_contains("LOWER($6)")
+            )
         );
     }
 
