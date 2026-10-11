@@ -76,6 +76,9 @@
             {% if show_universal_hash && !universal_hash.is_empty() %}
             <tr><td><strong>Universal Hash</strong></td><td>{{ universal_hash }}</td></tr>
             {% endif %}
+            {% if show_xgd_type %}
+            <tr><td><strong>XGD Type</strong></td><td>{{ xgd_type }}</td></tr>
+            {% endif %}
         </table>
     </section>
 
