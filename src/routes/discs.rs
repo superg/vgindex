@@ -303,6 +303,9 @@ pub struct DiscsQuery {
     pub title_exact: Option<String>,
     pub title_foreign: Option<String>,
     pub title_foreign_exact: Option<String>,
+    pub disc_number: Option<String>,
+    pub disc_title: Option<String>,
+    pub disc_title_exact: Option<String>,
     pub serial: Option<String>,
     pub serial_exact: Option<String>,
     pub edition: Option<String>,
@@ -556,12 +559,16 @@ fn add_universal_hash_clause(
 enum TitleTextField {
     Title,
     ForeignTitle,
+    DiscNumber,
+    DiscTitle,
 }
 
 fn title_text_search_clause(field: TitleTextField, bind_idx: u32, exact: bool) -> String {
     let (column, capability) = match field {
         TitleTextField::Title => ("title", None),
         TitleTextField::ForeignTitle => ("title_foreign", Some("has_title_foreign")),
+        TitleTextField::DiscNumber => ("disc_number", Some("has_disc_number")),
+        TitleTextField::DiscTitle => ("disc_title", Some("has_disc_title")),
     };
     let predicate = if exact {
         format!("d.{column} = ${bind_idx}")
@@ -578,7 +585,7 @@ fn title_text_search_clause(field: TitleTextField, bind_idx: u32, exact: bool) -
 fn add_title_text_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
-    filters: [(TitleTextField, bool, bool); 2],
+    filters: [(TitleTextField, bool, bool); 4],
 ) {
     for (field, active, exact) in filters {
         if active {
@@ -819,6 +826,9 @@ struct DiscsTemplate {
     title_exact: bool,
     filter_title_foreign: String,
     title_foreign_exact: bool,
+    filter_disc_number: String,
+    filter_disc_title: String,
+    disc_title_exact: bool,
     filter_serial: String,
     serial_exact: bool,
     filter_edition: String,
@@ -879,6 +889,9 @@ impl DiscsTemplate {
             title_exact: self.title_exact,
             title_foreign: &self.filter_title_foreign,
             title_foreign_exact: self.title_foreign_exact,
+            disc_number: &self.filter_disc_number,
+            disc_title: &self.filter_disc_title,
+            disc_title_exact: self.disc_title_exact,
             serial: &self.filter_serial,
             serial_exact: self.serial_exact,
             edition: &self.filter_edition,
@@ -940,6 +953,9 @@ struct DiscsUrlOptions<'a> {
     title_exact: bool,
     title_foreign: &'a str,
     title_foreign_exact: bool,
+    disc_number: &'a str,
+    disc_title: &'a str,
+    disc_title_exact: bool,
     serial: &'a str,
     serial_exact: bool,
     edition: &'a str,
@@ -1007,6 +1023,7 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
     };
     let title_exact = exact_param(options.title_exact, options.title);
     let title_foreign_exact = exact_param(options.title_foreign_exact, options.title_foreign);
+    let disc_title_exact = exact_param(options.disc_title_exact, options.disc_title);
     let serial_exact = exact_param(options.serial_exact, options.serial);
     let edition_exact = exact_param(options.edition_exact, options.edition);
     let barcode_exact = exact_param(options.barcode_exact, options.barcode);
@@ -1026,6 +1043,9 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("title_exact", title_exact),
             ("title_foreign", options.title_foreign),
             ("title_foreign_exact", title_foreign_exact),
+            ("disc_number", options.disc_number),
+            ("disc_title", options.disc_title),
+            ("disc_title_exact", disc_title_exact),
             ("serial", options.serial),
             ("serial_exact", serial_exact),
             ("edition", options.edition),
@@ -1383,6 +1403,18 @@ async fn discs_page(
         .as_deref()
         .map(|value| scalar_text_bind_value(value, title_foreign_exact));
     let filter_title_foreign = title_foreign_bind.clone().unwrap_or_default();
+    let active_disc_number = active_verbatim_filter(query.disc_number.as_ref());
+    let disc_number_bind = active_disc_number
+        .as_deref()
+        .map(|value| scalar_text_bind_value(value, true));
+    let filter_disc_number = disc_number_bind.clone().unwrap_or_default();
+    let active_disc_title = active_verbatim_filter(query.disc_title.as_ref());
+    let disc_title_exact =
+        exact_filter_enabled(active_disc_title.as_ref(), query.disc_title_exact.as_deref());
+    let disc_title_bind = active_disc_title
+        .as_deref()
+        .map(|value| scalar_text_bind_value(value, disc_title_exact));
+    let filter_disc_title = disc_title_bind.clone().unwrap_or_default();
     let active_serial = active_verbatim_filter(query.serial.as_ref());
     let filter_serial = active_serial.clone().unwrap_or_default();
     let serial_exact = exact_filter_enabled(active_serial.as_ref(), query.serial_exact.as_deref());
@@ -1631,6 +1663,12 @@ async fn discs_page(
                 active_title_foreign.is_some(),
                 title_foreign_exact,
             ),
+            (TitleTextField::DiscNumber, active_disc_number.is_some(), true),
+            (
+                TitleTextField::DiscTitle,
+                active_disc_title.is_some(),
+                disc_title_exact,
+            ),
         ],
     );
     add_array_text_clauses(
@@ -1794,6 +1832,17 @@ async fn discs_page(
             }
         })
         .unwrap_or_default();
+    let count_key_disc_number = disc_number_bind.clone().unwrap_or_default();
+    let count_key_disc_title = disc_title_bind
+        .as_deref()
+        .map(|value| {
+            if disc_title_exact {
+                value.to_string()
+            } else {
+                value.to_lowercase()
+            }
+        })
+        .unwrap_or_default();
     let count_key_serial = serial_bind.clone().unwrap_or_default();
     let count_key_edition = edition_bind.clone().unwrap_or_default();
     let count_key_barcode = barcode_bind.clone().unwrap_or_default();
@@ -1848,6 +1897,9 @@ async fn discs_page(
             title_exact,
             title_foreign: &count_key_title_foreign,
             title_foreign_exact,
+            disc_number: &count_key_disc_number,
+            disc_title: &count_key_disc_title,
+            disc_title_exact,
             serial: &count_key_serial,
             serial_exact,
             edition: &count_key_edition,
@@ -1892,6 +1944,8 @@ async fn discs_page(
     }
 
     let count_requires_system_join = active_title_foreign.is_some()
+        || active_disc_number.is_some()
+        || active_disc_title.is_some()
         || active_serial.is_some()
         || active_edition.is_some()
         || active_barcode.is_some()
@@ -1981,6 +2035,12 @@ async fn discs_page(
     }
     if let Some(title_foreign) = &title_foreign_bind {
         bind_queries!(title_foreign.clone());
+    }
+    if let Some(disc_number) = &disc_number_bind {
+        bind_queries!(disc_number.clone());
+    }
+    if let Some(disc_title) = &disc_title_bind {
+        bind_queries!(disc_title.clone());
     }
     if let Some(serial) = &serial_bind {
         bind_queries!(serial.clone());
@@ -2149,6 +2209,9 @@ async fn discs_page(
             title_exact,
             filter_title_foreign,
             title_foreign_exact,
+            filter_disc_number,
+            filter_disc_title,
+            disc_title_exact,
             filter_serial,
             serial_exact,
             filter_edition,
@@ -2645,7 +2708,7 @@ mod tests {
             assert!(template.contains(&format!("id=\"{prefix}-exact\"")));
             assert!(template.contains(&format!("initExactRange('{prefix}')")));
         }
-        assert_eq!(template.matches("<span>Exact</span>").count(), 7);
+        assert_eq!(template.matches("<span>Exact</span>").count(), 8);
         assert!(template.contains("{% if tracks_exact %}checked{% endif %}"));
         assert!(template.contains("{% if errors_exact %}checked{% endif %}"));
         assert!(template.contains("max.value = min.value"));
@@ -2845,6 +2908,9 @@ mod tests {
                 title_exact: true,
                 title_foreign: "Foreign Title",
                 title_foreign_exact: true,
+                disc_number: "2",
+                disc_title: "Bonus Disc",
+                disc_title_exact: true,
                 serial: "SLUS 12345",
                 serial_exact: true,
                 edition: "Limited Edition",
@@ -2872,7 +2938,7 @@ mod tests {
                 page: 2,
                 advanced: true,
             }),
-            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset=123&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
+            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&disc_number=2&disc_title=Bonus%20Disc&disc_title_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset=123&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
         );
 
         assert_eq!(
@@ -3155,6 +3221,8 @@ mod tests {
             [
                 (TitleTextField::Title, true, false),
                 (TitleTextField::ForeignTitle, true, true),
+                (TitleTextField::DiscNumber, false, false),
+                (TitleTextField::DiscTitle, false, false),
             ],
         );
         add_array_text_clauses(
