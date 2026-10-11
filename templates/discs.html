@@ -106,6 +106,20 @@
                     </label>
                 </div>
             </div>
+            <label class="advanced-search-row">
+                <span>Disc Number</span>
+                <input type="text" id="disc-number-filter" name="disc_number" value="{{ filter_disc_number }}">
+            </label>
+            <div class="advanced-search-row">
+                <span id="disc-title-filter-label">Disc Title</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="disc-title-filter" name="disc_title" value="{{ filter_disc_title }}" aria-labelledby="disc-title-filter-label">
+                    <label class="text-exact-toggle" for="disc-title-exact">
+                        <input type="checkbox" id="disc-title-exact" name="disc_title_exact" value="1" data-requires-nonblank="disc_title" {% if disc_title_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
             <div class="advanced-search-row">
                 <span id="serial-filter-label">Disc Serial</span>
                 <div class="text-exact-controls">
@@ -281,6 +295,9 @@
                     {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
                     {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}
                     {% if title_foreign_exact %}<input type="hidden" name="title_foreign_exact" value="1">{% endif %}
+                    {% if !filter_disc_number.is_empty() %}<input type="hidden" name="disc_number" value="{{ filter_disc_number }}">{% endif %}
+                    {% if !filter_disc_title.is_empty() %}<input type="hidden" name="disc_title" value="{{ filter_disc_title }}">{% endif %}
+                    {% if disc_title_exact %}<input type="hidden" name="disc_title_exact" value="1">{% endif %}
                     {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
                     {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
                     {% if !filter_edition.is_empty() %}
@@ -387,6 +404,9 @@
                     {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
                     {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}
                     {% if title_foreign_exact %}<input type="hidden" name="title_foreign_exact" value="1">{% endif %}
+                    {% if !filter_disc_number.is_empty() %}<input type="hidden" name="disc_number" value="{{ filter_disc_number }}">{% endif %}
+                    {% if !filter_disc_title.is_empty() %}<input type="hidden" name="disc_title" value="{{ filter_disc_title }}">{% endif %}
+                    {% if disc_title_exact %}<input type="hidden" name="disc_title_exact" value="1">{% endif %}
                     {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
                     {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
                     {% if !filter_edition.is_empty() %}

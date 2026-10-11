@@ -685,6 +685,10 @@ nav[aria-label="Pagination"] ul {
     width: var(--advanced-system-control-width, 21.875rem);
     max-width: 100%;
 }
+#filter-form .advanced-search-row input[name="disc_number"],
+#filter-form.advanced-search-visible .advanced-search-row input[name="disc_number"] {
+    width: calc(3ch + 0.8rem + (var(--pico-border-width) * 2));
+}
 .text-exact-controls {
     display: flex;
     align-items: center;
