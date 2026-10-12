@@ -2260,6 +2260,7 @@ async fn review_submit(
         if !drafted {
             return Ok(Redirect::to("/queue").into_response());
         }
+        state.draft_count_cache.invalidate(sub.submitter_id).await;
         return Ok(Redirect::to("/queue").into_response());
     }
 
@@ -2687,6 +2688,9 @@ mod tests {
             ),
             transliteration: Arc::new(
                 crate::transliteration::TransliterationRegistry::new().unwrap(),
+            ),
+            draft_count_cache: crate::auth::middleware::DraftCountCache::new(
+                Duration::from_secs(60),
             ),
         }
     }

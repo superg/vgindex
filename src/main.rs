@@ -28,6 +28,7 @@ pub struct AppState {
     pub homepage_cache: routes::main_page::HomepageCache,
     pub discs_cache: routes::discs::DiscsCache,
     pub transliteration: Arc<transliteration::TransliterationRegistry>,
+    pub draft_count_cache: auth::middleware::DraftCountCache,
 }
 
 #[tokio::main]
@@ -76,6 +77,7 @@ async fn main() {
         )),
         discs_cache: routes::discs::DiscsCache::production(),
         transliteration,
+        draft_count_cache: auth::middleware::DraftCountCache::new(Duration::from_secs(5 * 60)),
     };
 
     tokio::spawn(run_session_cleanup(pool.clone()));

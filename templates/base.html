@@ -61,12 +61,15 @@
                                 <span class="user-menu-silhouette">👤</span>
                                 {% endmatch %}
                             </span>
+                            {% if user.draft_count > 0 %}
+                            <a class="draft-badge" href="/queue?status=Draft&amp;submitter={{ self.url_encode(user.username) }}" aria-label="{{ user.draft_count }} draft submission{% if user.draft_count != 1 %}s{% endif %}">{{ user.draft_count }}</a>
+                            {% endif %}
                             <span class="user-menu-username">{{ user.username }}</span>
                         </button>
                         <ul class="submenu user-submenu">
                             <li><a href="/disc/submit">Add Disc</a></li>
                             <li><a href="/discs?dumper={{ self.url_encode(user.username) }}">My Discs</a></li>
-                            <li><a href="/queue?status=Pending%20and%20Draft&amp;submitter={{ self.url_encode(user.username) }}">My Submissions</a></li>
+                            <li{% if user.draft_count > 0 %} class="has-drafts"{% endif %}><a href="/queue?status=Pending%20and%20Draft&amp;submitter={{ self.url_encode(user.username) }}">My Submissions</a></li>
                             {% if user.role.can_moderate() %}
                             <li><a href="/maintenance">Maintenance</a></li>
                             {% endif %}
