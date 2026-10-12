@@ -392,6 +392,25 @@ table.striped td {
     font-size: 0.75rem;
 }
 
+/* 404 page */
+.not-found-page-title {
+    text-align: center;
+    margin-bottom: 0.75rem;
+}
+.not-found-body {
+    max-width: 820px;
+    margin: 0 auto;
+    text-align: center;
+}
+.not-found-message {
+    font-size: 0.85rem;
+    text-align: center;
+    color: #565e6a;
+}
+[data-theme="dark"] .not-found-message {
+    color: #C8CED8;
+}
+
 /* Downloads page heading and description */
 .downloads-page-title {
     text-align: center;
