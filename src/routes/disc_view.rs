@@ -1010,18 +1010,18 @@ fn format_frames_as_msf(frames: u32) -> String {
     format!("{minutes:02}:{seconds:02}:{frame:02}")
 }
 
-fn parse_session_from_rem(line: &str) -> Option<u32> {
+fn parse_session_from_rem(line: &str) -> Option<(u32, Option<&'static str>)> {
     let upper = line.to_ascii_uppercase();
     if upper.starts_with("REM SINGLE-DENSITY AREA") {
-        return Some(1);
+        return Some((1, Some("SINGLE-DENSITY AREA")));
     }
     if upper.starts_with("REM HIGH-DENSITY AREA") {
-        return Some(2);
+        return Some((2, Some("HIGH-DENSITY AREA")));
     }
     if !upper.starts_with("REM SESSION ") {
         return None;
     }
-    line[12..].trim().parse::<u32>().ok()
+    line[12..].trim().parse::<u32>().ok().map(|n| (n, None))
 }
 
 fn parse_flags_line(line: &str) -> Option<Vec<String>> {
@@ -1047,7 +1047,7 @@ fn parse_cue_tracks_with_sessions(cue: &str) -> Vec<ParsedCueTrack> {
             continue;
         }
 
-        if let Some(session_num) = parse_session_from_rem(line) {
+        if let Some((session_num, _)) = parse_session_from_rem(line) {
             current_session = session_num;
             continue;
         }
@@ -1100,6 +1100,14 @@ fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
         return Vec::new();
     }
 
+    let session_labels: std::collections::HashMap<u32, &'static str> = cue
+        .lines()
+        .filter_map(|l| {
+            let (num, label) = parse_session_from_rem(l.trim())?;
+            label.map(|lbl| (num, lbl))
+        })
+        .collect();
+
     let mut sectors_by_track = std::collections::HashMap::<u32, u32>::new();
     for f in files {
         if let Some(track_str) = f.track_number.as_deref() {
@@ -1123,10 +1131,14 @@ fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
 
     for track in parsed_tracks {
         if show_sessions && last_session != Some(track.session_num) {
+            let label = match session_labels.get(&track.session_num) {
+                Some(density) => format!("Session {} - {}", track.session_num, density),
+                None => format!("Session {}", track.session_num),
+            };
             rows.push(ViewTrackTableRow {
                 is_session_header: true,
                 is_total_row: false,
-                session_label: format!("Session {}", track.session_num),
+                session_label: label,
                 track_num: String::new(),
                 type_display: String::new(),
                 flags_display: String::new(),
