@@ -1039,6 +1039,42 @@ pub fn build_sbi_binary(sbi_text: &str) -> Vec<u8> {
     buf
 }
 
+pub fn build_lsd_binary(sbi_text: &str) -> Vec<u8> {
+    let mut buf: Vec<u8> = Vec::new();
+    for line in sbi_text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let msf_str = match line.strip_prefix("MSF: ") {
+            Some(s) => s.split_whitespace().next().unwrap_or(""),
+            None => continue,
+        };
+        let msf_parts: Vec<&str> = msf_str.split(':').collect();
+        if msf_parts.len() != 3 {
+            continue;
+        }
+        let msf_bytes: Vec<u8> = msf_parts
+            .iter()
+            .filter_map(|p| u8::from_str_radix(p, 16).ok())
+            .collect();
+        if msf_bytes.len() != 3 {
+            continue;
+        }
+        let qdata_str = match line.find("Q-Data: ") {
+            Some(i) => &line[i + 8..],
+            None => continue,
+        };
+        let qdata = parse_qdata_bytes(qdata_str);
+        if qdata.len() < 12 {
+            continue;
+        }
+        buf.extend_from_slice(&msf_bytes);
+        buf.extend_from_slice(&qdata[..12]);
+    }
+    buf
+}
+
 pub fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
