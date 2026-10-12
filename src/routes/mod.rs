@@ -9,15 +9,38 @@ pub mod main_page;
 pub mod maintenance;
 pub mod queue;
 
+use askama::Template;
+use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
+use crate::config::SiteConfig;
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 use axum::{
     extract::{rejection::PathRejection, Path, Request},
     http::{header, StatusCode, Uri},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     Router,
 };
+
+#[derive(Template)]
+#[template(path = "not_found.html")]
+struct NotFoundTemplate {
+    current_user: Option<AuthenticatedUser>,
+}
+impl SiteConfig for NotFoundTemplate {}
+
+async fn not_found_handler(user: CurrentUser) -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Html(
+            NotFoundTemplate {
+                current_user: user.user().cloned(),
+            }
+            .render()
+            .unwrap(),
+        ),
+    )
+}
 
 pub fn build_router() -> Router<AppState> {
     Router::new()
@@ -32,6 +55,7 @@ pub fn build_router() -> Router<AppState> {
         .merge(api::routes())
         .merge(maintenance::routes())
         .merge(about::routes())
+        .fallback(not_found_handler)
 }
 
 pub(crate) fn path_i32(path: Result<Path<i32>, PathRejection>) -> AppResult<i32> {
