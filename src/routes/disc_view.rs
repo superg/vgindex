@@ -67,6 +67,7 @@ pub fn routes() -> Router<AppState> {
         .route("/disc/{id}", get(disc_view))
         .route("/disc/{id}/cue", get(disc_cue_download))
         .route("/disc/{id}/sbi", get(disc_sbi_download))
+        .route("/disc/{id}/lsd", get(disc_lsd_download))
 }
 
 #[derive(Template)]
@@ -1633,6 +1634,55 @@ async fn disc_sbi_download(
         detail.disc.filename_suffix.as_deref(),
     );
     let filename = format!("{rom_base_name}.sbi");
+    let disposition = format!("attachment; filename=\"{filename}\"");
+
+    Ok((
+        [
+            (
+                http::header::CONTENT_TYPE,
+                "application/octet-stream".to_string(),
+            ),
+            (http::header::CONTENT_DISPOSITION, disposition),
+        ],
+        buf,
+    ))
+}
+
+async fn disc_lsd_download(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    id: Result<Path<i32>, PathRejection>,
+) -> AppResult<impl IntoResponse> {
+    let id = crate::routes::path_i32(id)?;
+    let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
+
+    if !detail
+        .system
+        .has_sbi_for_media_type(&detail.disc.media_type)
+    {
+        return Err(AppError::NotFound);
+    }
+
+    let sbi_text = detail
+        .disc
+        .sbi
+        .filter(|s| !s.is_empty())
+        .ok_or(AppError::NotFound)?;
+
+    let buf = build_lsd_binary(&sbi_text);
+
+    let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
+    let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
+    let rom_base_name = build_rom_base_name(
+        &detail.disc.title,
+        &region_names,
+        &language_codes,
+        detail.disc.disc_number.as_deref(),
+        detail.disc.disc_title.as_deref(),
+        detail.disc.filename_suffix.as_deref(),
+    );
+    let filename = format!("{rom_base_name}.lsd");
     let disposition = format!("attachment; filename=\"{filename}\"");
 
     Ok((
