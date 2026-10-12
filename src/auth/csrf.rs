@@ -62,6 +62,7 @@ mod tests {
             role: UserRole::User,
             csrf_token: "known-csrf-token".to_string(),
             avatar_url: None,
+            draft_count: 0,
         }
     }
 

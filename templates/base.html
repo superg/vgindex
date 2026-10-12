@@ -51,6 +51,7 @@
                     {% match current_user %}
                     {% when Some with (user) %}
                     <li class="has-submenu user-menu">
+                        <span class="user-menu-button-wrap">
                         <button class="user-menu-button submenu-label" type="button" aria-label="User menu" aria-haspopup="true">
                             <span class="user-menu-icon" aria-hidden="true">
                                 {% match user.avatar_url %}
@@ -61,11 +62,12 @@
                                 <span class="user-menu-silhouette">👤</span>
                                 {% endmatch %}
                             </span>
-                            {% if user.draft_count > 0 %}
-                            <a class="draft-badge" href="/queue?status=Draft&amp;submitter={{ self.url_encode(user.username) }}" aria-label="{{ user.draft_count }} draft submission{% if user.draft_count != 1 %}s{% endif %}">{{ user.draft_count }}</a>
-                            {% endif %}
                             <span class="user-menu-username">{{ user.username }}</span>
                         </button>
+                        {% if user.draft_count > 0 %}
+                        <a class="draft-badge" href="/queue?status=Draft&amp;submitter={{ self.url_encode(user.username) }}" aria-label="{{ user.draft_count }} draft submission{% if user.draft_count != 1 %}s{% endif %}">{{ user.draft_count }}</a>
+                        {% endif %}
+                        </span>
                         <ul class="submenu user-submenu">
                             <li><a href="/disc/submit">Add Disc</a></li>
                             <li><a href="/discs?dumper={{ self.url_encode(user.username) }}">My Discs</a></li>

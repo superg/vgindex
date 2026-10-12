@@ -1847,6 +1847,11 @@ header .site-nav-top {
 .user-menu-silhouette {
     line-height: 1;
 }
+.user-menu-button-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
 .draft-badge {
     position: absolute;
     top: 0;

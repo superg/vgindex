@@ -3324,6 +3324,7 @@ mod tests {
             role,
             csrf_token: "test-csrf-token".to_string(),
             avatar_url: None,
+            draft_count: 0,
         }
     }
 
@@ -3441,6 +3442,7 @@ mod tests {
                 role: UserRole::Moderator,
                 csrf_token: "test-csrf-token".to_string(),
                 avatar_url: Some("https://example.test/avatar.png".to_string()),
+                draft_count: 0,
             }),
             submission_id: 1,
             submission_type_display: "Edit".to_string(),
