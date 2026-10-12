@@ -1020,7 +1020,9 @@ function renderLayerbreaks() {
     var container = document.getElementById('layerbreak-list');
     if (!row || !container) return;
     var ml = getMaxLayers();
-    var count = ml - 1;
+    var mediaSel = document.getElementById('media-select');
+    var hasDummy = mediaSel && typeof MEDIA_HAS_DUMMY_LAYER !== 'undefined' && !!MEDIA_HAS_DUMMY_LAYER[mediaSel.value];
+    var count = hasDummy ? ml - 2 : ml - 1;
     if (count <= 0) {
         row.style.display = 'none';
         return;

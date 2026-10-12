@@ -666,7 +666,7 @@ pub async fn get_system(pool: &PgPool, code: &str) -> AppResult<System> {
 
 async fn enrich_media_type(pool: &PgPool, disc: &mut Disc) -> AppResult<()> {
     let row: MediaTypeRow = sqlx::query_as(
-        "SELECT code, name, layer_count, pic, rom_extension FROM media_types WHERE code = $1",
+        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer FROM media_types WHERE code = $1",
     )
     .bind(disc.media_type.code())
     .fetch_one(pool)
@@ -1387,6 +1387,7 @@ mod tests {
             layer_count: 2,
             pic: false,
             rom_extension: "iso".to_string(),
+            has_dummy_layer: false,
         }
         .into();
         let detail = DiscDetail {
@@ -1598,7 +1599,7 @@ pub async fn regenerate_cue_entry(conn: &mut PgConnection, disc_id: i32) -> AppR
         .await?
         .ok_or(AppError::NotFound)?;
     let media_type: MediaTypeRow = sqlx::query_as(
-        "SELECT code, name, layer_count, pic, rom_extension FROM media_types WHERE code = $1",
+        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer FROM media_types WHERE code = $1",
     )
     .bind(disc.media_type.code())
     .fetch_one(&mut *conn)

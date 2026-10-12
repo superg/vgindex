@@ -12,6 +12,7 @@ pub struct MediaType {
     layer_count: i32,
     pic: bool,
     rom_extension: String,
+    has_dummy_layer: bool,
 }
 
 impl MediaType {
@@ -69,6 +70,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for MediaType {
             layer_count: 1,
             pic: false,
             rom_extension: String::new(),
+            has_dummy_layer: false,
         })
     }
 }
@@ -89,6 +91,7 @@ pub struct MediaTypeRow {
     pub layer_count: i32,
     pub pic: bool,
     pub rom_extension: String,
+    pub has_dummy_layer: bool,
 }
 
 impl From<MediaTypeRow> for MediaType {
@@ -99,6 +102,7 @@ impl From<MediaTypeRow> for MediaType {
             layer_count: row.layer_count,
             pic: row.pic,
             rom_extension: row.rom_extension,
+            has_dummy_layer: row.has_dummy_layer,
         }
     }
 }
@@ -1087,6 +1091,7 @@ mod tests {
             layer_count: 1,
             pic: false,
             rom_extension: rom_extension.to_string(),
+            has_dummy_layer: false,
         }
     }
 
