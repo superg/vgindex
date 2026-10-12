@@ -1265,6 +1265,38 @@ function enableAddMinimalFieldsForSubmit(form) {
     });
 }
 
+function initDumpLogDragDrop() {
+    var textarea = document.querySelector('textarea[name="dump_log"]');
+    var button = document.getElementById('dump-log-fill-btn');
+    if (!textarea || !button) return;
+
+    textarea.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    });
+
+    textarea.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var file = e.dataTransfer.files[0];
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith('.log')) {
+            setDumpLogFillStatus('Only redumper .log files are supported.');
+            return;
+        }
+        if (file.size > 4 * 1024 * 1024) {
+            setDumpLogFillStatus('Log file is too large.');
+            return;
+        }
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+            textarea.value = ev.target.result;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            button.click();
+        };
+        reader.readAsText(file);
+    });
+}
+
 function initDumpLogFill() {
     var button = document.getElementById('dump-log-fill-btn');
     var textarea = document.querySelector('textarea[name="dump_log"]');
@@ -1351,6 +1383,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initFlagListToggle();
     initTransliterate();
     initDumpLogFill();
+    initDumpLogDragDrop();
     initIndependentInlineResizing();
     fitDiscMetaFields();
     fitAllInlineGroups();

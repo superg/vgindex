@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::post,
@@ -13,10 +13,13 @@ use crate::services::{disc_service, redumper_log};
 use crate::transliteration::{Script, TransliterationError};
 use crate::AppState;
 
+const MAX_API_BODY_BYTES: usize = 4 * 1024 * 1024;
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/transliterate", post(transliterate))
         .route("/api/parse-redumper-log", post(parse_redumper_log))
+        .layer(DefaultBodyLimit::max(MAX_API_BODY_BYTES))
 }
 
 /// Transliterate a non-Latin title into a Latin-script draft for the Main Title
