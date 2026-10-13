@@ -1256,6 +1256,7 @@ function applyParsedRedumperLog(data) {
         var lbInputs = document.querySelectorAll('input[name="layerbreak"]');
         for (var lbi = 0; lbi < lbInputs.length && lbi < data.layerbreaks.length; lbi++) {
             lbInputs[lbi].value = String(data.layerbreaks[lbi]);
+            LAYERBREAKS[lbi] = lbInputs[lbi].value;
             lbInputs[lbi].dispatchEvent(new Event('input', { bubbles: true }));
             applied += 1;
         }
