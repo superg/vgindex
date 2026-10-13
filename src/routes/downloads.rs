@@ -228,13 +228,11 @@ fn normalize_archive_system_code(system: &str) -> String {
     system.trim().to_ascii_uppercase()
 }
 
-fn dat_archive_type_for_features(features: &str) -> Option<&'static str> {
-    match features.trim().to_ascii_lowercase().as_str() {
-        "serial" | "version" | "serial,version" | "version,serial" => {
-            Some(archive_service::DAT_SERIAL_VERSION_ARCHIVE_TYPE)
-        }
-        _ => None,
-    }
+fn dat_archive_type_for_features(features: &str) -> bool {
+    matches!(
+        features.trim().to_ascii_lowercase().as_str(),
+        "serial" | "version" | "serial,version" | "version,serial"
+    )
 }
 
 async fn serve_archive(state: &AppState, system: &str, archive_type: &str) -> Response {
@@ -259,13 +257,15 @@ async fn download_dat(State(state): State<AppState>, Path(system): Path<String>)
     serve_archive(&state, &system, "dat").await
 }
 
+// Legacy routes: /datfile/{system}/serial, /datfile/{system}/version, /datfile/{system}/serial,version
 async fn download_dat_variant(
     State(state): State<AppState>,
     Path((system, features)): Path<(String, String)>,
 ) -> Response {
-    match dat_archive_type_for_features(&features) {
-        Some(archive_type) => serve_archive(&state, &system, archive_type).await,
-        None => AppError::NotFound.into_response(),
+    if dat_archive_type_for_features(&features) {
+        serve_archive(&state, &system, "dat").await
+    } else {
+        AppError::NotFound.into_response()
     }
 }
 
@@ -499,14 +499,6 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
 
-    #[test]
-    fn downloads_page_shows_serial_version_dat_links() {
-        let html = template(false).render().unwrap();
-
-        assert!(html.contains(r#"/datfile/PS3/serial,version"#));
-        assert!(html.contains(">Dat + Serial/Version<"));
-    }
-
     #[tokio::test]
     async fn bios_download_serves_file_with_attachment_headers() {
         let response = routes()
@@ -572,25 +564,17 @@ mod tests {
     }
 
     #[test]
-    fn dat_feature_aliases_use_serial_version_archive() {
-        for features in ["serial", "version", "serial,version", "version,serial"] {
-            assert_eq!(
-                dat_archive_type_for_features(features),
-                Some(archive_service::DAT_SERIAL_VERSION_ARCHIVE_TYPE)
-            );
+    fn dat_feature_aliases_redirect_to_dat() {
+        for features in ["serial", "version", "serial,version", "version,serial", "Serial,Version"] {
+            assert!(dat_archive_type_for_features(features));
         }
-
-        assert_eq!(
-            dat_archive_type_for_features("Serial,Version"),
-            Some(archive_service::DAT_SERIAL_VERSION_ARCHIVE_TYPE)
-        );
     }
 
     #[test]
     fn invalid_dat_feature_aliases_are_rejected() {
-        assert_eq!(dat_archive_type_for_features("serials"), None);
-        assert_eq!(dat_archive_type_for_features("serial/version"), None);
-        assert_eq!(dat_archive_type_for_features("serial,version,extra"), None);
+        assert!(!dat_archive_type_for_features("serials"));
+        assert!(!dat_archive_type_for_features("serial/version"));
+        assert!(!dat_archive_type_for_features("serial,version,extra"));
     }
 
     #[tokio::test]

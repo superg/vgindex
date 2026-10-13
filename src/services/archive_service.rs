@@ -8,7 +8,6 @@ use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 
 const ARCHIVE_CACHE_VERSION: &str = "v2";
-pub const DAT_SERIAL_VERSION_ARCHIVE_TYPE: &str = "dat-serial-version";
 
 pub struct ArchiveResult {
     pub data: Vec<u8>,
@@ -206,15 +205,9 @@ pub async fn regenerate_system_archives(
     let Some(sys) = sys else { return Ok(()) };
 
     let ts = timestamp_now();
-    let datfiles = generate_datfile_archives(pool, metadata, &sys, &ts).await?;
-    store_archive(&sys.code, "dat", &datfiles.standard)
+    let datfile = generate_datfile_archive(pool, metadata, &sys, &ts).await?;
+    store_archive(&sys.code, "dat", &datfile)
         .map_err(|e| AppError::Internal(e.to_string()))?;
-    store_archive(
-        &sys.code,
-        DAT_SERIAL_VERSION_ARCHIVE_TYPE,
-        &datfiles.serial_version,
-    )
-    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let has_bin_media = system_has_bin_media(pool, &sys.media_types).await;
     if archive_type_supported_by_system(&sys, "cue", has_bin_media).unwrap_or(false) {
@@ -281,7 +274,7 @@ fn archive_type_supported_by_system(
     has_bin_media: bool,
 ) -> AppResult<bool> {
     match archive_type {
-        "dat" | DAT_SERIAL_VERSION_ARCHIVE_TYPE => Ok(true),
+        "dat" => Ok(true),
         "cue" => Ok(has_bin_media),
         "key" => Ok(sys.has_key),
         "sbi" => Ok(sys.has_sbi && has_bin_media),
@@ -294,10 +287,7 @@ async fn archive_type_is_available(
     system: &str,
     archive_type: &str,
 ) -> AppResult<bool> {
-    if !matches!(
-        archive_type,
-        "dat" | DAT_SERIAL_VERSION_ARCHIVE_TYPE | "cue" | "key" | "sbi"
-    ) {
+    if !matches!(archive_type, "dat" | "cue" | "key" | "sbi") {
         return Err(AppError::NotFound);
     }
 
@@ -375,23 +365,12 @@ struct DatfileDisc {
     rom_extension: String,
 }
 
-struct DatfileArchives {
-    standard: ArchiveResult,
-    serial_version: ArchiveResult,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum DatfileVariant {
-    Standard,
-    SerialVersion,
-}
-
-async fn generate_datfile_archives(
+async fn generate_datfile_archive(
     pool: &PgPool,
     metadata: &ArchiveMetadata,
     sys: &System,
     ts: &str,
-) -> AppResult<DatfileArchives> {
+) -> AppResult<ArchiveResult> {
     let discs: Vec<DatfileDisc> = sqlx::query_as(
         "SELECT d.id, d.title,
                 d.filename_suffix, d.disc_number, d.disc_title,
@@ -413,33 +392,9 @@ async fn generate_datfile_archives(
     let dat_name = sys.dat_system_name();
     let games = build_datfile_games(pool, sys, &discs).await?;
 
-    let standard_description = format!("{} - Datfile ({}) ({})", dat_name, disc_count, ts);
-    let serial_version_description = format!(
-        "{} - Datfile (serial,version) ({}) ({})",
-        dat_name, disc_count, ts
-    );
-
-    let standard_xml = render_datfile_xml(
-        metadata,
-        &dat_name,
-        &standard_description,
-        &ts,
-        &games,
-        DatfileVariant::Standard,
-    );
-    let serial_version_xml = render_datfile_xml(
-        metadata,
-        &dat_name,
-        &serial_version_description,
-        &ts,
-        &games,
-        DatfileVariant::SerialVersion,
-    );
-
-    Ok(DatfileArchives {
-        standard: zip_datfile_xml(&standard_description, &standard_xml)?,
-        serial_version: zip_datfile_xml(&serial_version_description, &serial_version_xml)?,
-    })
+    let description = format!("{} - Datfile ({}) ({})", dat_name, disc_count, ts);
+    let xml = render_datfile_xml(metadata, &dat_name, &description, &ts, &games);
+    zip_datfile_xml(&description, &xml)
 }
 
 async fn build_datfile_games(
@@ -513,7 +468,6 @@ fn render_datfile_xml(
     description: &str,
     ts: &str,
     games: &[GameEntry],
-    variant: DatfileVariant,
 ) -> String {
     let mut xml = format!(
         r#"<?xml version="1.0"?>
@@ -545,16 +499,14 @@ fn render_datfile_xml(
             cat = html_escape(&game.category),
         ));
 
-        if variant == DatfileVariant::SerialVersion {
-            if let Some(serial) = dat_serial_text(&game.serials) {
-                xml.push_str(&format!("\t\t<serial>{}</serial>\n", html_escape(&serial)));
-            }
-            if let Some(version) = dat_version_text(game.version.as_deref()) {
-                xml.push_str(&format!(
-                    "\t\t<version>{}</version>\n",
-                    html_escape(version)
-                ));
-            }
+        if let Some(serial) = dat_serial_text(&game.serials) {
+            xml.push_str(&format!("\t\t<serial>{}</serial>\n", html_escape(&serial)));
+        }
+        if let Some(version) = dat_version_text(game.version.as_deref()) {
+            xml.push_str(&format!(
+                "\t\t<version>{}</version>\n",
+                html_escape(version)
+            ));
         }
 
         xml.push_str(&format!(
@@ -740,7 +692,7 @@ mod tests {
         }
     }
 
-    fn render_test_datfile(games: &[GameEntry], variant: DatfileVariant) -> String {
+    fn render_test_datfile(games: &[GameEntry]) -> String {
         let metadata = ArchiveMetadata::from_site_url("https://redump.info");
         render_datfile_xml(
             &metadata,
@@ -748,7 +700,6 @@ mod tests {
             "Console - Example - System - Datfile (1) (2026-06-21 00-00-00)",
             "2026-06-21 00-00-00",
             games,
-            variant,
         )
     }
 
@@ -771,10 +722,9 @@ mod tests {
     }
 
     #[test]
-    fn serial_version_datfile_renders_extra_nodes_before_description() {
+    fn datfile_renders_serial_version_nodes_before_description() {
         let xml = render_test_datfile(
             &[game_entry(vec!["ABC-001", "DEF & 002"], Some("1 < 2"))],
-            DatfileVariant::SerialVersion,
         );
 
         let category = xml
@@ -794,26 +744,14 @@ mod tests {
     }
 
     #[test]
-    fn serial_version_datfile_omits_blank_extra_nodes() {
+    fn datfile_omits_blank_serial_version_nodes() {
         let xml = render_test_datfile(
             &[game_entry(vec!["", "  "], Some("  "))],
-            DatfileVariant::SerialVersion,
         );
         let game_xml = &xml[xml.find("\t<game").unwrap()..];
 
         assert!(!game_xml.contains("\t\t<serial>"));
         assert!(!game_xml.contains("\t\t<version>"));
-    }
-
-    #[test]
-    fn standard_datfile_does_not_render_serial_version_nodes() {
-        let xml = render_test_datfile(
-            &[game_entry(vec!["ABC-001"], Some("1.00"))],
-            DatfileVariant::Standard,
-        );
-
-        assert!(!xml.contains("\t\t<serial>"));
-        assert!(!xml.contains("\t\t<version>1.00</version>"));
     }
 
     #[test]
@@ -861,12 +799,7 @@ mod tests {
 
         assert!(archive_type_supported_by_system(&key_system, "key", false).unwrap());
         assert!(!archive_type_supported_by_system(&plain_system, "key", false).unwrap());
-        assert!(archive_type_supported_by_system(
-            &plain_system,
-            DAT_SERIAL_VERSION_ARCHIVE_TYPE,
-            false
-        )
-        .unwrap());
+        assert!(archive_type_supported_by_system(&plain_system, "dat", false).unwrap());
         assert!(archive_type_supported_by_system(&sbi_system, "sbi", true).unwrap());
         assert!(!archive_type_supported_by_system(&sbi_system, "sbi", false).unwrap());
         assert!(!archive_type_supported_by_system(&plain_system, "sbi", false).unwrap());
