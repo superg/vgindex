@@ -1252,6 +1252,16 @@ function applyParsedRedumperLog(data) {
         }
     }
 
+    if (Array.isArray(data.layerbreaks) && data.layerbreaks.length > 0) {
+        var lbInputs = document.querySelectorAll('input[name="layerbreak"]');
+        for (var lbi = 0; lbi < lbInputs.length && lbi < data.layerbreaks.length; lbi++) {
+            lbInputs[lbi].value = String(data.layerbreaks[lbi]);
+            lbInputs[lbi].dispatchEvent(new Event('input', { bubbles: true }));
+            applied += 1;
+        }
+        fitAllInlineGroups();
+    }
+
     fitDiscMetaFields();
     fitAllInlineGroups();
     return applied;
