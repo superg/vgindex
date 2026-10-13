@@ -1794,7 +1794,7 @@ async fn discs_page(
     let sort_col = match sort_column.as_str() {
         "region" => {
             sort_cte = "WITH region_sort AS MATERIALIZED (
-                SELECT dr.disc_id, MIN(r.sort_order) AS sort_value
+                SELECT dr.disc_id, ARRAY_AGG(r.sort_order ORDER BY r.sort_order) AS sort_value
                 FROM disc_regions dr
                 JOIN regions r ON r.code = dr.region_code
                 GROUP BY dr.disc_id
@@ -1809,7 +1809,7 @@ async fn discs_page(
         "edition" => "LOWER(arr_to_str(d.edition, ', '))",
         "language" => {
             sort_cte = "WITH language_sort AS MATERIALIZED (
-                SELECT dl.disc_id, MIN(l.sort_order) AS sort_value
+                SELECT dl.disc_id, ARRAY_AGG(l.sort_order ORDER BY l.sort_order) AS sort_value
                 FROM disc_languages dl
                 JOIN languages l ON l.code = dl.language_code
                 GROUP BY dl.disc_id
