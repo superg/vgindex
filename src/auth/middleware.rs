@@ -7,6 +7,7 @@ use axum::{
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration as StdDuration, Instant};
 use tokio::sync::RwLock;
 
 use crate::auth::session;
@@ -31,37 +32,55 @@ pub struct AuthenticatedUser {
     pub draft_count: i64,
 }
 
+struct TimedCount {
+    loaded_at: Instant,
+    value: i64,
+}
+
 #[derive(Clone)]
 pub struct DraftCountCache {
-    values: Arc<RwLock<HashMap<i32, i64>>>,
+    values: Arc<RwLock<HashMap<i32, TimedCount>>>,
+    ttl: StdDuration,
 }
 
 impl DraftCountCache {
-    pub fn new() -> Self {
+    pub fn new(ttl: StdDuration) -> Self {
         Self {
             values: Arc::new(RwLock::new(HashMap::new())),
+            ttl,
         }
     }
 
     async fn get(&self, user_id: i32) -> Option<i64> {
-        self.values.read().await.get(&user_id).copied()
+        self.values
+            .read()
+            .await
+            .get(&user_id)
+            .filter(|entry| entry.loaded_at.elapsed() < self.ttl)
+            .map(|entry| entry.value)
     }
 
     async fn insert(&self, user_id: i32, value: i64) {
-        self.values.write().await.insert(user_id, value);
+        self.values.write().await.insert(
+            user_id,
+            TimedCount {
+                loaded_at: Instant::now(),
+                value,
+            },
+        );
     }
 
     pub async fn increment(&self, user_id: i32) {
         let mut map = self.values.write().await;
-        if let Some(count) = map.get_mut(&user_id) {
-            *count += 1;
+        if let Some(entry) = map.get_mut(&user_id) {
+            entry.value += 1;
         }
     }
 
     pub async fn decrement(&self, user_id: i32) {
         let mut map = self.values.write().await;
-        if let Some(count) = map.get_mut(&user_id) {
-            *count = (*count - 1).max(0);
+        if let Some(entry) = map.get_mut(&user_id) {
+            entry.value = (entry.value - 1).max(0);
         }
     }
 }
