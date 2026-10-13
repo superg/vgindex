@@ -163,6 +163,7 @@ pub(crate) struct DiscEditTemplate {
     pub pvd_hex: String,
     pub show_pic: bool,
     pub media_has_pic_json: String,
+    pub media_has_dummy_layer_json: String,
     pub pic_hex: String,
     pub show_bca: bool,
     pub bca_hex: String,
@@ -328,6 +329,7 @@ pub(crate) struct EditMediaTypeRow {
     pub layer_count: i32,
     pub pic: bool,
     pub rom_extension: String,
+    pub has_dummy_layer: bool,
 }
 
 #[derive(sqlx::FromRow)]
@@ -348,7 +350,7 @@ pub(crate) struct EditRefData {
 pub(crate) async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData> {
     let all_systems = disc_service::get_all_systems(pool).await?;
     let all_media_types: Vec<EditMediaTypeRow> = sqlx::query_as(
-        "SELECT code, name, layer_count, pic, rom_extension FROM media_types ORDER BY name",
+        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer FROM media_types ORDER BY name",
     )
     .fetch_all(pool)
     .await?;
@@ -594,6 +596,14 @@ pub(crate) fn build_media_layers_json(all_media_types: &[EditMediaTypeRow]) -> S
         media_layers_map.insert(m.code.clone(), serde_json::json!(m.layer_count));
     }
     serde_json::to_string(&media_layers_map).unwrap_or_else(|_| "{}".into())
+}
+
+pub(crate) fn build_media_has_dummy_layer_json(all_media_types: &[EditMediaTypeRow]) -> String {
+    let mut map = serde_json::Map::new();
+    for m in all_media_types {
+        map.insert(m.code.clone(), serde_json::json!(m.has_dummy_layer));
+    }
+    serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
 }
 
 pub(crate) fn build_media_has_pic_json(all_media_types: &[EditMediaTypeRow]) -> String {
@@ -843,6 +853,7 @@ async fn edit_page(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let max_layers = detail.disc.media_type.max_layers();
     let ring_layer_count = ring_layers(max_layers);
@@ -1028,6 +1039,7 @@ async fn edit_page(
                 .unwrap_or_default(),
             show_pic: detail.disc.media_type.has_pic(),
             media_has_pic_json: media_has_pic_json.clone(),
+            media_has_dummy_layer_json: media_has_dummy_layer_json.clone(),
             pic_hex: detail
                 .disc
                 .pic
@@ -1638,6 +1650,7 @@ async fn render_form_with_context(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let submit_as_usernames_json = if is_add_mode && can_moderate {
         build_submit_as_usernames_json(pool).await?
@@ -1777,6 +1790,7 @@ async fn render_form_with_context(
         pvd_hex: normalize_hex_dump_for_render(form.pvd.as_deref(), true),
         show_pic: media_pic,
         media_has_pic_json,
+        media_has_dummy_layer_json,
         pic_hex: normalize_hex_dump_for_render(form.pic.as_deref(), false),
         show_bca: has_sys(|s| s.has_bca),
         bca_hex: normalize_hex_dump_for_render(form.bca.as_deref(), false),
@@ -2528,6 +2542,7 @@ async fn add_page(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let can_submit_as = user.role.can_moderate();
     let submit_as_usernames_json = if can_submit_as {
@@ -2609,6 +2624,7 @@ async fn add_page(
             pvd_hex: String::new(),
             show_pic,
             media_has_pic_json,
+            media_has_dummy_layer_json,
             pic_hex: String::new(),
             show_bca: has_sys(|s| s.has_bca),
             bca_hex: String::new(),
@@ -3590,8 +3606,13 @@ fn filter_unsupported_fields_for_changes(
         filtered.cue = None;
     }
 
+    let layerbreak_layers = if media.has_dummy_layer {
+        (media.layer_count - 1).max(1) as usize
+    } else {
+        media.layer_count.max(1) as usize
+    };
     let media_layers = media.layer_count.max(1) as usize;
-    filtered.layerbreak.truncate(media_layers.saturating_sub(1));
+    filtered.layerbreak.truncate(layerbreak_layers.saturating_sub(1));
     filtered.ring_codes_json = filter_ring_codes_for_capabilities(
         filtered.ring_codes_json.as_deref(),
         media_layers,
@@ -3824,6 +3845,7 @@ mod operation_delta_tests {
             layer_count: 2,
             pic: false,
             rom_extension: "iso".to_string(),
+            has_dummy_layer: false,
         }]
     }
 
@@ -3834,6 +3856,7 @@ mod operation_delta_tests {
             layer_count: 2,
             pic: false,
             rom_extension: "iso".to_string(),
+            has_dummy_layer: false,
         }
         .into()
     }
@@ -4136,6 +4159,7 @@ mod operation_delta_tests {
             layer_count: 1,
             pic: false,
             rom_extension: "bin".to_string(),
+            has_dummy_layer: false,
         });
         rows
     }
@@ -5625,6 +5649,7 @@ mod operation_delta_tests {
             layer_count: 1,
             pic: false,
             rom_extension: "bin".to_string(),
+            has_dummy_layer: false,
         }
         .into();
         detail.disc.layerbreaks = None;

@@ -22,8 +22,8 @@ use super::compact_query_url;
 
 use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
-    build_check_options, build_flat_changes, build_lang_check_options, build_media_has_pic_json,
-    build_media_is_cd_json, build_media_layers_json, build_media_options,
+    build_check_options, build_flat_changes, build_lang_check_options, build_media_has_dummy_layer_json,
+    build_media_has_pic_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
     build_media_rom_extensions_json, build_new_disc_changes, build_sparse_disc_submission_changes,
     build_sparse_edit_changes, build_system_options, build_systems_json, fetch_ref_data,
     max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
@@ -754,6 +754,7 @@ async fn submission_detail(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = disc_edit::build_edition_suggestions_json(&state).await?;
 
     let snapshot: serde_json::Value;
@@ -798,6 +799,7 @@ async fn submission_detail(
         &media_rom_extensions_json,
         &media_is_cd_json,
         &media_has_pic_json,
+        &media_has_dummy_layer_json,
         &system_code,
         &media_type_code,
         max_layers,
@@ -841,6 +843,7 @@ fn build_review_template(
     media_rom_extensions_json: &str,
     media_is_cd_json: &str,
     media_has_pic_json: &str,
+    media_has_dummy_layer_json: &str,
     system_code: &str,
     media_type_code: &str,
     max_layers: u32,
@@ -1018,6 +1021,7 @@ fn build_review_template(
             .find(|m| m.code == media_type_code)
             .map_or(false, |m| m.pic),
         media_has_pic_json: media_has_pic_json.to_string(),
+        media_has_dummy_layer_json: media_has_dummy_layer_json.to_string(),
         pic_hex: json_opt_str("pic"),
         show_bca: has_sys(|s| s.has_bca),
         bca_hex: json_opt_str("bca"),
@@ -2121,6 +2125,7 @@ async fn render_latest_review_with_errors(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = disc_edit::build_edition_suggestions_json(state).await?;
 
     let snapshot: serde_json::Value;
@@ -2164,6 +2169,7 @@ async fn render_latest_review_with_errors(
         &media_rom_extensions_json,
         &media_is_cd_json,
         &media_has_pic_json,
+        &media_has_dummy_layer_json,
         &system_code,
         &media_type_code,
         max_layers,
@@ -2392,6 +2398,7 @@ async fn review_submit(
         let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
         let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
         let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+        let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
         let edition_suggestions_json = disc_edit::build_edition_suggestions_json(&state).await?;
         let snapshot =
             build_flat_changes(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
@@ -2417,6 +2424,7 @@ async fn review_submit(
             &media_rom_extensions_json,
             &media_is_cd_json,
             &media_has_pic_json,
+            &media_has_dummy_layer_json,
             &system_code,
             &media_type_code,
             max_layers,
@@ -2541,6 +2549,7 @@ async fn review_submit(
                 build_media_rom_extensions_json(&ref_data.all_media_types);
             let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
             let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+            let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
             let edition_suggestions_json =
                 disc_edit::build_edition_suggestions_json(&state).await?;
             let snapshot =
@@ -2567,6 +2576,7 @@ async fn review_submit(
                 &media_rom_extensions_json,
                 &media_is_cd_json,
                 &media_has_pic_json,
+                &media_has_dummy_layer_json,
                 &system_code,
                 &media_type_code,
                 max_layers,
@@ -2769,6 +2779,7 @@ mod tests {
                     layer_count: 2,
                     pic: false,
                     rom_extension: "iso".to_string(),
+                    has_dummy_layer: false,
                 },
                 disc_edit::EditMediaTypeRow {
                     code: "BD".to_string(),
@@ -2776,6 +2787,7 @@ mod tests {
                     layer_count: 2,
                     pic: false,
                     rom_extension: "iso".to_string(),
+                    has_dummy_layer: false,
                 },
             ],
             all_categories: vec![
@@ -3408,6 +3420,7 @@ mod tests {
             "",
             snapshot,
             &ref_data,
+            "{}",
             "{}",
             "{}",
             "{}",
