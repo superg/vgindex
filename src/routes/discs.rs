@@ -2778,7 +2778,7 @@ mod tests {
     #[test]
     fn visible_sort_controls_follow_letters_and_keep_all_options() {
         let template = include_str!("../../templates/discs.html");
-        let css = include_str!("../../static/css/app.css");
+        let css = include_str!("../../static/css/app.css").replace("\r\n", "\n");
 
         for sort in [
             "title", "region", "system", "version", "edition", "language", "serial", "status",
@@ -2857,7 +2857,7 @@ mod tests {
 
     #[test]
     fn language_column_is_compact_and_wraps_against_available_width() {
-        let css = include_str!("../../static/css/app.css");
+        let css = include_str!("../../static/css/app.css").replace("\r\n", "\n");
         let template = include_str!("../../templates/discs.html");
         let language_rule = css
             .split_once(".disc-table .language-col {")

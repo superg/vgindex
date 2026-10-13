@@ -3940,7 +3940,7 @@ mod tests {
 
     #[test]
     fn review_textarea_assets_autosize_sidecars_without_manual_resize_wrapper() {
-        let css = include_str!("../../static/css/app.css");
+        let css = include_str!("../../static/css/app.css").replace("\r\n", "\n");
         assert!(css.contains("textarea.auto-expand {\n    overflow: hidden;\n    resize: none;\n}"));
         assert!(!css.contains("textarea-resize"));
         assert!(css.contains(".review-field-annotation {\n    flex: 0 0 100%;\n    width: 100%;\n    display: flex;\n    flex-wrap: nowrap;\n    align-items: center;\n    gap: 0.25rem;\n    overflow-x: auto;\n    white-space: nowrap;\n}"));
