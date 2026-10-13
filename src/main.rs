@@ -77,7 +77,7 @@ async fn main() {
         )),
         discs_cache: routes::discs::DiscsCache::production(),
         transliteration,
-        draft_count_cache: auth::middleware::DraftCountCache::new(Duration::from_secs(5 * 60)),
+        draft_count_cache: auth::middleware::DraftCountCache::new(),
     };
 
     tokio::spawn(run_session_cleanup(pool.clone()));

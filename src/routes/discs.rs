@@ -3733,9 +3733,7 @@ mod tests {
             transliteration: Arc::new(
                 crate::transliteration::TransliterationRegistry::new().unwrap(),
             ),
-            draft_count_cache: crate::auth::middleware::DraftCountCache::new(
-                Duration::from_secs(60),
-            ),
+            draft_count_cache: crate::auth::middleware::DraftCountCache::new(),
         };
 
         for query in [
