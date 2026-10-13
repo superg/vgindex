@@ -23,3 +23,5 @@ This project is licensed under the GNU Affero General Public License v3.0 — se
 ---
 
 **Need help?** [Open an issue](https://github.com/superg/vgindex/issues).
+
+**Want to contribute?** To test changes, install [Rust](https://rust-lang.org/tools/install/), [Docker](https://docs.docker.com/engine/install/), create an [`.env`](./.env.example) file, and run `docker compose up --build`.

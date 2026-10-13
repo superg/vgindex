@@ -621,7 +621,6 @@ pub fn sanitize_filename(s: &str) -> String {
         ("²", "^2"),
         ("³", "^3"),
         ("α", "Alpha"),
-        ("½", "1-2"),
         ("Δ", "Delta"),
         ("μ", "Mu"),
         ("#", ""),
