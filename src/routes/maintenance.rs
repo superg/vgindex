@@ -2998,6 +2998,7 @@ mod tests {
             role,
             csrf_token: "test-csrf-token".to_string(),
             avatar_url: None,
+            draft_count: 0,
         }
     }
 
@@ -3045,6 +3046,9 @@ mod tests {
             ),
             transliteration: Arc::new(
                 crate::transliteration::TransliterationRegistry::new().unwrap(),
+            ),
+            draft_count_cache: crate::auth::middleware::DraftCountCache::new(
+                Duration::from_secs(60),
             ),
         }
     }

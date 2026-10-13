@@ -2923,6 +2923,9 @@ async fn add_submit(
             Some(&request_fingerprint),
         )
         .await?;
+        if submitted.is_some() {
+            state.draft_count_cache.decrement(user.id).await;
+        }
         return if submitted.is_some() {
             Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
         } else {

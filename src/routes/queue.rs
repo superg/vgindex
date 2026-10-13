@@ -2266,6 +2266,7 @@ async fn review_submit(
         if !drafted {
             return Ok(Redirect::to("/queue").into_response());
         }
+        state.draft_count_cache.increment(sub.submitter_id).await;
         return Ok(Redirect::to("/queue").into_response());
     }
 
@@ -2697,6 +2698,9 @@ mod tests {
             ),
             transliteration: Arc::new(
                 crate::transliteration::TransliterationRegistry::new().unwrap(),
+            ),
+            draft_count_cache: crate::auth::middleware::DraftCountCache::new(
+                Duration::from_secs(60),
             ),
         }
     }
@@ -3332,6 +3336,7 @@ mod tests {
             role,
             csrf_token: "test-csrf-token".to_string(),
             avatar_url: None,
+            draft_count: 0,
         }
     }
 
@@ -3450,6 +3455,7 @@ mod tests {
                 role: UserRole::Moderator,
                 csrf_token: "test-csrf-token".to_string(),
                 avatar_url: Some("https://example.test/avatar.png".to_string()),
+                draft_count: 0,
             }),
             submission_id: 1,
             submission_type_display: "Edit".to_string(),

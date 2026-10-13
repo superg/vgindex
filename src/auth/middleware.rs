@@ -5,6 +5,10 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use chrono::{DateTime, Duration, Utc};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration as StdDuration, Instant};
+use tokio::sync::RwLock;
 
 use crate::auth::session;
 use crate::db::models::{Session, UserRole};
@@ -25,6 +29,60 @@ pub struct AuthenticatedUser {
     pub role: UserRole,
     pub csrf_token: String,
     pub avatar_url: Option<String>,
+    pub draft_count: i64,
+}
+
+struct TimedCount {
+    loaded_at: Instant,
+    value: i64,
+}
+
+#[derive(Clone)]
+pub struct DraftCountCache {
+    values: Arc<RwLock<HashMap<i32, TimedCount>>>,
+    ttl: StdDuration,
+}
+
+impl DraftCountCache {
+    pub fn new(ttl: StdDuration) -> Self {
+        Self {
+            values: Arc::new(RwLock::new(HashMap::new())),
+            ttl,
+        }
+    }
+
+    async fn get(&self, user_id: i32) -> Option<i64> {
+        self.values
+            .read()
+            .await
+            .get(&user_id)
+            .filter(|entry| entry.loaded_at.elapsed() < self.ttl)
+            .map(|entry| entry.value)
+    }
+
+    async fn insert(&self, user_id: i32, value: i64) {
+        self.values.write().await.insert(
+            user_id,
+            TimedCount {
+                loaded_at: Instant::now(),
+                value,
+            },
+        );
+    }
+
+    pub async fn increment(&self, user_id: i32) {
+        let mut map = self.values.write().await;
+        if let Some(entry) = map.get_mut(&user_id) {
+            entry.value += 1;
+        }
+    }
+
+    pub async fn decrement(&self, user_id: i32) {
+        let mut map = self.values.write().await;
+        if let Some(entry) = map.get_mut(&user_id) {
+            entry.value = (entry.value - 1).max(0);
+        }
+    }
 }
 
 impl AuthenticatedUser {
@@ -35,6 +93,7 @@ impl AuthenticatedUser {
             role: UserRole::User,
             csrf_token: "test-csrf-token".to_string(),
             avatar_url: None,
+            draft_count: 0,
         }
     }
 }
@@ -85,6 +144,20 @@ async fn load_authenticated_session(
         return Ok(None);
     };
 
+    let draft_count = if let Some(cached) = state.draft_count_cache.get(user.id).await {
+        cached
+    } else {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM disc_submissions WHERE submitter_id = $1 AND status = 'Draft'",
+        )
+        .bind(user.id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or(0);
+        state.draft_count_cache.insert(user.id, count).await;
+        count
+    };
+
     Ok(Some((
         AuthenticatedUser {
             id: user.id,
@@ -92,6 +165,7 @@ async fn load_authenticated_session(
             role,
             csrf_token: session.csrf_token.clone().unwrap_or_default(),
             avatar_url: user.avatar_url,
+            draft_count,
         },
         session,
     )))
