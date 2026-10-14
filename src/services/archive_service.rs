@@ -241,11 +241,6 @@ pub async fn regenerate_system_archives(
         store_archive(&sys.code, "cue", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    if archive_type_supported_by_system(&sys, "key", false).unwrap_or(false) {
-        let result = generate_key_archive(pool, &sys.code, &ts).await?;
-        store_archive(&sys.code, "key", &result).map_err(|e| AppError::Internal(e.to_string()))?;
-    }
-
     if archive_type_supported_by_system(&sys, "sbi", has_bin_media).unwrap_or(false) {
         let result = generate_sbi_archive(pool, &sys.code, &ts).await?;
         store_archive(&sys.code, "sbi", &result).map_err(|e| AppError::Internal(e.to_string()))?;
@@ -312,7 +307,6 @@ fn archive_type_supported_by_system(
     match archive_type {
         "dat" => Ok(true),
         "cue" => Ok(has_bin_media),
-        "key" => Ok(sys.has_key),
         "sbi" => Ok(sys.has_sbi && has_bin_media),
         _ => Err(AppError::NotFound),
     }
@@ -323,7 +317,7 @@ async fn archive_type_is_available(
     system: &str,
     archive_type: &str,
 ) -> AppResult<bool> {
-    if !matches!(archive_type, "dat" | "cue" | "key" | "sbi") {
+    if !matches!(archive_type, "dat" | "cue" | "sbi") {
         return Err(AppError::NotFound);
     }
 
@@ -745,7 +739,7 @@ fn dat_file_is_active(file: &File, cue_active: bool) -> bool {
 mod tests {
     use super::*;
 
-    fn system(has_key: bool, has_sbi: bool) -> System {
+    fn system(has_sbi: bool) -> System {
         System {
             code: "SYS".to_string(),
             system_type: "Console".to_string(),
@@ -759,7 +753,6 @@ mod tests {
             has_edc: false,
             has_error_count: false,
             has_disc_id: false,
-            has_key,
             has_universal_hash: false,
             has_title_foreign: false,
             has_disc_title: false,
@@ -898,7 +891,7 @@ mod tests {
 
     #[test]
     fn dat_cue_entries_are_active_only_for_supported_bin_media() {
-        let sys = system(false, false);
+        let sys = system(false);
 
         assert!(dat_disc_has_active_cue(&dat_disc("cd", "bin"), &sys));
         assert!(dat_disc_has_active_cue(&dat_disc("gdrom", "BIN"), &sys));
@@ -917,13 +910,10 @@ mod tests {
     }
 
     #[test]
-    fn archive_availability_uses_system_flags_for_key_and_sbi() {
-        let key_system = system(true, false);
-        let sbi_system = system(false, true);
-        let plain_system = system(false, false);
+    fn archive_availability_uses_system_flags_for_sbi() {
+        let sbi_system = system(true);
+        let plain_system = system(false);
 
-        assert!(archive_type_supported_by_system(&key_system, "key", false).unwrap());
-        assert!(!archive_type_supported_by_system(&plain_system, "key", false).unwrap());
         assert!(archive_type_supported_by_system(&plain_system, "dat", false).unwrap());
         assert!(archive_type_supported_by_system(&sbi_system, "sbi", true).unwrap());
         assert!(!archive_type_supported_by_system(&sbi_system, "sbi", false).unwrap());
@@ -932,7 +922,7 @@ mod tests {
 
     #[test]
     fn archive_availability_uses_bin_media_for_cues() {
-        let sys = system(false, false);
+        let sys = system(false);
 
         assert!(archive_type_supported_by_system(&sys, "cue", true).unwrap());
         assert!(!archive_type_supported_by_system(&sys, "cue", false).unwrap());
@@ -1103,84 +1093,6 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str, ts: &str) -> App
         "{} - Cuesheets ({}) ({}).zip",
         sys.dat_system_name(),
         cue_count,
-        ts
-    );
-    Ok(ArchiveResult {
-        data: buf,
-        filename: zip_filename,
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Keys generation
-// ---------------------------------------------------------------------------
-
-#[derive(sqlx::FromRow)]
-struct KeyArchiveDisc {
-    id: i32,
-    title: String,
-    disc_number: Option<String>,
-    disc_title: Option<String>,
-    filename_suffix: Option<String>,
-    disc_key: Vec<u8>,
-}
-
-async fn generate_key_archive(pool: &PgPool, system: &str, ts: &str) -> AppResult<ArchiveResult> {
-    let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
-        .bind(system)
-        .fetch_optional(pool)
-        .await?
-        .ok_or(AppError::NotFound)?;
-
-    if !sys.has_key {
-        return Err(AppError::NotFound);
-    }
-
-    let discs: Vec<KeyArchiveDisc> = sqlx::query_as(
-        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.disc_key
-         FROM discs d
-         WHERE d.system_code = $1 AND d.disc_key IS NOT NULL
-               AND d.status NOT IN ('Disabled', 'Questionable')
-         ORDER BY d.title",
-    )
-    .bind(&sys.code)
-    .fetch_all(pool)
-    .await?;
-
-    let key_count = discs.len();
-
-    let mut buf = Vec::new();
-    {
-        let mut zip = ZipWriter::new(std::io::Cursor::new(&mut buf));
-        let options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-
-        for disc in &discs {
-            let region_names = get_disc_region_names(pool, disc.id).await;
-            let language_codes = get_disc_language_codes(pool, disc.id).await;
-            let base_name = build_rom_base_name(
-                &disc.title,
-                &region_names,
-                &language_codes,
-                disc.disc_number.as_deref(),
-                disc.disc_title.as_deref(),
-                disc.filename_suffix.as_deref(),
-            );
-            let filename = format!("{base_name}.key");
-            zip.start_file(&filename, options)
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            zip.write_all(&disc.disc_key)
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-        }
-
-        zip.finish()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-    }
-
-    let zip_filename = format!(
-        "{} - Keys ({}) ({}).zip",
-        sys.dat_system_name(),
-        key_count,
         ts
     );
     Ok(ArchiveResult {
