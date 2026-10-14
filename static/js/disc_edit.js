@@ -476,7 +476,7 @@ function renderRingEntries() {
                 if (showOffset) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset', entryHighlight && entryHighlight.offset_value) + '" value="' + esc(entry.offset_value || '') + '"></td>';
                 if (showOffsetExtra) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset-extra', entryHighlight && entryHighlight.offset_extra_value) + '" value="' + esc(entry.offset_extra_value || '') + '"></td>';
                 if (showSampleStart) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-sample-start', entryHighlight && entryHighlight.sample_start) + '" value="' + esc(entry.sample_start || '') + '"></td>';
-                cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-comment', entryHighlight && entryHighlight.comment) + '" value="' + esc(ringDisplayValue(entry.comment)) + '"></td>';
+                cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-comment', entryHighlight && entryHighlight.comment) + '" value="' + esc(entry.comment || '') + '"></td>';
                 if (showRemoveButton) cells += '<td' + rs + '><button type="button" class="outline secondary remove-entry" onclick="removeRingEntry(' + ei + ')">&times;</button></td>';
             }
 
