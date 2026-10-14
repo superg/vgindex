@@ -132,6 +132,10 @@ struct DiscViewTemplate {
     show_disc_id: bool,
     show_key: bool,
     disc_key: String,
+    cue_catalog: String,
+    cue_title: String,
+    cue_performer: String,
+    cue_songwriter: String,
     show_universal_hash: bool,
     universal_hash: String,
     disc_id_text: String,
@@ -443,6 +447,10 @@ struct ParsedCueTrack {
     track_type: String,
     flags: Vec<String>,
     index01_frames: Option<u32>,
+    isrc: String,
+    title: String,
+    performer: String,
+    songwriter: String,
 }
 
 struct ViewTrackTableRow {
@@ -455,6 +463,10 @@ struct ViewTrackTableRow {
     pregap: String,
     length: String,
     sectors: String,
+    isrc: String,
+    title: String,
+    performer: String,
+    songwriter: String,
 }
 
 struct TrackColVis {
@@ -464,6 +476,10 @@ struct TrackColVis {
     pregap: bool,
     length: bool,
     sectors: bool,
+    isrc: bool,
+    title: bool,
+    performer: bool,
+    songwriter: bool,
     visible_count: usize,
 }
 
@@ -632,6 +648,9 @@ async fn disc_view(
     } else {
         String::new()
     };
+
+    let cue_disc_meta = parse_cue_disc_meta(detail.disc.cue.as_deref().unwrap_or_default());
+    
     let universal_hash = detail
         .disc
         .universal_hash
@@ -812,6 +831,10 @@ async fn disc_view(
             show_disc_id: can_view_key_material && detail.system.has_disc_id,
             show_key: can_view_key_material && detail.system.has_key,
             disc_key,
+            cue_catalog: cue_disc_meta.catalog,
+            cue_title: cue_disc_meta.title,
+            cue_performer: cue_disc_meta.performer,
+            cue_songwriter: cue_disc_meta.songwriter,
             show_universal_hash: detail.system.has_universal_hash,
             universal_hash,
             disc_id_text,
@@ -1061,6 +1084,10 @@ fn parse_cue_tracks_with_sessions(cue: &str) -> Vec<ParsedCueTrack> {
                 track_type: mode.to_string(),
                 flags: Vec::new(),
                 index01_frames: None,
+                isrc: String::new(),
+                title: String::new(),
+                performer: String::new(),
+                songwriter: String::new(),
             });
             current_track_idx = Some(tracks.len() - 1);
             continue;
@@ -1069,6 +1096,34 @@ fn parse_cue_tracks_with_sessions(cue: &str) -> Vec<ParsedCueTrack> {
         if let Some(flags) = parse_flags_line(line) {
             if let Some(idx) = current_track_idx {
                 tracks[idx].flags = flags;
+            }
+            continue;
+        }
+
+        if upper.starts_with("ISRC ") {
+            if let Some(idx) = current_track_idx {
+                tracks[idx].isrc = line[5..].trim().to_string();
+            }
+            continue;
+        }
+
+        if upper.starts_with("TITLE ") {
+            if let Some(idx) = current_track_idx {
+                tracks[idx].title = parse_cue_maybe_quoted(line, 6);
+            }
+            continue;
+        }
+
+        if upper.starts_with("PERFORMER ") {
+            if let Some(idx) = current_track_idx {
+                tracks[idx].performer = parse_cue_maybe_quoted(line, 10);
+            }
+            continue;
+        }
+
+        if upper.starts_with("SONGWRITER ") {
+            if let Some(idx) = current_track_idx {
+                tracks[idx].songwriter = parse_cue_maybe_quoted(line, 11);
             }
             continue;
         }
@@ -1083,6 +1138,48 @@ fn parse_cue_tracks_with_sessions(cue: &str) -> Vec<ParsedCueTrack> {
     }
 
     tracks
+}
+
+struct CueDiscMeta {
+    catalog: String,
+    title: String,
+    performer: String,
+    songwriter: String,
+}
+
+fn parse_cue_disc_meta(cue: &str) -> CueDiscMeta {
+    let mut meta = CueDiscMeta {
+        catalog: String::new(),
+        title: String::new(),
+        performer: String::new(),
+        songwriter: String::new(),
+    };
+    for raw_line in cue.lines() {
+        let line = raw_line.trim();
+        let upper = line.to_ascii_uppercase();
+        if upper.starts_with("TRACK ") {
+            break;
+        }
+        if upper.starts_with("CATALOG ") {
+            meta.catalog = line[8..].trim().to_string();
+        } else if upper.starts_with("TITLE ") {
+            meta.title = parse_cue_maybe_quoted(line, 6);
+        } else if upper.starts_with("PERFORMER ") {
+            meta.performer = parse_cue_maybe_quoted(line, 10);
+        } else if upper.starts_with("SONGWRITER ") {
+            meta.songwriter = parse_cue_maybe_quoted(line, 11);
+        }
+    }
+    meta
+}
+
+fn parse_cue_maybe_quoted(line: &str, prefix_len: usize) -> String {
+    let rest = line[prefix_len..].trim();
+    if rest.starts_with('"') && rest.ends_with('"') && rest.len() >= 2 {
+        rest[1..rest.len() - 1].to_string()
+    } else {
+        rest.to_string()
+    }
 }
 
 fn display_track_type(raw: &str) -> String {
@@ -1145,6 +1242,10 @@ fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
                 pregap: String::new(),
                 length: String::new(),
                 sectors: String::new(),
+                isrc: String::new(),
+                title: String::new(),
+                performer: String::new(),
+                songwriter: String::new(),
             });
             last_session = Some(track.session_num);
         }
@@ -1164,6 +1265,10 @@ fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
                 .unwrap_or_default(),
             length: format_frames_as_msf(sectors),
             sectors: sectors.to_string(),
+            isrc: track.isrc,
+            title: track.title,
+            performer: track.performer,
+            songwriter: track.songwriter,
         });
     }
 
@@ -1177,6 +1282,10 @@ fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
         pregap: String::new(),
         length: format_frames_as_msf(total_sectors as u32),
         sectors: total_sectors.to_string(),
+        isrc: String::new(),
+        title: String::new(),
+        performer: String::new(),
+        songwriter: String::new(),
     });
 
     rows
@@ -1191,7 +1300,11 @@ fn compute_track_col_vis(rows: &[ViewTrackTableRow]) -> TrackColVis {
     let pregap = non_session_rows.iter().any(|r| !r.pregap.is_empty());
     let length = non_session_rows.iter().any(|r| !r.length.is_empty());
     let sectors = non_session_rows.iter().any(|r| !r.sectors.is_empty());
-    let visible_count = [track_num, type_display, flags, pregap, length, sectors]
+    let isrc = non_session_rows.iter().any(|r| !r.isrc.is_empty());
+    let title = non_session_rows.iter().any(|r| !r.title.is_empty());
+    let performer = non_session_rows.iter().any(|r| !r.performer.is_empty());
+    let songwriter = non_session_rows.iter().any(|r| !r.songwriter.is_empty());
+    let visible_count = [track_num, type_display, flags, pregap, length, sectors, isrc, title, performer, songwriter]
         .into_iter()
         .filter(|v| *v)
         .count();
@@ -1202,6 +1315,10 @@ fn compute_track_col_vis(rows: &[ViewTrackTableRow]) -> TrackColVis {
         pregap,
         length,
         sectors,
+        isrc,
+        title,
+        performer,
+        songwriter,
         visible_count,
     }
 }
@@ -1912,6 +2029,10 @@ mod tests {
                 pregap: false,
                 length: false,
                 sectors: false,
+                isrc: false,
+                title: false,
+                performer: false,
+                songwriter: false,
                 visible_count: 0,
             },
             files: Vec::new(),
@@ -1923,6 +2044,10 @@ mod tests {
             show_disc_id,
             show_key,
             disc_key: disc_key.to_string(),
+            cue_catalog: String::new(),
+            cue_title: String::new(),
+            cue_performer: String::new(),
+            cue_songwriter: String::new(),
             show_universal_hash: false,
             universal_hash: String::new(),
             disc_id_text: disc_id_text.to_string(),
@@ -2269,6 +2394,10 @@ mod tests {
             pregap: false,
             length: true,
             sectors: true,
+            isrc: false,
+            title: false,
+            performer: false,
+            songwriter: false,
             visible_count: 3,
         };
         template.track_rows = vec![
@@ -2282,6 +2411,10 @@ mod tests {
                 pregap: String::new(),
                 length: "00:02:00".to_string(),
                 sectors: "12345".to_string(),
+                isrc: String::new(),
+                title: String::new(),
+                performer: String::new(),
+                songwriter: String::new(),
             },
             ViewTrackTableRow {
                 is_session_header: false,
@@ -2293,6 +2426,10 @@ mod tests {
                 pregap: String::new(),
                 length: "00:04:00".to_string(),
                 sectors: "67890".to_string(),
+                isrc: String::new(),
+                title: String::new(),
+                performer: String::new(),
+                songwriter: String::new(),
             },
         ];
 
