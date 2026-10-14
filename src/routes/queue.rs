@@ -2702,6 +2702,8 @@ mod tests {
                 Duration::from_secs(60),
                 Duration::from_secs(60),
             ),
+            archive_versions_cache:
+                crate::services::archive_service::ArchiveVersionsCache::new(),
             transliteration: Arc::new(
                 crate::transliteration::TransliterationRegistry::new().unwrap(),
             ),

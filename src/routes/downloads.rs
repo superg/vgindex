@@ -47,6 +47,7 @@ struct SystemDownload {
     has_cue: bool,
     has_key: bool,
     has_sbi: bool,
+    version: Option<String>,
 }
 
 struct BiosDownload {
@@ -164,25 +165,26 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
         })
         .collect();
 
-    let systems =
-        rows.iter()
-            .map(|r| SystemDownload {
-                name: system_names.get(&r.code).cloned().unwrap_or_else(|| {
-                    crate::db::models::build_system_name(&r.manufacturer, &r.name)
-                }),
-                code: r.code.clone(),
-                has_dat: true,
-                has_cue: r
-                    .media_types
+    let mut systems: Vec<SystemDownload> = Vec::with_capacity(rows.len());
+    for r in &rows {
+        systems.push(SystemDownload {
+            name: system_names.get(&r.code).cloned().unwrap_or_else(|| {
+                crate::db::models::build_system_name(&r.manufacturer, &r.name)
+            }),
+            version: state.archive_versions_cache.get(&r.code).await,
+            code: r.code.clone(),
+            has_dat: true,
+            has_cue: r
+                .media_types
+                .iter()
+                .any(|code| cd_media_codes.contains(code)),
+            has_key: r.has_key,
+            has_sbi: r.has_sbi
+                && r.media_types
                     .iter()
                     .any(|code| cd_media_codes.contains(code)),
-                has_key: r.has_key,
-                has_sbi: r.has_sbi
-                    && r.media_types
-                        .iter()
-                        .any(|code| cd_media_codes.contains(code)),
-            })
-            .collect();
+        });
+    }
 
     Html(
         DownloadsTemplate {
@@ -366,6 +368,7 @@ mod tests {
                     has_cue: false,
                     has_key: true,
                     has_sbi: false,
+                    version: Some("2026-10-14 09:30:00".to_string()),
                 },
                 SystemDownload {
                     code: "PC".to_string(),
@@ -374,6 +377,7 @@ mod tests {
                     has_cue: true,
                     has_key: false,
                     has_sbi: false,
+                    version: None,
                 },
             ],
             bios_systems: bios_downloads(&system_names),
@@ -414,6 +418,8 @@ mod tests {
                 Duration::from_secs(60),
                 Duration::from_secs(60),
             ),
+            archive_versions_cache:
+                crate::services::archive_service::ArchiveVersionsCache::new(),
             transliteration: Arc::new(
                 crate::transliteration::TransliterationRegistry::new().unwrap(),
             ),
@@ -432,6 +438,14 @@ mod tests {
         assert!(!html.contains(">Database</h4>"));
         assert!(html.contains(r#"/datfile/PS3"#));
         assert!(html.contains(r#"/cues/PC"#));
+    }
+
+    #[test]
+    fn downloads_page_shows_archive_versions() {
+        let html = template(false).render().unwrap();
+
+        assert!(html.contains(r#"<time datetime="2026-10-14 09:30:00">2026-10-14 09:30:00</time>"#));
+        assert!(html.contains("<th>Version</th>"));
     }
 
     #[test]
