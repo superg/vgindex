@@ -2242,6 +2242,12 @@ async fn review_submit(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
+    if form.action == "comment" {
+        queue_service::comment_submission(&state.pool, id, user.id, review_comment.as_deref())
+            .await?;
+        return Ok(Redirect::to("/queue").into_response());
+    }
+
     if form.action == "draft" {
         if sub.submission_type != SubmissionType::Disc {
             return Err(AppError::BadRequest(
@@ -3567,6 +3573,7 @@ mod tests {
 
         let css = include_str!("../../static/css/app.css");
         assert!(css.contains(".review-actions .btn-draft"));
+        assert!(css.contains(".review-actions .btn-comment"));
     }
 
     #[test]

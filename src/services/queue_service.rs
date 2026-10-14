@@ -1694,6 +1694,32 @@ async fn fetch_approval_conflict_disc_title(pool: &PgPool, disc_id: i32) -> AppR
     ))
 }
 
+// Keep submission as pending, but add a review comment for other reviewers to see
+pub async fn comment_submission(
+    pool: &PgPool,
+    id: i32,
+    reviewer_id: i32,
+    review_comment: Option<&str>,
+) -> AppResult<bool> {
+    let normalized_review_comment: Option<String> = review_comment
+        .map(normalize_newlines)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let result = sqlx::query(
+        "UPDATE disc_submissions SET reviewer_id = $1,
+         review_comment = $2, reviewed_at = NOW()
+         WHERE id = $3 AND status = 'Pending'",
+    )
+    .bind(reviewer_id)
+    .bind(normalized_review_comment.as_deref())
+    .bind(id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 /// Atomically reject a submission.  Returns `true` if the rejection was
 /// applied, `false` if the submission was already processed by another
 /// moderator (race condition).

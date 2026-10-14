@@ -670,6 +670,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         {% if submission_type_display != "Edit" %}
         <button type="submit" name="action" value="draft" class="btn-draft">Draft</button>
         {% endif %}
+        <button type="submit" name="action" value="comment" class="btn-comment" formnovalidate>Comment</button>
     </div>
     {% else %}
     <label>Submission Comment{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %} <span aria-hidden="true">*</span>{% endif %}
