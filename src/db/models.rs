@@ -1108,7 +1108,11 @@ pub fn build_lsd_binary(sbi_text: &str) -> Vec<u8> {
 }
 
 pub fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
+    let filtered: String = s
+        .chars()
+        .filter(|&c| matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'))
+        .collect();
+    filtered.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
