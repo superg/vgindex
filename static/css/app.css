@@ -4258,6 +4258,10 @@ body:has(.submission-info) main.container > section h3 {
     background-color: #d65a00;
     border-color: #d65a00;
 }
+.review-actions .btn-comment {
+    background-color: #525f7a;
+    border-color: #525f7a;
+}
 
 /* ===== Dark mode overrides ===== */
 [data-theme="dark"],
