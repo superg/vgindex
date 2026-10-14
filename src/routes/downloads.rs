@@ -53,6 +53,7 @@ struct SystemDownload {
 struct BiosDownload {
     name: String,
     href: String,
+    version: String,
 }
 
 struct DatabaseDownload {
@@ -89,6 +90,17 @@ const BIOS_DOWNLOADS: &[BiosDownloadSpec] = &[
     },
 ];
 
+fn bios_version_from_path(path: &str) -> String {
+    let stem = std::path::Path::new(path)
+        .file_stem()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_default();
+    stem.rfind('(')
+        .and_then(|i| stem[i + 1..].strip_suffix(')'))
+        .unwrap_or(&stem)
+        .to_string()
+}
+
 fn bios_downloads(system_names: &HashMap<String, String>) -> Vec<BiosDownload> {
     BIOS_DOWNLOADS
         .iter()
@@ -98,6 +110,7 @@ fn bios_downloads(system_names: &HashMap<String, String>) -> Vec<BiosDownload> {
                 .cloned()
                 .unwrap_or_else(|| spec.fallback_name.to_string()),
             href: format!("/bios/{}", spec.code),
+            version: bios_version_from_path(spec.path),
         })
         .collect()
 }

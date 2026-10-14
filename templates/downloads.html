@@ -42,6 +42,7 @@
     <thead>
         <tr>
             <th>System</th>
+            <th>Version</th>
             <th class="downloads-group-header">Downloads</th>
         </tr>
     </thead>
@@ -49,6 +50,7 @@
         {% for sys in bios_systems %}
         <tr>
             <td>{{ sys.name }}</td>
+            <td class="downloads-version-cell">{{ sys.version }}</td>
             <td class="download-links-cell bios-download-links-cell">
                 <a href="{{ sys.href }}">Datfile</a>
             </td>
