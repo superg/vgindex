@@ -445,6 +445,7 @@ struct ParsedCueTrack {
     track_type: String,
     flags: Vec<String>,
     index01_frames: Option<u32>,
+    max_index: u32,
     isrc: String,
     title: String,
     performer: String,
@@ -459,6 +460,7 @@ struct ViewTrackTableRow {
     type_display: String,
     flags_display: String,
     pregap: String,
+    index: String,
     length: String,
     sectors: String,
     isrc: String,
@@ -472,6 +474,7 @@ struct TrackColVis {
     type_display: bool,
     flags: bool,
     pregap: bool,
+    index: bool,
     length: bool,
     sectors: bool,
     isrc: bool,
@@ -1065,6 +1068,7 @@ fn parse_cue_tracks_with_sessions(cue: &str) -> Vec<ParsedCueTrack> {
                 track_type: mode.to_string(),
                 flags: Vec::new(),
                 index01_frames: None,
+                max_index: 0,
                 isrc: String::new(),
                 title: String::new(),
                 performer: String::new(),
@@ -1113,6 +1117,11 @@ fn parse_cue_tracks_with_sessions(cue: &str) -> Vec<ParsedCueTrack> {
             if idx_num == 1 {
                 if let Some(idx) = current_track_idx {
                     tracks[idx].index01_frames = Some(mm * 60 * 75 + ss * 75 + ff);
+                }
+            }
+            if let Some(idx) = current_track_idx {
+                if idx_num > tracks[idx].max_index {
+                    tracks[idx].max_index = idx_num;
                 }
             }
         }
@@ -1221,6 +1230,7 @@ fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
                 type_display: String::new(),
                 flags_display: String::new(),
                 pregap: String::new(),
+                index: String::new(),
                 length: String::new(),
                 sectors: String::new(),
                 isrc: String::new(),
@@ -1244,6 +1254,11 @@ fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
                 .index01_frames
                 .map(format_frames_as_msf)
                 .unwrap_or_default(),
+            index: if track.max_index >= 2 {
+                format!("{:02}", track.max_index)
+            } else {
+                String::new()
+            },
             length: format_frames_as_msf(sectors),
             sectors: sectors.to_string(),
             isrc: track.isrc,
@@ -1261,6 +1276,7 @@ fn build_track_table_rows(cue: &str, files: &[File]) -> Vec<ViewTrackTableRow> {
         type_display: "Total".to_string(),
         flags_display: String::new(),
         pregap: String::new(),
+        index: String::new(),
         length: format_frames_as_msf(total_sectors as u32),
         sectors: total_sectors.to_string(),
         isrc: String::new(),
@@ -1279,13 +1295,14 @@ fn compute_track_col_vis(rows: &[ViewTrackTableRow]) -> TrackColVis {
     let type_display = non_session_rows.iter().any(|r| !r.type_display.is_empty());
     let flags = non_session_rows.iter().any(|r| !r.flags_display.is_empty());
     let pregap = non_session_rows.iter().any(|r| !r.pregap.is_empty());
+    let index = non_session_rows.iter().any(|r| !r.index.is_empty());
     let length = non_session_rows.iter().any(|r| !r.length.is_empty());
     let sectors = non_session_rows.iter().any(|r| !r.sectors.is_empty());
     let isrc = non_session_rows.iter().any(|r| !r.isrc.is_empty());
     let title = non_session_rows.iter().any(|r| !r.title.is_empty());
     let performer = non_session_rows.iter().any(|r| !r.performer.is_empty());
     let songwriter = non_session_rows.iter().any(|r| !r.songwriter.is_empty());
-    let visible_count = [track_num, type_display, flags, pregap, length, sectors, isrc, title, performer, songwriter]
+    let visible_count = [track_num, type_display, flags, pregap, index, length, sectors, isrc, title, performer, songwriter]
         .into_iter()
         .filter(|v| *v)
         .count();
@@ -1294,6 +1311,7 @@ fn compute_track_col_vis(rows: &[ViewTrackTableRow]) -> TrackColVis {
         type_display,
         flags,
         pregap,
+        index,
         length,
         sectors,
         isrc,
@@ -2003,6 +2021,7 @@ mod tests {
                 type_display: false,
                 flags: false,
                 pregap: false,
+                index: false,
                 length: false,
                 sectors: false,
                 isrc: false,
@@ -2358,6 +2377,7 @@ mod tests {
             type_display: true,
             flags: false,
             pregap: false,
+            index: false,
             length: true,
             sectors: true,
             isrc: false,
@@ -2375,6 +2395,7 @@ mod tests {
                 type_display: "Data".to_string(),
                 flags_display: String::new(),
                 pregap: String::new(),
+                index: String::new(),
                 length: "00:02:00".to_string(),
                 sectors: "12345".to_string(),
                 isrc: String::new(),
@@ -2390,6 +2411,7 @@ mod tests {
                 type_display: "Total".to_string(),
                 flags_display: String::new(),
                 pregap: String::new(),
+                index: String::new(),
                 length: "00:04:00".to_string(),
                 sectors: "67890".to_string(),
                 isrc: String::new(),
