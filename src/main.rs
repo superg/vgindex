@@ -82,6 +82,8 @@ async fn main() {
 
     tokio::spawn(run_session_cleanup(pool.clone()));
 
+    services::archive_service::cleanup_legacy_archive_dirs();
+
     tokio::spawn(services::archive_service::run_archive_worker(
         pool,
         archive_metadata,
