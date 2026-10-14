@@ -73,6 +73,18 @@
             {% if show_key && !disc_key.is_empty() %}
             <tr><td><strong>Disc Key</strong></td><td>{{ disc_key }}</td></tr>
             {% endif %}
+            {% if !cue_catalog.is_empty() %}
+            <tr><td><strong>CUE Catalog</strong></td><td>{{ cue_catalog }}</td></tr>
+            {% endif %}
+            {% if !cue_title.is_empty() %}
+            <tr><td><strong>CUE Title</strong></td><td>{{ cue_title }}</td></tr>
+            {% endif %}
+            {% if !cue_performer.is_empty() %}
+            <tr><td><strong>CUE Performer</strong></td><td>{{ cue_performer }}</td></tr>
+            {% endif %}
+            {% if !cue_songwriter.is_empty() %}
+            <tr><td><strong>CUE Songwriter</strong></td><td>{{ cue_songwriter }}</td></tr>
+            {% endif %}
             {% if show_universal_hash && !universal_hash.is_empty() %}
             <tr><td><strong>Universal Hash</strong></td><td>{{ universal_hash }}</td></tr>
             {% endif %}
@@ -147,6 +159,10 @@
                 {% if track_col_vis.pregap %}<th>Pregap</th>{% endif %}
                 {% if track_col_vis.length %}<th>Length</th>{% endif %}
                 {% if track_col_vis.sectors %}<th>Sectors</th>{% endif %}
+                {% if track_col_vis.isrc %}<th>ISRC</th>{% endif %}
+                {% if track_col_vis.title %}<th>Title</th>{% endif %}
+                {% if track_col_vis.performer %}<th>Performer</th>{% endif %}
+                {% if track_col_vis.songwriter %}<th>Songwriter</th>{% endif %}
             </tr>
         </thead>
         <tbody>
@@ -161,6 +177,10 @@
                 {% if track_col_vis.pregap %}<td></td>{% endif %}
                 {% if track_col_vis.length %}<td class="col-num"><strong><code>{{ row.length }}</code></strong></td>{% endif %}
                 {% if track_col_vis.sectors %}<td class="col-num"><strong><code>{{ row.sectors }}</code></strong></td>{% endif %}
+                {% if track_col_vis.isrc %}<td></td>{% endif %}
+                {% if track_col_vis.title %}<td></td>{% endif %}
+                {% if track_col_vis.performer %}<td></td>{% endif %}
+                {% if track_col_vis.songwriter %}<td></td>{% endif %}
             </tr>
             {% else %}
             <tr>
@@ -170,6 +190,10 @@
                 {% if track_col_vis.pregap %}<td class="col-num"><code>{{ row.pregap }}</code></td>{% endif %}
                 {% if track_col_vis.length %}<td class="col-num"><code>{{ row.length }}</code></td>{% endif %}
                 {% if track_col_vis.sectors %}<td class="col-num"><code>{{ row.sectors }}</code></td>{% endif %}
+                {% if track_col_vis.isrc %}<td><code>{{ row.isrc }}</code></td>{% endif %}
+                {% if track_col_vis.title %}<td>{{ row.title }}</td>{% endif %}
+                {% if track_col_vis.performer %}<td>{{ row.performer }}</td>{% endif %}
+                {% if track_col_vis.songwriter %}<td>{{ row.songwriter }}</td>{% endif %}
             </tr>
             {% endif %}
             {% endfor %}
