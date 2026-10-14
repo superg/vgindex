@@ -11,6 +11,7 @@
     <thead>
         <tr>
             <th>System</th>
+            <th>Version</th>
             <th class="downloads-group-header">Downloads</th>
         </tr>
     </thead>
@@ -18,8 +19,14 @@
         {% for sys in systems %}
         <tr>
             <td>{{ sys.name }}</td>
+            <td class="downloads-version-cell">
+                {% match sys.version %}
+                {% when Some with (version) %}<time datetime="{{ version }}">{{ version }}</time>
+                {% when None %}-
+                {% endmatch %}
+            </td>
             <td class="download-links-cell">
-                {% if sys.has_dat %}<a href="/datfile/{{ sys.code }}">Dat</a>{% endif %}
+                {% if sys.has_dat %}<a href="/datfile/{{ sys.code }}">Datfile</a>{% endif %}
                 {% if sys.has_cue %}<a href="/cues/{{ sys.code }}">Cuesheets</a>{% endif %}
                 {% if sys.has_sbi %}<a href="/sbi/{{ sys.code }}">SBI</a>{% endif %}
             </td>
@@ -43,7 +50,7 @@
         <tr>
             <td>{{ sys.name }}</td>
             <td class="download-links-cell bios-download-links-cell">
-                <a href="{{ sys.href }}">Dat</a>
+                <a href="{{ sys.href }}">Datfile</a>
             </td>
         </tr>
         {% endfor %}

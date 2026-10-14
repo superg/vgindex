@@ -448,6 +448,9 @@ table.striped td {
 [data-theme="dark"] .downloads-table th {
     color: #C8CED8;
 }
+.downloads-version-cell {
+    color: var(--pico-muted-color);
+}
 .downloads-table .downloads-group-header {
     text-align: center;
 }
@@ -463,6 +466,18 @@ table.striped td {
 }
 .downloads-table[data-downloads-match-width] .download-links-cell {
     justify-content: center;
+}
+
+.download-links-cell a {
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 0.3rem;
+    text-decoration: none;
+    line-height: 1.4;
+}
+.download-links-cell a:hover {
+    border-color: var(--pico-muted-border-color);
+    background: color-mix(in srgb, var(--pico-primary) 20%, transparent);
 }
 
 /* Disc count line — centered, match title font size */

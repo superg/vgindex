@@ -1,7 +1,10 @@
 use sqlx::{PgConnection, PgPool};
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use zip::write::{SimpleFileOptions, ZipWriter};
 
 use crate::db::models::*;
@@ -12,6 +15,29 @@ const ARCHIVE_CACHE_VERSION: &str = "v2";
 pub struct ArchiveResult {
     pub data: Vec<u8>,
     pub filename: String,
+}
+
+#[derive(Clone, Default)]
+pub struct ArchiveVersionsCache {
+    versions: Arc<RwLock<HashMap<String, String>>>,
+}
+
+impl ArchiveVersionsCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub async fn get(&self, system: &str) -> Option<String> {
+        self.versions.read().await.get(system).cloned()
+    }
+
+    pub async fn replace_all(&self, versions: HashMap<String, String>) {
+        *self.versions.write().await = versions;
+    }
+
+    pub async fn set(&self, system: String, version: String) {
+        self.versions.write().await.insert(system, version);
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -197,12 +223,12 @@ pub async fn regenerate_system_archives(
     pool: &PgPool,
     metadata: &ArchiveMetadata,
     system: &str,
-) -> AppResult<()> {
+) -> AppResult<Option<String>> {
     let sys: Option<System> = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
         .fetch_optional(pool)
         .await?;
-    let Some(sys) = sys else { return Ok(()) };
+    let Some(sys) = sys else { return Ok(None) };
 
     let ts = timestamp_now();
     let datfile = generate_datfile_archive(pool, metadata, &sys, &ts).await?;
@@ -225,31 +251,41 @@ pub async fn regenerate_system_archives(
         store_archive(&sys.code, "sbi", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    Ok(())
+    Ok(Some(normalize_timestamp(&ts)))
 }
 
 pub async fn process_dirty_archive_systems(
     pool: PgPool,
     metadata: ArchiveMetadata,
+    versions_cache: &ArchiveVersionsCache,
 ) -> AppResult<Vec<String>> {
     let systems = claim_dirty_archive_systems(&pool).await?;
 
     for code in &systems {
         tracing::info!("Regenerating archives for system {code}");
-        if let Err(err) = regenerate_system_archives(&pool, &metadata, code).await {
-            tracing::error!("Failed to regenerate archives for system {code}: {err}");
-            let _ = mark_system_archives_dirty(&pool, code).await;
+        match regenerate_system_archives(&pool, &metadata, code).await {
+            Ok(Some(version)) => versions_cache.set(code.clone(), version).await,
+            Ok(None) => {}
+            Err(err) => {
+                tracing::error!("Failed to regenerate archives for system {code}: {err}");
+                let _ = mark_system_archives_dirty(&pool, code).await;
+            }
         }
     }
 
     Ok(systems)
 }
 
-pub async fn run_archive_worker(pool: PgPool, metadata: ArchiveMetadata) {
+pub async fn run_archive_worker(
+    pool: PgPool,
+    metadata: ArchiveMetadata,
+    versions_cache: ArchiveVersionsCache,
+) {
     let mut interval = tokio::time::interval(Duration::from_secs(10 * 60));
     loop {
         interval.tick().await;
-        if let Err(err) = process_dirty_archive_systems(pool.clone(), metadata.clone()).await {
+        if let Err(err) = process_dirty_archive_systems(pool.clone(), metadata.clone(), &versions_cache).await
+        {
             tracing::error!("Failed to process dirty archive systems: {err}");
         }
         if let Err(err) = crate::services::database_export_service::regenerate_if_due(
@@ -345,6 +381,84 @@ async fn get_disc_language_codes(pool: &PgPool, disc_id: i32) -> Vec<String> {
 
 fn timestamp_now() -> String {
     chrono::Utc::now().format("%Y-%m-%d %H-%M-%S").to_string()
+}
+
+fn normalize_timestamp(ts: &str) -> String {
+    match ts.split_once(' ') {
+        Some((date, time)) => format!("{date} {}", time.replace('-', ":")),
+        None => ts.to_string(),
+    }
+}
+
+fn parse_archive_version(filename: &str) -> Option<String> {
+    let stem = filename.strip_suffix(".zip").unwrap_or(filename);
+    let inner = stem.trim_end().strip_suffix(')')?;
+    let open = inner.rfind('(')?;
+    let raw = inner[open + 1..].trim();
+
+    let (date, time) = raw.split_once(' ')?;
+    if date.len() != 10 || time.is_empty() {
+        return None;
+    }
+    Some(normalize_timestamp(raw))
+}
+
+fn system_archive_version(system: &str) -> Option<String> {
+    let dir = archive_subdir(system, "dat");
+    let path = newest_zip_path(Path::new(&dir))?;
+    let filename = path.file_name()?.to_str()?;
+    parse_archive_version(filename)
+}
+
+pub fn archive_versions() -> std::collections::HashMap<String, String> {
+    let mut versions = std::collections::HashMap::new();
+    let archives_dir = Path::new(crate::config::DATA_DIR).join("archives");
+    let Ok(entries) = std::fs::read_dir(&archives_dir) else {
+        return versions;
+    };
+    let suffix = format!("-dat-{ARCHIVE_CACHE_VERSION}");
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let Some(system) = name.strip_suffix(&suffix) else {
+            continue;
+        };
+        if let Some(version) = system_archive_version(system) {
+            versions.insert(system.to_string(), version);
+        }
+    }
+    versions
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::parse_archive_version;
+
+    #[test]
+    fn parses_timestamp_from_dat_filename() {
+        assert_eq!(
+            parse_archive_version("Sony - PlayStation - Datfile (123) (2026-10-14 09-30-00).zip"),
+            Some("2026-10-14 09:30:00".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_timestamp_from_cuesheet_filename() {
+        assert_eq!(
+            parse_archive_version("Sony - PlayStation - Cuesheets (45) (2026-11-02 03-04-05).zip"),
+            Some("2026-11-02 03:04:05".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_filename_without_timestamp() {
+        assert_eq!(parse_archive_version("not-an-archive.zip"), None);
+        assert_eq!(parse_archive_version("Datfile (123).zip"), None);
+    }
 }
 
 // ---------------------------------------------------------------------------

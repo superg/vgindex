@@ -27,6 +27,7 @@ pub struct AppState {
     pub news_cache: services::news_service::NewsCache,
     pub homepage_cache: routes::main_page::HomepageCache,
     pub discs_cache: routes::discs::DiscsCache,
+    pub archive_versions_cache: services::archive_service::ArchiveVersionsCache,
     pub transliteration: Arc<transliteration::TransliterationRegistry>,
     pub draft_count_cache: auth::middleware::DraftCountCache,
 }
@@ -62,6 +63,11 @@ async fn main() {
     let archive_metadata =
         services::archive_service::ArchiveMetadata::from_site_url(&config.site_url);
 
+    let archive_versions_cache = services::archive_service::ArchiveVersionsCache::new();
+    archive_versions_cache
+        .replace_all(services::archive_service::archive_versions())
+        .await;
+
     let state = AppState {
         pool: pool.clone(),
         config: Arc::new(config.clone()),
@@ -76,6 +82,7 @@ async fn main() {
             routes::main_page::HOMEPAGE_CACHE_TTL_SECONDS,
         )),
         discs_cache: routes::discs::DiscsCache::production(),
+        archive_versions_cache: archive_versions_cache.clone(),
         transliteration,
         draft_count_cache: auth::middleware::DraftCountCache::new(Duration::from_secs(60 * 60 * 24)),
     };
@@ -85,6 +92,7 @@ async fn main() {
     tokio::spawn(services::archive_service::run_archive_worker(
         pool,
         archive_metadata,
+        archive_versions_cache,
     ));
 
     let dynamic_routes = routes::build_router().layer(middleware::from_fn_with_state(
