@@ -154,6 +154,7 @@
                 {% if track_col_vis.type_display %}<th>Type</th>{% endif %}
                 {% if track_col_vis.flags %}<th>Flags</th>{% endif %}
                 {% if track_col_vis.pregap %}<th>Pregap</th>{% endif %}
+                {% if track_col_vis.index %}<th>Index</th>{% endif %}
                 {% if track_col_vis.length %}<th>Length</th>{% endif %}
                 {% if track_col_vis.sectors %}<th>Sectors</th>{% endif %}
                 {% if track_col_vis.isrc %}<th>ISRC</th>{% endif %}
@@ -172,6 +173,7 @@
                 {% if track_col_vis.type_display %}<td><strong>{{ row.type_display }}</strong></td>{% endif %}
                 {% if track_col_vis.flags %}<td></td>{% endif %}
                 {% if track_col_vis.pregap %}<td></td>{% endif %}
+                {% if track_col_vis.index %}<td></td>{% endif %}
                 {% if track_col_vis.length %}<td class="col-num"><strong><code>{{ row.length }}</code></strong></td>{% endif %}
                 {% if track_col_vis.sectors %}<td class="col-num"><strong><code>{{ row.sectors }}</code></strong></td>{% endif %}
                 {% if track_col_vis.isrc %}<td></td>{% endif %}
@@ -185,6 +187,7 @@
                 {% if track_col_vis.type_display %}<td>{{ row.type_display }}</td>{% endif %}
                 {% if track_col_vis.flags %}<td>{{ row.flags_display }}</td>{% endif %}
                 {% if track_col_vis.pregap %}<td class="col-num"><code>{{ row.pregap }}</code></td>{% endif %}
+                {% if track_col_vis.index %}<td class="col-num"><code>{{ row.index }}</code></td>{% endif %}
                 {% if track_col_vis.length %}<td class="col-num"><code>{{ row.length }}</code></td>{% endif %}
                 {% if track_col_vis.sectors %}<td class="col-num"><code>{{ row.sectors }}</code></td>{% endif %}
                 {% if track_col_vis.isrc %}<td><code>{{ row.isrc }}</code></td>{% endif %}
