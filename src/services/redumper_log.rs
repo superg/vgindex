@@ -166,7 +166,7 @@ fn parse_internal(
         dvdkey.as_deref(),
         info.as_deref(),
     );
-    let bd_layer_count = dump.as_deref().and_then(bd_layer_count);
+    let dump_layer_count = dump.as_deref().and_then(dump_layer_count);
     result.layerbreaks = dump.as_deref().and_then(dump_layerbreaks);
     result.media_type = result.system_code.as_deref().and_then(|system_code| {
         let media_types = known_systems
@@ -179,7 +179,7 @@ fn parse_internal(
             return Some("xgd".to_owned());
         }
         let profile = latest_profile(&lines)?;
-        media_type_for_profile(profile, bd_layer_count, media_types)
+        media_type_for_profile(profile, dump_layer_count, media_types)
     });
     if matches!(result.system_code.as_deref(), Some("GC" | "WII")) {
         result.version = result.version.map(|version| {
@@ -204,16 +204,19 @@ fn latest_profile<'a>(lines: &[&'a str]) -> Option<&'a str> {
 
 fn media_type_for_profile(
     profile: &str,
-    bd_layer_count: Option<u32>,
+    dump_layer_count: Option<u32>,
     system_media_types: &[String],
 ) -> Option<String> {
     let candidates: &[&str] = match profile {
         "CD-ROM" | "CD-R" | "CD-RW" => &["cd", "gdrom"],
         "DVD-ROM" | "DVD-R" | "DVD-RAM" | "DVD-RW RO" | "DVD-RW" | "DVD+RW" | "DVD+R" => {
-            &["dvd5", "dvd5gc", "dvd5wii"]
+            match dump_layer_count {
+                Some(2) => &["dvd9", "dvd9wii"][..],
+                _ => &["dvd5", "dvd5gc", "dvd5wii"][..],
+            }
         }
         "DVD-R DL" | "DVD-R DL LJR" | "DVD+RW DL" | "DVD+R DL" => &["dvd9", "dvd9wii"],
-        "BD-ROM" | "BD-R" | "BD-R RRM" | "BD-RW" => match bd_layer_count {
+        "BD-ROM" | "BD-R" | "BD-R RRM" | "BD-RW" => match dump_layer_count {
             Some(2) => &["bd50", "bd66", "bd50wiiu"][..],
             Some(3) => &["bd100"][..],
             Some(4) => &["bd128"][..],
@@ -558,7 +561,7 @@ fn protection(
     }
 }
 
-fn bd_layer_count(dump_lines: &[&str]) -> Option<u32> {
+fn dump_layer_count(dump_lines: &[&str]) -> Option<u32> {
     dump_lines.iter().find_map(|line| {
         line.trim()
             .strip_prefix("layers count:")
