@@ -1284,6 +1284,7 @@ struct FormValidationOptions {
     require_regions: bool,
     require_edc: bool,
     require_cuesheet: bool,
+    require_layerbreak: bool,
 }
 
 impl FormValidationOptions {
@@ -1296,6 +1297,7 @@ impl FormValidationOptions {
             require_regions: true,
             require_edc: true,
             require_cuesheet: true,
+            require_layerbreak: true,
         }
     }
 
@@ -1308,6 +1310,7 @@ impl FormValidationOptions {
             require_regions: !is_verification,
             require_edc: !is_verification,
             require_cuesheet: !is_verification,
+            require_layerbreak: !is_verification,
         }
     }
 }
@@ -1389,6 +1392,18 @@ fn validate_form_with_options(
                     i + 1
                 ));
             }
+        }
+    }
+
+    let layerbreak_layers = all_media_types
+        .iter()
+        .find(|m| m.code == media_code)
+        .map(|m| if m.has_dummy_layer { (m.layer_count - 1).max(1) } else { m.layer_count })
+        .unwrap_or(1);
+    if options.require_layerbreak && layerbreak_layers > 1 {
+        let filled = form.layerbreak.iter().filter(|s| !s.trim().is_empty()).count();
+        if filled < (layerbreak_layers - 1) as usize {
+            errors.push("Layerbreak: required for this media type".into());
         }
     }
 
@@ -3770,6 +3785,9 @@ fn build_add_submission_changes(
             if form_edc_selection(form).is_none() {
                 obj.remove("edc");
             }
+            if form.layerbreak.iter().all(|s| s.trim().is_empty()) {
+                obj.remove("layerbreaks");
+            }
         }
     }
     changes
@@ -5896,7 +5914,7 @@ mod operation_delta_tests {
 
     #[test]
     fn serial_and_barcode_plus_buttons_are_available_on_add_disc() {
-        let template = include_str!("../../templates/disc_edit.html");
+        let template = include_str!("../../templates/disc_edit.html").replace("\r\n", "\n");
 
         assert!(template.contains(
             r#"<button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('serial-list','serial')">+</button>"#
@@ -6195,8 +6213,8 @@ mod operation_delta_tests {
 
     #[test]
     fn dump_log_uses_submission_comment_textarea_style() {
-        let template = include_str!("../../templates/disc_edit.html");
-        let css = include_str!("../../static/css/app.css");
+        let template = include_str!("../../templates/disc_edit.html").replace("\r\n", "\n");
+        let css = include_str!("../../static/css/app.css").replace("\r\n", "\n");
         let script = include_str!("../../static/js/disc_edit.js");
 
         assert!(template.contains(
@@ -6227,7 +6245,7 @@ mod operation_delta_tests {
     fn add_disc_dump_log_has_fill_helper() {
         let template = include_str!("../../templates/disc_edit.html");
         let script = include_str!("../../static/js/disc_edit.js");
-        let css = include_str!("../../static/css/app.css");
+        let css = include_str!("../../static/css/app.css").replace("\r\n", "\n");
 
         let dump_log_pos = template.find(r#"textarea name="dump_log""#).unwrap();
         let fill_pos = template
@@ -6310,7 +6328,7 @@ mod operation_delta_tests {
 
     #[test]
     fn ringcode_review_highlights_follow_entries_across_structural_edits() {
-        let script = include_str!("../../static/js/disc_edit.js");
+        let script = include_str!("../../static/js/disc_edit.js").replace("\r\n", "\n");
 
         assert!(script.contains("var ringEntryHighlights = [];"));
         assert!(script.contains("ringEntryHighlights = ringEntries.map(function (_, idx)"));

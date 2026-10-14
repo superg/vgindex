@@ -2104,7 +2104,7 @@ mod tests {
 
     #[test]
     fn ring_table_cells_use_middle_alignment() {
-        let css = include_str!("../../static/css/app.css");
+        let css = include_str!("../../static/css/app.css").replace("\r\n", "\n");
 
         // All ring cells share middle alignment so single-row entries line up.
         assert!(css.contains(

@@ -26,6 +26,7 @@ pub struct ParsedRedumperLog {
     /// `None` means no protection information was found. `Some("")` means
     /// `protection: none` was explicitly reported and the field should clear.
     pub protection: Option<String>,
+    pub layerbreaks: Option<Vec<String>>,
 }
 
 pub fn has_supported_autofill_builds(log: &str) -> bool {
@@ -82,6 +83,7 @@ fn parse_internal(
     let hash = latest_section(&lines, "HASH");
     let protection_section = latest_section(&lines, "PROTECTION");
     let dvdkey = latest_section(&lines, "DVDKEY");
+    let dump = latest_section(&lines, "DUMP");
 
     let mut result = ParsedRedumperLog::default();
 
@@ -164,6 +166,8 @@ fn parse_internal(
         dvdkey.as_deref(),
         info.as_deref(),
     );
+    let dump_layer_count = dump.as_deref().and_then(dump_layer_count);
+    result.layerbreaks = dump.as_deref().and_then(dump_layerbreaks);
     result.media_type = result.system_code.as_deref().and_then(|system_code| {
         let media_types = known_systems
             .iter()
@@ -175,7 +179,7 @@ fn parse_internal(
             return Some("xgd".to_owned());
         }
         let profile = latest_profile(&lines)?;
-        media_type_for_profile(profile, media_types)
+        media_type_for_profile(profile, dump_layer_count, media_types)
     });
     if matches!(result.system_code.as_deref(), Some("GC" | "WII")) {
         result.version = result.version.map(|version| {
@@ -198,14 +202,26 @@ fn latest_profile<'a>(lines: &[&'a str]) -> Option<&'a str> {
     })
 }
 
-fn media_type_for_profile(profile: &str, system_media_types: &[String]) -> Option<String> {
+fn media_type_for_profile(
+    profile: &str,
+    dump_layer_count: Option<u32>,
+    system_media_types: &[String],
+) -> Option<String> {
     let candidates: &[&str] = match profile {
         "CD-ROM" | "CD-R" | "CD-RW" => &["cd", "gdrom"],
         "DVD-ROM" | "DVD-R" | "DVD-RAM" | "DVD-RW RO" | "DVD-RW" | "DVD+RW" | "DVD+R" => {
-            &["dvd5", "dvd5gc", "dvd5wii"]
+            match dump_layer_count {
+                Some(2) => &["dvd9", "dvd9wii"][..],
+                _ => &["dvd5", "dvd5gc", "dvd5wii"][..],
+            }
         }
         "DVD-R DL" | "DVD-R DL LJR" | "DVD+RW DL" | "DVD+R DL" => &["dvd9", "dvd9wii"],
-        "BD-ROM" | "BD-R" | "BD-R RRM" | "BD-RW" => &["bd25", "bd25wiiu"],
+        "BD-ROM" | "BD-R" | "BD-R RRM" | "BD-RW" => match dump_layer_count {
+            Some(2) => &["bd50", "bd66", "bd50wiiu"][..],
+            Some(3) => &["bd100"][..],
+            Some(4) => &["bd128"][..],
+            _ => &["bd25", "bd25wiiu"][..],
+        },
         "HD DVD-ROM" | "HD DVD-R" | "HD DVD-RAM" | "HD DVD-RW" => &["hdvd15"],
         "HD DVD-R DL" | "HD DVD-RW DL" => &["hdvd30"],
         _ => return None,
@@ -543,6 +559,46 @@ fn protection(
     } else {
         None
     }
+}
+
+fn dump_layer_count(dump_lines: &[&str]) -> Option<u32> {
+    dump_lines.iter().find_map(|line| {
+        line.trim()
+            .strip_prefix("layers count:")
+            .and_then(|v| v.trim().parse::<u32>().ok())
+            .filter(|&n| n > 0)
+    })
+}
+
+fn dump_layerbreaks(dump_lines: &[&str]) -> Option<Vec<String>> {
+    let mut breaks: Vec<(u32, String)> = dump_lines
+        .iter()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("layer break (layer:") {
+                let (layer_part, value_part) = rest.split_once(')')?;
+                let layer = layer_part.trim().parse::<u32>().ok()?;
+                let value = value_part.trim().strip_prefix(':')?.trim();
+                if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
+                }
+                Some((layer, value.to_owned()))
+            } else if let Some(value) = trimmed.strip_prefix("layer break:") {
+                let value = value.trim();
+                if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+                    return None;
+                }
+                Some((0, value.to_owned()))
+            } else {
+                None
+            }
+        })
+        .collect();
+    if breaks.is_empty() {
+        return None;
+    }
+    breaks.sort_by_key(|(layer, _)| *layer);
+    Some(breaks.into_iter().map(|(_, v)| v).collect())
 }
 
 fn nonempty_join<'a>(values: impl IntoIterator<Item = &'a str>) -> Option<String> {
