@@ -134,34 +134,6 @@ pub(crate) fn clear_archives_cache_at(data_dir: impl AsRef<Path>) -> std::io::Re
     }
 }
 
-pub fn cleanup_legacy_archive_dirs() {
-    cleanup_legacy_archive_dirs_at(crate::config::DATA_DIR)
-}
-
-fn cleanup_legacy_archive_dirs_at(data_dir: impl AsRef<Path>) {
-    let archives_dir = data_dir.as_ref().join("archives");
-    let Ok(entries) = std::fs::read_dir(&archives_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let is_legacy = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.contains("-dat-serial-version-"));
-        if is_legacy {
-            if let Err(err) = std::fs::remove_dir_all(&path) {
-                tracing::warn!("Failed to remove legacy archive dir {path:?}: {err}");
-            } else {
-                tracing::info!("Removed legacy archive dir {path:?}");
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
