@@ -419,6 +419,14 @@ async fn build_datfile_games(
             disc.disc_title.as_deref(),
             disc.filename_suffix.as_deref(),
         );
+        let game_description = build_rom_base_description(
+            &disc.title,
+            &region_names,
+            &language_codes,
+            disc.disc_number.as_deref(),
+            disc.disc_title.as_deref(),
+            disc.filename_suffix.as_deref(),
+        );
 
         let total_tracks = files.iter().filter(|f| f.track_number.is_some()).count();
         let cue_active = dat_disc_has_active_cue(disc, sys);
@@ -452,6 +460,7 @@ async fn build_datfile_games(
         games.push(GameEntry {
             id: disc.id,
             name: game_name,
+            description: game_description,
             category: disc.category_name.clone(),
             serials: clean_dat_strings(&disc.serial),
             version: clean_dat_optional(disc.version.as_deref()),
@@ -510,8 +519,8 @@ fn render_datfile_xml(
         }
 
         xml.push_str(&format!(
-            "\t\t<description>{name}</description>\n",
-            name = html_escape(&game.name),
+            "\t\t<description>{desc}</description>\n",
+            desc = html_escape(&game.description),
         ));
 
         for rom in &game.roms {
@@ -582,6 +591,7 @@ fn dat_version_text(version: Option<&str>) -> Option<&str> {
 struct GameEntry {
     id: i32,
     name: String,
+    description: String,
     category: String,
     serials: Vec<String>,
     version: Option<String>,
@@ -685,6 +695,7 @@ mod tests {
         GameEntry {
             id: 7,
             name: "Game & Title".to_string(),
+            description: "Game & Title".to_string(),
             category: "Games & Apps".to_string(),
             serials: serials.into_iter().map(str::to_string).collect(),
             version: version.map(str::to_string),

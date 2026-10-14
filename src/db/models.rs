@@ -742,24 +742,53 @@ pub fn build_rom_base_name(
     disc_title: Option<&str>,
     filename_suffix: Option<&str>,
 ) -> String {
-    let mut name = sanitize_filename(title);
+    build_rom_base_name_inner(title, region_names, language_codes, disc_number, disc_title, filename_suffix, true)
+}
+
+pub fn build_rom_base_description(
+    title: &str,
+    region_names: &[String],
+    language_codes: &[String],
+    disc_number: Option<&str>,
+    disc_title: Option<&str>,
+    filename_suffix: Option<&str>,
+) -> String {
+    build_rom_base_name_inner(title, region_names, language_codes, disc_number, disc_title, filename_suffix, false)
+}
+
+fn build_rom_base_name_inner(
+    title: &str,
+    region_names: &[String],
+    language_codes: &[String],
+    disc_number: Option<&str>,
+    disc_title: Option<&str>,
+    filename_suffix: Option<&str>,
+    sanitize: bool,
+) -> String {
+    let clean_string = |s: &str| -> Option<String> {
+        if sanitize {
+            sanitize_filename_component(s)
+        } else {
+            let t = s.trim();
+            if t.is_empty() { None } else { Some(t.to_string()) }
+        }
+    };
+
+    let mut name = if sanitize { sanitize_filename(title) } else { title.to_string() };
     let regions: Vec<String> = region_names
         .iter()
-        .filter_map(|r| sanitize_filename_component(r))
+        .filter_map(|r| clean_string(r))
         .collect();
     if !regions.is_empty() {
         push_parenthetical(&mut name, &regions.join(", "));
     }
     let languages: Vec<String> = language_codes
         .iter()
-        .filter_map(|c| sanitize_filename_component(c))
+        .filter_map(|c| clean_string(c))
         .map(|c| {
             let mut chars = c.chars();
             match chars.next() {
-                Some(first) => {
-                    let upper: String = first.to_uppercase().collect();
-                    format!("{upper}{}", chars.as_str())
-                }
+                Some(first) => format!("{}{}", first.to_uppercase().collect::<String>(), chars.as_str()),
                 None => String::new(),
             }
         })
@@ -767,13 +796,13 @@ pub fn build_rom_base_name(
     if languages.len() > 1 {
         push_parenthetical(&mut name, &languages.join(","));
     }
-    if let Some(n) = disc_number.and_then(sanitize_filename_component) {
+    if let Some(n) = disc_number.and_then(|s| clean_string(s)) {
         push_parenthetical(&mut name, &format!("Disc {n}"));
     }
-    if let Some(d) = disc_title.and_then(sanitize_filename_component) {
+    if let Some(d) = disc_title.and_then(|s| clean_string(s)) {
         push_parenthetical(&mut name, &d);
     }
-    if let Some(s) = filename_suffix.and_then(sanitize_filename_component) {
+    if let Some(s) = filename_suffix.and_then(|s| clean_string(s)) {
         push_parenthetical(&mut name, &s);
     }
     name
@@ -1079,7 +1108,11 @@ pub fn build_lsd_binary(sbi_text: &str) -> Vec<u8> {
 }
 
 pub fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
+    let filtered: String = s
+        .chars()
+        .filter(|&c| matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'))
+        .collect();
+    filtered.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
