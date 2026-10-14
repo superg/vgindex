@@ -23,7 +23,6 @@ pub fn routes() -> Router<AppState> {
         .route("/datfile/{system}", get(download_dat))
         .route("/datfile/{system}/{features}", get(download_dat_variant))
         .route("/cues/{system}", get(download_cue))
-        .route("/keys/{system}", get(download_key))
         .route("/sbi/{system}", get(download_sbi))
         .route("/downloads/database", get(download_database))
 }
@@ -32,7 +31,6 @@ pub fn routes() -> Router<AppState> {
 #[template(path = "downloads.html")]
 struct DownloadsTemplate {
     current_user: Option<AuthenticatedUser>,
-    can_download_keys: bool,
     can_download_database: bool,
     database_export: Option<DatabaseDownload>,
     systems: Vec<SystemDownload>,
@@ -45,7 +43,6 @@ struct SystemDownload {
     name: String,
     has_dat: bool,
     has_cue: bool,
-    has_key: bool,
     has_sbi: bool,
     version: Option<String>,
 }
@@ -159,7 +156,7 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
         .collect();
 
     let rows: Vec<SystemDownloadRow> = sqlx::query_as(
-        "SELECT s.code, s.manufacturer, s.name, s.has_key, s.has_sbi, s.media_types
+        "SELECT s.code, s.manufacturer, s.name, s.has_sbi, s.media_types
          FROM systems s
          WHERE EXISTS (SELECT 1 FROM discs d WHERE d.system_code = s.code)
          ORDER BY LOWER(CONCAT_WS(' ', NULLIF(s.manufacturer, ''), s.name))",
@@ -191,7 +188,6 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
                 .media_types
                 .iter()
                 .any(|code| cd_media_codes.contains(code)),
-            has_key: r.has_key,
             has_sbi: r.has_sbi
                 && r.media_types
                     .iter()
@@ -202,7 +198,6 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
     Html(
         DownloadsTemplate {
             current_user: user.user().cloned(),
-            can_download_keys: authenticated,
             can_download_database: authenticated,
             database_export: database_export_download(),
             systems,
@@ -228,7 +223,6 @@ struct SystemDownloadRow {
     code: String,
     manufacturer: String,
     name: String,
-    has_key: bool,
     has_sbi: bool,
     media_types: Vec<String>,
 }
@@ -286,14 +280,6 @@ async fn download_dat_variant(
 
 async fn download_cue(State(state): State<AppState>, Path(system): Path<String>) -> Response {
     serve_archive(&state, &system, "cue").await
-}
-
-async fn download_key(
-    State(state): State<AppState>,
-    _user: RequireAuth,
-    Path(system): Path<String>,
-) -> Response {
-    serve_archive(&state, &system, "key").await
 }
 
 async fn download_sbi(State(state): State<AppState>, Path(system): Path<String>) -> Response {
@@ -355,11 +341,11 @@ mod tests {
         .collect()
     }
 
-    fn template(can_download_keys: bool) -> DownloadsTemplate {
+    fn template(authenticated: bool) -> DownloadsTemplate {
         let system_names = test_system_names();
 
         DownloadsTemplate {
-            current_user: can_download_keys.then(|| AuthenticatedUser {
+            current_user: authenticated.then(|| AuthenticatedUser {
                 id: 1,
                 username: "tester".to_string(),
                 role: UserRole::User,
@@ -367,8 +353,7 @@ mod tests {
                 avatar_url: None,
                 draft_count: 0,
             }),
-            can_download_keys,
-            can_download_database: can_download_keys,
+            can_download_database: authenticated,
             database_export: Some(DatabaseDownload {
                 date: "2026-07-03 19:25:58 UTC".to_string(),
                 datetime: "2026-07-03T19:25:58Z".to_string(),
@@ -379,7 +364,6 @@ mod tests {
                     name: "Sony - PlayStation 3".to_string(),
                     has_dat: true,
                     has_cue: false,
-                    has_key: true,
                     has_sbi: false,
                     version: Some("2026-10-14 09:30:00".to_string()),
                 },
@@ -388,7 +372,6 @@ mod tests {
                     name: "IBM - PC compatible".to_string(),
                     has_dat: true,
                     has_cue: true,
-                    has_key: false,
                     has_sbi: false,
                     version: None,
                 },
@@ -443,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn downloads_page_hides_key_links_from_guests() {
+    fn downloads_page_hides_database_section_from_guests() {
         let html = template(false).render().unwrap();
 
         assert!(!html.contains(r#"/keys/PS3"#));
@@ -462,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn downloads_page_shows_key_links_to_authenticated_users() {
+    fn downloads_page_shows_database_section_to_authenticated_users() {
         let html = template(true).render().unwrap();
 
         assert!(html.contains(r#"href="/downloads/database""#));

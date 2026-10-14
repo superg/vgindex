@@ -42,7 +42,7 @@
 (crawler_guard_app) {
 	@crawler_generated {
 		header_regexp User-Agent "(?i)(bot|crawler|spider|slurp|archiver|facebookexternalhit|meta-externalagent|meta-webindexer|aiwebindex)"
-		path /api/* /auth/* /login /logout /queue /queue/* /maintenance /maintenance/* /disc/submit /downloads/database /datfile/* /cues/* /keys/* /sbi/*
+		path /api/* /auth/* /login /logout /queue /queue/* /maintenance /maintenance/* /disc/submit /downloads/database /datfile/* /cues/* /sbi/*
 	}
 	respond @crawler_generated "Crawler access to generated navigation is disabled.\n" 403
 
@@ -129,7 +129,6 @@
 		Disallow: /downloads/database
 		Disallow: /datfile/
 		Disallow: /cues/
-		Disallow: /keys/
 		Disallow: /sbi/
 		ROBOTS 200
 	import crawler_guard_app

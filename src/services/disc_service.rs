@@ -300,10 +300,6 @@ fn parse_hex_text_bytes_for(field_name: &str, val: Option<&str>) -> AppResult<Op
     Ok(Some(bytes))
 }
 
-fn parse_hex_text_bytes(val: Option<&str>) -> AppResult<Option<Vec<u8>>> {
-    parse_hex_text_bytes_for("disc_key", val)
-}
-
 fn parse_universal_hash_bytes(val: Option<&str>) -> AppResult<Option<Vec<u8>>> {
     let bytes = parse_hex_text_bytes_for("universal_hash", val)?;
     if let Some(bytes) = &bytes {
@@ -870,7 +866,6 @@ pub async fn update_disc(
         .as_str()
         .map(|s| s.trim().to_ascii_lowercase())
         .filter(|s| !s.is_empty());
-    let disc_key = parse_hex_text_bytes(data["disc_key"].as_str())?;
     let universal_hash = parse_universal_hash_bytes(data["universal_hash"].as_str())?;
     let error_count = data["error_count"].as_i64().map(|v| v as i32);
     let exe_date = data["exe_date"].as_str().filter(|s| !s.is_empty());
@@ -937,11 +932,11 @@ pub async fn update_disc(
          error_count = $15, exe_date = $16, edc = $17,
          layerbreaks = $18,
          pvd = $19, pic = $20, bca = $21, header = $22,
-         protection = $23, sbi = $24, disc_id = $25, disc_key = $26,
-         universal_hash = $27,
-         cue = $28,
-         status = $29::disc_status_enum
-         WHERE id = $30",
+         protection = $23, sbi = $24, disc_id = $25,
+         universal_hash = $26,
+         cue = $27,
+         status = $28::disc_status_enum
+         WHERE id = $29",
     )
     .bind(title) // $1
     .bind(system_code) // $2
@@ -968,11 +963,10 @@ pub async fn update_disc(
     .bind(protection) // $23
     .bind(sbi) // $24
     .bind(disc_id_text) // $25
-    .bind(&disc_key) // $26
-    .bind(&universal_hash) // $27
-    .bind(cue) // $28
-    .bind(status) // $29
-    .bind(disc_id) // $30
+    .bind(&universal_hash) // $26
+    .bind(cue) // $27
+    .bind(status) // $28
+    .bind(disc_id) // $29
     .execute(&mut *conn)
     .await?;
 
@@ -1414,7 +1408,6 @@ mod tests {
                 protection: None,
                 sbi: Some("MSF: 02:03:04 Q-Data: a1b2c3 0a:0b:0c 00 0d:0e:0f abcd".to_string()),
                 disc_id: Some("AABBCCDD".to_string()),
-                disc_key: Some(vec![0xaa, 0xbb, 0xcc, 0xdd]),
                 universal_hash: Some((0u8..20).collect()),
                 cue: None,
                 pvd: None,
@@ -1436,7 +1429,6 @@ mod tests {
                 has_edc: false,
                 has_error_count: false,
                 has_disc_id: false,
-                has_key: false,
                 has_universal_hash: false,
                 has_title_foreign: false,
                 has_disc_title: false,
@@ -1512,7 +1504,6 @@ mod tests {
             "000102030405060708090a0b0c0d0e0f10111213"
         );
         assert_eq!(snapshot["disc_id"], "aabbccdd");
-        assert_eq!(snapshot["disc_key"], "aabbccdd");
         assert_eq!(
             snapshot["sbi"],
             "MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD"
@@ -2201,7 +2192,6 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "protection": detail.disc.protection,
         "sbi": detail.disc.sbi,
         "disc_id": detail.disc.disc_id,
-        "disc_key": detail.disc.disc_key.as_ref().map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()),
         "universal_hash": detail.disc.universal_hash.as_ref().map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()),
         "cuesheet": cue,
         "status": detail.disc.status.to_string(),

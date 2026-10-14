@@ -130,8 +130,6 @@ struct DiscViewTemplate {
     show_pvd: bool,
     pic_rows: Vec<HeaderRow>,
     show_disc_id: bool,
-    show_key: bool,
-    disc_key: String,
     cue_catalog: String,
     cue_title: String,
     cue_performer: String,
@@ -623,21 +621,6 @@ async fn disc_view(
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
 
-    let disc_key = if can_view_key_material {
-        detail
-            .disc
-            .disc_key
-            .as_ref()
-            .map(|bytes| {
-                bytes
-                    .iter()
-                    .map(|b| format!("{:02x}", b))
-                    .collect::<String>()
-            })
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
     let disc_id_text = if can_view_key_material {
         detail
             .disc
@@ -829,8 +812,6 @@ async fn disc_view(
             show_pvd: detail.system.has_pvd,
             pic_rows,
             show_disc_id: can_view_key_material && detail.system.has_disc_id,
-            show_key: can_view_key_material && detail.system.has_key,
-            disc_key,
             cue_catalog: cue_disc_meta.catalog,
             cue_title: cue_disc_meta.title,
             cue_performer: cue_disc_meta.performer,
@@ -1955,12 +1936,7 @@ mod tests {
         }
     }
 
-    fn disc_view_template(
-        show_disc_id: bool,
-        show_key: bool,
-        disc_id_text: &str,
-        disc_key: &str,
-    ) -> DiscViewTemplate {
+    fn disc_view_template(show_disc_id: bool, disc_id_text: &str) -> DiscViewTemplate {
         DiscViewTemplate {
             current_user: None,
             can_edit: false,
@@ -2042,8 +2018,6 @@ mod tests {
             show_pvd: false,
             pic_rows: Vec::new(),
             show_disc_id,
-            show_key,
-            disc_key: disc_key.to_string(),
             cue_catalog: String::new(),
             cue_title: String::new(),
             cue_performer: String::new(),
@@ -2064,7 +2038,7 @@ mod tests {
 
     #[test]
     fn disc_view_renders_added_and_modified_timestamps_in_utc() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.added_at = "2026-01-01 01:02 UTC".to_string();
         template.updated_at = "2026-01-02 04:05 UTC".to_string();
 
@@ -2084,7 +2058,7 @@ mod tests {
 
     #[test]
     fn disc_identifier_fields_render_sorted_for_display() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.show_serial = true;
         template.serial_count = 4;
         template.serial = join_sorted_identifier_values(&[
@@ -2120,7 +2094,7 @@ mod tests {
 
     #[test]
     fn disc_view_hides_history_link_when_user_cannot_view_history() {
-        let html = disc_view_template(false, false, "", "").render().unwrap();
+        let html = disc_view_template(false, "").render().unwrap();
 
         assert!(!html.contains("History"));
         assert!(!html.contains("/queue?disc_id=1"));
@@ -2128,7 +2102,7 @@ mod tests {
 
     #[test]
     fn disc_view_shows_history_link_when_user_can_view_history() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.current_user = Some(AuthenticatedUser::template_only("user"));
         template.can_view_history = true;
 
@@ -2158,7 +2132,7 @@ mod tests {
 
     #[test]
     fn disc_view_template_omits_hidden_protection_text() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.protection = "Sensitive BD protection".to_string();
         template.show_protection = can_show_disc_view_protection("BD-VIDEO", true, false);
 
@@ -2170,7 +2144,7 @@ mod tests {
 
     #[test]
     fn disc_view_template_shows_visible_protection_text() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.protection = "Visible protection".to_string();
         template.show_protection = can_show_disc_view_protection("BD-VIDEO", true, true);
 
@@ -2182,7 +2156,7 @@ mod tests {
 
     #[test]
     fn disc_view_error_count_respects_system_capability() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.error_count = "3".to_string();
 
         let hidden = template.render().unwrap();
@@ -2260,7 +2234,7 @@ mod tests {
 
     #[test]
     fn ring_entry_offsets_render_once_per_entry_with_rowspan() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.ring_rows = vec![
             ViewRingRow {
                 entry_num: 1,
@@ -2338,32 +2312,24 @@ mod tests {
     }
 
     #[test]
-    fn disc_view_hides_disc_id_and_key_when_visibility_flags_are_false() {
-        let html = disc_view_template(false, false, "secret-disc-id", "deadbeef")
-            .render()
-            .unwrap();
+    fn disc_view_hides_disc_id_when_visibility_flag_is_false() {
+        let html = disc_view_template(false, "secret-disc-id").render().unwrap();
 
         assert!(!html.contains("<strong>Disc ID</strong>"));
-        assert!(!html.contains("<strong>Disc Key</strong>"));
         assert!(!html.contains("secret-disc-id"));
-        assert!(!html.contains("deadbeef"));
     }
 
     #[test]
-    fn disc_view_shows_disc_id_and_key_when_visibility_flags_are_true() {
-        let html = disc_view_template(true, true, "visible-disc-id", "deadbeef")
-            .render()
-            .unwrap();
+    fn disc_view_shows_disc_id_when_visibility_flag_is_true() {
+        let html = disc_view_template(true, "visible-disc-id").render().unwrap();
 
         assert!(html.contains("<strong>Disc ID</strong>"));
-        assert!(html.contains("<strong>Disc Key</strong>"));
         assert!(html.contains("visible-disc-id"));
-        assert!(html.contains("deadbeef"));
     }
 
     #[test]
     fn disc_view_hides_empty_universal_hash() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.show_universal_hash = true;
 
         let html = template.render().unwrap();
@@ -2373,7 +2339,7 @@ mod tests {
 
     #[test]
     fn disc_view_shows_populated_universal_hash() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.show_universal_hash = true;
         template.universal_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string();
 
@@ -2385,7 +2351,7 @@ mod tests {
 
     #[test]
     fn tracks_table_sectors_use_fixed_font_like_length() {
-        let mut template = disc_view_template(false, false, "", "");
+        let mut template = disc_view_template(false, "");
         template.show_tracks_table = true;
         template.track_col_vis = TrackColVis {
             track_num: false,
