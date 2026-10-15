@@ -1055,6 +1055,15 @@ function updatePicLayerbreakHint() {
     var picTa = document.querySelector('textarea[name="pic"]');
     var result = picTa && picTa.value.trim() ? layerbreakFromPicHex(picTa.value) : null;
     if (result) {
+        var values = result.split(', ').map(function (s) { return s.replace(' (from PIC)', ''); });
+        var inputs = document.querySelectorAll('input[name="layerbreak"]');
+        var allMatch = values.length === inputs.length && values.every(function (v, i) {
+            return inputs[i] && inputs[i].value.trim() === v;
+        });
+        if (allMatch) {
+            hint.style.display = 'none';
+            return;
+        }
         hint.textContent = result;
         hint.style.display = '';
     } else {
@@ -1084,6 +1093,7 @@ function renderLayerbreaks() {
         input.type = 'text';
         input.name = 'layerbreak';
         input.value = (typeof LAYERBREAKS !== 'undefined' && LAYERBREAKS[i]) ? LAYERBREAKS[i] : '';
+        input.addEventListener('input', updatePicLayerbreakHint);
         container.appendChild(input);
     }
     if (hint) container.appendChild(hint);
