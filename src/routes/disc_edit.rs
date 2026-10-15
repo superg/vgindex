@@ -1280,6 +1280,13 @@ impl FormValidationOptions {
         }
     }
 
+    const fn edit_submission() -> Self {
+        Self {
+            require_layerbreak: false,
+            ..Self::strict()
+        }
+    }
+
     const fn add_submission(is_verification: bool) -> Self {
         Self {
             require_system: !is_verification,
@@ -1519,7 +1526,7 @@ pub(crate) fn validate_form(
         form,
         all_media_types,
         all_systems,
-        FormValidationOptions::strict(),
+        FormValidationOptions::edit_submission(),
     )
 }
 
