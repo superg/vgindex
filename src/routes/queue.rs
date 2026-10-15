@@ -607,6 +607,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
         title_foreign: string("title_foreign"),
         disc_number: string("disc_number"),
         disc_title: string("disc_title"),
+        disc_title_foreign: string("disc_title_foreign"),
         filename_suffix: string("filename_suffix"),
         category: string("category").unwrap_or_default(),
         regions: strings("regions"),
@@ -960,6 +961,8 @@ fn build_review_template(
         disc_number: json_opt_str("disc_number"),
         show_disc_title: has_sys(|s| s.has_disc_title),
         disc_title: json_opt_str("disc_title"),
+        show_disc_title_foreign: has_sys(|s| s.has_disc_title_foreign),
+        disc_title_foreign: json_opt_str("disc_title_foreign"),
         filename_suffix: json_opt_str("filename_suffix"),
         show_filename_suffix: true,
 
@@ -1379,6 +1382,7 @@ fn build_review_diff_context(
         "title_foreign",
         "disc_number",
         "disc_title",
+        "disc_title_foreign",
         "filename_suffix",
     ] {
         let old = &db_snapshot[field];
@@ -1529,6 +1533,7 @@ fn apply_review_diff_context(
                 template.show_title_foreign = system.has_title_foreign;
                 template.show_disc_number = system.has_disc_number;
                 template.show_disc_title = system.has_disc_title;
+                template.show_disc_title_foreign = system.has_disc_title_foreign;
                 template.show_serial = system.has_serial;
                 template.show_version = system.has_version;
                 template.show_edition = system.has_edition;
@@ -1584,6 +1589,7 @@ fn apply_review_diff_context(
             "title_foreign",
             "disc_number",
             "disc_title",
+            "disc_title_foreign",
             "filename_suffix",
         ] {
             if !review_value_changed(&db_snapshot[field], &submitted_snapshot[field]) {
@@ -1595,6 +1601,7 @@ fn apply_review_diff_context(
                 "title_foreign" => template.title_foreign = old_value,
                 "disc_number" => template.disc_number = old_value,
                 "disc_title" => template.disc_title = old_value,
+                "disc_title_foreign" => template.disc_title_foreign = old_value,
                 "filename_suffix" => template.filename_suffix = old_value,
                 _ => {}
             }
@@ -1698,6 +1705,7 @@ fn compute_field_highlights(
         "title_foreign",
         "disc_number",
         "disc_title",
+        "disc_title_foreign",
         "filename_suffix",
         "version",
         "error_count",
@@ -2747,6 +2755,7 @@ mod tests {
             has_universal_hash: true,
             has_title_foreign: true,
             has_disc_title: true,
+            has_disc_title_foreign: true,
             has_disc_number: true,
             has_serial: true,
             has_barcode: true,
