@@ -1382,6 +1382,7 @@ fn build_review_diff_context(
         "title_foreign",
         "disc_number",
         "disc_title",
+        "disc_title_foreign",
         "filename_suffix",
     ] {
         let old = &db_snapshot[field];
@@ -1587,6 +1588,7 @@ fn apply_review_diff_context(
             "title_foreign",
             "disc_number",
             "disc_title",
+            "disc_title_foreign",
             "filename_suffix",
         ] {
             if !review_value_changed(&db_snapshot[field], &submitted_snapshot[field]) {
@@ -1702,6 +1704,7 @@ fn compute_field_highlights(
         "title_foreign",
         "disc_number",
         "disc_title",
+        "disc_title_foreign",
         "filename_suffix",
         "version",
         "error_count",
