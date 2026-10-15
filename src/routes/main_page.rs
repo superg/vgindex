@@ -297,10 +297,14 @@ async fn rss_new_discs(State(state): State<AppState>) -> impl IntoResponse {
             .added_at_dt
             .map(|dt| dt.format("%a, %d %b %Y %H:%M:%S +0000").to_string())
             .unwrap_or_default();
-        let guid = if pub_date.is_empty() {
+        let guid_date = disc
+            .added_at_dt
+            .map(|dt| dt.format("%Y%m%d%H%M%S").to_string())
+            .unwrap_or_default();
+        let guid = if guid_date.is_empty() {
             link.clone()
         } else {
-            format!("{link}#{}", pub_date)
+            format!("{link}#{}", guid_date)
         };
         xml.push_str(&format!(
             "  <item>\n    <title>{title}</title>\n    <link>{link}</link>\n    <guid>{guid}</guid>\n"
@@ -348,10 +352,14 @@ async fn rss_recent_changes(State(state): State<AppState>) -> impl IntoResponse 
             .modified_at_dt
             .map(|dt| dt.format("%a, %d %b %Y %H:%M:%S +0000").to_string())
             .unwrap_or_default();
-        let guid = if pub_date.is_empty() {
+        let guid_date = change
+            .modified_at_dt
+            .map(|dt| dt.format("%Y%m%d%H%M%S").to_string())
+            .unwrap_or_default();
+        let guid = if guid_date.is_empty() {
             link.clone()
         } else {
-            format!("{link}#{}", pub_date)
+            format!("{link}#{}", guid_date)
         };
         xml.push_str(&format!(
             "  <item>\n    <title>{title}</title>\n    <link>{link}</link>\n    <guid>{guid}</guid>\n"
