@@ -67,7 +67,6 @@ CREATE TABLE systems (
     has_exe_date INTEGER NOT NULL,
     has_edc INTEGER NOT NULL,
     has_error_count INTEGER NOT NULL,
-    has_disc_id INTEGER NOT NULL,
     has_universal_hash INTEGER NOT NULL,
     has_protection INTEGER NOT NULL,
     has_sector_ranges INTEGER NOT NULL,
@@ -97,7 +96,6 @@ CREATE TABLE discs (
     exe_date TEXT,
     edc INTEGER NOT NULL,
     layerbreaks TEXT CHECK (layerbreaks IS NULL OR json_valid(layerbreaks)),
-    disc_id TEXT,
     universal_hash BLOB,
     comments TEXT,
     contents TEXT,
@@ -208,7 +206,6 @@ struct SystemRow {
     has_exe_date: bool,
     has_edc: bool,
     has_error_count: bool,
-    has_disc_id: bool,
     has_universal_hash: bool,
     has_protection: bool,
     has_sector_ranges: bool,
@@ -239,7 +236,6 @@ struct DiscRow {
     exe_date: Option<String>,
     edc: bool,
     layerbreaks: Option<String>,
-    disc_id: Option<String>,
     universal_hash: Option<Vec<u8>>,
     comments: Option<String>,
     contents: Option<String>,
@@ -648,7 +644,7 @@ async fn export_systems(
                 to_json(media_types)::text AS media_types,
                 has_title_foreign, has_disc_number, has_disc_title, has_serial,
                 has_edition, has_barcode, has_version, has_exe_date, has_edc,
-                has_error_count, has_disc_id, has_universal_hash, has_protection,
+                has_error_count, has_universal_hash, has_protection,
                 has_sector_ranges, has_sbi, has_pvd, has_header, has_bca,
                 has_sample_start, has_offset_extra
          FROM systems ORDER BY code",
@@ -656,7 +652,7 @@ async fn export_systems(
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.code)
         .bind(row.system_type)
@@ -674,7 +670,6 @@ async fn export_systems(
         .bind(row.has_exe_date)
         .bind(row.has_edc)
         .bind(row.has_error_count)
-        .bind(row.has_disc_id)
         .bind(row.has_universal_hash)
         .bind(row.has_protection)
         .bind(row.has_sector_ranges)
@@ -704,7 +699,7 @@ async fn export_discs(
                 to_json(barcode)::text AS barcode,
                 version, error_count, exe_date, edc,
                 to_json(layerbreaks)::text AS layerbreaks,
-                disc_id, universal_hash, comments, contents, protection,
+                universal_hash, comments, contents, protection,
                 to_json(sector_ranges)::text AS sector_ranges,
                 sbi, pvd, header, bca, pic, cue, status::text AS status
          FROM discs
@@ -714,7 +709,7 @@ async fn export_discs(
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.id)
         .bind(row.system_code)
@@ -733,7 +728,6 @@ async fn export_discs(
         .bind(row.exe_date)
         .bind(row.edc)
         .bind(row.layerbreaks)
-        .bind(row.disc_id)
         .bind(row.universal_hash)
         .bind(row.comments)
         .bind(row.contents)

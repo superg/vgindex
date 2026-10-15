@@ -1209,10 +1209,6 @@ const SYSTEM_FLAGS: &[SystemFlagDefinition] = &[
         label: "Error Count",
     },
     SystemFlagDefinition {
-        field: "has_disc_id",
-        label: "Disc ID",
-    },
-    SystemFlagDefinition {
         field: "has_universal_hash",
         label: "Universal Hash",
     },
@@ -1338,16 +1334,16 @@ const INSERT_SYSTEM_SQL: &str = "
         (code, type, manufacturer, name, short_name, media_types,
          has_title_foreign, has_disc_number, has_disc_title, has_serial,
          has_edition, has_barcode, has_version, has_exe_date, has_edc,
-         has_error_count, has_disc_id, has_universal_hash, has_protection,
+         has_error_count, has_universal_hash, has_protection,
          has_sector_ranges, has_sbi, has_pvd, has_header, has_bca,
          has_sample_start, has_offset_extra, archives_dirty)
     VALUES
         ($1, $2, $3, $4, $5, $6,
          $7, $8, $9, $10,
          $11, $12, $13, $14, $15,
-         $16, $17, $18, $19,
-         $20, $21, $22, $23, $24,
-         $25, $26, TRUE)";
+         $16, $17, $18,
+         $19, $20, $21, $22, $23,
+         $24, $25, TRUE)";
 
 const UPDATE_SYSTEM_SQL: &str = "
     UPDATE systems
@@ -1366,16 +1362,15 @@ const UPDATE_SYSTEM_SQL: &str = "
         has_exe_date = $14,
         has_edc = $15,
         has_error_count = $16,
-        has_disc_id = $17,
-        has_universal_hash = $18,
-        has_protection = $19,
-        has_sector_ranges = $20,
-        has_sbi = $21,
-        has_pvd = $22,
-        has_header = $23,
-        has_bca = $24,
-        has_sample_start = $25,
-        has_offset_extra = $26,
+        has_universal_hash = $17,
+        has_protection = $18,
+        has_sector_ranges = $19,
+        has_sbi = $20,
+        has_pvd = $21,
+        has_header = $22,
+        has_bca = $23,
+        has_sample_start = $24,
+        has_offset_extra = $25,
         archives_dirty = TRUE
     WHERE code = $1";
 
@@ -2266,7 +2261,6 @@ fn system_flag_value(system: &System, field: &str) -> bool {
         "has_exe_date" => system.has_exe_date,
         "has_edc" => system.has_edc,
         "has_error_count" => system.has_error_count,
-        "has_disc_id" => system.has_disc_id,
         "has_universal_hash" => system.has_universal_hash,
         "has_protection" => system.has_protection,
         "has_sector_ranges" => system.has_sector_ranges,
@@ -2768,7 +2762,6 @@ fn bind_system_fields<'q>(
         .bind(row.flag("has_exe_date"))
         .bind(row.flag("has_edc"))
         .bind(row.flag("has_error_count"))
-        .bind(row.flag("has_disc_id"))
         .bind(row.flag("has_universal_hash"))
         .bind(row.flag("has_protection"))
         .bind(row.flag("has_sector_ranges"))
@@ -3074,7 +3067,6 @@ mod tests {
             has_pvd: false,
             has_edc: false,
             has_error_count: false,
-            has_disc_id: false,
             has_universal_hash: false,
             has_title_foreign: false,
             has_disc_title: false,

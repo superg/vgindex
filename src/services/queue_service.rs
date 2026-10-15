@@ -709,7 +709,6 @@ fn is_nullable_scalar_field(key: &str) -> bool {
             | "protection"
             | "sector_ranges"
             | "sbi"
-            | "disc_id"
             | "universal_hash"
             | "pvd"
             | "header"
@@ -4592,14 +4591,12 @@ mod tests {
     #[test]
     fn resolver_canonicalizes_hex_case_without_rewriting_stored_changes() {
         let db = serde_json::json!({
-            "disc_id": "aabbccdd",
             "universal_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "sbi": "MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD",
             "pvd": "0320 : AA BB                                           ab",
             "dat": "<rom name=\"Track.bin\" size=\"1\" crc=\"abcdef12\" md5=\"aabbccddeeff00112233445566778899\" sha1=\"abcdefabcdefabcdefabcdefabcdefabcdefabcd\" />"
         });
         let changes = serde_json::json!({
-            "disc_id": {"modify": {"old": "aabbccdd", "new": "AABBCCDD"}},
             "universal_hash": {"modify": {"old": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "new": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}},
             "sbi": {"modify": {"old": "MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD", "new": "MSF: 02:03:04 Q-Data: a1b2c3 0a:0b:0c 00 0d:0e:0f abcd"}},
             "pvd": {"modify": {"old": "0320 : AA BB                                           ab", "new": "0320 : aa bb                                           ab"}},

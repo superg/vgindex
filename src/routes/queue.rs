@@ -632,7 +632,6 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
         sector_ranges,
         sbi: string("sbi"),
         universal_hash: string("universal_hash"),
-        protection_key_disc_id: string("disc_id"),
         cue: string("cuesheet"),
         files_xml: string("dat"),
         status: string("status").unwrap_or_else(|| "Unverified".to_string()),
@@ -895,7 +894,6 @@ fn build_review_template(
     };
 
     let universal_hash = json_opt_str("universal_hash");
-    let protection_key_disc_id = json_opt_str("disc_id");
 
     let status = snapshot["status"]
         .as_str()
@@ -1026,7 +1024,6 @@ fn build_review_template(
         show_header: has_sys(|s| s.has_header),
         header_hex: json_opt_str("header"),
 
-        show_disc_id: has_sys(|s| s.has_disc_id),
         show_universal_hash: has_sys(|s| s.has_universal_hash),
         show_protection: has_sys(|s| s.has_protection),
         protection: json_opt_str("protection"),
@@ -1040,7 +1037,6 @@ fn build_review_template(
         ),
         sbi: json_opt_str("sbi"),
         universal_hash,
-        protection_key_disc_id,
         has_sample_start: has_sys(|s| s.has_sample_start),
 
         cue: json_opt_str("cuesheet"),
@@ -1406,7 +1402,6 @@ fn build_review_diff_context(
         "version",
         "error_count",
         "exe_date",
-        "disc_id",
         "universal_hash",
     ] {
         let old = &db_snapshot[field];
@@ -1540,7 +1535,6 @@ fn apply_review_diff_context(
                 template.show_barcode = system.has_barcode;
                 template.show_exe_date = system.has_exe_date;
                 template.show_edc = system.has_edc;
-                template.show_disc_id = system.has_disc_id;
                 template.show_universal_hash = system.has_universal_hash;
                 template.show_protection = system.has_protection;
                 template.show_sector_ranges = system.has_sector_ranges;
@@ -1714,7 +1708,6 @@ fn compute_field_highlights(
         "protection",
         "sector_ranges",
         "sbi",
-        "disc_id",
         "universal_hash",
         "pvd",
         "header",
@@ -2751,7 +2744,6 @@ mod tests {
             has_pvd: true,
             has_edc: true,
             has_error_count: true,
-            has_disc_id: true,
             has_universal_hash: true,
             has_title_foreign: true,
             has_disc_title: true,
@@ -3905,10 +3897,8 @@ mod tests {
     #[test]
     fn review_ignores_hexadecimal_case_only_submission_changes() {
         let mut db = old_snapshot();
-        db["disc_id"] = serde_json::json!("aabbccdd");
         db["sbi"] = serde_json::json!("MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD");
         let changes = serde_json::json!({
-            "disc_id": {"modify": {"old": "aabbccdd", "new": "AABBCCDD"}},
             "universal_hash": {"modify": {"old": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "new": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}},
             "sbi": {"modify": {"old": db["sbi"], "new": "MSF: 02:03:04 Q-Data: a1b2c3 0a:0b:0c 00 0d:0e:0f abcd"}},
             "dat": {"modify": {"old": db["dat"], "new": "<rom name=\"old.iso\" size=\"1\" crc=\"11111111\" md5=\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\" sha1=\"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\" />"}}

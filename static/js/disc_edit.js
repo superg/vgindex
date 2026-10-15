@@ -846,8 +846,7 @@ var DEFAULT_WIDTHS = {
     'error_count': 6,
     'exe_date': 10,
     'layerbreak': 8,
-    'universal_hash': 18,
-    'protection_key_disc_id': 32
+    'universal_hash': 18
 };
 
 function defaultWidthPx(name, font) {

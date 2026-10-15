@@ -752,7 +752,6 @@ mod tests {
             has_pvd: false,
             has_edc: false,
             has_error_count: false,
-            has_disc_id: false,
             has_universal_hash: false,
             has_title_foreign: false,
             has_disc_title: false,
