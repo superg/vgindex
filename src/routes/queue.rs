@@ -1533,6 +1533,7 @@ fn apply_review_diff_context(
                 template.show_title_foreign = system.has_title_foreign;
                 template.show_disc_number = system.has_disc_number;
                 template.show_disc_title = system.has_disc_title;
+                template.show_disc_title_foreign = system.has_disc_title_foreign;
                 template.show_serial = system.has_serial;
                 template.show_version = system.has_version;
                 template.show_edition = system.has_edition;
