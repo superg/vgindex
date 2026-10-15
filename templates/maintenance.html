@@ -58,7 +58,8 @@
         {% endmatch %}
         <input type="hidden" name="systems_payload" id="maintenance-systems-payload" value="">
 
-        <div class="maintenance-system-scroll maintenance-editor-scroll">
+        <div class="maintenance-top-scroll" data-top-scroll><div class="maintenance-top-scroll-spacer"></div></div>
+        <div class="maintenance-system-scroll maintenance-editor-scroll" data-scroll-body>
         <table class="maintenance-system-table maintenance-editor-table">
         {% for row in system_rows %}
             <tbody data-maintenance-row data-system-row data-original-code="{{ row.original_code }}">

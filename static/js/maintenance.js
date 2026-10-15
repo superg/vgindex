@@ -162,6 +162,21 @@ function initMaintenanceUserReferences() {
     });
 }
 
+function initTopScrollbars() {
+    document.querySelectorAll('[data-top-scroll]').forEach(function (top) {
+        var body = top.nextElementSibling;
+        var spacer = top.querySelector('.maintenance-top-scroll-spacer');
+        if (!body || !spacer) return;
+        function syncWidth() {
+            spacer.style.width = body.scrollWidth + 'px';
+        }
+        syncWidth();
+        new ResizeObserver(syncWidth).observe(body);
+        top.addEventListener('scroll', function () { body.scrollLeft = top.scrollLeft; });
+        body.addEventListener('scroll', function () { top.scrollLeft = body.scrollLeft; });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-maintenance-form]').forEach(function (form) {
         form.addEventListener('submit', function () {
@@ -178,4 +193,5 @@ document.addEventListener('DOMContentLoaded', function () {
 
     initMaintenanceUserPicker();
     initMaintenanceUserReferences();
+    initTopScrollbars();
 });
