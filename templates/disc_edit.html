@@ -441,7 +441,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     <div class="inline-field{% if !self.highlight_class("layerbreaks").is_empty() %} {{ self.highlight_class("layerbreaks") }}{% endif %}" id="layerbreak-row" data-add-requires-system-media style="display:none">
         <span class="inline-field-label">Layerbreaks</span>
         <div class="inline-field-values inline-field-values-stacked">
-            <div id="layerbreak-list" class="inline-field-values"></div>
+            <div id="layerbreak-list" class="inline-field-values">{% if is_review_mode %}<span id="pic-layerbreak-hint" class="pic-layerbreak-hint" style="display:none"></span>{% endif %}</div>
             {% for ann in self.annotations_for("layerbreaks") %}
             <div class="review-field-annotation">
                 <span class="review-field-annotation-label">{{ ann.label }}:</span>

@@ -737,6 +737,10 @@ async fn disc_view(
                 let breaks = detail.disc.layerbreaks.as_deref().unwrap_or_default();
                 if breaks.is_empty() && is_xgd {
                     default_xgd_layerbreak(xgd_iso_size.flatten(), detail.disc.pvd.as_deref()).to_string()
+                } else if breaks.is_empty() {
+                    detail.disc.pic.as_deref()
+                        .and_then(layerbreak_from_pic)
+                        .unwrap_or_default()
                 } else {
                     breaks.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ")
                 }
@@ -822,6 +826,33 @@ async fn disc_view(
         .render()
         .unwrap(),
     ))
+}
+
+fn layerbreak_from_pic(pic: &[u8]) -> Option<String> {
+    let mut cumulative = 0u64;
+    let mut layerbreaks: Vec<u64> = Vec::new();
+
+    for block in pic.get(4..)?.chunks_exact(0x40) {
+        // Check for valid DI block
+        if &block[..2] != b"DI" {
+            break;
+        }
+        // Check for pressed BD
+        if block[6] != b' ' {
+            return None;
+        }
+        let start = u32::from_be_bytes(block[24..28].try_into().ok()?) as u64;
+        let end = u32::from_be_bytes(block[28..32].try_into().ok()?) as u64;
+        cumulative += end + 2 - start;
+        layerbreaks.push(cumulative);
+    }
+
+    // Remove last layerbreak (total size)
+    layerbreaks.pop();
+    if layerbreaks.is_empty() {
+        return None;
+    }
+    Some(layerbreaks.iter().map(|v| format!("{} (default)", v)).collect::<Vec<_>>().join(", "))
 }
 
 fn default_xgd_layerbreak(iso_size: Option<i64>, pvd: Option<&[u8]>) -> &'static str {
