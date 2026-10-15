@@ -832,7 +832,12 @@ fn layerbreak_from_pic(pic: &[u8]) -> Option<String> {
     let mut cumulative = 0u64;
     let mut layerbreaks: Vec<u64> = Vec::new();
 
-    for block in pic.get(4..)?.chunks_exact(0x40) {
+    let body = pic.get(4..)?;
+    let chunks = body.chunks_exact(0x40);
+    if !chunks.remainder().is_empty() {
+        return None;
+    }
+    for block in chunks {
         // Check for valid DI block
         if &block[..2] != b"DI" {
             break;
@@ -843,6 +848,9 @@ fn layerbreak_from_pic(pic: &[u8]) -> Option<String> {
         }
         let start = u32::from_be_bytes(block[24..28].try_into().ok()?) as u64;
         let end = u32::from_be_bytes(block[28..32].try_into().ok()?) as u64;
+        if start > end + 2 {
+            return None;
+        }
         cumulative += end + 2 - start;
         layerbreaks.push(cumulative);
     }

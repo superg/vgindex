@@ -1052,6 +1052,8 @@ function updatePicLayerbreakHint() {
     var hint = document.getElementById('pic-layerbreak-hint');
     var row = document.getElementById('layerbreak-row');
     if (!hint || !row || row.style.display === 'none') return;
+    var picField = document.querySelector('[data-media-flag="has_pic"]');
+    if (!picField || picField.style.display === 'none') { hint.style.display = 'none'; return; }
     var picTa = document.querySelector('textarea[name="pic"]');
     var result = picTa && picTa.value.trim() ? layerbreakFromPicHex(picTa.value) : null;
     if (result) {
