@@ -88,10 +88,8 @@ pub fn canonicalize_disc_snapshot_hex_fields(snapshot: &mut Value) {
         return;
     };
 
-    for field in ["disc_id", "universal_hash"] {
-        if let Some(Value::String(value)) = fields.get_mut(field) {
-            *value = value.to_ascii_lowercase();
-        }
+    if let Some(Value::String(value)) = fields.get_mut("universal_hash") {
+        *value = value.to_ascii_lowercase();
     }
     if let Some(Value::String(value)) = fields.get_mut("sbi") {
         *value = normalize_sbi_hex_case(value);
@@ -143,7 +141,6 @@ mod tests {
     #[test]
     fn snapshot_normalization_canonicalizes_every_hex_representation() {
         let mut snapshot = serde_json::json!({
-            "disc_id": "AABB",
             "universal_hash": "ABCDEF",
             "sbi": "MSF: 02:03:04 Q-Data: aabbcc 00:00:00 00 00:00:00 ddee",
             "pvd": "032a : aa bb                                           ab",
@@ -155,7 +152,6 @@ mod tests {
 
         canonicalize_disc_snapshot_hex_fields(&mut snapshot);
 
-        assert_eq!(snapshot["disc_id"], "aabb");
         assert_eq!(snapshot["universal_hash"], "abcdef");
         assert_eq!(
             snapshot["sbi"],
