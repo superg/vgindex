@@ -1016,6 +1016,63 @@ function applyRingColumnWidths() {
     });
 }
 
+function layerbreakFromPicHex(hexText) {
+    var bytes = [];
+    var lines = hexText.split("\n");
+    for (var li = 0; li < lines.length; li++) {
+        var line = lines[li].trim();
+        if (!line) continue;
+        var hexPart = line.replace(/^[0-9A-Fa-f]{4}\s*:\s*/, "");
+        var tokens = hexPart.trim().split(/\s+/);
+        for (var ti = 0; ti < tokens.length; ti++) {
+            if (!/^[0-9A-Fa-f]{2}$/.test(tokens[ti])) break;
+            bytes.push(parseInt(tokens[ti], 16));
+        }
+    }
+    if (bytes.length < 8) return null;
+    var offset = 4;
+    var cumulative = 0;
+    var layerbreaks = [];
+    while (offset + 0x40 <= bytes.length) {
+        var block = bytes.slice(offset, offset + 0x40);
+        if (block[0] !== 0x44 || block[1] !== 0x49) break; // 'DI'
+        if (block[6] !== 0x20) return null; // not pressed BD
+        var start = (block[24] << 24 | block[25] << 16 | block[26] << 8 | block[27]) >>> 0;
+        var end   = (block[28] << 24 | block[29] << 16 | block[30] << 8 | block[31]) >>> 0;
+        cumulative += end + 2 - start;
+        layerbreaks.push(cumulative);
+        offset += 0x40;
+    }
+    layerbreaks.pop(); // remove total size
+    if (layerbreaks.length === 0) return null;
+    return layerbreaks.map(function (v) { return v + ' (from PIC)'; }).join(', ');
+}
+
+function updatePicLayerbreakHint() {
+    var hint = document.getElementById('pic-layerbreak-hint');
+    var row = document.getElementById('layerbreak-row');
+    if (!hint || !row || row.style.display === 'none') return;
+    var picField = document.querySelector('[data-media-flag="has_pic"]');
+    if (!picField || picField.style.display === 'none') { hint.style.display = 'none'; return; }
+    var picTa = document.querySelector('textarea[name="pic"]');
+    var result = picTa && picTa.value.trim() ? layerbreakFromPicHex(picTa.value) : null;
+    if (result) {
+        var values = result.split(', ').map(function (s) { return s.replace(' (from PIC)', ''); });
+        var inputs = document.querySelectorAll('input[name="layerbreak"]');
+        var allMatch = values.length === inputs.length && values.every(function (v, i) {
+            return inputs[i] && inputs[i].value.trim() === v;
+        });
+        if (allMatch) {
+            hint.style.display = 'none';
+            return;
+        }
+        hint.textContent = result;
+        hint.style.display = '';
+    } else {
+        hint.style.display = 'none';
+    }
+}
+
 // Layerbreaks — fixed inputs based on media type layers
 function renderLayerbreaks() {
     var row = document.getElementById('layerbreak-row');
@@ -1027,17 +1084,22 @@ function renderLayerbreaks() {
     var count = hasDummy ? ml - 2 : ml - 1;
     if (count <= 0) {
         row.style.display = 'none';
+        updatePicLayerbreakHint();
         return;
     }
     row.style.display = '';
+    var hint = document.getElementById('pic-layerbreak-hint');
     container.innerHTML = '';
     for (var i = 0; i < count; i++) {
         var input = document.createElement('input');
         input.type = 'text';
         input.name = 'layerbreak';
         input.value = (typeof LAYERBREAKS !== 'undefined' && LAYERBREAKS[i]) ? LAYERBREAKS[i] : '';
+        input.addEventListener('input', updatePicLayerbreakHint);
         container.appendChild(input);
     }
+    if (hint) container.appendChild(hint);
+    updatePicLayerbreakHint();
 }
 
 // Transliterate the Foreign Title into the target (Title) field via the API.
@@ -1400,6 +1462,8 @@ document.addEventListener('DOMContentLoaded', function () {
     initDumpLogFill();
     initDumpLogDragDrop();
     initIndependentInlineResizing();
+    var picTa = document.querySelector('textarea[name="pic"]');
+    if (picTa) picTa.addEventListener('input', updatePicLayerbreakHint);
     fitDiscMetaFields();
     fitAllInlineGroups();
     fitRingColumns();

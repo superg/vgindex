@@ -3037,6 +3037,11 @@ body:has(.disc-edit) footer.container hr {
 #layerbreak-row {
     border-bottom: none;
 }
+.pic-layerbreak-hint {
+    font-size: 0.72rem;
+    color: var(--pico-muted-color);
+    white-space: nowrap;
+}
 .inline-field-label {
     font-weight: 600;
     white-space: nowrap;
