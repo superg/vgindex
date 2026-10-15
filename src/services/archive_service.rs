@@ -755,6 +755,7 @@ mod tests {
             has_universal_hash: false,
             has_title_foreign: false,
             has_disc_title: false,
+            has_disc_title_foreign: false,
             has_disc_number: false,
             has_serial: false,
             has_barcode: false,

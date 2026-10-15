@@ -132,6 +132,8 @@ pub(crate) struct DiscEditTemplate {
     pub disc_number: String,
     pub show_disc_title: bool,
     pub disc_title: String,
+    pub show_disc_title_foreign: bool,
+    pub disc_title_foreign: String,
     pub filename_suffix: String,
     pub show_filename_suffix: bool,
 
@@ -381,6 +383,7 @@ pub(crate) fn build_systems_json(all_systems: &[System]) -> (String, String) {
                 "has_title_foreign": s.has_title_foreign,
                 "has_disc_number": s.has_disc_number,
                 "has_disc_title": s.has_disc_title,
+                "has_disc_title_foreign": s.has_disc_title_foreign,
                 "has_serial": s.has_serial,
                 "has_version": s.has_version,
                 "has_edition": s.has_edition,
@@ -958,6 +961,8 @@ async fn edit_page(
             disc_number: detail.disc.disc_number.clone().unwrap_or_default(),
             show_disc_title: detail.system.has_disc_title,
             disc_title: detail.disc.disc_title.clone().unwrap_or_default(),
+            show_disc_title_foreign: detail.system.has_disc_title_foreign,
+            disc_title_foreign: detail.disc.disc_title_foreign.clone().unwrap_or_default(),
             filename_suffix: detail.disc.filename_suffix.clone().unwrap_or_default(),
             show_filename_suffix: true,
 
@@ -1157,6 +1162,7 @@ pub struct DiscEditForm {
     pub title_foreign: Option<String>,
     pub disc_number: Option<String>,
     pub disc_title: Option<String>,
+    pub disc_title_foreign: Option<String>,
     pub filename_suffix: Option<String>,
     #[serde(default)]
     pub category: String,
@@ -1710,6 +1716,8 @@ async fn render_form_with_context(
         disc_number: form.disc_number.clone().unwrap_or_default(),
         show_disc_title: has_sys(|s| s.has_disc_title),
         disc_title: form.disc_title.clone().unwrap_or_default(),
+        show_disc_title_foreign: has_sys(|s| s.has_disc_title_foreign),
+        disc_title_foreign: form.disc_title_foreign.clone().unwrap_or_default(),
         filename_suffix: form.filename_suffix.clone().unwrap_or_default(),
         show_filename_suffix: !is_add_mode || can_edit_directly,
 
@@ -2559,6 +2567,8 @@ async fn add_page(
             disc_number: String::new(),
             show_disc_title: has_sys(|s| s.has_disc_title),
             disc_title: String::new(),
+            show_disc_title_foreign: has_sys(|s| s.has_disc_title_foreign),
+            disc_title_foreign: String::new(),
             filename_suffix: String::new(),
             show_filename_suffix: user.role.can_edit_directly(),
 
@@ -3031,6 +3041,7 @@ pub(crate) fn build_flat_changes(
         "title_foreign": norm_opt_str(form.title_foreign.as_deref()),
         "disc_number": norm_opt_str(form.disc_number.as_deref()),
         "disc_title": norm_opt_str(form.disc_title.as_deref()),
+        "disc_title_foreign": norm_opt_str(form.disc_title_foreign.as_deref()),
         "filename_suffix": norm_opt_str(form.filename_suffix.as_deref()),
         "serial": new_serials,
         "version": norm_opt_str(form.version.as_deref()),
@@ -3507,6 +3518,9 @@ fn filter_unsupported_fields_for_changes(
     if !system.has_disc_title {
         filtered.disc_title = None;
     }
+    if !system.has_disc_title_foreign {
+        filtered.disc_title_foreign = None;
+    }
     if !system.has_serial {
         filtered.serial.clear();
     }
@@ -3607,6 +3621,7 @@ fn build_history_changes(
         "title_foreign",
         "disc_number",
         "disc_title",
+        "disc_title_foreign",
         "filename_suffix",
         "version",
         "error_count",
@@ -3852,6 +3867,7 @@ mod operation_delta_tests {
             has_universal_hash: true,
             has_title_foreign: true,
             has_disc_title: true,
+            has_disc_title_foreign: true,
             has_disc_number: true,
             has_serial: true,
             has_barcode: true,
@@ -3923,6 +3939,7 @@ mod operation_delta_tests {
                 title: "Old Game".to_string(),
                 title_foreign: Some("Old Foreign".to_string()),
                 disc_title: Some("Old Disc Title".to_string()),
+                disc_title_foreign: Some("Old Foreign Disc Title".to_string()),
                 disc_number: Some("1".to_string()),
                 serial: vec!["OLD-001".to_string(), "KEEP-002".to_string()],
                 category: Category::Games,
@@ -3972,6 +3989,7 @@ mod operation_delta_tests {
             title_foreign: detail.disc.title_foreign.clone(),
             disc_number: detail.disc.disc_number.clone(),
             disc_title: detail.disc.disc_title.clone(),
+            disc_title_foreign: detail.disc.disc_title_foreign.clone(),
             filename_suffix: detail.disc.filename_suffix.clone(),
             category: detail.disc.category.to_string(),
             regions: detail.regions.iter().map(|r| r.code.clone()).collect(),
@@ -4031,6 +4049,7 @@ mod operation_delta_tests {
             title_foreign: Some("New Foreign".to_string()),
             disc_number: Some("2".to_string()),
             disc_title: Some("Install Disc".to_string()),
+            disc_title_foreign: Some("Install Disc Foreign".to_string()),
             filename_suffix: None,
             category: "Games".to_string(),
             regions: vec![

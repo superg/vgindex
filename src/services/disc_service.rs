@@ -827,6 +827,7 @@ pub async fn update_disc(
     let media_type = data["media_type"].as_str();
     let title_foreign = data["title_foreign"].as_str().filter(|s| !s.is_empty());
     let disc_title = data["disc_title"].as_str().filter(|s| !s.is_empty());
+    let disc_title_foreign = data["disc_title_foreign"].as_str().filter(|s| !s.is_empty());
     let disc_number = data["disc_number"].as_str().filter(|s| !s.is_empty());
     let filename_suffix = data["filename_suffix"].as_str().filter(|s| !s.is_empty());
     let serial = parse_text_array(&data["serial"]);
@@ -931,7 +932,8 @@ pub async fn update_disc(
          protection = $23, sbi = $24,
          universal_hash = $25,
          cue = $26,
-         status = $27::disc_status_enum
+         status = $27::disc_status_enum,
+         disc_title_foreign = $29
          WHERE id = $28",
     )
     .bind(title) // $1
@@ -962,6 +964,7 @@ pub async fn update_disc(
     .bind(cue) // $26
     .bind(status) // $27
     .bind(disc_id) // $28
+    .bind(disc_title_foreign) // $29
     .execute(&mut *conn)
     .await?;
 
@@ -1387,6 +1390,7 @@ mod tests {
                 title: "Game".to_string(),
                 title_foreign: None,
                 disc_title: None,
+                disc_title_foreign: None,
                 disc_number: None,
                 serial: vec![],
                 category: Category::Games,
@@ -1425,6 +1429,7 @@ mod tests {
                 has_universal_hash: false,
                 has_title_foreign: false,
                 has_disc_title: false,
+                has_disc_title_foreign: false,
                 has_disc_number: false,
                 has_serial: false,
                 has_barcode: false,
@@ -2166,6 +2171,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "title_foreign": detail.disc.title_foreign,
         "disc_number": detail.disc.disc_number,
         "disc_title": detail.disc.disc_title,
+        "disc_title_foreign": detail.disc.disc_title_foreign,
         "filename_suffix": detail.disc.filename_suffix,
         "serial": detail.disc.serial,
         "version": detail.disc.version,

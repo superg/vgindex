@@ -1181,6 +1181,10 @@ const SYSTEM_FLAGS: &[SystemFlagDefinition] = &[
         label: "Disc Title",
     },
     SystemFlagDefinition {
+        field: "has_disc_title_foreign",
+        label: "Foreign Disc Title",
+    },
+    SystemFlagDefinition {
         field: "has_serial",
         label: "Serial",
     },
@@ -1332,18 +1336,18 @@ enum LookupSaveAction {
 const INSERT_SYSTEM_SQL: &str = "
     INSERT INTO systems
         (code, type, manufacturer, name, short_name, media_types,
-         has_title_foreign, has_disc_number, has_disc_title, has_serial,
-         has_edition, has_barcode, has_version, has_exe_date, has_edc,
+         has_title_foreign, has_disc_number, has_disc_title, has_disc_title_foreign,
+         has_serial, has_edition, has_barcode, has_version, has_exe_date, has_edc,
          has_error_count, has_universal_hash, has_protection,
          has_sector_ranges, has_sbi, has_pvd, has_header, has_bca,
          has_sample_start, has_offset_extra, archives_dirty)
     VALUES
         ($1, $2, $3, $4, $5, $6,
          $7, $8, $9, $10,
-         $11, $12, $13, $14, $15,
-         $16, $17, $18,
-         $19, $20, $21, $22, $23,
-         $24, $25, TRUE)";
+         $11, $12, $13, $14, $15, $16,
+         $17, $18, $19,
+         $20, $21, $22, $23, $24,
+         $25, $26, TRUE)";
 
 const UPDATE_SYSTEM_SQL: &str = "
     UPDATE systems
@@ -1355,22 +1359,23 @@ const UPDATE_SYSTEM_SQL: &str = "
         has_title_foreign = $7,
         has_disc_number = $8,
         has_disc_title = $9,
-        has_serial = $10,
-        has_edition = $11,
-        has_barcode = $12,
-        has_version = $13,
-        has_exe_date = $14,
-        has_edc = $15,
-        has_error_count = $16,
-        has_universal_hash = $17,
-        has_protection = $18,
-        has_sector_ranges = $19,
-        has_sbi = $20,
-        has_pvd = $21,
-        has_header = $22,
-        has_bca = $23,
-        has_sample_start = $24,
-        has_offset_extra = $25,
+        has_disc_title_foreign = $10,
+        has_serial = $11,
+        has_edition = $12,
+        has_barcode = $13,
+        has_version = $14,
+        has_exe_date = $15,
+        has_edc = $16,
+        has_error_count = $17,
+        has_universal_hash = $18,
+        has_protection = $19,
+        has_sector_ranges = $20,
+        has_sbi = $21,
+        has_pvd = $22,
+        has_header = $23,
+        has_bca = $24,
+        has_sample_start = $25,
+        has_offset_extra = $26,
         archives_dirty = TRUE
     WHERE code = $1";
 
@@ -2254,6 +2259,7 @@ fn system_flag_value(system: &System, field: &str) -> bool {
         "has_title_foreign" => system.has_title_foreign,
         "has_disc_number" => system.has_disc_number,
         "has_disc_title" => system.has_disc_title,
+        "has_disc_title_foreign" => system.has_disc_title_foreign,
         "has_serial" => system.has_serial,
         "has_edition" => system.has_edition,
         "has_barcode" => system.has_barcode,
@@ -2755,6 +2761,7 @@ fn bind_system_fields<'q>(
         .bind(row.flag("has_title_foreign"))
         .bind(row.flag("has_disc_number"))
         .bind(row.flag("has_disc_title"))
+        .bind(row.flag("has_disc_title_foreign"))
         .bind(row.flag("has_serial"))
         .bind(row.flag("has_edition"))
         .bind(row.flag("has_barcode"))
@@ -3070,6 +3077,7 @@ mod tests {
             has_universal_hash: false,
             has_title_foreign: false,
             has_disc_title: false,
+            has_disc_title_foreign: false,
             has_disc_number: false,
             has_serial: false,
             has_barcode: false,

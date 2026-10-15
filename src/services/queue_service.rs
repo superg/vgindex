@@ -700,6 +700,7 @@ fn is_nullable_scalar_field(key: &str) -> bool {
         "title_foreign"
             | "disc_number"
             | "disc_title"
+            | "disc_title_foreign"
             | "filename_suffix"
             | "version"
             | "error_count"

@@ -221,6 +221,18 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
             </div>
             {% endfor %}
         </label>
+        <label class="disc-meta-row{% if !self.highlight_class("disc_title_foreign").is_empty() %} {{ self.highlight_class("disc_title_foreign") }}{% endif %}" data-add-requires-system-media data-field-flag="has_disc_title_foreign"{% if !show_disc_title_foreign %} style="display:none"{% endif %}>
+            <span class="disc-meta-label">Foreign Disc Title:</span>
+            <input type="text" name="disc_title_foreign" value="{{ disc_title_foreign }}">
+            {% for ann in self.annotations_for("disc_title_foreign") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </label>
         {% if show_filename_suffix %}
         <label class="disc-meta-row{% if !self.highlight_class("filename_suffix").is_empty() %} {{ self.highlight_class("filename_suffix") }}{% endif %}" data-add-requires-system-media>
             <span class="disc-meta-label">Filename Suffix:</span>

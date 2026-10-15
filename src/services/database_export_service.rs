@@ -60,6 +60,7 @@ CREATE TABLE systems (
     has_title_foreign INTEGER NOT NULL,
     has_disc_number INTEGER NOT NULL,
     has_disc_title INTEGER NOT NULL,
+    has_disc_title_foreign INTEGER NOT NULL,
     has_serial INTEGER NOT NULL,
     has_edition INTEGER NOT NULL,
     has_barcode INTEGER NOT NULL,
@@ -87,6 +88,7 @@ CREATE TABLE discs (
     title_foreign TEXT,
     disc_number TEXT,
     disc_title TEXT,
+    disc_title_foreign TEXT,
     filename_suffix TEXT,
     serial TEXT NOT NULL CHECK (json_valid(serial)),
     edition TEXT NOT NULL CHECK (json_valid(edition)),
@@ -199,6 +201,7 @@ struct SystemRow {
     has_title_foreign: bool,
     has_disc_number: bool,
     has_disc_title: bool,
+    has_disc_title_foreign: bool,
     has_serial: bool,
     has_edition: bool,
     has_barcode: bool,
@@ -227,6 +230,7 @@ struct DiscRow {
     title_foreign: Option<String>,
     disc_number: Option<String>,
     disc_title: Option<String>,
+    disc_title_foreign: Option<String>,
     filename_suffix: Option<String>,
     serial: String,
     edition: String,
@@ -642,8 +646,8 @@ async fn export_systems(
     let mut rows = sqlx::query_as::<_, SystemRow>(
         "SELECT code, type AS system_type, manufacturer, name, short_name,
                 to_json(media_types)::text AS media_types,
-                has_title_foreign, has_disc_number, has_disc_title, has_serial,
-                has_edition, has_barcode, has_version, has_exe_date, has_edc,
+                has_title_foreign, has_disc_number, has_disc_title, has_disc_title_foreign,
+                has_serial, has_edition, has_barcode, has_version, has_exe_date, has_edc,
                 has_error_count, has_universal_hash, has_protection,
                 has_sector_ranges, has_sbi, has_pvd, has_header, has_bca,
                 has_sample_start, has_offset_extra
@@ -652,7 +656,7 @@ async fn export_systems(
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.code)
         .bind(row.system_type)
@@ -663,6 +667,7 @@ async fn export_systems(
         .bind(row.has_title_foreign)
         .bind(row.has_disc_number)
         .bind(row.has_disc_title)
+        .bind(row.has_disc_title_foreign)
         .bind(row.has_serial)
         .bind(row.has_edition)
         .bind(row.has_barcode)
@@ -693,7 +698,7 @@ async fn export_discs(
     let mut count = 0;
     let mut rows = sqlx::query_as::<_, DiscRow>(
         "SELECT id, system_code, media_type_code, category_id, title, title_foreign,
-                disc_number, disc_title, filename_suffix,
+                disc_number, disc_title, disc_title_foreign, filename_suffix,
                 to_json(serial)::text AS serial,
                 to_json(edition)::text AS edition,
                 to_json(barcode)::text AS barcode,
@@ -709,7 +714,7 @@ async fn export_discs(
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.id)
         .bind(row.system_code)
@@ -719,6 +724,7 @@ async fn export_discs(
         .bind(row.title_foreign)
         .bind(row.disc_number)
         .bind(row.disc_title)
+        .bind(row.disc_title_foreign)
         .bind(row.filename_suffix)
         .bind(row.serial)
         .bind(row.edition)

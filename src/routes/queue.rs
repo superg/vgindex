@@ -607,6 +607,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
         title_foreign: string("title_foreign"),
         disc_number: string("disc_number"),
         disc_title: string("disc_title"),
+        disc_title_foreign: string("disc_title_foreign"),
         filename_suffix: string("filename_suffix"),
         category: string("category").unwrap_or_default(),
         regions: strings("regions"),
@@ -960,6 +961,8 @@ fn build_review_template(
         disc_number: json_opt_str("disc_number"),
         show_disc_title: has_sys(|s| s.has_disc_title),
         disc_title: json_opt_str("disc_title"),
+        show_disc_title_foreign: has_sys(|s| s.has_disc_title_foreign),
+        disc_title_foreign: json_opt_str("disc_title_foreign"),
         filename_suffix: json_opt_str("filename_suffix"),
         show_filename_suffix: true,
 
@@ -1595,6 +1598,7 @@ fn apply_review_diff_context(
                 "title_foreign" => template.title_foreign = old_value,
                 "disc_number" => template.disc_number = old_value,
                 "disc_title" => template.disc_title = old_value,
+                "disc_title_foreign" => template.disc_title_foreign = old_value,
                 "filename_suffix" => template.filename_suffix = old_value,
                 _ => {}
             }
@@ -2747,6 +2751,7 @@ mod tests {
             has_universal_hash: true,
             has_title_foreign: true,
             has_disc_title: true,
+            has_disc_title_foreign: true,
             has_disc_number: true,
             has_serial: true,
             has_barcode: true,

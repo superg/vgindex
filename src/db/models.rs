@@ -360,6 +360,7 @@ pub struct System {
     pub has_universal_hash: bool,
     pub has_title_foreign: bool,
     pub has_disc_title: bool,
+    pub has_disc_title_foreign: bool,
     pub has_disc_number: bool,
     pub has_serial: bool,
     pub has_barcode: bool,
@@ -439,6 +440,7 @@ pub struct Disc {
     pub title: String,
     pub title_foreign: Option<String>,
     pub disc_title: Option<String>,
+    pub disc_title_foreign: Option<String>,
     pub disc_number: Option<String>,
     pub serial: Vec<String>,
     #[sqlx(rename = "category_id")]
@@ -1175,6 +1177,7 @@ mod tests {
             has_universal_hash: false,
             has_title_foreign: false,
             has_disc_title: false,
+            has_disc_title_foreign: false,
             has_disc_number: false,
             has_serial: false,
             has_barcode: false,

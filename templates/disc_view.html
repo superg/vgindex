@@ -8,8 +8,8 @@
 <div class="disc-title-row{% if can_edit || can_view_history %} has-title-action{% endif %}{% if can_edit && can_view_history %} has-edit-action{% endif %}">
 <div class="disc-title-box">
 <h2>{{ title }}</h2>
-{% if show_title_foreign && !title_foreign.is_empty() %}
-<h2 class="foreign-title">{{ title_foreign }}</h2>
+{% if (show_title_foreign && !title_foreign.is_empty()) || (show_disc_title_foreign && !disc_title_foreign.is_empty()) %}
+<h2 class="foreign-title">{% if show_title_foreign && !title_foreign.is_empty() %}{{ title_foreign }}{% endif %}{% if show_disc_title_foreign && !disc_title_foreign.is_empty() %}{% if show_title_foreign && !title_foreign.is_empty() %}　{% endif %}({{ disc_title_foreign }}){% endif %}</h2>
 {% endif %}
 </div>
 <div class="disc-title-actions">
