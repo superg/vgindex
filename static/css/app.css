@@ -3875,6 +3875,16 @@ textarea.full-width-textarea {
     margin: 0;
 }
 
+.maintenance-top-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 16px;
+}
+
+.maintenance-top-scroll-spacer {
+    height: 1px;
+}
+
 .maintenance-system-scroll,
 .maintenance-editor-scroll {
     overflow-x: auto;
