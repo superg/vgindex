@@ -1,5 +1,5 @@
 use askama::Template;
-use axum::{extract::State, response::Html, routing::get, Router};
+use axum::{extract::State, response::{Html, IntoResponse}, routing::get, Router};
 use sqlx::PgPool;
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -62,7 +62,10 @@ fn home_display_title(
 }
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route("/", get(homepage))
+    Router::new()
+        .route("/", get(homepage))
+        .route("/rss/recent-dumps", get(rss_new_discs))
+        .route("/rss/recent-changes", get(rss_recent_changes))
 }
 
 #[derive(Template)]
@@ -101,6 +104,7 @@ struct RecentDisc {
     system: String,
     region_flags: Vec<HomeRegionFlag>,
     added_at: String,
+    added_at_dt: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,6 +114,7 @@ struct RecentChange {
     system: String,
     region_flags: Vec<HomeRegionFlag>,
     modified_at: String,
+    modified_at_dt: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -252,6 +257,116 @@ async fn homepage(State(state): State<AppState>, user: CurrentUser) -> Html<Stri
     )
 }
 
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+async fn rss_new_discs(State(state): State<AppState>) -> impl IntoResponse {
+    let data = state
+        .homepage_cache
+        .get(&state.pool)
+        .await
+        .unwrap_or_else(|err| {
+            tracing::warn!("Failed to load RSS feed data: {err}");
+            HomepageData::default()
+        });
+
+    let base_url = &state.config.base_url;
+    let site_name = state.config.site_name.clone();
+
+    let mut xml = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>{site_name} - Recent Dumps</title>
+    <link>{base_url}</link>
+    <description>Recently added discs on {site_name}</description>
+"#
+    );
+
+    for disc in &data.recent_discs {
+        let regions: Vec<String> = disc.region_flags.iter().map(|r| r.code.to_uppercase()).collect();
+        let region_prefix = if regions.is_empty() { String::new() } else { format!("[{}] ", regions.join(",")) };
+        let title = xml_escape(&format!("[{}] {}{}", disc.system, region_prefix, disc.title));
+        let link = format!("{base_url}/disc/{}", disc.id);
+        let pub_date = disc
+            .added_at_dt
+            .map(|dt| dt.format("%a, %d %b %Y %H:%M:%S +0000").to_string())
+            .unwrap_or_default();
+        let guid = if pub_date.is_empty() {
+            link.clone()
+        } else {
+            format!("{link}#{}", pub_date)
+        };
+        xml.push_str(&format!(
+            "  <item>\n    <title>{title}</title>\n    <link>{link}</link>\n    <guid>{guid}</guid>\n"
+        ));
+        if !pub_date.is_empty() {
+            xml.push_str(&format!("    <pubDate>{pub_date}</pubDate>\n"));
+        }
+        xml.push_str("  </item>\n");
+    }
+
+    xml.push_str("  </channel>\n</rss>\n");
+
+    ([(axum::http::header::CONTENT_TYPE, "application/rss+xml; charset=utf-8")], xml)
+}
+
+async fn rss_recent_changes(State(state): State<AppState>) -> impl IntoResponse {
+    let data = state
+        .homepage_cache
+        .get(&state.pool)
+        .await
+        .unwrap_or_else(|err| {
+            tracing::warn!("Failed to load RSS feed data: {err}");
+            HomepageData::default()
+        });
+
+    let base_url = &state.config.base_url;
+    let site_name = state.config.site_name.clone();
+
+    let mut xml = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>{site_name} - Recent Changes</title>
+    <link>{base_url}</link>
+    <description>Recently changed discs on {site_name}</description>
+"#
+    );
+
+    for change in &data.recent_changes {
+        let regions: Vec<String> = change.region_flags.iter().map(|r| r.code.to_uppercase()).collect();
+        let region_prefix = if regions.is_empty() { String::new() } else { format!("[{}] ", regions.join(",")) };
+        let title = xml_escape(&format!("[{}] {}{}", change.system, region_prefix, change.title));
+        let link = format!("{base_url}/disc/{}", change.id);
+        let pub_date = change
+            .modified_at_dt
+            .map(|dt| dt.format("%a, %d %b %Y %H:%M:%S +0000").to_string())
+            .unwrap_or_default();
+        let guid = if pub_date.is_empty() {
+            link.clone()
+        } else {
+            format!("{link}#{}", pub_date)
+        };
+        xml.push_str(&format!(
+            "  <item>\n    <title>{title}</title>\n    <link>{link}</link>\n    <guid>{guid}</guid>\n"
+        ));
+        if !pub_date.is_empty() {
+            xml.push_str(&format!("    <pubDate>{pub_date}</pubDate>\n"));
+        }
+        xml.push_str("  </item>\n");
+    }
+
+    xml.push_str("  </channel>\n</rss>\n");
+
+    ([(axum::http::header::CONTENT_TYPE, "application/rss+xml; charset=utf-8")], xml)
+}
+
 async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> {
     let total_started = Instant::now();
 
@@ -293,6 +408,7 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
             ),
             system: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             region_flags: regions_by_disc.get(&r.id).cloned().unwrap_or_default(),
+            added_at_dt: r.added_at,
             added_at,
         });
     }
@@ -315,6 +431,7 @@ async fn load_homepage_data(pool: &PgPool) -> Result<HomepageData, sqlx::Error> 
             ),
             system: crate::db::models::short_system_display(&r.system_short_name, &r.system_code),
             region_flags: regions_by_disc.get(&r.id).cloned().unwrap_or_default(),
+            modified_at_dt: r.modified_at,
             modified_at,
         });
     }
@@ -512,6 +629,11 @@ mod tests {
                     name: "USA".to_string(),
                 }],
                 added_at: "2026-01-01".to_string(),
+                added_at_dt: Some(
+                    chrono::DateTime::parse_from_rfc3339("2026-01-01T12:00:00Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc),
+                ),
             }],
             recent_changes: vec![RecentChange {
                 id: 2,
@@ -519,6 +641,11 @@ mod tests {
                 system: "PS2".to_string(),
                 region_flags: vec![],
                 modified_at: "2026-01-02".to_string(),
+                modified_at_dt: Some(
+                    chrono::DateTime::parse_from_rfc3339("2026-01-02T15:30:00Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc),
+                ),
             }],
         }
     }
@@ -646,6 +773,95 @@ mod tests {
 
         assert_eq!(refreshed, homepage_data("fresh"));
         assert_eq!(refresh_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn xml_escape_replaces_special_characters() {
+        assert_eq!(xml_escape("A & B <c> \"d\" 'e'"), "A &amp; B &lt;c&gt; &quot;d&quot; &apos;e&apos;");
+    }
+
+    #[tokio::test]
+    async fn rss_feed_contains_disc_title_link_and_pub_date() {
+        let cache = HomepageCache::new(Duration::from_secs(60));
+        cache
+            .get_with_loader(|| async { Ok::<_, String>(homepage_data("Test Disc")) })
+            .await
+            .unwrap();
+
+        let data = cache
+            .get_with_loader(|| async { Ok::<_, String>(homepage_data("Test Disc")) })
+            .await
+            .unwrap();
+
+        let base_url = "http://localhost";
+        let site_name = "localhost";
+        let mut xml = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>{site_name} - New Discs</title>
+    <link>{base_url}</link>
+    <description>Recently added discs on {site_name}</description>
+"#
+        );
+        for disc in &data.recent_discs {
+            let title = xml_escape(&disc.title);
+            let link = format!("{base_url}/disc/{}", disc.id);
+            let pub_date = disc
+                .added_at_dt
+                .map(|dt| dt.format("%a, %d %b %Y %H:%M:%S +0000").to_string())
+                .unwrap_or_default();
+            xml.push_str(&format!(
+                "  <item>\n    <title>{title}</title>\n    <link>{link}</link>\n    <guid>{link}</guid>\n"
+            ));
+            if !pub_date.is_empty() {
+                xml.push_str(&format!("    <pubDate>{pub_date}</pubDate>\n"));
+            }
+            xml.push_str("  </item>\n");
+        }
+        xml.push_str("  </channel>\n</rss>\n");
+
+        assert!(xml.contains("<title>Test Disc</title>"));
+        assert!(xml.contains("<link>http://localhost/disc/1</link>"));
+        assert!(xml.contains("<guid>http://localhost/disc/1</guid>"));
+        assert!(xml.contains("<pubDate>Thu, 01 Jan 2026 12:00:00 +0000</pubDate>"));
+    }
+
+    #[test]
+    fn rss_recent_changes_contains_change_title_link_and_pub_date() {
+        let data = homepage_data("Test Disc");
+        let base_url = "http://localhost";
+        let site_name = "localhost";
+        let mut xml = format!(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>{site_name} - Recent Changes</title>
+    <link>{base_url}</link>
+    <description>Recently changed discs on {site_name}</description>
+"#
+        );
+        for change in &data.recent_changes {
+            let title = xml_escape(&change.title);
+            let link = format!("{base_url}/disc/{}", change.id);
+            let pub_date = change
+                .modified_at_dt
+                .map(|dt| dt.format("%a, %d %b %Y %H:%M:%S +0000").to_string())
+                .unwrap_or_default();
+            xml.push_str(&format!(
+                "  <item>\n    <title>{title}</title>\n    <link>{link}</link>\n    <guid>{link}</guid>\n"
+            ));
+            if !pub_date.is_empty() {
+                xml.push_str(&format!("    <pubDate>{pub_date}</pubDate>\n"));
+            }
+            xml.push_str("  </item>\n");
+        }
+        xml.push_str("  </channel>\n</rss>\n");
+
+        assert!(xml.contains("<title>Test Disc changed</title>"));
+        assert!(xml.contains("<link>http://localhost/disc/2</link>"));
+        assert!(xml.contains("<guid>http://localhost/disc/2</guid>"));
+        assert!(xml.contains("<pubDate>Fri, 02 Jan 2026 15:30:00 +0000</pubDate>"));
     }
 
     #[test]
