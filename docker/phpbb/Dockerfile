@@ -42,6 +42,7 @@ RUN set -eux; \
     chown -R www-data:www-data /var/www/html
 
 COPY docker/phpbb/ext/vgindex/oidcprovider /var/www/html/ext/vgindex/oidcprovider
+COPY logo/logo.svg /var/www/html/styles/prosilver/theme/images/site_logo.svg
 
 COPY docker/phpbb/entrypoint.sh /usr/local/bin/phpbb-entrypoint.sh
 RUN set -eux; \
