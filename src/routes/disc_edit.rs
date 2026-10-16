@@ -3290,6 +3290,28 @@ fn ring_entry_change(
     }
     if is_removal {
         out.insert("remove".to_string(), serde_json::json!(true));
+        for key in ["offset_value", "offset_extra_value", "sample_start", "comment"] {
+            let val = old_entry[key].as_str().unwrap_or("");
+            if !val.is_empty() {
+                out.insert(key.to_string(), serde_json::json!(val));
+            }
+        }
+        let old_layers = old_entry["layers"].as_array().cloned().unwrap_or_default();
+        let layer_summaries: Vec<serde_json::Value> = old_layers
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, layer)| {
+                let mc = layer["mastering_code"].as_str().unwrap_or("");
+                let ms = layer["mastering_sid"].as_str().unwrap_or("");
+                if mc.is_empty() && ms.is_empty() {
+                    return None;
+                }
+                Some(serde_json::json!({ "index": idx, "mastering_code": mc, "mastering_sid": ms }))
+            })
+            .collect();
+        if !layer_summaries.is_empty() {
+            out.insert("layers".to_string(), serde_json::json!(layer_summaries));
+        }
         return Some(serde_json::Value::Object(out));
     }
 
