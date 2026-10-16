@@ -2138,6 +2138,53 @@ async fn discs_page(
     };
     let total_pages = (total_count + PAGE_SIZE - 1) / PAGE_SIZE;
 
+    if page > total_pages.max(1) {
+        return Ok(Redirect::to(&build_discs_url(DiscsUrlOptions {
+            system: &filter_system,
+            region: &filter_region,
+            language: &filter_language,
+            media: &filter_media,
+            category: &filter_category,
+            status: &filter_status,
+            letter: &filter_letter,
+            dumper: &filter_dumper,
+            title: &filter_title,
+            title_exact,
+            title_foreign: &filter_title_foreign,
+            title_foreign_exact,
+            disc_number: &filter_disc_number,
+            disc_title: &filter_disc_title,
+            disc_title_exact,
+            serial: &filter_serial,
+            serial_exact,
+            edition: &filter_edition,
+            edition_exact,
+            barcode: &filter_barcode,
+            barcode_exact,
+            universal_hash: &filter_universal_hash,
+            tracks_min: &filter_tracks_min,
+            tracks_max: &filter_tracks_max,
+            errors_min: &filter_errors_min,
+            errors_max: &filter_errors_max,
+            edc: &filter_edc,
+            protection: &filter_protection,
+            comments: &filter_comments,
+            contents: &filter_contents,
+            mastering_code: &filter_mastering_code,
+            mastering_sid: &filter_mastering_sid,
+            toolstamp: &filter_toolstamp,
+            mould_sid: &filter_mould_sid,
+            additional_mould: &filter_additional_mould,
+            offset: &filter_offset,
+            q: &filter_q,
+            sort: &sort_column,
+            order: &sort_order_str,
+            page: total_pages.max(1),
+            advanced: advanced_explicit,
+        }))
+        .into_response());
+    }
+
     let raw_rows: Vec<RawDiscRow> = select_query.fetch_all(&state.pool).await?;
 
     if !quick_search_terms.is_empty() && total_count == 1 {
