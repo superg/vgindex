@@ -121,6 +121,16 @@
                 </div>
             </div>
             <div class="advanced-search-row">
+                <span id="disc-title-foreign-filter-label">Foreign Disc Title</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="disc-title-foreign-filter" name="disc_title_foreign" value="{{ filter_disc_title_foreign }}" aria-labelledby="disc-title-foreign-filter-label">
+                    <label class="text-exact-toggle" for="disc-title-foreign-exact">
+                        <input type="checkbox" id="disc-title-foreign-exact" name="disc_title_foreign_exact" value="1" data-requires-nonblank="disc_title_foreign" {% if disc_title_foreign_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
                 <span id="serial-filter-label">Disc Serial</span>
                 <div class="text-exact-controls">
                     <input type="text" id="serial-filter" name="serial" value="{{ filter_serial }}" aria-labelledby="serial-filter-label">
