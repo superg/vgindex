@@ -2825,7 +2825,7 @@ mod tests {
             assert!(template.contains(&format!("id=\"{prefix}-exact\"")));
             assert!(template.contains(&format!("initExactRange('{prefix}')")));
         }
-        assert_eq!(template.matches("<span>Exact</span>").count(), 8);
+        assert_eq!(template.matches("<span>Exact</span>").count(), 9);
         assert!(template.contains("{% if tracks_exact %}checked{% endif %}"));
         assert!(template.contains("{% if errors_exact %}checked{% endif %}"));
         assert!(template.contains("max.value = min.value"));
