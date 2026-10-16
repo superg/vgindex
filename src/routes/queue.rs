@@ -323,7 +323,7 @@ async fn queue_list(
     State(state): State<AppState>,
     RequireAuth(user): RequireAuth,
     Query(query): Query<QueueQuery>,
-) -> AppResult<Html<String>> {
+) -> AppResult<Response> {
     let current = Some(&user);
     let is_logged_in = true;
     let can_view_disabled_discs = user.role.can_view_disabled_discs();
@@ -413,6 +413,21 @@ async fn queue_list(
     .await?;
 
     let total_pages = (total_count + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    if page > total_pages.max(1) {
+        return Ok(Redirect::to(&build_queue_url(QueueUrlOptions {
+            status: &filter_status,
+            sub_type: &filter_type,
+            system: &filter_system,
+            submitter: &filter_submitter,
+            disc_id: &disc_id_filter.map(|id| id.to_string()).unwrap_or_default(),
+            sort: &sort_column,
+            order: &sort_order,
+            page: total_pages.max(1),
+            is_disc_history,
+        }))
+        .into_response());
+    }
 
     let sys_rows: Vec<SysRow> = sqlx::query_as(
         "SELECT code, manufacturer, name FROM systems
@@ -504,7 +519,8 @@ async fn queue_list(
         }
         .render()
         .unwrap(),
-    ))
+    )
+    .into_response())
 }
 
 // ── Submission detail (GET /queue/{id}/) ───────────────────────────────
