@@ -3290,6 +3290,41 @@ fn ring_entry_change(
     }
     if is_removal {
         out.insert("remove".to_string(), serde_json::json!(true));
+        for key in ["offset_value", "offset_extra_value", "sample_start", "comment"] {
+            let val = old_entry[key].as_str().unwrap_or("");
+            if !val.is_empty() {
+                out.insert(key.to_string(), serde_json::json!(val));
+            }
+        }
+        let old_layers = old_entry["layers"].as_array().cloned().unwrap_or_default();
+        let layer_summaries: Vec<serde_json::Value> = old_layers
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, layer)| {
+                let ma_code = layer["mastering_code"].as_str().unwrap_or("");
+                let ma_sid = layer["mastering_sid"].as_str().unwrap_or("");
+                let toolstamp = layer["toolstamps"].as_str().unwrap_or("");
+                let mo_sid = layer["mould_sids"].as_str().unwrap_or("");
+                let mo_other = layer["additional_moulds"].as_str().unwrap_or("");
+                if ma_code.is_empty() && ma_sid.is_empty() && toolstamp.is_empty() && mo_sid.is_empty() && mo_other.is_empty() {
+                    return None;
+                }
+                let mut summary = serde_json::json!({ "index": idx, "mastering_code": ma_code, "mastering_sid": ma_sid });
+                if !toolstamp.is_empty() {
+                    summary["toolstamps"] = serde_json::json!(toolstamp);
+                }
+                if !mo_sid.is_empty() {
+                    summary["mould_sids"] = serde_json::json!(mo_sid);
+                }
+                if !mo_other.is_empty() {
+                    summary["additional_moulds"] = serde_json::json!(mo_other);
+                }
+                Some(summary)
+            })
+            .collect();
+        if !layer_summaries.is_empty() {
+            out.insert("layers".to_string(), serde_json::json!(layer_summaries));
+        }
         return Some(serde_json::Value::Object(out));
     }
 
