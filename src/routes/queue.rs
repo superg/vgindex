@@ -1348,7 +1348,7 @@ impl ReviewIdentityMode {
 
     fn annotation_label(self) -> &'static str {
         match self {
-            Self::PreferOld => "Changed to",
+            Self::PreferOld => "Submitted as",
             Self::PreferSubmitted => "Changed from",
         }
     }
@@ -3741,19 +3741,19 @@ mod tests {
         assert_eq!(template.disc_title, "Old Disc");
         assert_eq!(template.filename_suffix, "Old Suffix");
         assert_eq!(
-            annotation_values(&template, "title", "Changed to"),
+            annotation_values(&template, "title", "Submitted as"),
             vec!["New Game".to_string()]
         );
         assert_eq!(
-            annotation_values(&template, "system_code", "Changed to"),
+            annotation_values(&template, "system_code", "Submitted as"),
             vec!["Test New System".to_string()]
         );
         assert_eq!(
-            annotation_values(&template, "media_type", "Changed to"),
+            annotation_values(&template, "media_type", "Submitted as"),
             vec!["Blu-ray".to_string()]
         );
         assert_eq!(
-            annotation_values(&template, "category", "Changed to"),
+            annotation_values(&template, "category", "Submitted as"),
             vec!["Demos".to_string()]
         );
     }
