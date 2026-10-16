@@ -261,10 +261,10 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             if gap_opened || index01_seen {
                 return Err(format!("row {}: ISRC must appear before INDEX", row));
             }
-            let value = &upper[5..];
-            if value.len() != 12 || !value.chars().all(|c| c.is_ascii_alphanumeric()) {
+            let value = &line[5..];
+            if value.len() != 12 || !value.chars().all(|c| c.is_ascii_digit() || c.is_ascii_uppercase()) {
                 return Err(format!(
-                    "row {}: ISRC must be exactly 12 alphanumeric characters",
+                    "row {}: ISRC must be exactly 12 uppercase alphanumeric characters",
                     row
                 ));
             }
@@ -771,6 +771,12 @@ FILE "Track 01.bin" BINARY
     ISRC ZWUFD31357-4
     INDEX 01 00:00:00"#;
         assert!(validate_cuesheet(isrc_non_alnum).is_err());
+
+        let isrc_lowercase = r#"FILE "Track 01.bin" BINARY
+  TRACK 01 AUDIO
+    ISRC zwufd3135734
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(isrc_lowercase).is_err());
     }
 
     #[test]
