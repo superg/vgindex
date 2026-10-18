@@ -621,7 +621,6 @@ pub fn sanitize_filename(s: &str) -> String {
         ("α", "Alpha"),
         ("Δ", "Delta"),
         ("μ", "Mu"),
-        ("#", ""),
         ("¡", ""),
         ("¿", ""),
         ("°", ""),
@@ -1568,7 +1567,6 @@ FILE \"Track 2.bin\" BINARY\n\
             ('ō', "o"),
             ('Ş', "S"),
             ('ș', "s"),
-            ('#', ""),
         ];
 
         for (input, expected) in cases {
