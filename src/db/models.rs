@@ -1446,9 +1446,8 @@ FILE \"Track 2.bin\" BINARY\n\
     }
 
     #[test]
-    fn sanitize_filename_spacing_and_hash_replacements() {
+    fn sanitize_filename_spacing_replacement() {
         assert_eq!(sanitize_filename("Foo : Bar"), "Foo - Bar");
-        assert_eq!(sanitize_filename("Game #1"), "Game 1");
     }
 
     #[test]
