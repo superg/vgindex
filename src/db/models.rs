@@ -621,7 +621,6 @@ pub fn sanitize_filename(s: &str) -> String {
         ("α", "Alpha"),
         ("Δ", "Delta"),
         ("μ", "Mu"),
-        ("#", ""),
         ("¡", ""),
         ("¿", ""),
         ("°", ""),
@@ -1447,9 +1446,8 @@ FILE \"Track 2.bin\" BINARY\n\
     }
 
     #[test]
-    fn sanitize_filename_spacing_and_hash_replacements() {
+    fn sanitize_filename_spacing_replacement() {
         assert_eq!(sanitize_filename("Foo : Bar"), "Foo - Bar");
-        assert_eq!(sanitize_filename("Game #1"), "Game 1");
     }
 
     #[test]
@@ -1476,7 +1474,7 @@ FILE \"Track 2.bin\" BINARY\n\
                 &strings(&["en", "fr"]),
                 Some("1:"),
                 Some("Label: Test"),
-                Some("#Special?"),
+                Some("¿Special?"),
             ),
             "Foo - Bar (USA & Europe) (En,Fr) (Disc 1-) (Label - Test) (Special)"
         );
@@ -1487,9 +1485,9 @@ FILE \"Track 2.bin\" BINARY\n\
         assert_eq!(
             build_rom_base_name(
                 "Game",
-                &strings(&["#"]),
-                &strings(&["en", "#"]),
-                Some("#"),
+                &strings(&["¿"]),
+                &strings(&["en", "¿"]),
+                Some("¿"),
                 Some("?"),
                 Some("°"),
             ),
@@ -1568,7 +1566,6 @@ FILE \"Track 2.bin\" BINARY\n\
             ('ō', "o"),
             ('Ş', "S"),
             ('ș', "s"),
-            ('#', ""),
         ];
 
         for (input, expected) in cases {
