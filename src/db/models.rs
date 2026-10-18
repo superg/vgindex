@@ -1474,7 +1474,7 @@ FILE \"Track 2.bin\" BINARY\n\
                 &strings(&["en", "fr"]),
                 Some("1:"),
                 Some("Label: Test"),
-                Some("#Special?"),
+                Some("¿Special?"),
             ),
             "Foo - Bar (USA & Europe) (En,Fr) (Disc 1-) (Label - Test) (Special)"
         );
@@ -1485,9 +1485,9 @@ FILE \"Track 2.bin\" BINARY\n\
         assert_eq!(
             build_rom_base_name(
                 "Game",
-                &strings(&["#"]),
-                &strings(&["en", "#"]),
-                Some("#"),
+                &strings(&["¿"]),
+                &strings(&["en", "¿"]),
+                Some("¿"),
                 Some("?"),
                 Some("°"),
             ),
