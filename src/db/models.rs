@@ -654,7 +654,7 @@ pub fn sanitize_filename(s: &str) -> String {
         }
     }
     result.retain(|c| matches!(c as u32, 0x20..=0x7E));
-    result.trim().to_string()
+    result.trim_start().to_string()
 }
 
 fn transliterate_non_ascii(s: &str) -> String {
