@@ -653,8 +653,8 @@ pub fn sanitize_filename(s: &str) -> String {
             result = result.replace(from, to);
         }
     }
-    result.retain(|c| !matches!(c as u32, 0x00..=0x1F | 0x7F));
-    result
+    result.retain(|c| matches!(c as u32, 0x20..=0x7E));
+    result.trim_start().to_string()
 }
 
 fn transliterate_non_ascii(s: &str) -> String {
