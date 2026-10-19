@@ -1143,6 +1143,7 @@ pub struct SubmissionListRow {
     pub target_disc_id: Option<i32>,
     pub date_at: DateTime<Utc>,
     pub region_flags: Vec<FlagInfo>,
+    pub submission_comment: Option<String>,
 }
 
 #[cfg(test)]

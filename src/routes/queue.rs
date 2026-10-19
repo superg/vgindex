@@ -101,6 +101,7 @@ struct QueueTemplate {
     next_type_order: String,
     next_disc_id_order: String,
     next_status_order: String,
+    has_comments: bool,
 }
 impl SiteConfig for QueueTemplate {}
 impl QueueTemplate {
@@ -481,6 +482,8 @@ async fn queue_list(
         .to_string()
     };
 
+    let has_comments = entries.iter().any(|e| e.submission_comment.as_deref().is_some_and(|c| !c.is_empty()));
+
     Ok(Html(
         QueueTemplate {
             current_user: current.cloned(),
@@ -516,6 +519,7 @@ async fn queue_list(
             next_type_order: next_order("type"),
             next_disc_id_order: next_order("disc_id"),
             next_status_order: next_order("status"),
+            has_comments,
         }
         .render()
         .unwrap(),
@@ -2981,6 +2985,7 @@ mod tests {
             target_disc_id: Some(123),
             date_at: chrono::Utc::now(),
             region_flags: vec![],
+            submission_comment: None,
         }
     }
 
@@ -4052,6 +4057,7 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
             target_disc_id: row.try_get("target_disc_id")?,
             date_at: row.try_get("date_at")?,
             region_flags,
+            submission_comment: row.try_get("submission_comment").unwrap_or(None),
         })
     }
 }
