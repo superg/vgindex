@@ -1282,6 +1282,7 @@ function applyParsedRedumperLog(data) {
         'sbi',
         'pvd',
         'header',
+        'bca',
         'cuesheet',
         'dat',
         'protection'

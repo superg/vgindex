@@ -21,6 +21,7 @@ pub struct ParsedRedumperLog {
     pub sbi: Option<String>,
     pub pvd: Option<String>,
     pub header: Option<String>,
+    pub bca: Option<String>,
     pub cuesheet: Option<String>,
     pub dat: Option<String>,
     /// `None` means no protection information was found. `Some("")` means
@@ -112,6 +113,7 @@ fn parse_internal(
             }));
         result.pvd = hex_dump_after(info, "PVD:");
         result.header = hex_dump_after(info, "header:");
+        result.bca = bca_after(info, "BCA:");
         result.system_code = system_code(info, known_system_codes);
     }
 
@@ -326,6 +328,24 @@ fn hex_dump_after(lines: &[&str], label: &str) -> Option<String> {
         .iter()
         .take_while(|line| looks_like_hex_dump(line))
         .map(|line| line.trim_end());
+    nonempty_join(values)
+}
+
+fn looks_like_bca_line(line: &str) -> bool {
+    let line = line.trim();
+    !line.is_empty()
+        && line.split_whitespace().all(|group| {
+            group.len() == 4 && group.bytes().all(|byte| byte.is_ascii_hexdigit())
+        })
+}
+
+fn bca_after(lines: &[&str], label: &str) -> Option<String> {
+    let index = lines.iter().position(|line| line.trim() == label)?;
+    let values = lines[index + 1..]
+        .iter()
+        .skip_while(|line| line.trim().is_empty())
+        .take_while(|line| looks_like_bca_line(line))
+        .map(|line| line.trim());
     nonempty_join(values)
 }
 
