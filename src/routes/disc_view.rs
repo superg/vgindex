@@ -790,7 +790,7 @@ async fn disc_view(
                         )
                     })
                     .collect::<Vec<_>>()
-                    .join(", ")
+                    .join("<br>")
             },
             ring_vis: RingColVis::from_rows(
                 &ring_rows,
