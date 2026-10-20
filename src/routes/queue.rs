@@ -259,7 +259,7 @@ fn can_review_submission(user: &AuthenticatedUser, sub: &DiscSubmission) -> bool
 }
 
 fn can_view_submission(user: &AuthenticatedUser, sub: &DiscSubmission) -> bool {
-    sub.status != SubmissionStatus::Draft || sub.submitter_id == user.id || user.role.can_moderate()
+    (sub.status != SubmissionStatus::Draft && sub.status != SubmissionStatus::Rejected) || sub.submitter_id == user.id || user.role.can_moderate()
 }
 
 fn normalize_queue_type_filter(sub_type: Option<&str>, is_disc_history: bool) -> String {
@@ -3062,7 +3062,24 @@ mod tests {
             &sub
         ));
 
+        sub.status = SubmissionStatus::Pending;
+        assert!(can_view_submission(&auth_user(8, UserRole::User), &sub));
+    }
+
+    #[test]
+    fn rejected_visibility_is_limited_to_owner_and_moderators() {
+        let mut sub = test_submission();
         sub.status = SubmissionStatus::Rejected;
+        sub.submitter_id = 7;
+
+        assert!(can_view_submission(&auth_user(7, UserRole::User), &sub));
+        assert!(!can_view_submission(&auth_user(8, UserRole::User), &sub));
+        assert!(can_view_submission(
+            &auth_user(8, UserRole::Moderator),
+            &sub
+        ));
+
+        sub.status = SubmissionStatus::Accepted;
         assert!(can_view_submission(&auth_user(8, UserRole::User), &sub));
     }
 
