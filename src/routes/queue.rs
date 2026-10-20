@@ -3079,7 +3079,7 @@ mod tests {
             &sub
         ));
 
-        sub.status = SubmissionStatus::Accepted;
+        sub.status = SubmissionStatus::Approved;
         assert!(can_view_submission(&auth_user(8, UserRole::User), &sub));
     }
 
