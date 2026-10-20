@@ -2225,14 +2225,14 @@ pub async fn list_submissions(
         idx += 1;
         draft_owner_param = Some(idx);
         conditions.push(format!(
-            "(ds.status <> 'Draft' OR ds.submitter_id = ${idx})"
+            "(ds.status NOT IN ('Draft', 'Rejected') OR ds.submitter_id = ${idx})"
         ));
     }
     if hide_disabled_disc_targets {
         conditions.push(match draft_owner_param {
             Some(viewer_idx) => format!(
                 "(d.id IS NULL OR d.status <> 'Disabled' OR \
-                 (ds.status = 'Draft' AND ds.submitter_id = ${viewer_idx}))"
+                 (ds.status IN ('Draft', 'Rejected') AND ds.submitter_id = ${viewer_idx}))"
             ),
             None => "(d.id IS NULL OR d.status <> 'Disabled')".to_string(),
         });
@@ -2386,14 +2386,14 @@ pub async fn count_submissions(
         idx += 1;
         draft_owner_param = Some(idx);
         conditions.push(format!(
-            "(ds.status <> 'Draft' OR ds.submitter_id = ${idx})"
+            "(ds.status NOT IN ('Draft', 'Rejected') OR ds.submitter_id = ${idx})"
         ));
     }
     if hide_disabled_disc_targets {
         conditions.push(match draft_owner_param {
             Some(viewer_idx) => format!(
                 "(d.id IS NULL OR d.status <> 'Disabled' OR \
-                 (ds.status = 'Draft' AND ds.submitter_id = ${viewer_idx}))"
+                 (ds.status IN ('Draft', 'Rejected') AND ds.submitter_id = ${viewer_idx}))"
             ),
             None => "(d.id IS NULL OR d.status <> 'Disabled')".to_string(),
         });
