@@ -1403,7 +1403,7 @@ nav[aria-label="Pagination"] ul {
 }
 .disc-view table td:first-child {
     text-align: right;
-    vertical-align: middle;
+    vertical-align: top;
     white-space: nowrap;
     width: 1%;
 }
