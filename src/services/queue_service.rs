@@ -2304,6 +2304,7 @@ pub async fn list_submissions(
                 ds.status,
                 CASE WHEN ds.status = 'Draft' THEN NULL ELSE ds.target_disc_id END AS target_disc_id,
                 {date_expr} AS date_at,
+                CASE WHEN ds.submission_type = 'Edit' THEN ds.submission_comment ELSE NULL END as submission_comment,
                 COALESCE((
                     SELECT array_agg(TRIM(r.flag_code) || '|' || r.name ORDER BY r.sort_order)
                     FROM regions r

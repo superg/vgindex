@@ -98,6 +98,7 @@
                 <th class="submitter-col"><a href="{{ self.sort_url("submitter", next_submitter_order) }}">Submitter{% if sort_column == "submitter" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="reviewer-col"><a href="{{ self.sort_url("reviewer", next_reviewer_order) }}">Reviewer{% if sort_column == "reviewer" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="status-col"><a href="{{ self.sort_url("status", next_status_order) }}">Status{% if sort_column == "status" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
+                {% if has_comments %}<th class="comment-col">Comment</th>{% endif %}
             </tr>
         </thead>
         <tbody>
@@ -112,10 +113,11 @@
                 <td class="submitter-col"><a href="/discs?dumper={{ self.url_encode(entry.submitter) }}">{{ entry.submitter }}</a></td>
                 <td class="reviewer-col">{% match entry.reviewer_id %}{% when Some with (_) %}<a href="/discs?dumper={{ self.url_encode(entry.reviewer.as_deref().unwrap_or("")) }}">{{ entry.reviewer.as_deref().unwrap_or("") }}</a>{% when None %}{% endmatch %}</td>
                 <td class="status-col" title="{{ entry.status }}">{% match entry.status %}{% when SubmissionStatus::Pending %}🟡{% when SubmissionStatus::Draft %}🟠{% when SubmissionStatus::Approved %}🟢{% when SubmissionStatus::Rejected %}🔴{% when SubmissionStatus::Legacy %}⚪{% endmatch %}</td>
+                {% if has_comments %}<td class="comment-col"><span class="queue-comment-text" title="{% if let Some(c) = entry.submission_comment.as_deref() %}{{ c }}{% endif %}">{% if let Some(c) = entry.submission_comment.as_deref() %}{{ c }}{% endif %}</span></td>{% endif %}
             </tr>
             {% endfor %}
             {% if entries.is_empty() %}
-            <tr><td colspan="9">No submissions found.</td></tr>
+            <tr><td colspan="{% if has_comments %}10{% else %}9{% endif %}">No submissions found.</td></tr>
             {% endif %}
         </tbody>
     </table>

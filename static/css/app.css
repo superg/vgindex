@@ -2614,6 +2614,18 @@ table.striped tbody tr.clickable-row.is-row-hover td {
     padding-inline-end: 0.35rem;
 }
 
+.queue-table .comment-col {
+    max-width: 16rem;
+}
+
+.queue-comment-text {
+    display: block;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .status-dot-pending  { background: #f39c12; }
 .status-dot-approved { background: var(--status-verified); }
 .status-dot-rejected { background: var(--status-bad); }
