@@ -482,7 +482,7 @@ async fn queue_list(
         .to_string()
     };
 
-    let has_comments = entries.iter().any(|e| e.submission_comment.as_deref().is_some_and(|c| !c.is_empty()));
+    let has_comments = is_disc_history && entries.iter().any(|e| e.submission_comment.as_deref().is_some_and(|c| !c.is_empty()));
 
     Ok(Html(
         QueueTemplate {
