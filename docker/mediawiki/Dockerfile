@@ -1,4 +1,4 @@
-FROM mediawiki:1.46.0@sha256:51756779bb215c32842dfa38276813f504111c9624e2e4ec0c52204745d52aba
+FROM mediawiki:1.46.2@sha256:17d7c4fa00f2073c18800a08885020ec36c4fb1bab04f9195d9253c285d2b387
 
 RUN set -eux; \
     apt-get update; \
@@ -7,6 +7,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 COPY docker/apache/mpm_prefork.conf /etc/apache2/mods-available/mpm_prefork.conf
+COPY docker/php/security.ini /usr/local/etc/php/conf.d/security.ini
 
 COPY --from=composer:2@sha256:7725eb4545c438629ae8bde3ef0bb9a5038ef566126ad878442a69007242d267 /usr/bin/composer /usr/bin/composer
 
