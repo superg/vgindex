@@ -19,7 +19,7 @@ RUN set -eux; \
     git clone --branch REL1_46 \
         https://github.com/wikimedia/mediawiki-extensions-OpenIDConnect; \
     git -C mediawiki-extensions-OpenIDConnect checkout --detach ebf21a832f26a17541ab03f9b0a45dbb88b2dcdf; \
-    cd OpenIDConnect && \
+    cd mediawiki-extensions-OpenIDConnect && \
     COMPOSER_ALLOW_SUPERUSER=1 composer remove --dev --no-update --no-interaction \
         mediawiki/mediawiki-codesniffer \
         mediawiki/minus-x \
