@@ -14,10 +14,10 @@ COPY --from=composer:2@sha256:7725eb4545c438629ae8bde3ef0bb9a5038ef566126ad87844
 RUN set -eux; \
     cd /var/www/html/extensions; \
     git clone --branch REL1_46 \
-        https://gerrit.wikimedia.org/r/mediawiki/extensions/PluggableAuth; \
+        https://github.com/wikimedia/mediawiki-extensions-PluggableAuth; \
     git -C PluggableAuth checkout --detach b1f17d7930e25fbc495a1b872316251fcc546694; \
     git clone --branch REL1_46 \
-        https://gerrit.wikimedia.org/r/mediawiki/extensions/OpenIDConnect; \
+        https://github.com/wikimedia/mediawiki-extensions-OpenIDConnect; \
     git -C OpenIDConnect checkout --detach ebf21a832f26a17541ab03f9b0a45dbb88b2dcdf; \
     cd OpenIDConnect && \
     COMPOSER_ALLOW_SUPERUSER=1 composer remove --dev --no-update --no-interaction \
