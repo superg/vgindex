@@ -15,10 +15,10 @@ RUN set -eux; \
     cd /var/www/html/extensions; \
     git clone --branch REL1_46 \
         https://github.com/wikimedia/mediawiki-extensions-PluggableAuth; \
-    git -C PluggableAuth checkout --detach b1f17d7930e25fbc495a1b872316251fcc546694; \
+    git -C mediawiki-extensions-PluggableAuth checkout --detach b1f17d7930e25fbc495a1b872316251fcc546694; \
     git clone --branch REL1_46 \
         https://github.com/wikimedia/mediawiki-extensions-OpenIDConnect; \
-    git -C OpenIDConnect checkout --detach ebf21a832f26a17541ab03f9b0a45dbb88b2dcdf; \
+    git -C mediawiki-extensions-OpenIDConnect checkout --detach ebf21a832f26a17541ab03f9b0a45dbb88b2dcdf; \
     cd OpenIDConnect && \
     COMPOSER_ALLOW_SUPERUSER=1 composer remove --dev --no-update --no-interaction \
         mediawiki/mediawiki-codesniffer \
