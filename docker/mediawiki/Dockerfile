@@ -1,4 +1,4 @@
-FROM mediawiki:1.46.2@sha256:508592f370e04076a78bd313b280fbb851ef5b6442f9e279a43cc9a9c2a82f20
+FROM mediawiki:1.46.2@sha256:276fd8c601efd6a607747f5b0a9de4649b80d4927b905fba0e77a62c0adf4af7
 
 RUN set -eux; \
     apt-get update; \
