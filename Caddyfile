@@ -80,13 +80,6 @@
 	respond @crawler_session "Crawler access to generated navigation is disabled.\n" 403
 }
 
-(block_multipart) {
-	@multipart {
-		header_regexp Content-Type "(?i)^\s*multipart/form-data"
-	}
-	respond @multipart 403
-}
-
 (crawler_guard_wiki) {
 	@crawler_generated {
 		header_regexp User-Agent "(?i)(bot|crawler|spider|slurp|archiver|facebookexternalhit|meta-externalagent|meta-webindexer|aiwebindex)"
@@ -144,7 +137,6 @@
 
 {$PHPBB_PUBLIC_URL} {
 	import access_log
-	import block_multipart
 	respond /robots.txt <<ROBOTS
 		User-agent: *
 		Disallow: /search.php
@@ -164,7 +156,6 @@
 
 {$MEDIAWIKI_PUBLIC_URL} {
 	import access_log
-	import block_multipart
 	respond /robots.txt <<ROBOTS
 		User-agent: *
 		Disallow: /index.php
