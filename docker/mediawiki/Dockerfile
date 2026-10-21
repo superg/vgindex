@@ -7,6 +7,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 COPY docker/apache/mpm_prefork.conf /etc/apache2/mods-available/mpm_prefork.conf
+COPY docker/php/security.ini /usr/local/etc/php/conf.d/security.ini
 
 COPY --from=composer:2@sha256:7725eb4545c438629ae8bde3ef0bb9a5038ef566126ad878442a69007242d267 /usr/bin/composer /usr/bin/composer
 
