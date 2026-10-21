@@ -432,6 +432,12 @@ seed_app_oidc_client() {
         >/dev/null
 }
 
+run_db_update() {
+    echo "phpBB entrypoint: running database migrations..."
+    cd /var/www/html
+    php bin/phpbbcli.php db:migrate --safe-mode --no-interaction
+}
+
 run_bootstrap() {
     echo "phpBB entrypoint: applying bootstrap settings..."
     disable_legacy_oidc_extension
@@ -532,6 +538,7 @@ fi
 rm -rf /var/www/html/install
 
 write_config_php
+run_db_update
 ensure_oidc_signing_key
 
 case "$PHPBB_BOOTSTRAP_MODE" in

@@ -1,6 +1,6 @@
 FROM php:8.2-apache-bookworm
 
-ARG PHPBB_VERSION=3.3.17
+ARG PHPBB_VERSION=3.3.19
 ENV PHPBB_VERSION=${PHPBB_VERSION}
 
 RUN set -eux; \
@@ -31,6 +31,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 COPY docker/apache/mpm_prefork.conf /etc/apache2/mods-available/mpm_prefork.conf
+COPY docker/php/security.ini /usr/local/etc/php/conf.d/security.ini
 
 RUN set -eux; \
     curl -fsSL -o /tmp/phpbb.zip \
