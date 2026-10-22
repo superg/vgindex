@@ -172,7 +172,8 @@ main > h3 {
 [data-theme="dark"] .disc-table .title-col a {
     color: #c6e3fd;
 }
-.disc-table .title-col .foreign-title {
+.disc-table .title-col .foreign-title,
+.disc-table .title-col .alt-title {
     margin-top: 0.08rem;
     font-size: 0.72rem;
     line-height: 1.2;

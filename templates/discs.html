@@ -386,7 +386,8 @@
                     <a href="/disc/{{ disc.id }}">{{ disc.title }}</a>
                     {% if !disc.title_foreign.is_empty() %}
                     <div class="foreign-title">{{ disc.title_foreign }}</div>
-                    {% else if !disc.title_alt.is_empty() %}
+                    {% endif %}
+                    {% if !disc.title_alt.is_empty() %}
                     <div class="alt-title">{{ disc.title_alt }}</div>
                     {% endif %}
                 </td>

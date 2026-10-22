@@ -826,6 +826,7 @@ pub async fn update_disc(
     let system_code = data["system_code"].as_str();
     let media_type = data["media_type"].as_str();
     let title_foreign = data["title_foreign"].as_str().filter(|s| !s.is_empty());
+    let title_alt = data["title_alt"].as_str().filter(|s| !s.is_empty());
     let disc_title = data["disc_title"].as_str().filter(|s| !s.is_empty());
     let disc_title_foreign = data["disc_title_foreign"].as_str().filter(|s| !s.is_empty());
     let disc_number = data["disc_number"].as_str().filter(|s| !s.is_empty());
@@ -922,49 +923,50 @@ pub async fn update_disc(
          system_code = COALESCE($2, system_code),
          media_type_code = COALESCE($3, media_type_code),
          category_id = (SELECT id FROM categories WHERE name = $4),
-         title_foreign = $5, disc_title = $6, disc_number = $7,
-         filename_suffix = $8,
-         serial = $9, version = $10, edition = $11, barcode = $12,
-         comments = $13, contents = $14,
-         error_count = $15, exe_date = $16, edc = $17,
-         layerbreaks = $18,
-         pvd = $19, pic = $20, bca = $21, header = $22,
-         protection = $23, sbi = $24,
-         universal_hash = $25,
-         cue = $26,
-         status = $27::disc_status_enum,
-         disc_title_foreign = $29
-         WHERE id = $28",
+         title_foreign = $5, title_alt = $6, disc_title = $7, disc_number = $8,
+         filename_suffix = $9,
+         serial = $10, version = $11, edition = $12, barcode = $13,
+         comments = $14, contents = $15,
+         error_count = $16, exe_date = $17, edc = $18,
+         layerbreaks = $19,
+         pvd = $20, pic = $21, bca = $22, header = $23,
+         protection = $24, sbi = $25,
+         universal_hash = $26,
+         cue = $27,
+         status = $28::disc_status_enum,
+         disc_title_foreign = $30
+         WHERE id = $29",
     )
     .bind(title) // $1
     .bind(system_code) // $2
     .bind(media_type) // $3
     .bind(category) // $4
     .bind(title_foreign) // $5
-    .bind(disc_title) // $6
-    .bind(disc_number) // $7
-    .bind(filename_suffix) // $8
-    .bind(&serial) // $9
-    .bind(version) // $10
-    .bind(&edition) // $11
-    .bind(&barcode) // $12
-    .bind(comments) // $13
-    .bind(contents) // $14
-    .bind(error_count) // $15
-    .bind(exe_date) // $16
-    .bind(edc) // $17
-    .bind(&layerbreaks) // $18
-    .bind(&pvd) // $19
-    .bind(&pic) // $20
-    .bind(&bca) // $21
-    .bind(&header) // $22
-    .bind(protection) // $23
-    .bind(sbi) // $24
-    .bind(&universal_hash) // $25
-    .bind(cue) // $26
-    .bind(status) // $27
-    .bind(disc_id) // $28
-    .bind(disc_title_foreign) // $29
+    .bind(title_alt) // $6
+    .bind(disc_title) // $7
+    .bind(disc_number) // $8
+    .bind(filename_suffix) // $9
+    .bind(&serial) // $10
+    .bind(version) // $11
+    .bind(&edition) // $12
+    .bind(&barcode) // $13
+    .bind(comments) // $14
+    .bind(contents) // $15
+    .bind(error_count) // $16
+    .bind(exe_date) // $17
+    .bind(edc) // $18
+    .bind(&layerbreaks) // $19
+    .bind(&pvd) // $20
+    .bind(&pic) // $21
+    .bind(&bca) // $22
+    .bind(&header) // $23
+    .bind(protection) // $24
+    .bind(sbi) // $25
+    .bind(&universal_hash) // $26
+    .bind(cue) // $27
+    .bind(status) // $28
+    .bind(disc_id) // $29
+    .bind(disc_title_foreign) // $30
     .execute(&mut *conn)
     .await?;
 
@@ -2170,6 +2172,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "title": detail.disc.title,
         "category": detail.disc.category.to_string(),
         "title_foreign": detail.disc.title_foreign,
+        "title_alt": detail.disc.title_alt,
         "disc_number": detail.disc.disc_number,
         "disc_title": detail.disc.disc_title,
         "disc_title_foreign": detail.disc.disc_title_foreign,

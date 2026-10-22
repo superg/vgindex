@@ -1069,6 +1069,7 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
     };
     let title_exact = exact_param(options.title_exact, options.title);
     let title_foreign_exact = exact_param(options.title_foreign_exact, options.title_foreign);
+    let title_alt_exact = exact_param(options.title_alt_exact, options.title_alt);
     let disc_title_exact = exact_param(options.disc_title_exact, options.disc_title);
     let disc_title_foreign_exact = exact_param(options.disc_title_foreign_exact, options.disc_title_foreign);
     let serial_exact = exact_param(options.serial_exact, options.serial);
@@ -1090,6 +1091,8 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("title_exact", title_exact),
             ("title_foreign", options.title_foreign),
             ("title_foreign_exact", title_foreign_exact),
+            ("title_alt", options.title_alt),
+            ("title_alt_exact", title_alt_exact),
             ("disc_number", options.disc_number),
             ("disc_title", options.disc_title),
             ("disc_title_exact", disc_title_exact),
@@ -3107,7 +3110,7 @@ mod tests {
                 page: 2,
                 advanced: true,
             }),
-            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&disc_number=2&disc_title=Bonus%20Disc&disc_title_exact=1&disc_title_foreign=Foreign%20Disc%20Title&disc_title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset=123&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
+            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&title_alt=Alt%20Title&title_alt_exact=1&disc_number=2&disc_title=Bonus%20Disc&disc_title_exact=1&disc_title_foreign=Foreign%20Disc%20Title&disc_title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset=123&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
         );
 
         assert_eq!(

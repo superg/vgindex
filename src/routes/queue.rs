@@ -1402,6 +1402,7 @@ fn build_review_diff_context(
     for field in [
         "title",
         "title_foreign",
+        "title_alt",
         "disc_number",
         "disc_title",
         "disc_title_foreign",
@@ -1725,6 +1726,7 @@ fn compute_field_highlights(
         "category",
         "title",
         "title_foreign",
+        "title_alt",
         "disc_number",
         "disc_title",
         "disc_title_foreign",
