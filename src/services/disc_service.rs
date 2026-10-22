@@ -1389,6 +1389,7 @@ mod tests {
                 media_type,
                 title: "Game".to_string(),
                 title_foreign: None,
+                title_alt: None,
                 disc_title: None,
                 disc_title_foreign: None,
                 disc_number: None,

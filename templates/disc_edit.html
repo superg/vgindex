@@ -197,6 +197,19 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
             <small class="transliterate-note" id="transliterate-note" role="status" aria-live="polite" style="display:none"></small>
         </label>
 
+        <label class="disc-meta-row{% if !self.highlight_class("title_alt").is_empty() %} {{ self.highlight_class("title_alt") }}{% endif %}" data-add-requires-system-media>
+            <span class="disc-meta-label">Alternate Title:</span>
+            <input type="text" name="title_alt" value="{{ title_alt }}">
+            {% for ann in self.annotations_for("title_alt") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </label>
+
         <label class="disc-meta-row{% if !self.highlight_class("disc_number").is_empty() %} {{ self.highlight_class("disc_number") }}{% endif %}" data-add-requires-system-media data-field-flag="has_disc_number"{% if !show_disc_number %} style="display:none"{% endif %}>
             <span class="disc-meta-label">Disc Number:</span>
             <input type="text" name="disc_number" value="{{ disc_number }}">

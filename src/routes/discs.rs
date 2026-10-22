@@ -303,6 +303,8 @@ pub struct DiscsQuery {
     pub title_exact: Option<String>,
     pub title_foreign: Option<String>,
     pub title_foreign_exact: Option<String>,
+    pub title_alt: Option<String>,
+    pub title_alt_exact: Option<String>,
     pub disc_number: Option<String>,
     pub disc_title: Option<String>,
     pub disc_title_exact: Option<String>,
@@ -491,6 +493,7 @@ fn quick_search_clause(bind_idx: u32, hash_candidate_bind_idx: Option<u32>) -> S
     let mut clause = format!(
         r#"(LOWER(d.title) {title_like}
              OR LOWER(d.title_foreign) {title_like}
+             OR LOWER(d.title_alt) {title_like}
              OR compact_disc_array_search(d.serial) {serial_like}"#
     );
 
@@ -571,6 +574,7 @@ fn add_universal_hash_clause(
 enum TitleTextField {
     Title,
     ForeignTitle,
+    AltTitle,
     DiscNumber,
     DiscTitle,
     ForeignDiscTitle,
@@ -580,6 +584,7 @@ fn title_text_search_clause(field: TitleTextField, bind_idx: u32, exact: bool) -
     let (column, capability) = match field {
         TitleTextField::Title => ("title", None),
         TitleTextField::ForeignTitle => ("title_foreign", Some("has_title_foreign")),
+        TitleTextField::AltTitle => ("title_alt", None),
         TitleTextField::DiscNumber => ("disc_number", Some("has_disc_number")),
         TitleTextField::DiscTitle => ("disc_title", Some("has_disc_title")),
         TitleTextField::ForeignDiscTitle => ("disc_title_foreign", Some("has_disc_title_foreign")),
@@ -602,7 +607,7 @@ fn title_text_search_clause(field: TitleTextField, bind_idx: u32, exact: bool) -
 fn add_title_text_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
-    filters: [(TitleTextField, bool, bool); 5],
+    filters: [(TitleTextField, bool, bool); 6],
 ) {
     for (field, active, exact) in filters {
         if active {
@@ -855,6 +860,8 @@ struct DiscsTemplate {
     title_exact: bool,
     filter_title_foreign: String,
     title_foreign_exact: bool,
+    filter_title_alt: String,
+    title_alt_exact: bool,
     filter_disc_number: String,
     filter_disc_title: String,
     disc_title_exact: bool,
@@ -920,6 +927,8 @@ impl DiscsTemplate {
             title_exact: self.title_exact,
             title_foreign: &self.filter_title_foreign,
             title_foreign_exact: self.title_foreign_exact,
+            title_alt: &self.filter_title_alt,
+            title_alt_exact: self.title_alt_exact,
             disc_number: &self.filter_disc_number,
             disc_title: &self.filter_disc_title,
             disc_title_exact: self.disc_title_exact,
@@ -986,6 +995,8 @@ struct DiscsUrlOptions<'a> {
     title_exact: bool,
     title_foreign: &'a str,
     title_foreign_exact: bool,
+    title_alt: &'a str,
+    title_alt_exact: bool,
     disc_number: &'a str,
     disc_title: &'a str,
     disc_title_exact: bool,
@@ -1118,6 +1129,7 @@ struct DiscRow {
     id: i32,
     title: String,
     title_foreign: String,
+    title_alt: String,
     system_code: String,
     system_display: String,
     dumped_by_me: bool,
@@ -1441,6 +1453,15 @@ async fn discs_page(
         .as_deref()
         .map(|value| scalar_text_bind_value(value, title_foreign_exact));
     let filter_title_foreign = title_foreign_bind.clone().unwrap_or_default();
+    let active_title_alt = active_verbatim_filter(query.title_alt.as_ref());
+    let title_alt_exact = exact_filter_enabled(
+        active_title_alt.as_ref(),
+        query.title_alt_exact.as_deref(),
+    );
+    let title_alt_bind = active_title_alt
+        .as_deref()
+        .map(|value| scalar_text_bind_value(value, title_alt_exact));
+    let filter_title_alt = title_alt_bind.clone().unwrap_or_default();
     let active_disc_number = active_verbatim_filter(query.disc_number.as_ref());
     let disc_number_bind = active_disc_number
         .as_deref()
@@ -1708,6 +1729,11 @@ async fn discs_page(
                 active_title_foreign.is_some(),
                 title_foreign_exact,
             ),
+            (
+                TitleTextField::AltTitle,
+                active_title_alt.is_some(),
+                title_alt_exact,
+            ),
             (TitleTextField::DiscNumber, active_disc_number.is_some(), true),
             (
                 TitleTextField::DiscTitle,
@@ -1882,6 +1908,16 @@ async fn discs_page(
             }
         })
         .unwrap_or_default();
+    let count_key_title_alt = title_alt_bind
+        .as_deref()
+        .map(|value| {
+            if title_alt_exact {
+                value.to_string()
+            } else {
+                value.to_lowercase()
+            }
+        })
+        .unwrap_or_default();
     let count_key_disc_number = disc_number_bind.clone().unwrap_or_default();
     let count_key_disc_title = disc_title_bind
         .as_deref()
@@ -1957,6 +1993,8 @@ async fn discs_page(
             title_exact,
             title_foreign: &count_key_title_foreign,
             title_foreign_exact,
+            title_alt: &count_key_title_alt,
+            title_alt_exact,
             disc_number: &count_key_disc_number,
             disc_title: &count_key_disc_title,
             disc_title_exact,
@@ -2034,6 +2072,7 @@ async fn discs_page(
     let sql_select = format!(
         "{sort_cte} SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
                 d.title_foreign,
+                d.title_alt,
                 s.has_title_foreign, s.has_disc_number, s.has_disc_title, s.has_edition, s.has_serial,
                 s.code AS system_code,
                 s.short_name AS system_short_name,
@@ -2098,6 +2137,9 @@ async fn discs_page(
     }
     if let Some(title_foreign) = &title_foreign_bind {
         bind_queries!(title_foreign.clone());
+    }
+    if let Some(title_alt) = &title_alt_bind {
+        bind_queries!(title_alt.clone());
     }
     if let Some(disc_number) = &disc_number_bind {
         bind_queries!(disc_number.clone());
@@ -2193,6 +2235,8 @@ async fn discs_page(
             title_exact,
             title_foreign: &filter_title_foreign,
             title_foreign_exact,
+            title_alt: &filter_title_alt,
+            title_alt_exact,
             disc_number: &filter_disc_number,
             disc_title: &filter_disc_title,
             disc_title_exact,
@@ -2263,6 +2307,7 @@ async fn discs_page(
             } else {
                 String::new()
             },
+            title_alt: r.title_alt.unwrap_or_default(),
             system_display: crate::db::models::short_system_display(
                 &r.system_short_name,
                 &r.system_code,
@@ -2324,6 +2369,8 @@ async fn discs_page(
             title_exact,
             filter_title_foreign,
             title_foreign_exact,
+            filter_title_alt,
+            title_alt_exact,
             filter_disc_number,
             filter_disc_title,
             disc_title_exact,
@@ -2392,6 +2439,7 @@ struct RawDiscRow {
     disc_title: Option<String>,
     filename_suffix: Option<String>,
     title_foreign: Option<String>,
+    title_alt: Option<String>,
     has_title_foreign: bool,
     has_disc_number: bool,
     has_disc_title: bool,
@@ -2825,7 +2873,7 @@ mod tests {
             assert!(template.contains(&format!("id=\"{prefix}-exact\"")));
             assert!(template.contains(&format!("initExactRange('{prefix}')")));
         }
-        assert_eq!(template.matches("<span>Exact</span>").count(), 9);
+        assert_eq!(template.matches("<span>Exact</span>").count(), 10);
         assert!(template.contains("{% if tracks_exact %}checked{% endif %}"));
         assert!(template.contains("{% if errors_exact %}checked{% endif %}"));
         assert!(template.contains("max.value = min.value"));
@@ -3025,6 +3073,8 @@ mod tests {
                 title_exact: true,
                 title_foreign: "Foreign Title",
                 title_foreign_exact: true,
+                title_alt: "Alt Title",
+                title_alt_exact: true,
                 disc_number: "2",
                 disc_title: "Bonus Disc",
                 disc_title_exact: true,
@@ -3345,6 +3395,7 @@ mod tests {
             [
                 (TitleTextField::Title, true, false),
                 (TitleTextField::ForeignTitle, true, true),
+                (TitleTextField::AltTitle, false, false),
                 (TitleTextField::DiscNumber, false, false),
                 (TitleTextField::DiscTitle, false, false),
                 (TitleTextField::ForeignDiscTitle, false, false),

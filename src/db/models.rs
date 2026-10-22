@@ -439,6 +439,7 @@ pub struct Disc {
     pub media_type: MediaType,
     pub title: String,
     pub title_foreign: Option<String>,
+    pub title_alt: Option<String>,
     pub disc_title: Option<String>,
     pub disc_title_foreign: Option<String>,
     pub disc_number: Option<String>,

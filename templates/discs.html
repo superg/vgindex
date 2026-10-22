@@ -106,6 +106,16 @@
                     </label>
                 </div>
             </div>
+            <div class="advanced-search-row">
+                <span id="title-alt-filter-label">Alternate Title</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="title-alt-filter" name="title_alt" value="{{ filter_title_alt }}" aria-labelledby="title-alt-filter-label">
+                    <label class="text-exact-toggle" for="title-alt-exact">
+                        <input type="checkbox" id="title-alt-exact" name="title_alt_exact" value="1" data-requires-nonblank="title_alt" {% if title_alt_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
             <label class="advanced-search-row">
                 <span>Disc Number</span>
                 <input type="text" id="disc-number-filter" name="disc_number" value="{{ filter_disc_number }}">
@@ -305,6 +315,8 @@
                     {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
                     {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}
                     {% if title_foreign_exact %}<input type="hidden" name="title_foreign_exact" value="1">{% endif %}
+                    {% if !filter_title_alt.is_empty() %}<input type="hidden" name="title_alt" value="{{ filter_title_alt }}">{% endif %}
+                    {% if title_alt_exact %}<input type="hidden" name="title_alt_exact" value="1">{% endif %}
                     {% if !filter_disc_number.is_empty() %}<input type="hidden" name="disc_number" value="{{ filter_disc_number }}">{% endif %}
                     {% if !filter_disc_title.is_empty() %}<input type="hidden" name="disc_title" value="{{ filter_disc_title }}">{% endif %}
                     {% if disc_title_exact %}<input type="hidden" name="disc_title_exact" value="1">{% endif %}
@@ -374,6 +386,8 @@
                     <a href="/disc/{{ disc.id }}">{{ disc.title }}</a>
                     {% if !disc.title_foreign.is_empty() %}
                     <div class="foreign-title">{{ disc.title_foreign }}</div>
+                    {% else if !disc.title_alt.is_empty() %}
+                    <div class="alt-title">{{ disc.title_alt }}</div>
                     {% endif %}
                 </td>
                 <td class="system-col">{{ disc.system_display }}</td>
@@ -414,6 +428,8 @@
                     {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
                     {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}
                     {% if title_foreign_exact %}<input type="hidden" name="title_foreign_exact" value="1">{% endif %}
+                    {% if !filter_title_alt.is_empty() %}<input type="hidden" name="title_alt" value="{{ filter_title_alt }}">{% endif %}
+                    {% if title_alt_exact %}<input type="hidden" name="title_alt_exact" value="1">{% endif %}
                     {% if !filter_disc_number.is_empty() %}<input type="hidden" name="disc_number" value="{{ filter_disc_number }}">{% endif %}
                     {% if !filter_disc_title.is_empty() %}<input type="hidden" name="disc_title" value="{{ filter_disc_title }}">{% endif %}
                     {% if disc_title_exact %}<input type="hidden" name="disc_title_exact" value="1">{% endif %}
