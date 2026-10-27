@@ -770,6 +770,13 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_all(pool)
     .await?;
 
+    let bca_mastering: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT data FROM disc_bca_mastering WHERE disc_id = $1",
+    )
+    .bind(disc_id)
+    .fetch_all(pool)
+    .await?;
+
     sort_ring_entry_views(&mut ring_views, disc.media_type.max_layers() as usize);
 
     Ok(DiscDetail {
@@ -782,6 +789,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         dumpers,
         disc_submission_count,
         sector_ranges,
+        bca_mastering,
         added_at,
         modified_at,
     })
@@ -1151,6 +1159,78 @@ pub async fn update_disc(
         }
     }
 
+    // Nintendo BCA mastering data
+    if let Some(value) = data.get("bca_mastering") {
+        let mut new_records: Vec<Vec<u8>> = Vec::new();
+        if let Some(items) = value.as_array() {
+            for item in items {
+                let Some(text) = item.as_str() else { continue };
+                if text.trim().is_empty() {
+                    continue;
+                }
+
+                let compact: String = text
+                    .chars()
+                    .filter(|c| !c.is_whitespace() && *c != ':' && *c != '-')
+                    .map(|c| c.to_ascii_uppercase())
+                    .collect();
+                if compact.len() != 32 || !compact.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Err(AppError::BadRequest(format!(
+                        "BCA Mastering: '{}' must be exactly 16 bytes (32 hex digits)",
+                        text
+                    )));
+                }
+                let bytes = (0..32)
+                    .step_by(2)
+                    .map(|i| {
+                        u8::from_str_radix(&compact[i..i + 2], 16)
+                            .map_err(|e| AppError::BadRequest(format!("BCA Mastering: {e}")))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                new_records.push(bytes);
+            }
+        }
+
+        let media_allowed = match media_type {
+            Some(code) if !code.trim().is_empty() => {
+                crate::services::validation::media_allows_bca_mastering(code)
+            }
+            _ => true,
+        };
+        if !media_allowed {
+            new_records.clear();
+        }
+
+        let existing_records: Vec<Vec<u8>> = sqlx::query_scalar(
+            "SELECT data FROM disc_bca_mastering WHERE disc_id = $1 ORDER BY data"
+        )
+        .bind(disc_id)
+        .fetch_all(&mut *conn)
+        .await?;
+
+        new_records.sort();
+
+        for existing in &existing_records {
+            if !new_records.contains(existing) {
+                sqlx::query("DELETE FROM disc_bca_mastering WHERE disc_id = $1 AND data = $2")
+                    .bind(disc_id)
+                    .bind(existing)
+                    .execute(&mut *conn)
+                    .await?;
+            }
+        }
+
+        for new in &new_records {
+            if !existing_records.contains(new) {
+                sqlx::query("INSERT INTO disc_bca_mastering (disc_id, data) VALUES ($1, $2)")
+                    .bind(disc_id)
+                    .bind(new)
+                    .execute(&mut *conn)
+                    .await?;
+            }
+        }
+    }
+
     // Files (non-cue) from XML
     if let Some(files_xml) = data["dat"].as_str().map(normalize_newlines) {
         sqlx::query("DELETE FROM files WHERE disc_id = $1 AND track_number IS NOT NULL")
@@ -1486,6 +1566,7 @@ mod tests {
             dumpers: vec![],
             disc_submission_count: 0,
             sector_ranges: vec![],
+            bca_mastering: vec![],
             added_at: None,
             modified_at: None,
         };
@@ -2186,6 +2267,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "pvd": detail.disc.pvd.as_ref().map(|d| format_pvd_hex_snapshot(d)),
         "pic": detail.disc.pic.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
         "bca": detail.disc.bca.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
+        "bca_mastering": detail.bca_mastering.iter().map(|d| crate::services::validation::format_bca_mastering_record(d)).collect::<Vec<_>>(),
         "header": detail.disc.header.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
         "protection": detail.disc.protection,
         "sbi": detail.disc.sbi,

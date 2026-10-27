@@ -14,6 +14,8 @@ function addInlineEntry(containerId, name) {
     input.name = name;
     if (last) {
         input.style.width = last.style.width;
+    } else if (name === 'bca_mastering') {
+        input.style.width = '18ch';
     }
     var annotation = container.querySelector('.review-field-annotation');
     if (annotation) {
@@ -25,6 +27,7 @@ function addInlineEntry(containerId, name) {
         attachEditionSelector(input);
     } else if (isIndependentlySizedInlineField(name)) {
         attachIndependentInlineResize(input);
+        fitInlineInput(input);
     }
     input.focus();
 }
@@ -680,6 +683,10 @@ function applyMediaFieldVisibility() {
                 autoExpand(ta);
             });
         }
+    });
+    document.querySelectorAll('[data-media-codes]').forEach(function (el) {
+        var allowed = (el.getAttribute('data-media-codes') || '').split(/\s+/);
+        setFormFieldVisible(el, allowed.indexOf(code) !== -1);
     });
     var errorCountField = document.getElementById('error-count-field');
     if (!errorCountField) {

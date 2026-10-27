@@ -373,6 +373,40 @@
 </section>
 {% endif %}
 
+{% if show_bca && !bca_mastering_rows.is_empty() %}
+<section class="left-section detail-section">
+    <h3>BCA Mastering Data</h3>
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table">
+        <thead>
+            <tr>
+                <th class="col-num">#</th>
+                <th class="col-num" title="Anti-piracy check value">Check Bit</th>
+                <th title="Identifiers for manufacturing plant and Laser Beam Recorder">Plant/LBR</th>
+                <th title="Batch serial">Serial</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th class="col-num" title="Unique disc number within batch">Disc #</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in bca_mastering_rows %}
+            <tr>
+                <td class="col-num">{{ row.num }}</td>
+                <td class="col-num">{{ row.check_bit }}</td>
+                <td><code>{{ row.plant_lbr }}</code></td>
+                <td><code>{{ row.serial }}</code></td>
+                <td><code>{{ row.date }}</code></td>
+                <td><code>{{ row.time }}</code></td>
+                <td class="col-num">{{ row.disc_num }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
 {% if !pic_rows.is_empty() %}
 <section class="left-section detail-section">
     {% if pic_rows.len() > 20 %}

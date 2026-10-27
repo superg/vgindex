@@ -5,7 +5,7 @@ use axum::{
     routing::get,
     Router,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, NaiveDate, Utc};
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
@@ -144,9 +144,94 @@ struct DiscViewTemplate {
     header_rows: Vec<HeaderRow>,
     show_header: bool,
     bca_rows: Vec<HeaderRow>,
+    bca_mastering_rows: Vec<BcaMasteringRow>,
     show_bca: bool,
 }
 impl SiteConfig for DiscViewTemplate {}
+
+struct BcaMasteringRow {
+    num: usize,
+    check_bit: String,
+    plant_lbr: String,
+    serial: String,
+    date: String,
+    time: String,
+    disc_num: u32,
+}
+
+fn build_bca_mastering_rows(records: &[Vec<u8>]) -> Vec<BcaMasteringRow> {
+    records
+        .iter()
+        .enumerate()
+        .map(|(index, data)| {
+            let check_bit = match data.get(..4) {
+                Some([0, 0, 0, 0]) => "0",
+                Some([0, 0, 0, 1]) => "1",
+                _ => "?",
+            };
+            let plant_lbr = data
+                .get(4..8)
+                .map(|bytes| {
+                    bytes
+                        .chunks_exact(2)
+                        .map(|pair| {
+                            pair.iter()
+                                .map(|byte| {
+                                    if byte.is_ascii_graphic() {
+                                        char::from(*byte)
+                                    } else {
+                                        '\u{FFFD}'
+                                    }
+                                })
+                                .collect::<String>()
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            let serial = data
+                .get(8)
+                .map(|byte| format!("{byte:02X}"))
+                .unwrap_or_default();
+            let date = match data.get(9..11) {
+                Some([first, second]) => {
+                    let days_since_epoch = u16::from_be_bytes([*first, *second]);
+                    NaiveDate::from_ymd_opt(2000, 1, 1)
+                        .and_then(|epoch| {
+                            epoch.checked_add_signed(ChronoDuration::days(i64::from(
+                                days_since_epoch,
+                            )))
+                        })
+                        .map(|date| date.format("%Y-%m-%d").to_string())
+                        .unwrap_or_default()
+                }
+                _ => String::new(),
+            };
+            let time = match data.get(11..13) {
+                Some([hour, minute]) => format!("{hour:02}:{minute:02}"),
+                _ => String::new(),
+            };
+            let disc_num = data
+                .get(13..16)
+                .map(|bytes| {
+                    (u32::from(bytes[0]) << 16)
+                        | (u32::from(bytes[1]) << 8)
+                        | u32::from(bytes[2])
+                })
+                .unwrap_or_default();
+
+            BcaMasteringRow {
+                num: index + 1,
+                check_bit: check_bit.to_string(),
+                plant_lbr,
+                serial,
+                date,
+                time,
+                disc_num,
+            }
+        })
+        .collect()
+}
 
 struct ProtectionRangeRow {
     num: usize,
@@ -661,6 +746,9 @@ async fn disc_view(
         .as_ref()
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
+    let mut bca_mastering = detail.bca_mastering.clone();
+    bca_mastering.sort_unstable();
+    let bca_mastering_rows = build_bca_mastering_rows(&bca_mastering);
     let show_protection = can_show_disc_view_protection(
         &detail.system.code,
         detail.system.has_protection,
@@ -825,6 +913,7 @@ async fn disc_view(
             header_rows,
             show_header: detail.system.has_header,
             bca_rows,
+            bca_mastering_rows,
             show_bca: detail.system.has_bca,
         }
         .render()
@@ -1569,6 +1658,13 @@ fn parse_header_rows(data: &[u8]) -> Vec<HeaderRow> {
         .collect()
 }
 
+fn format_hex_bytes(data: &[u8]) -> String {
+    data.iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn format_hex_dump(data: &[u8]) -> String {
     let mut out = String::new();
     for (i, chunk) in data.chunks(16).enumerate() {
@@ -1862,6 +1958,27 @@ mod tests {
     use tower::ServiceExt;
 
     #[test]
+    fn bca_mastering_date_is_days_since_2000_01_01() {
+        let mut record = vec![0; 16];
+        record[10] = 9;
+
+        let rows = build_bca_mastering_rows(&[record]);
+
+        assert_eq!(rows[0].date, "2000-01-10");
+    }
+
+    #[test]
+    fn bca_mastering_date_counts_leap_day() {
+        let mut record = vec![0; 16];
+        record[9] = 0;
+        record[10] = 60;
+
+        let rows = build_bca_mastering_rows(&[record]);
+
+        assert_eq!(rows[0].date, "2000-03-01");
+    }
+
+    #[test]
     fn postgap_type_form_2_tag_includes_its_value() {
         assert_eq!(format_comments("[T:PT2]"), "<b>Postgap type</b>: Form 2");
     }
@@ -2078,6 +2195,7 @@ mod tests {
             header_rows: Vec::new(),
             show_header: false,
             bca_rows: Vec::new(),
+            bca_mastering_rows: Vec::new(),
             show_bca: false,
         }
     }

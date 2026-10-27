@@ -68,6 +68,35 @@ pub fn parse_sector_range_pairs(text: &str) -> Vec<(i32, i32)> {
         .collect()
 }
 
+pub fn format_bca_mastering_record(data: &[u8]) -> String {
+    data.iter().map(|b| format!("{:02X}", b)).collect()
+}
+
+pub fn media_allows_bca_mastering(media_code: &str) -> bool {
+    matches!(media_code, "dvd5gc" | "dvd5wii" | "dvd9wii")
+}
+
+pub fn validate_bca_mastering(text: &str) -> Result<(), String> {
+    for (idx, line) in text.lines().enumerate() {
+        let compact: String = line
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != ':' && *c != '-')
+            .map(|c| c.to_ascii_uppercase())
+            .collect();
+        if compact.is_empty() {
+            continue;
+        }
+        if compact.len() != 32 || !compact.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!(
+                "line {}: '{}' must be exactly 16 bytes (32 hex digits)",
+                idx + 1,
+                line.trim()
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_sbi(text: &str) -> Result<(), String> {
     let text = text.trim();
     if text.is_empty() {

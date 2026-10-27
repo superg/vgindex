@@ -648,6 +648,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
         pvd: string("pvd"),
         pic: string("pic"),
         bca: string("bca"),
+        bca_mastering: strings("bca_mastering"),
         header: string("header"),
         protection: string("protection"),
         sector_ranges,
@@ -1044,6 +1045,16 @@ fn build_review_template(
         pic_hex: json_opt_str("pic"),
         show_bca: has_sys(|s| s.has_bca),
         bca_hex: json_opt_str("bca"),
+        show_bca_mastering: crate::services::validation::media_allows_bca_mastering(
+            &media_type_code,
+        ),
+        bca_masterings: json_str_vec("bca_mastering")
+            .into_iter()
+            .map(|s| disc_edit::HighlightedValue {
+                value: s,
+                highlight: String::new(),
+            })
+            .collect(),
         show_header: has_sys(|s| s.has_header),
         header_hex: json_opt_str("header"),
 
@@ -1311,6 +1322,8 @@ fn sector_ranges_display(value: &serde_json::Value) -> String {
 fn multiline_display_value(field: &str, value: &serde_json::Value) -> String {
     if field == "sector_ranges" {
         sector_ranges_display(value)
+    } else if field == "bca_mastering" {
+        array_strings(value).join("\n")
     } else {
         review_display_value(value)
     }
@@ -1503,6 +1516,7 @@ fn build_review_diff_context(
         "pvd",
         "header",
         "bca",
+        "bca_mastering",
         "pic",
         "cuesheet",
         "dat",
@@ -1740,6 +1754,7 @@ fn compute_field_highlights(
         "pvd",
         "header",
         "bca",
+        "bca_mastering",
         "pic",
         "cuesheet",
         "dat",
