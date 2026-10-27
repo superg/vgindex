@@ -581,7 +581,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         {% endif %}
     </div>
 
-    {% if !is_add_mode && !is_review_mode %}
+    {% if !is_add_mode %}
     <div class="repeatable-inline-field{% if !self.highlight_class("bca_mastering").is_empty() %} {{ self.highlight_class("bca_mastering") }}{% endif %}" data-add-requires-system-media data-media-codes="dvd5gc dvd5wii dvd9wii"{% if !show_bca_mastering %} style="display:none"{% endif %}>
         <span class="inline-field-label">BCA Mastering Data</span>
         <div id="bca-mastering-list" class="inline-field-values repeatable-inline-values">
