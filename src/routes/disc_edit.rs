@@ -3874,16 +3874,11 @@ fn build_add_submission_changes(
         if let Some(bca) = bca_input {
             if let Ok(bytes) = disc_service::parse_binary_hex_input(bca) {
                 derived_bca_mastering = derive_bca_mastering_tail(&bytes);
-                if bytes.len() == 192 {
-                    let bca_body = &bytes[..bytes.len() - 16];
-                    add_form.bca = if bca_body.is_empty() {
-                        None
-                    } else {
-                        Some(format_header_hex_dump(bca_body))
-                    };
+                add_form.bca = if !bytes.is_empty() && bytes.len() == 192 {
+                    Some(format_header_hex_dump(&bytes))
                 } else {
-                    add_form.bca = None;
-                }
+                    None
+                };
             }
         }
     }
@@ -5540,7 +5535,7 @@ mod operation_delta_tests {
     }
 
     #[test]
-    fn add_submission_splits_192_byte_bca_and_adds_mastering_tail() {
+    fn add_submission_adds_bca_mastering_tail() {
         let mut form = new_disc_form();
         form.media_type = "dvd5gc".to_string();
         let mut bytes: Vec<u8> = (0..176).map(|byte| byte as u8).collect();
@@ -5586,7 +5581,7 @@ mod operation_delta_tests {
 
         assert_eq!(
             changes["bca"]["add"]["new"],
-            format_header_hex_dump(&bytes[..176])
+            format_header_hex_dump(&bytes[..192])
         );
         assert_eq!(changes["bca_mastering"], serde_json::json!({ "add": ["10".repeat(16)] }));
         let resolved = queue_service::resolve_submission_snapshot(
@@ -5594,7 +5589,7 @@ mod operation_delta_tests {
             &changes,
         )
         .unwrap();
-        assert_eq!(resolved["bca"], format_header_hex_dump(&bytes[..176]));
+        assert_eq!(resolved["bca"], format_header_hex_dump(&bytes[..192]));
         assert_eq!(resolved["bca_mastering"], serde_json::json!(["10".repeat(16)]));
     }
 
