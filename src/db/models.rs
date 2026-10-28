@@ -563,6 +563,7 @@ pub struct DiscDetail {
     pub dumpers: Vec<DumperInfo>,
     pub disc_submission_count: i64,
     pub sector_ranges: Vec<ProtectionRange>,
+    pub bca_mastering: Vec<Vec<u8>>,
     pub added_at: Option<DateTime<Utc>>,
     pub modified_at: Option<DateTime<Utc>>,
 }

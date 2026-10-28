@@ -581,6 +581,29 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         {% endif %}
     </div>
 
+    {% if !is_add_mode %}
+    <div class="repeatable-inline-field{% if !self.highlight_class("bca_mastering").is_empty() %} {{ self.highlight_class("bca_mastering") }}{% endif %}" data-add-requires-system-media data-media-codes="dvd5gc dvd5wii dvd9wii"{% if !show_bca_mastering %} style="display:none"{% endif %}>
+        <span class="inline-field-label">BCA Mastering Data</span>
+        <div id="bca-mastering-list" class="inline-field-values repeatable-inline-values">
+            {% for b in bca_masterings %}
+            <input type="text" name="bca_mastering" value="{{ b.value }}" placeholder="32 hex digits (16 bytes)"{% if !b.highlight.is_empty() %} class="item-{{ b.highlight }}"{% endif %}>
+            {% endfor %}
+            {% if self.has_annotations_for("bca_mastering") %}
+            <div class="review-field-annotation review-field-annotation-combined">
+                {% for ann in self.annotations_for("bca_mastering") %}
+                <span class="review-field-annotation-label">{% if !loop.first %}, {% endif %}{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <button type="button" class="outline secondary array-add-btn" onclick="addInlineEntry('bca-mastering-list','bca_mastering')">+</button>
+    </div>
+    {% endif %}
+
+
     <div class="multiline-review-field{% if !self.highlight_class("pic").is_empty() %} {{ self.highlight_class("pic") }}{% endif %}" data-add-requires-system-media data-media-flag="has_pic"{% if !show_pic %} style="display:none"{% endif %}>
         <label>PIC
             <textarea name="pic" rows="9" class="hex-dump-input auto-expand fixed-80" spellcheck="false">{{ pic_hex }}</textarea>

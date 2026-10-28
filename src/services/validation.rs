@@ -1,4 +1,4 @@
-use crate::{db::models::extract_track_from_filename, services::disc_service};
+use crate::{db::models::extract_track_from_filename};
 
 pub fn validate_non_negative_int(s: &str) -> Result<i64, String> {
     let s = s.trim();
@@ -65,6 +65,22 @@ pub fn parse_sector_range_pairs(text: &str) -> Vec<(i32, i32)> {
             }
             parse_range_line(line)
         })
+        .collect()
+}
+
+pub fn format_bca_mastering_record(data: &[u8]) -> String {
+    data.iter().map(|b| format!("{:02X}", b)).collect()
+}
+
+pub fn media_allows_bca_mastering(media_code: &str) -> bool {
+    matches!(media_code, "dvd5gc" | "dvd5wii" | "dvd9wii")
+}
+
+pub fn normalize_bca_mastering_input(input: &str) -> String {
+    input
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != ':' && *c != '-')
+        .map(|c| c.to_ascii_uppercase())
         .collect()
 }
 
@@ -156,10 +172,6 @@ fn validate_sbi_line(line: &str) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-pub fn validate_hex_dump(text: &str) -> Result<(), String> {
-    disc_service::parse_binary_hex_input(text).map(|_| ())
 }
 
 pub fn validate_cuesheet(text: &str) -> Result<(), String> {
@@ -665,26 +677,6 @@ mod tests {
         assert!(validate_sbi("MSF: 0:0:0 Q-Data: 000000 00:00:00 00 00:00:00 0000").is_err());
         assert!(validate_sbi("MSF: 02:03:04 Q-Data: ZZZZZZ 00:00:00 00 00:00:00 0000").is_err());
         assert!(validate_sbi("MSF: 02:03:04 Q-Data: 41010203:04:05 00 06:07:08 ABCD").is_err());
-    }
-
-    #[test]
-    fn test_hex_dump_valid() {
-        assert!(validate_hex_dump("").is_ok());
-        assert!(validate_hex_dump("0000 : 01 02 03 04   ....").is_ok());
-        assert!(validate_hex_dump("01 02 03 04\n05 06").is_ok());
-        assert!(validate_hex_dump("01020304\n0506").is_ok());
-        let multi = "0320 : 01 02 03 04 05 06 07 08  09 0A 0B 0C 0D 0E 0F 10   ................\n\
-                      0330 : 11 12 13 14 15 16 17 18  19 1A 1B 1C 1D 1E 1F 20   ............... ";
-        assert!(validate_hex_dump(multi).is_ok());
-    }
-
-    #[test]
-    fn test_hex_dump_invalid() {
-        assert!(validate_hex_dump("no colon here").is_err());
-        assert!(validate_hex_dump("GGGG : ZZ ZZ").is_err());
-        assert!(validate_hex_dump("ABC").is_err());
-        assert!(validate_hex_dump("01 02 XX").is_err());
-        assert!(validate_hex_dump("0000 : 01 02\n03 04").is_err());
     }
 
     #[test]

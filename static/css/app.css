@@ -3102,7 +3102,8 @@ body:has(.disc-edit) footer.container hr {
 }
 #serial-list,
 #edition-list,
-#barcode-list {
+#barcode-list,
+#bca-mastering-list {
     flex-direction: column;
     align-items: flex-start;
 }

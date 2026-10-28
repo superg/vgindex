@@ -169,6 +169,8 @@ pub(crate) struct DiscEditTemplate {
     pub pic_hex: String,
     pub show_bca: bool,
     pub bca_hex: String,
+    pub show_bca_mastering: bool,
+    pub bca_masterings: Vec<HighlightedValue>,
     pub show_header: bool,
     pub header_hex: String,
 
@@ -1052,6 +1054,16 @@ async fn edit_page(
                 .as_ref()
                 .map(|data| format_header_hex_dump(data))
                 .unwrap_or_default(),
+            show_bca_mastering: validation::media_allows_bca_mastering(&detail.disc.media_type.code()),
+            bca_masterings: detail
+                .bca_mastering
+                .iter()
+                .map(|data| validation::format_bca_mastering_record(data))
+                .map(|s| HighlightedValue {
+                    value: s,
+                    highlight: String::new(),
+                })
+                .collect(),
             show_header: detail.system.has_header,
             header_hex: detail
                 .disc
@@ -1189,6 +1201,8 @@ pub struct DiscEditForm {
     pub pvd: Option<String>,
     pub pic: Option<String>,
     pub bca: Option<String>,
+    #[serde(default, deserialize_with = "one_or_many_strings")]
+    pub bca_mastering: Vec<String>,
     pub header: Option<String>,
     pub protection: Option<String>,
     pub sector_ranges: Option<String>,
@@ -1264,6 +1278,7 @@ struct FormValidationOptions {
     require_edc: bool,
     require_cuesheet: bool,
     require_layerbreak: bool,
+    validate_bca_mastering_data: bool,
 }
 
 impl FormValidationOptions {
@@ -1277,6 +1292,7 @@ impl FormValidationOptions {
             require_edc: true,
             require_cuesheet: true,
             require_layerbreak: true,
+            validate_bca_mastering_data: true,
         }
     }
 
@@ -1297,6 +1313,7 @@ impl FormValidationOptions {
             require_edc: !is_verification,
             require_cuesheet: !is_verification,
             require_layerbreak: !is_verification,
+            validate_bca_mastering_data: false,
         }
     }
 }
@@ -1423,7 +1440,7 @@ fn validate_form_with_options(
     if let Some(ref text) = form.pvd {
         let text = text.trim();
         if !text.is_empty() {
-            if let Err(e) = validation::validate_hex_dump(text) {
+            if let Err(e) = disc_service::parse_binary_hex_input(text).map(|_| ()) {
                 errors.push(format!("PVD: {}", e));
             }
         }
@@ -1432,7 +1449,7 @@ fn validate_form_with_options(
     if let Some(ref text) = form.header {
         let text = text.trim();
         if !text.is_empty() {
-            if let Err(e) = validation::validate_hex_dump(text) {
+            if let Err(e) = disc_service::parse_binary_hex_input(text).map(|_| ()) {
                 errors.push(format!("Header: {}", e));
             }
         }
@@ -1441,8 +1458,47 @@ fn validate_form_with_options(
     if let Some(ref text) = form.bca {
         let text = text.trim();
         if !text.is_empty() {
-            if let Err(e) = validation::validate_hex_dump(text) {
-                errors.push(format!("BCA: {}", e));
+            match disc_service::parse_binary_hex_input(text) {
+                Err(e) => {
+                    errors.push(format!("BCA: {}", e));
+                }
+                Ok(bytes) => {
+                    if validation::media_allows_bca_mastering(media_code) {
+                        if bytes.len() < 16 {
+                            errors.push(format!(
+                                "BCA: must be at least 16 bytes, got {} bytes",
+                                bytes.len()
+                            ));
+                        }
+                        if options.validate_bca_mastering_data {
+                            if bytes.len() != 192 {
+                                errors.push(format!(
+                                    "BCA: must be exactly 192 bytes, got {} bytes",
+                                    bytes.len()
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let media_code = form.media_type.trim();
+    if validation::media_allows_bca_mastering(media_code)
+        && options.validate_bca_mastering_data
+    {
+        for (idx, line) in form.bca_mastering.iter().enumerate() {
+            let compact = validation::normalize_bca_mastering_input(line);
+            if compact.is_empty() {
+                continue;
+            }
+            if compact.len() != 32 || !compact.chars().all(|c| c.is_ascii_hexdigit()) {
+                errors.push(format!(
+                    "BCA Mastering: line {}: '{}' must be exactly 16 bytes (32 hex digits)",
+                    idx + 1,
+                    line.trim()
+                ));
             }
         }
     }
@@ -1450,7 +1506,7 @@ fn validate_form_with_options(
     if let Some(ref text) = form.pic {
         let text = text.trim();
         if !text.is_empty() {
-            if let Err(e) = validation::validate_hex_dump(text) {
+            if let Err(e) = disc_service::parse_binary_hex_input(text).map(|_| ()) {
                 errors.push(format!("PIC: {}", e));
             }
         }
@@ -1786,6 +1842,17 @@ async fn render_form_with_context(
         pic_hex: normalize_hex_dump_for_render(form.pic.as_deref(), false),
         show_bca: has_sys(|s| s.has_bca),
         bca_hex: normalize_hex_dump_for_render(form.bca.as_deref(), false),
+        show_bca_mastering: validation::media_allows_bca_mastering(form.media_type.trim()),
+        bca_masterings: form
+            .bca_mastering
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(|s| HighlightedValue {
+                value: s,
+                highlight: String::new(),
+            })
+            .collect(),
         show_header: has_sys(|s| s.has_header),
         header_hex: normalize_hex_dump_for_render(form.header.as_deref(), false),
 
@@ -2610,6 +2677,8 @@ async fn add_page(
             pic_hex: String::new(),
             show_bca: has_sys(|s| s.has_bca),
             bca_hex: String::new(),
+            show_bca_mastering: false,
+            bca_masterings: vec![],
             show_header: has_sys(|s| s.has_header),
             header_hex: String::new(),
 
@@ -3017,6 +3086,16 @@ pub(crate) fn build_flat_changes(
             .into_iter()
             .map(|(start, end)| serde_json::json!({"start": start, "end": end}))
             .collect();
+    let new_bca_mastering: Vec<String> =
+        if validation::media_allows_bca_mastering(form.media_type.trim()) {
+            form.bca_mastering
+                .iter()
+                .map(|s| validation::normalize_bca_mastering_input(s.trim()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        } else {
+            Vec::new()
+        };
     let new_regions = norm_str_vec(form.regions.clone());
     let new_languages = norm_str_vec(form.languages.clone());
     let new_serials = norm_str_vec_keep_order(form.serial.clone());
@@ -3063,6 +3142,7 @@ pub(crate) fn build_flat_changes(
         "pvd": norm_opt_multiline_str(form.pvd.as_deref()).map(|s| normalize_pvd_hex_dump(&s)),
         "pic": norm_opt_multiline_str(form.pic.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
         "bca": norm_opt_multiline_str(form.bca.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
+        "bca_mastering": new_bca_mastering,
         "header": norm_opt_multiline_str(form.header.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
         "protection": norm_opt_multiline_str(form.protection.as_deref()),
         "sbi": new_sbi,
@@ -3590,6 +3670,9 @@ fn filter_unsupported_fields_for_changes(
     if !system.has_bca {
         filtered.bca = None;
     }
+    if !validation::media_allows_bca_mastering(&media.code) {
+        filtered.bca_mastering.clear();
+    }
     if !system.has_universal_hash {
         filtered.universal_hash = None;
     }
@@ -3695,6 +3778,17 @@ fn build_history_changes(
     }
 
     {
+        let key = "bca_mastering";
+        let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
+        let new = form_obj.get(key).unwrap_or(&serde_json::Value::Null);
+        let old_values = json_str_vec(old);
+        let new_values = json_str_vec(new);
+        if let Some(change) = set_operation_change(&old_values, &new_values, allow_removal) {
+            changes.insert(key.to_string(), change);
+        }
+    }
+
+    {
         let key = "dat";
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let new = form_obj.get(key).unwrap_or(&serde_json::Value::Null);
@@ -3762,13 +3856,59 @@ pub(crate) fn build_new_disc_changes(
     build_history_changes(form, None, all_media_types, all_systems, false)
 }
 
+fn derive_bca_mastering_tail(bytes: &[u8]) -> Option<String> {
+    (bytes.len() >= 16).then(|| {
+        bytes[bytes.len() - 16..]
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<String>()
+    })
+}
+
 fn build_add_submission_changes(
     form: &DiscEditForm,
     all_media_types: &[EditMediaTypeRow],
     all_systems: &[System],
     add_match: Option<&AddDiscMatch>,
 ) -> serde_json::Value {
-    let mut changes = build_new_disc_changes(form, all_media_types, all_systems);
+    let media_code = add_match
+        .map(|matched| matched.media_type.as_str())
+        .unwrap_or_else(|| form.media_type.trim());
+    let mut add_form = form.clone();
+    add_form.media_type = media_code.to_string();
+    let bca_input = form.bca.as_deref().map(str::trim).filter(|bca| !bca.is_empty());
+    let preserve_existing_bca = bca_input.is_none();
+    let mut derived_bca_mastering = None;
+
+    if validation::media_allows_bca_mastering(media_code) {
+        if let Some(bca) = bca_input {
+            if let Ok(bytes) = disc_service::parse_binary_hex_input(bca) {
+                derived_bca_mastering = derive_bca_mastering_tail(&bytes);
+                add_form.bca = if !bytes.is_empty() && bytes.len() == 192 {
+                    Some(format_header_hex_dump(&bytes))
+                } else {
+                    None
+                };
+            }
+        }
+    }
+
+    let mut changes = build_new_disc_changes(&add_form, all_media_types, all_systems);
+    if add_match.is_some() && form.media_type.trim().is_empty() {
+        if let Some(obj) = changes.as_object_mut() {
+            obj.remove("media_type");
+        }
+    }
+    if preserve_existing_bca {
+        if let Some(obj) = changes.as_object_mut() {
+            obj.remove("bca");
+            obj.remove("bca_mastering");
+        }
+    } else if let Some(record) = derived_bca_mastering {
+        if let Some(obj) = changes.as_object_mut() {
+            obj.insert("bca_mastering".to_string(), serde_json::json!({ "add": [record] }));
+        }
+    }
     if add_match.is_some() {
         if let Some(obj) = changes.as_object_mut() {
             if form_edc_selection(form).is_none() {
@@ -4016,6 +4156,7 @@ mod operation_delta_tests {
             dumpers: vec![],
             disc_submission_count: 0,
             sector_ranges: vec![],
+            bca_mastering: vec![],
             added_at: None,
             modified_at: None,
         }
@@ -4061,6 +4202,7 @@ mod operation_delta_tests {
             pvd: None,
             pic: None,
             bca: None,
+            bca_mastering: vec![],
             header: None,
             protection: detail.disc.protection.clone(),
             sector_ranges: None,
@@ -4129,6 +4271,7 @@ mod operation_delta_tests {
             pvd: None,
             pic: None,
             bca: None,
+            bca_mastering: vec![],
             header: None,
             protection: Some("new protection".to_string()),
             sector_ranges: None,
@@ -5402,16 +5545,75 @@ mod operation_delta_tests {
     }
 
     #[test]
+    fn add_submission_adds_bca_mastering_tail() {
+        let mut form = new_disc_form();
+        form.media_type = "dvd5gc".to_string();
+        let mut bytes: Vec<u8> = (0..176).map(|byte| byte as u8).collect();
+        bytes.extend([0x10; 16]);
+        form.bca = Some(
+            bytes
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        let mut media = media_rows();
+        media[0].code = "dvd5gc".to_string();
+        assert_eq!(
+            disc_service::parse_binary_hex_input(form.bca.as_deref().unwrap()).unwrap(),
+            bytes
+        );
+        form.bca = Some(
+            bytes[..191]
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        assert_eq!(
+            disc_service::parse_binary_hex_input(form.bca.as_deref().unwrap()).unwrap(),
+            bytes[..191]
+        );
+        form.bca = Some(
+            bytes
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+
+        let changes = build_add_submission_changes(
+            &form,
+            &media,
+            &systems_with_edc(true),
+            None,
+        );
+
+        assert_eq!(
+            changes["bca"]["add"]["new"],
+            format_header_hex_dump(&bytes[..192])
+        );
+        assert_eq!(changes["bca_mastering"], serde_json::json!({ "add": ["10".repeat(16)] }));
+        let resolved = queue_service::resolve_submission_snapshot(
+            &serde_json::json!({ "bca": null, "bca_mastering": [] }),
+            &changes,
+        )
+        .unwrap();
+        assert_eq!(resolved["bca"], format_header_hex_dump(&bytes[..192]));
+        assert_eq!(resolved["bca_mastering"], serde_json::json!(["10".repeat(16)]));
+    }
+
+    #[test]
     fn build_add_submission_changes_preserves_explicit_payload_for_verification() {
         let form = new_disc_form();
-        let new_disc_changes =
-            build_add_submission_changes(&form, &media_rows(), &systems_with_edc(true), None);
+        let media = media_rows();
+        let new_disc_changes = build_add_submission_changes(&form, &media, &systems_with_edc(true), None);
 
         for source in [AddDiscMatchSource::Dat, AddDiscMatchSource::UniversalHash] {
             let matched = add_match(1, source, "SYS", "DVD");
             let verification_changes = build_add_submission_changes(
                 &form,
-                &media_rows(),
+                &media,
                 &systems_with_edc(true),
                 Some(&matched),
             );
