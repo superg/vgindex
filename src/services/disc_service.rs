@@ -1169,11 +1169,7 @@ pub async fn update_disc(
                     continue;
                 }
 
-                let compact: String = text
-                    .chars()
-                    .filter(|c| !c.is_whitespace() && *c != ':' && *c != '-')
-                    .map(|c| c.to_ascii_uppercase())
-                    .collect();
+                let compact = crate::services::validation::normalize_bca_mastering_input(text);
                 if compact.len() != 32 || !compact.chars().all(|c| c.is_ascii_hexdigit()) {
                     return Err(AppError::BadRequest(format!(
                         "BCA Mastering: '{}' must be exactly 16 bytes (32 hex digits)",

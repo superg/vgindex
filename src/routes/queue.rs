@@ -1500,7 +1500,7 @@ fn build_review_diff_context(
         );
     }
 
-    for field in ["serial", "edition", "barcode"] {
+    for field in ["serial", "edition", "barcode", "bca_mastering"] {
         let old = array_strings(&db_snapshot[field]);
         let new = array_strings(&submitted_snapshot[field]);
         let (added, removed) = set_added_removed(&old, &new);
@@ -1516,7 +1516,6 @@ fn build_review_diff_context(
         "pvd",
         "header",
         "bca",
-        "bca_mastering",
         "pic",
         "cuesheet",
         "dat",

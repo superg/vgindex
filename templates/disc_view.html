@@ -351,28 +351,6 @@
 </section>
 {% endif %}
 
-{% if show_bca && !bca_rows.is_empty() %}
-<section class="left-section detail-section">
-    <h3>BCA</h3>
-    <div class="table-scroll table-scroll-compact">
-    <table class="table-nowrap binary-table">
-        <thead>
-            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
-        </thead>
-        <tbody>
-            {% for row in bca_rows %}
-            <tr>
-                <td><code>{{ row.offset }}</code></td>
-                <td><code>{{ row.hex_contents }}</code></td>
-                <td><code>{{ row.ascii }}</code></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</section>
-{% endif %}
-
 {% if show_bca && !bca_mastering_rows.is_empty() %}
 <section class="left-section detail-section">
     <h3>BCA Mastering Data</h3>
@@ -404,6 +382,30 @@
         </tbody>
     </table>
     </div>
+</section>
+{% endif %}
+
+{% if show_bca && !bca_rows.is_empty() %}
+<section class="left-section detail-section">
+    <details>
+        <summary><h3>BCA</h3></summary>
+        <div class="table-scroll table-scroll-compact">
+        <table class="table-nowrap binary-table">
+            <thead>
+                <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+            </thead>
+            <tbody>
+                {% for row in bca_rows %}
+                <tr>
+                    <td><code>{{ row.offset }}</code></td>
+                    <td><code>{{ row.hex_contents }}</code></td>
+                    <td><code>{{ row.ascii }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </details>
 </section>
 {% endif %}
 

@@ -1440,7 +1440,7 @@ fn validate_form_with_options(
     if let Some(ref text) = form.pvd {
         let text = text.trim();
         if !text.is_empty() {
-            if let Err(e) = validation::validate_hex_dump(text) {
+            if let Err(e) = disc_service::parse_binary_hex_input(text).map(|_| ()) {
                 errors.push(format!("PVD: {}", e));
             }
         }
@@ -1449,7 +1449,7 @@ fn validate_form_with_options(
     if let Some(ref text) = form.header {
         let text = text.trim();
         if !text.is_empty() {
-            if let Err(e) = validation::validate_hex_dump(text) {
+            if let Err(e) = disc_service::parse_binary_hex_input(text).map(|_| ()) {
                 errors.push(format!("Header: {}", e));
             }
         }
@@ -1458,8 +1458,28 @@ fn validate_form_with_options(
     if let Some(ref text) = form.bca {
         let text = text.trim();
         if !text.is_empty() {
-            if let Err(e) = validation::validate_hex_dump(text) {
-                errors.push(format!("BCA: {}", e));
+            match disc_service::parse_binary_hex_input(text) {
+                Err(e) => {
+                    errors.push(format!("BCA: {}", e));
+                }
+                Ok(bytes) => {
+                    if validation::media_allows_bca_mastering(media_code) {
+                        if bytes.len() < 16 {
+                            errors.push(format!(
+                                "BCA: must be at least 16 bytes, got {} bytes",
+                                bytes.len()
+                            ));
+                        }
+                        if options.validate_bca_mastering_data {
+                            if bytes.len() != 192 {
+                                errors.push(format!(
+                                    "BCA: must be exactly 192 bytes, got {} bytes",
+                                    bytes.len()
+                                ));
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1469,11 +1489,7 @@ fn validate_form_with_options(
         && options.validate_bca_mastering_data
     {
         for (idx, line) in form.bca_mastering.iter().enumerate() {
-            let compact: String = line
-                .chars()
-                .filter(|c| !c.is_whitespace() && *c != ':' && *c != '-')
-                .map(|c| c.to_ascii_uppercase())
-                .collect();
+            let compact = validation::normalize_bca_mastering_input(line);
             if compact.is_empty() {
                 continue;
             }
@@ -1490,7 +1506,7 @@ fn validate_form_with_options(
     if let Some(ref text) = form.pic {
         let text = text.trim();
         if !text.is_empty() {
-            if let Err(e) = validation::validate_hex_dump(text) {
+            if let Err(e) = disc_service::parse_binary_hex_input(text).map(|_| ()) {
                 errors.push(format!("PIC: {}", e));
             }
         }
@@ -3074,13 +3090,7 @@ pub(crate) fn build_flat_changes(
         if validation::media_allows_bca_mastering(form.media_type.trim()) {
             form.bca_mastering
                 .iter()
-                .map(|s| {
-                    s.trim()
-                        .chars()
-                        .filter(|c| !c.is_whitespace() && *c != ':' && *c != '-')
-                        .map(|c| c.to_ascii_uppercase())
-                        .collect::<String>()
-                })
+                .map(|s| validation::normalize_bca_mastering_input(s.trim()))
                 .filter(|s| !s.is_empty())
                 .collect()
         } else {
