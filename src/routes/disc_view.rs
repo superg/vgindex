@@ -152,7 +152,7 @@ impl SiteConfig for DiscViewTemplate {}
 struct BcaMasteringRow {
     num: usize,
     check_bit: String,
-    plant_lbr: String,
+    plant: String,
     serial: String,
     date: String,
     time: String,
@@ -169,26 +169,21 @@ fn build_bca_mastering_rows(records: &[Vec<u8>]) -> Vec<BcaMasteringRow> {
                 Some([0, 0, 0, 1]) => "1",
                 _ => "?",
             };
-            let plant_lbr = data
+            let plant = data
                 .get(4..8)
                 .map(|bytes| {
                     bytes
-                        .chunks_exact(2)
-                        .map(|pair| {
-                            pair.iter()
-                                .map(|byte| {
-                                    if byte.is_ascii_graphic() {
-                                        char::from(*byte)
-                                    } else {
-                                        '\u{FFFD}'
-                                    }
-                                })
-                                .collect::<String>()
+                        .iter()
+                        .map(|&byte| {
+                            if byte.is_ascii_graphic() {
+                                char::from(byte)
+                            } else {
+                                '\u{FFFD}'
+                            }
                         })
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
-                .unwrap_or_default();
+                        .collect::<String>()
+            })
+            .unwrap_or_default();
             let serial = data
                 .get(8)
                 .map(|byte| format!("{byte:02X}"))
@@ -223,7 +218,7 @@ fn build_bca_mastering_rows(records: &[Vec<u8>]) -> Vec<BcaMasteringRow> {
             BcaMasteringRow {
                 num: index + 1,
                 check_bit: check_bit.to_string(),
-                plant_lbr,
+                plant,
                 serial,
                 date,
                 time,
@@ -747,7 +742,6 @@ async fn disc_view(
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
     let mut bca_mastering = detail.bca_mastering.clone();
-    bca_mastering.sort_unstable();
     let bca_mastering_rows = build_bca_mastering_rows(&bca_mastering);
     let show_protection = can_show_disc_view_protection(
         &detail.system.code,

@@ -360,7 +360,7 @@
             <tr>
                 <th class="col-num">#</th>
                 <th class="col-num" title="Anti-piracy check value">Check Bit</th>
-                <th title="Identifiers for manufacturing plant and Laser Beam Recorder">Plant/LBR</th>
+                <th title="Manufacturing plant identifier">Plant</th>
                 <th title="Batch serial">Serial</th>
                 <th>Date</th>
                 <th>Time</th>
@@ -372,7 +372,15 @@
             <tr>
                 <td class="col-num">{{ row.num }}</td>
                 <td class="col-num">{{ row.check_bit }}</td>
-                <td><code>{{ row.plant_lbr }}</code></td>
+                <td title="{% match row.plant.as_str() %}
+                    {% when "KGSC" %}Kinki General Services Co., Ltd
+                    {% when "MBUT" %}Media Business Unit Tsuyama
+                    {% when "MDMC" %}Matsushita Disc Manufacturing Corporation
+                    {% when "PDMC" %}Panasonic Disc Manufacturing Corporation
+                    {% when "PDSC" %}Panasonic Disc Services Corporation
+                    {% when "PMUK" %}Panasonic Manufacturing UK
+                    {% else %}{% endmatch %}">
+                    <code>{{ row.plant }}</code></td>
                 <td><code>{{ row.serial }}</code></td>
                 <td><code>{{ row.date }}</code></td>
                 <td><code>{{ row.time }}</code></td>

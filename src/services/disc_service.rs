@@ -771,7 +771,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .await?;
 
     let bca_mastering: Vec<Vec<u8>> = sqlx::query_scalar(
-        "SELECT data FROM disc_bca_mastering WHERE disc_id = $1",
+        "SELECT data FROM disc_bca_mastering WHERE disc_id = $1 ORDER BY SUBSTRING(data FROM 10)",
     )
     .bind(disc_id)
     .fetch_all(pool)
