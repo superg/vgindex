@@ -73,8 +73,8 @@ WHERE bca_data IS NOT NULL;
 UPDATE discs
 SET comments = regexp_replace(
     comments,
-    '(?:^|\n)(?:(?:[-=_|<>`/\s]*\n)?)(?:<[bu]>)?Additional BCA(?: [Dd]ata)?:?(?:<\/[bu]>)?:?(?:<(?:tt|code)>)?:?(?:\n(?:(?:[-=_|<>`/\s]*\n|(?:\s*[0-9A-Fa-f]){32}\s*(?:\n|$))+))(?:<\/(?:tt|code)>)?',
-    '',
+    '(^|\n)(?:(?:[-=_|<>`/\s]*\n)?)(?:<[bu]>)?Additional BCA(?: [Dd]ata)?:?(?:<\/[bu]>)?:?(?:<(?:tt|code)>)?:?(?:\n(?:(?:[-=_|<>`/\s]*\n|(?:\s*[0-9A-Fa-f]){32}\s*(?:\n|$))+))(?:<\/(?:tt|code)>)?',
+    E'\\1',
     'g'
 )
 WHERE system_code IN ('GC', 'WII')
