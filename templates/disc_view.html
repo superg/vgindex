@@ -372,7 +372,7 @@
             <tr>
                 <td class="col-num">{{ row.num }}</td>
                 <td class="col-num">{{ row.check_bit }}</td>
-                <td title="{% match row.plant %}
+                <td title="{% match row.plant.as_str() %}
                     {% when "KGSC" %}Kinki General Services Co., Ltd
                     {% when "MBUT" %}Media Business Unit Tsuyama
                     {% when "MDMC" %}Matsushita Disc Manufacturing Corporation
