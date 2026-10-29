@@ -151,12 +151,6 @@ main > h3 {
     max-width: none;
 }
 
-/* Hack for safari bug */
-.tracks-session-row > td[colspan] {
-    max-width: 0;
-    overflow: visible;
-}
-
 .table-nowrap th,
 .table-nowrap td {
     white-space: nowrap;

@@ -1056,7 +1056,7 @@
 		<comment>Revision: 3.30</comment>
 		<description>SCPH-39005/SCPH-39006/SCPH-39007 (Version 3.08)</description>
 		<manufacturer>dai</manufacturer>
-		<rom name="ps2-mechacon-308h.bin" size="196608" crc="256d7c20" md5="" sha1="" crc16="ad56" serial="CXP103049-403GG" />
+		<rom name="ps2-mechacon-308h.bin" size="196608" crc="60e3a237" md5="afefff3630595e9e02f005edb5edce17" sha1="748c66b4915e5dff2a60cd4011d26077eb41c843" crc16="ad56" serial="CXP103049-403GG" />
 	</machine>
 	<machine name="ps2-mechacon-500-20030120-152800">
 		<category>MechaCon</category>
