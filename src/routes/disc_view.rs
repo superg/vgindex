@@ -741,8 +741,7 @@ async fn disc_view(
         .as_ref()
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
-    let mut bca_mastering = detail.bca_mastering.clone();
-    let bca_mastering_rows = build_bca_mastering_rows(&bca_mastering);
+    let bca_mastering_rows = build_bca_mastering_rows(&detail.bca_mastering);
     let show_protection = can_show_disc_view_protection(
         &detail.system.code,
         detail.system.has_protection,

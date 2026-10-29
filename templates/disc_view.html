@@ -371,10 +371,13 @@
             {% for row in bca_mastering_rows %}
             <tr>
                 <td class="col-num">{{ row.num }}</td>
-                <td class="col-num">{{ row.check_bit }}</td>
+                <td class="col-num"><code>{{ row.check_bit }}</code></td>
                 <td title="{% match row.plant.as_str() %}
                     {% when "KGSC" %}Kinki General Services Co., Ltd
+                    {% when "SCKG" %}Kinki General Services Co., Ltd
+                    {% when "GKCS" %}Kinki General Services Co., Ltd
                     {% when "MBUT" %}Media Business Unit Tsuyama
+                    {% when "NVUT" %}Media Business Unit Tsuyama
                     {% when "MDMC" %}Matsushita Disc Manufacturing Corporation
                     {% when "PDMC" %}Panasonic Disc Manufacturing Corporation
                     {% when "PDSC" %}Panasonic Disc Services Corporation
@@ -384,7 +387,7 @@
                 <td><code>{{ row.serial }}</code></td>
                 <td><code>{{ row.date }}</code></td>
                 <td><code>{{ row.time }}</code></td>
-                <td class="col-num">{{ row.disc_num }}</td>
+                <td class="col-num"><code>{{ row.disc_num }}</code></td>
             </tr>
             {% endfor %}
         </tbody>
