@@ -1359,9 +1359,22 @@ nav[aria-label="Pagination"] ul {
         width: 3.4rem;
     }
 }
-.disc-view .binary-table code {
-    font-size: 0.62rem;
-    letter-spacing: 0;
+.disc-view .binary-metadata {
+    display: inline-block;
+    margin: 0.05rem auto 0.15rem;
+    padding: 0.05rem 0.5rem;
+    line-height: 1.2;
+    font-size: 0.75rem;
+    text-align: left;
+}
+.disc-view .binary-metadata strong {
+    font-weight: 600;
+}
+.disc-view .binary-metadata code {
+    font-size: inherit;
+}
+.disc-view .binary-metadata-warning {
+    color: var(--status-bad);
 }
 .disc-view .binary-table td,
 .disc-view .binary-table th,

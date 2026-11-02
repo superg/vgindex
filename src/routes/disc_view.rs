@@ -131,6 +131,8 @@ struct DiscViewTemplate {
     pvd_rows: Vec<PvdRow>,
     show_pvd: bool,
     pic_rows: Vec<HeaderRow>,
+    pic_length: String,
+    pic_invalid: bool,
     cue_catalog: String,
     cue_title: String,
     cue_performer: String,
@@ -144,6 +146,8 @@ struct DiscViewTemplate {
     header_rows: Vec<HeaderRow>,
     show_header: bool,
     bca_rows: Vec<HeaderRow>,
+    bca_length: String,
+    bca_invalid: bool,
     bca_mastering_rows: Vec<BcaMasteringRow>,
     show_bca: bool,
 }
@@ -512,10 +516,27 @@ struct PvdRow {
     gmt: String,
 }
 
+#[derive(Clone)]
 struct HeaderRow {
     offset: String,
     hex_contents: String,
     ascii: String,
+}
+
+struct ScsiDump {
+    rows: Vec<HeaderRow>,
+    length: Option<u16>,
+    invalid: bool,
+}
+
+impl Default for ScsiDump {
+    fn default() -> Self {
+        Self {
+            rows: Vec::new(),
+            length: None,
+            invalid: false,
+        }
+    }
 }
 
 struct ParsedCueTrack {
@@ -696,12 +717,11 @@ async fn disc_view(
         .map(|data| parse_pvd_rows(data))
         .unwrap_or_default();
 
-    let pic_rows = detail
+    let pic_dump = detail
         .disc
         .pic
         .as_ref()
-        .map(|data| parse_header_rows(data))
-        .unwrap_or_default();
+        .map(|data| parse_scsi_dump(data));
 
     let cue_disc_meta = parse_cue_disc_meta(detail.disc.cue.as_deref().unwrap_or_default());
     
@@ -735,12 +755,11 @@ async fn disc_view(
         .map(|data| parse_header_rows(data))
         .unwrap_or_default();
 
-    let bca_rows = detail
+    let bca_dump = detail
         .disc
         .bca
         .as_ref()
-        .map(|data| parse_header_rows(data))
-        .unwrap_or_default();
+        .map(|data| parse_scsi_dump(data));
     let bca_mastering_rows = build_bca_mastering_rows(&detail.bca_mastering);
     let show_protection = can_show_disc_view_protection(
         &detail.system.code,
@@ -888,7 +907,18 @@ async fn disc_view(
             show_sbi,
             pvd_rows,
             show_pvd: detail.system.has_pvd,
-            pic_rows,
+            pic_rows: pic_dump
+                .as_ref()
+                .map(|dump| dump.rows.clone())
+                .unwrap_or_default(),
+            pic_length: pic_dump
+                .as_ref()
+                .and_then(|dump| dump.length)
+                .map(|length| length.to_string())
+                .unwrap_or_default(),
+            pic_invalid: pic_dump
+                .as_ref()
+                .is_some_and(|dump| dump.invalid),
             cue_catalog: cue_disc_meta.catalog,
             cue_title: cue_disc_meta.title,
             cue_performer: cue_disc_meta.performer,
@@ -905,7 +935,18 @@ async fn disc_view(
             show_xgd_type: is_xgd,
             header_rows,
             show_header: detail.system.has_header,
-            bca_rows,
+            bca_rows: bca_dump
+                .as_ref()
+                .map(|dump| dump.rows.clone())
+                .unwrap_or_default(),
+            bca_length: bca_dump
+                .as_ref()
+                .and_then(|dump| dump.length)
+                .map(|length| length.to_string())
+                .unwrap_or_default(),
+            bca_invalid: bca_dump.as_ref().is_some_and(|dump| {
+                dump.invalid || dump.length != Some(188)
+            }),
             bca_mastering_rows,
             show_bca: detail.system.has_bca,
         }
@@ -1626,13 +1667,10 @@ fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
 fn parse_header_rows(data: &[u8]) -> Vec<HeaderRow> {
     data.chunks(16)
         .enumerate()
-        .map(|(i, chunk)| {
-            let hex_contents = chunk
-                .iter()
-                .map(|b| format!("{:02X}", b))
-                .collect::<Vec<_>>()
-                .join(" ");
-            let ascii: String = chunk
+        .map(|(i, chunk)| HeaderRow {
+            offset: format!("{:04X}", i * 16),
+            hex_contents: format_hex_bytes(chunk),
+            ascii: chunk
                 .iter()
                 .map(|&b| {
                     if b.is_ascii_graphic() || b == b' ' {
@@ -1641,14 +1679,26 @@ fn parse_header_rows(data: &[u8]) -> Vec<HeaderRow> {
                         '.'
                     }
                 })
-                .collect();
-            HeaderRow {
-                offset: format!("{:04X}", i * 16),
-                hex_contents,
-                ascii,
-            }
+                .collect(),
         })
         .collect()
+}
+
+fn parse_scsi_dump(data: &[u8]) -> ScsiDump {
+    let (length, invalid, payload) = match data {
+        [msb, lsb, third, fourth, payload @ ..] => (
+            Some(u16::from_be_bytes([*msb, *lsb]).saturating_sub(2)),
+            *third != 0 || *fourth != 0,
+            payload,
+        ),
+        _ => (None, false, &[] as &[u8]),
+    };
+
+    ScsiDump {
+        rows: parse_header_rows(payload),
+        length,
+        invalid,
+    }
 }
 
 fn format_hex_bytes(data: &[u8]) -> String {
@@ -2175,6 +2225,8 @@ mod tests {
             pvd_rows: Vec::new(),
             show_pvd: false,
             pic_rows: Vec::new(),
+            pic_length: String::new(),
+            pic_invalid: false,
             cue_catalog: String::new(),
             cue_title: String::new(),
             cue_performer: String::new(),
@@ -2188,6 +2240,8 @@ mod tests {
             header_rows: Vec::new(),
             show_header: false,
             bca_rows: Vec::new(),
+            bca_length: String::new(),
+            bca_invalid: false,
             bca_mastering_rows: Vec::new(),
             show_bca: false,
         }

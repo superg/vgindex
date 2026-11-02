@@ -400,6 +400,7 @@
 <section class="left-section detail-section">
     <details>
         <summary><h3>BCA</h3></summary>
+        <p class="binary-metadata"><strong>Length</strong> <code>{{ bca_length }}</code>{% if bca_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
         <div class="table-scroll table-scroll-compact">
         <table class="table-nowrap binary-table">
             <thead>
@@ -425,6 +426,7 @@
     {% if pic_rows.len() > 20 %}
     <details>
         <summary><h3>PIC</h3></summary>
+        <p class="binary-metadata"><strong>Length</strong> <code>{{ pic_length }}</code>{% if pic_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
         <div class="table-scroll table-scroll-compact">
         <table class="table-nowrap binary-table">
             <thead>
@@ -444,6 +446,7 @@
     </details>
     {% else %}
     <h3>PIC</h3>
+    <p class="binary-metadata"><strong>Length</strong> <code>{{ pic_length }}</code>{% if pic_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
         <thead>
