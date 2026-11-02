@@ -124,9 +124,7 @@ fn parse_internal(
         result.system_code = Some(code);
     }
 
-    if dvdkey
-        .as_deref()
-        .is_some_and(dvdkey_has_css_cppm_and_title_keys)
+    if dvdkey.as_deref().is_some_and(dvdkey_has_css_cppm_and_title_keys)
         && known_system_codes.iter().any(|code| code == "DVD-VIDEO")
     {
         result.system_code = Some("DVD-VIDEO".to_owned());
