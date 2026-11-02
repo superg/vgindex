@@ -189,13 +189,12 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
     for (line_num, line) in text.lines().enumerate() {
         let row = line_num + 1;
         let line = line.trim();
-        let upper = line.to_uppercase();
 
-        if upper.is_empty() {
+        if line.is_empty() {
             continue;
         }
 
-        if is_cue_file_line(&upper) {
+        if is_cue_file_line(line) {
             if file_opened && !index01_seen {
                 return Err(format!("row {}: previous FILE not closed", row));
             }
@@ -207,7 +206,7 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             continue;
         }
 
-        if let Some((num, _mode)) = parse_cue_track_line(&upper) {
+        if let Some((num, _mode)) = parse_cue_track_line(line) {
             if track_count + 1 != num {
                 return Err(format!(
                     "row {}: track number not sequential (expected {}, got {})",
@@ -230,18 +229,18 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             continue;
         }
 
-        if upper.starts_with("CATALOG ") {
+        if line.starts_with("CATALOG ") {
             if file_opened {
                 return Err(format!("row {}: CATALOG must appear before any FILE", row));
             }
-            let value = &upper[8..];
+            let value = &line[8..];
             if value.len() != 13 || !value.chars().all(|c| c.is_ascii_digit()) {
                 return Err(format!("row {}: CATALOG must be exactly 13 digits", row));
             }
             continue;
         }
 
-        if upper.starts_with("FLAGS ") {
+        if line.starts_with("FLAGS ") {
             if !file_opened {
                 return Err(format!("row {}: FLAGS without FILE", row));
             }
@@ -254,7 +253,7 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             if index01_seen {
                 return Err(format!("row {}: FLAGS after INDEX 01", row));
             }
-            let flags_part = &upper[6..];
+            let flags_part = &line[6..];
             for flag in flags_part.split_whitespace() {
                 if flag != "PRE" && flag != "DCP" {
                     return Err(format!("row {}: invalid flag '{}'", row, flag));
@@ -263,7 +262,7 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             continue;
         }
 
-        if upper.starts_with("ISRC ") {
+        if line.starts_with("ISRC ") {
             if !file_opened {
                 return Err(format!("row {}: ISRC without FILE", row));
             }
@@ -283,7 +282,7 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             continue;
         }
 
-        if let Some((idx_num, mm, ss, ff)) = parse_cue_index_line(&upper) {
+        if let Some((idx_num, mm, ss, ff)) = parse_cue_index_line(line) {
             if !file_opened {
                 return Err(format!("row {}: INDEX without FILE", row));
             }
@@ -350,10 +349,10 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
             continue;
         }
 
-        if upper.starts_with("REM")
-            || upper.starts_with("PERFORMER")
-            || upper.starts_with("TITLE")
-            || upper.starts_with("SONGWRITER")
+        if is_cue_rem_line(line)
+            || (line.starts_with("PERFORMER \"") && line.ends_with("\""))
+            || (line.starts_with("TITLE \"") && line.ends_with("\""))
+            || (line.starts_with("SONGWRITER \"") && line.ends_with("\""))
         {
             continue;
         }
@@ -370,7 +369,7 @@ pub fn cuesheet_has_only_audio_tracks(text: &str) -> bool {
 
     let mut found_track = false;
     for line in text.lines() {
-        if let Some((_number, mode)) = parse_cue_track_line(&line.trim().to_uppercase()) {
+        if let Some((_number, mode)) = parse_cue_track_line(line.trim()) {
             found_track = true;
             if mode != "AUDIO" {
                 return false;
@@ -387,12 +386,12 @@ pub fn cuesheet_is_enhanced_cd(text: &str) -> bool {
 
     let mut sessions: Vec<Vec<bool>> = Vec::new();
     for line in text.lines() {
-        let upper = line.trim().to_uppercase();
-        if is_cue_session_line(&upper) {
+        let line = line.trim();
+        if is_cue_session_line(line) {
             sessions.push(Vec::new());
             continue;
         }
-        if let Some((_number, mode)) = parse_cue_track_line(&upper) {
+        if let Some((_number, mode)) = parse_cue_track_line(line) {
             let Some(session) = sessions.last_mut() else {
                 return false;
             };
@@ -408,11 +407,30 @@ pub fn cuesheet_is_enhanced_cd(text: &str) -> bool {
             .all(|session| session.first().is_some_and(|is_audio| !is_audio))
 }
 
+fn is_cue_rem_line(line: &str) -> bool {
+    if matches!(line, "REM SINGLE-DENSITY AREA" | "REM HIGH-DENSITY AREA") {
+        return true;
+    }
+
+    if let Some(number) = line.strip_prefix("REM SESSION ") {
+        return number.len() == 2 && number.bytes().all(|byte| byte.is_ascii_digit());
+    }
+
+    for prefix in ["REM LEAD-IN ", "REM LEAD-OUT ", "REM PREGAP ", "REM POSTGAP "] {
+        if let Some(time) = line.strip_prefix(prefix) {
+            let parts: Vec<&str> = time.split(':').collect();
+            return parts.len() == 3
+                && parts.iter().all(|part| {
+                    part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_digit())
+                });
+        }
+    }
+
+    false
+}
+
 fn is_cue_session_line(line: &str) -> bool {
-    let Some(number) = line.strip_prefix("REM SESSION ") else {
-        return false;
-    };
-    !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+    line.starts_with("REM SESSION ") && is_cue_rem_line(line)
 }
 
 fn is_cue_file_line(line: &str) -> bool {
@@ -422,7 +440,8 @@ fn is_cue_file_line(line: &str) -> bool {
     let rest = &line[6..];
     if let Some(pos) = rest.find('"') {
         let after_quote = &rest[pos + 1..];
-        after_quote == " BINARY" || after_quote == " WAVE"
+        // "WAVE" is normally valid cue here but is unused in redump
+        after_quote == " BINARY"
     } else {
         false
     }
@@ -879,6 +898,72 @@ FILE "Track 02.bin" BINARY
     INDEX 00 00:00:00
     INDEX 01 00:01:74"#;
         assert!(validate_cuesheet(cd_audio).is_ok());
+    }
+
+    #[test]
+    fn test_cuesheet_keywords_must_be_uppercase() {
+        let valid = r#"FILE "track.bin" BINARY
+  TRACK 01 AUDIO
+    FLAGS DCP
+    INDEX 01 00:00:00"#;
+        assert!(validate_cuesheet(valid).is_ok());
+
+        for value in ["binary", "Binary", "audio", "Audio", "mode1/2352", "mode2/2352", "cdi/2352", "Cdi/2352"] {
+            let cue = if value.eq_ignore_ascii_case("binary") {
+                format!("FILE \"track.bin\" {value}")
+            } else {
+                format!("FILE \"track.bin\" BINARY\n  TRACK 01 {value}\n    INDEX 01 00:00:00")
+            };
+            assert!(validate_cuesheet(&cue).is_err(), "value {value} should be rejected");
+        }
+
+        for keyword in ["file", "TrAcK", "catalog", "flags", "isrc", "index", "rem", "performer", "title", "songwriter"] {
+            let line = match keyword.to_ascii_lowercase().as_str() {
+                "file" => format!("{keyword} \"track.bin\" BINARY"),
+                "track" => format!("  {keyword} 01 AUDIO"),
+                "catalog" => format!("{keyword} 0000000000000"),
+                "flags" => format!("    {keyword} DCP"),
+                "isrc" => format!("    {keyword} ZWUFD3135734"),
+                "index" => format!("    {keyword} 01 00:00:00"),
+                "rem" => format!("{keyword} comment"),
+                "performer" => format!("{keyword} \"Artist\""),
+                "title" => format!("{keyword} \"Title\""),
+                "songwriter" => format!("{keyword} \"Writer\""),
+                _ => unreachable!(),
+            };
+            assert!(validate_cuesheet(&line).is_err(), "keyword {keyword} should be rejected");
+        }
+    }
+
+    #[test]
+    fn test_cuesheet_rem_lines() {
+        for line in [
+            "REM SESSION 01",
+            "REM LEAD-IN 00:02:00",
+            "REM LEAD-OUT 01:30:00",
+            "REM PREGAP 00:02:00",
+            "REM POSTGAP 00:02:00",
+            "REM SINGLE-DENSITY AREA",
+            "REM HIGH-DENSITY AREA",
+        ] {
+            assert!(is_cue_rem_line(line), "expected valid REM line: {line}");
+            assert!(validate_cuesheet(line).is_ok(), "expected valid cue: {line}");
+        }
+
+        for line in [
+            "REM SESSION 1",
+            "REM SESSION 001",
+            "REM SESSION AA",
+            "REM LEAD-IN 0:02:00",
+            "REM LEAD-OUT 00:2:00",
+            "REM PREGAP 00:02:000",
+            "REM POSTGAP 00:02",
+            "REM LEAD-IN 00:60:00x",
+            "REM HIGH-DENSITY AREA extra",
+        ] {
+            assert!(!is_cue_rem_line(line), "expected invalid REM line: {line}");
+            assert!(validate_cuesheet(line).is_err(), "expected invalid cue: {line}");
+        }
     }
 
     #[test]
