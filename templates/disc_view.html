@@ -540,6 +540,11 @@
             }
             table.style.transform = '';
             table.style.transformOrigin = '';
+            var metadata = wrapper.closest('.detail-section')?.querySelector('.binary-metadata');
+            if (metadata) {
+                metadata.style.transform = '';
+                metadata.style.transformOrigin = '';
+            }
             wrapper.style.height = '';
             wrapper.style.overflow = '';
             wrapper.style.width = '';
@@ -551,6 +556,10 @@
                 var scale = containerWidth / tableWidth;
                 table.style.transform = 'scale(' + scale + ')';
                 table.style.transformOrigin = 'top left';
+                if (metadata) {
+                    metadata.style.transform = 'scale(' + scale + ')';
+                    metadata.style.transformOrigin = 'top left';
+                }
                 wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
                 wrapper.style.overflow = 'hidden';
                 refreshDetailSectionFit(wrapper, true);
