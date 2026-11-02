@@ -124,7 +124,7 @@ fn parse_internal(
         result.system_code = Some(code);
     }
 
-    if dvdkey.as_deref().is_some_and(dvdkey_has_css_cppm)
+    if dvdkey.as_deref().is_some_and(dvdkey_has_css_cppm_and_title_keys)
         && known_system_codes.iter().any(|code| code == "DVD-VIDEO")
     {
         result.system_code = Some("DVD-VIDEO".to_owned());
@@ -452,6 +452,23 @@ fn protection_system_code(lines: &[&str], known_system_codes: &[String]) -> Opti
 fn dvdkey_has_css_cppm(lines: &[&str]) -> bool {
     scalar_value(lines, "protection system type:")
         .is_some_and(|value| value.eq_ignore_ascii_case("CSS/CPPM"))
+}
+
+fn dvdkey_has_css_cppm_and_title_keys(lines: &[&str]) -> bool {
+    if !dvdkey_has_css_cppm(lines) {
+        return false;
+    }
+
+    lines
+        .iter()
+        .position(|line| line.trim().starts_with("protection system type:"))
+        .is_some_and(|index| {
+            lines
+                .iter()
+                .skip(index + 1)
+                .take(3)
+                .any(|line| line.trim() == "title keys:")
+        })
 }
 
 fn normalized_dvd_key(value: &str) -> Option<String> {
