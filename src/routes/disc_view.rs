@@ -1686,11 +1686,13 @@ fn parse_header_rows(data: &[u8]) -> Vec<HeaderRow> {
 
 fn parse_scsi_dump(data: &[u8]) -> ScsiDump {
     let (length, invalid, payload) = match data {
-        [msb, lsb, third, fourth, payload @ ..] => (
-            Some(u16::from_be_bytes([*msb, *lsb]).saturating_sub(2)),
-            *third != 0 || *fourth != 0,
-            payload,
-        ),
+        [msb, lsb, third, fourth, payload @ ..] => {
+            let raw_length = u16::from_be_bytes([*msb, *lsb]);
+            let length = raw_length.saturating_sub(2);
+            let invalid = raw_length <= 2 || *third != 0 || *fourth != 0;
+
+            (Some(length), invalid, payload)
+        }
         _ => (None, false, &[] as &[u8]),
     };
 
