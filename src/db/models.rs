@@ -866,7 +866,7 @@ pub fn build_simple_track_name(
     name
 }
 
-/// Returns true for `REM LEAD-OUT|LEAD-IN|PREGAP` lines (case-insensitive,
+/// Returns true for `REM LEAD-OUT|LEAD-IN|PREGAP|POSTGAP` lines (case-insensitive,
 /// whitespace-delimited) which carry no information beyond the multi-session
 /// structure itself and are therefore dropped during cue canonicalization.
 fn is_strippable_rem(trimmed: &str) -> bool {
@@ -876,7 +876,7 @@ fn is_strippable_rem(trimmed: &str) -> bool {
         None => return false,
     };
     let tag = rest.split_whitespace().next().unwrap_or("");
-    matches!(tag, "LEAD-OUT" | "LEAD-IN" | "PREGAP")
+    matches!(tag, "LEAD-OUT" | "LEAD-IN" | "PREGAP" | "POSTGAP")
 }
 
 fn ensure_single_trailing_newline(mut s: String) -> String {
@@ -993,14 +993,15 @@ pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
         .count();
 
     let mut result = Vec::with_capacity(lines.len());
+    let mut seen_file = false;
     let mut i = 0;
     while i < lines.len() {
-        let trimmed = lines[i].trim_start();
-        if is_strippable_rem(trimmed) {
+        let line = lines[i].trim();
+        if is_strippable_rem(line) {
             i += 1;
             continue;
         }
-        if trimmed.starts_with("FILE ") {
+        if line.starts_with("FILE ") {
             // Find the next TRACK line to get the track number
             let track_num = lines[i + 1..].iter().find_map(|l| {
                 let lt = l.trim_start();
@@ -1014,10 +1015,23 @@ pub fn finalize_cue(raw_cue: &str, base_name: &str, extension: &str) -> String {
                 }
             });
             let rom_name = build_rom_name(base_name, track_num, total_tracks, extension);
-            let file_type = trimmed.rsplit_once(' ').map(|(_, t)| t).unwrap_or("BINARY");
+            let file_type = line.rsplit_once(' ').map(|(_, t)| t).unwrap_or("BINARY");
             result.push(format!("FILE \"{rom_name}\" {file_type}"));
+            seen_file = true;
         } else {
-            result.push(lines[i].to_string());
+            let indent = if line.starts_with("TRACK ") {
+                "  "
+            } else if !seen_file {
+                ""
+            } else if ["INDEX ", "FLAGS ", "ISRC ", "TITLE ", "PERFORMER ", "SONGWRITER "]
+                .iter()
+                .any(|prefix| line.starts_with(prefix))
+            {
+                "    "
+            } else {
+                ""
+            };
+            result.push(format!("{indent}{line}"));
         }
         i += 1;
     }
@@ -1356,6 +1370,17 @@ FILE \"Track 2.bin\" BINARY\n\
         assert!(!out.contains("LEAD-IN"));
         assert!(!out.to_uppercase().contains("PREGAP"));
         assert!(out.contains("FILE \"Awesome Game.bin\" BINARY"));
+    }
+
+    #[test]
+    fn finalize_cue_normalizes_leading_and_trailing_whitespace_on_each_line() {
+        let cue = " TITLE \"Album\"  \n PERFORMER \"Artist\"\t\n REM SESSION 01 \n FILE \"Track 01.bin\" BINARY  \n  TRACK 01 AUDIO\t\n    INDEX 01 00:00:00 \t\n";
+        let out = finalize_cue(cue, "Awesome Game", "bin");
+
+        assert_eq!(
+            out,
+            "TITLE \"Album\"\nPERFORMER \"Artist\"\nREM SESSION 01\nFILE \"Awesome Game.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n"
+        );
     }
 
     #[test]
