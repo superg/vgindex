@@ -3836,13 +3836,13 @@ fn build_history_changes(
             continue;
         }
         if key == "dmi"
-            && (form.dmi.is_none()
-                || !dmi_available_for_selection(
-                    all_systems,
-                    all_media_types,
-                    &form.system_code,
-                    &form.media_type,
-                ))
+            && form.dmi.is_none()
+            && dmi_available_for_selection(
+                all_systems,
+                all_media_types,
+                &form.system_code,
+                &form.media_type,
+            )
         {
             continue;
         }
@@ -6115,10 +6115,13 @@ mod operation_delta_tests {
         let discarded = build_sparse_edit_changes(&form, &detail, &media, &systems);
         assert_eq!(discarded["dmi"], blank["dmi"]);
 
-        systems[0].has_dmi = false;
+        media[0].dmi = false;
         form.dmi = Some(String::new());
         let unavailable = build_sparse_edit_changes(&form, &detail, &media, &systems);
-        assert!(unavailable.get("dmi").is_none());
+        assert_eq!(
+            unavailable["dmi"],
+            serde_json::json!({ "remove": { "old": format_header_hex_dump(&original_dmi) } })
+        );
     }
 
     #[test]

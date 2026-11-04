@@ -70,6 +70,7 @@ pub fn routes() -> Router<AppState> {
         .route("/disc/{id}", get(disc_view))
         .route("/disc/{id}/cue", get(disc_cue_download))
         .route("/disc/{id}/sbi", get(disc_sbi_download))
+        .route("/disc/{id}/dmi", get(disc_dmi_download))
         .route("/disc/{id}/lsd", get(disc_lsd_download))
 }
 
@@ -136,6 +137,7 @@ struct DiscViewTemplate {
     dmi_rows: Vec<HeaderRow>,
     dmi_placeholder_rows: Vec<HeaderRow>,
     dmi_invalid: bool,
+    dmi_download_available: bool,
     dmi_is_gamecube: bool,
     dmi_show_placeholder: bool,
     pic_rows: Vec<HeaderRow>,
@@ -763,6 +765,18 @@ async fn disc_view(
     let dmi_invalid = dmi_dump.as_ref().is_some_and(|dump| {
         dump.length != Some(2048) || dump.invalid
     });
+    let dmi_download_available = detail
+        .system
+        .has_dmi_for_media_type(&detail.disc.media_type)
+        && detail.disc.dmi.as_ref().is_some_and(|data| {
+            if matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii")
+                || (detail.disc.system_code == "XBOX" && detail.disc.media_type.code() == "xgd")
+            {
+                data.len() == 84
+            } else {
+                data.len() == 2052
+            }
+        });
 
     let cue_disc_meta = parse_cue_disc_meta(detail.disc.cue.as_deref().unwrap_or_default());
     
@@ -951,6 +965,7 @@ async fn disc_view(
             dmi_rows,
             dmi_placeholder_rows,
             dmi_invalid,
+            dmi_download_available,
             dmi_is_gamecube: detail.disc.media_type.code() == "dvd5gc",
             dmi_show_placeholder,
             pic_rows: pic_dump
@@ -2043,6 +2058,68 @@ async fn disc_lsd_download(
     ))
 }
 
+async fn disc_dmi_download(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    id: Result<Path<i32>, PathRejection>,
+) -> AppResult<impl IntoResponse> {
+    let id = crate::routes::path_i32(id)?;
+    let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
+
+    if !detail
+        .system
+        .has_dmi_for_media_type(&detail.disc.media_type)
+    {
+        return Err(AppError::NotFound);
+    }
+
+    let stored_dmi = detail.disc.dmi.ok_or(AppError::NotFound)?;
+    let is_wii_dmi = matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii");
+    let is_xbox_placeholder_dmi = detail.disc.system_code == "XBOX"
+        && detail.disc.media_type.code() == "xgd";
+    let is_placeholder_dmi = is_wii_dmi || is_xbox_placeholder_dmi;
+    let payload = stored_dmi.get(4..).filter(|payload| {
+        payload.len() == if is_placeholder_dmi { 80 } else { 2048 }
+    }).ok_or(AppError::NotFound)?;
+
+    let mut buf = Vec::with_capacity(2048);
+    buf.extend_from_slice(payload);
+    if is_placeholder_dmi {
+        let trailer = if is_wii_dmi {
+            WII_DMI_TRAILER
+        } else {
+            &[]
+        };
+        buf.extend_from_slice(trailer);
+        buf.resize(2048, 0);
+    }
+
+    let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
+    let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
+    let rom_base_name = build_rom_base_name(
+        &detail.disc.title,
+        &region_names,
+        &language_codes,
+        detail.disc.disc_number.as_deref(),
+        detail.disc.disc_title.as_deref(),
+        detail.disc.filename_suffix.as_deref(),
+    );
+    let filename = format!("{rom_base_name}.dmi");
+    let disposition = format!("attachment; filename=\"{filename}\"");
+
+    Ok((
+        [
+            (
+                http::header::CONTENT_TYPE,
+                "application/octet-stream".to_string(),
+            ),
+            (http::header::CONTENT_DISPOSITION, disposition),
+        ],
+        buf,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2279,6 +2356,7 @@ mod tests {
             dmi_rows: Vec::new(),
             dmi_placeholder_rows: Vec::new(),
             dmi_invalid: false,
+            dmi_download_available: false,
             dmi_is_gamecube: false,
             dmi_show_placeholder: false,
             pic_rows: Vec::new(),

@@ -1774,6 +1774,7 @@ fn compute_field_highlights(
         "universal_hash",
         "pvd",
         "header",
+        "dmi",
         "bca",
         "bca_mastering",
         "pic",
@@ -3869,7 +3870,19 @@ mod tests {
         db["dmi"] = serde_json::json!("0000 : 01 02 03 04 05");
         let mut submitted = submitted_snapshot();
         submitted["dmi"] = serde_json::json!("0000 : 01 02 03 04 06");
-        let ref_data = ref_data();
+        let mut ref_data = ref_data();
+        ref_data
+            .all_systems
+            .iter_mut()
+            .find(|system| system.code == "OLD")
+            .unwrap()
+            .has_dmi = true;
+        ref_data
+            .all_media_types
+            .iter_mut()
+            .find(|media| media.code == "DVD")
+            .unwrap()
+            .dmi = true;
         let mut template = build_template(&submitted);
 
         apply_review_diff_context(
@@ -3881,6 +3894,8 @@ mod tests {
             true,
         );
 
+        assert!(template.show_dmi);
+        assert_eq!(template.dmi_hex, "0000 : 01 02 03 04 06");
         assert_eq!(
             annotation_values(&template, "regions", "Removed"),
             vec!["Europe".to_string()]
