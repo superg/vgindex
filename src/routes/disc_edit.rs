@@ -173,6 +173,9 @@ pub(crate) struct DiscEditTemplate {
     pub bca_masterings: Vec<HighlightedValue>,
     pub show_header: bool,
     pub header_hex: String,
+    pub show_dmi: bool,
+    pub media_has_dmi_json: String,
+    pub dmi_hex: String,
 
     pub show_universal_hash: bool,
     pub show_protection: bool,
@@ -328,6 +331,7 @@ pub(crate) struct EditMediaTypeRow {
     pub name: String,
     pub layer_count: i32,
     pub pic: bool,
+    pub dmi: bool,
     pub rom_extension: String,
     pub has_dummy_layer: bool,
 }
@@ -350,7 +354,7 @@ pub(crate) struct EditRefData {
 pub(crate) async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData> {
     let all_systems = disc_service::get_all_systems(pool).await?;
     let all_media_types: Vec<EditMediaTypeRow> = sqlx::query_as(
-        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer FROM media_types ORDER BY name",
+        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer, dmi FROM media_types ORDER BY name",
     )
     .fetch_all(pool)
     .await?;
@@ -396,6 +400,7 @@ pub(crate) fn build_systems_json(all_systems: &[System]) -> (String, String) {
                 "has_universal_hash": s.has_universal_hash,
                 "has_pvd": s.has_pvd,
                 "has_bca": s.has_bca,
+                "has_dmi": s.has_dmi,
                 "has_header": s.has_header,
                 "has_protection": s.has_protection,
                 "has_sector_ranges": s.has_sector_ranges,
@@ -611,6 +616,27 @@ pub(crate) fn build_media_has_pic_json(all_media_types: &[EditMediaTypeRow]) -> 
         map.insert(m.code.clone(), serde_json::json!(m.pic));
     }
     serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
+}
+
+pub(crate) fn build_media_has_dmi_json(all_media_types: &[EditMediaTypeRow]) -> String {
+    let mut map = serde_json::Map::new();
+    for m in all_media_types {
+        map.insert(m.code.clone(), serde_json::json!(m.dmi));
+    }
+    serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
+}
+
+pub(crate) fn dmi_available_for_selection(
+    all_systems: &[System],
+    all_media_types: &[EditMediaTypeRow],
+    system_code: &str,
+    media_code: &str,
+) -> bool {
+    all_systems
+        .iter()
+        .find(|system| system.code == system_code)
+        .zip(all_media_types.iter().find(|media| media.code == media_code))
+        .map_or(false, |(system, media)| system.has_dmi && media.dmi)
 }
 
 pub(crate) fn media_code_is_cd(all_media_types: &[EditMediaTypeRow], media_code: &str) -> bool {
@@ -852,6 +878,7 @@ async fn edit_page(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let media_has_dmi_json = build_media_has_dmi_json(&ref_data.all_media_types);
     let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let max_layers = detail.disc.media_type.max_layers();
@@ -1071,6 +1098,14 @@ async fn edit_page(
                 .as_ref()
                 .map(|data| format_header_hex_dump(data))
                 .unwrap_or_default(),
+            show_dmi: dmi_available_for_selection(
+                &ref_data.all_systems,
+                &ref_data.all_media_types,
+                &detail.disc.system_code,
+                detail.disc.media_type.code(),
+            ),
+            media_has_dmi_json: media_has_dmi_json.clone(),
+            dmi_hex: detail.disc.dmi.as_deref().map(|data| format_header_hex_dump(data)).unwrap_or_default(),
 
             show_universal_hash: detail.system.has_universal_hash,
             show_protection: detail.system.has_protection,
@@ -1204,6 +1239,7 @@ pub struct DiscEditForm {
     #[serde(default, deserialize_with = "one_or_many_strings")]
     pub bca_mastering: Vec<String>,
     pub header: Option<String>,
+    pub dmi: Option<String>,
     pub protection: Option<String>,
     pub sector_ranges: Option<String>,
     pub sbi: Option<String>,
@@ -1512,6 +1548,16 @@ fn validate_form_with_options(
         }
     }
 
+    let dmi_available =
+        dmi_available_for_selection(all_systems, all_media_types, system_code, media_code);
+    if dmi_available {
+        if let Some(text) = form.dmi.as_deref() {
+            if let Err(error) = disc_service::parse_dmi_input(text, media_code) {
+                errors.push(error);
+            }
+        }
+    }
+
     if let Some(ref text) = form.universal_hash {
         let text = text.trim();
         if !text.is_empty() {
@@ -1696,6 +1742,7 @@ async fn render_form_with_context(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let media_has_dmi_json = build_media_has_dmi_json(&ref_data.all_media_types);
     let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let submit_as_usernames_json = if is_add_mode && can_moderate {
@@ -1855,6 +1902,14 @@ async fn render_form_with_context(
             .collect(),
         show_header: has_sys(|s| s.has_header),
         header_hex: normalize_hex_dump_for_render(form.header.as_deref(), false),
+        show_dmi: dmi_available_for_selection(
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            &form.system_code,
+            &form.media_type,
+        ),
+        media_has_dmi_json,
+        dmi_hex: normalize_hex_dump_for_render(form.dmi.as_deref(), false),
 
         show_universal_hash: has_sys(|s| s.has_universal_hash),
         show_protection: has_sys(|s| s.has_protection),
@@ -2589,6 +2644,7 @@ async fn add_page(
     let media_rom_extensions_json = build_media_rom_extensions_json(&ref_data.all_media_types);
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
+    let media_has_dmi_json = build_media_has_dmi_json(&ref_data.all_media_types);
     let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let can_submit_as = user.role.can_moderate();
@@ -2681,6 +2737,9 @@ async fn add_page(
             bca_masterings: vec![],
             show_header: has_sys(|s| s.has_header),
             header_hex: String::new(),
+            show_dmi: false,
+            media_has_dmi_json,
+            dmi_hex: String::new(),
 
             show_universal_hash: has_sys(|s| s.has_universal_hash),
             show_protection: has_sys(|s| s.has_protection),
@@ -3144,6 +3203,9 @@ pub(crate) fn build_flat_changes(
         "bca": norm_opt_multiline_str(form.bca.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
         "bca_mastering": new_bca_mastering,
         "header": norm_opt_multiline_str(form.header.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
+        "dmi": norm_opt_multiline_str(form.dmi.as_deref())
+            .and_then(|text| disc_service::parse_dmi_input(&text, form.media_type.trim()).ok().flatten())
+            .map(|bytes| format_header_hex_dump(&bytes)),
         "protection": norm_opt_multiline_str(form.protection.as_deref()),
         "sbi": new_sbi,
         "universal_hash": new_universal_hash,
@@ -3693,6 +3755,9 @@ fn filter_unsupported_fields_for_changes(
     if !media.pic {
         filtered.pic = None;
     }
+    if !(system.has_dmi && media.dmi) {
+        filtered.dmi = None;
+    }
     if !media_is_cd {
         filtered.cue = None;
     }
@@ -3762,11 +3827,23 @@ fn build_history_changes(
         "header",
         "bca",
         "pic",
+        "dmi",
         "cuesheet",
         "status",
         "layerbreaks",
     ] {
         if key == "status" && !include_status {
+            continue;
+        }
+        if key == "dmi"
+            && (form.dmi.is_none()
+                || !dmi_available_for_selection(
+                    all_systems,
+                    all_media_types,
+                    &form.system_code,
+                    &form.media_type,
+                ))
+        {
             continue;
         }
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
@@ -3994,6 +4071,7 @@ mod operation_delta_tests {
             name: "DVD-ROM".to_string(),
             layer_count: 2,
             pic: false,
+            dmi: false,
             rom_extension: "iso".to_string(),
             has_dummy_layer: false,
         }]
@@ -4005,6 +4083,7 @@ mod operation_delta_tests {
             name: "DVD-ROM".to_string(),
             layer_count: 2,
             pic: false,
+            dmi: false,
             rom_extension: "iso".to_string(),
             has_dummy_layer: false,
         }
@@ -4059,6 +4138,7 @@ mod operation_delta_tests {
             has_sector_ranges: true,
             has_header: true,
             has_bca: true,
+            has_dmi: false,
             has_sample_start: true,
             has_offset_extra: true,
             archives_dirty: false,
@@ -4143,6 +4223,7 @@ mod operation_delta_tests {
                 pic: None,
                 header: None,
                 bca: None,
+                dmi: None,
                 status: DiscStatus::Unverified,
             },
             system: test_system(),
@@ -4204,6 +4285,7 @@ mod operation_delta_tests {
             bca: None,
             bca_mastering: vec![],
             header: None,
+            dmi: detail.disc.dmi.as_ref().map(|data| format_header_hex_dump(data)),
             protection: detail.disc.protection.clone(),
             sector_ranges: None,
             sbi: detail.disc.sbi.clone(),
@@ -4273,6 +4355,7 @@ mod operation_delta_tests {
             bca: None,
             bca_mastering: vec![],
             header: None,
+            dmi: None,
             protection: Some("new protection".to_string()),
             sector_ranges: None,
             sbi: Some("new sbi".to_string()),
@@ -4302,6 +4385,7 @@ mod operation_delta_tests {
             name: "CD-ROM".to_string(),
             layer_count: 1,
             pic: false,
+            dmi: false,
             rom_extension: "bin".to_string(),
             has_dummy_layer: false,
         });
@@ -5271,6 +5355,9 @@ mod operation_delta_tests {
         form.header = Some("a1 b2\nc3 d4".to_string());
         form.bca = Some("a1b2c3d4".to_string());
         form.pic = Some("a1 b2 c3 d4".to_string());
+        let mut dmi_bytes = vec![0x11; 0x804];
+        dmi_bytes[..6].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef, 0x01, 0x23]);
+        form.dmi = Some(dmi_bytes.iter().map(|byte| format!("{byte:02x}")).collect());
         form.sbi = Some("MSF: 02:03:04 Q-Data: a1b2c3 0a:0b:0c 00 0d:0e:0f abcd".to_string());
         form.universal_hash = Some("ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD".to_string());
         form.files_xml = Some(
@@ -5284,11 +5371,13 @@ mod operation_delta_tests {
         );
         let expected = format_header_hex_dump(&[0xa1, 0xb2, 0xc3, 0xd4]);
         let expected_pvd = format_pvd_hex_dump(&pvd_bytes[..82]);
+        let expected_dmi = format_header_hex_dump(&dmi_bytes);
 
         assert_eq!(snapshot["pvd"].as_str().unwrap(), expected_pvd);
         assert_eq!(snapshot["header"].as_str().unwrap(), expected);
         assert_eq!(snapshot["bca"].as_str().unwrap(), expected);
         assert_eq!(snapshot["pic"].as_str().unwrap(), expected);
+        assert_eq!(snapshot["dmi"].as_str().unwrap(), expected_dmi);
         assert_eq!(
             snapshot["sbi"],
             "MSF: 02:03:04 Q-Data: A1B2C3 0A:0B:0C 00 0D:0E:0F ABCD"
@@ -5839,6 +5928,7 @@ mod operation_delta_tests {
             name: "CD-ROM".to_string(),
             layer_count: 1,
             pic: false,
+            dmi: false,
             rom_extension: "bin".to_string(),
             has_dummy_layer: false,
         }
@@ -5964,6 +6054,100 @@ mod operation_delta_tests {
         );
 
         assert!(changes.get("status").is_none());
+    }
+
+    #[test]
+    fn dmi_edit_delta_preserves_omitted_adds_modifies_and_removes_effective_values() {
+        let mut detail = base_detail();
+        detail.system.has_dmi = true;
+        detail.disc.media_type = {
+            let row = MediaTypeRow {
+                code: "dvd5wii".to_string(),
+                name: "DVD-ROM".to_string(),
+                layer_count: 2,
+                pic: false,
+                rom_extension: "iso".to_string(),
+                has_dummy_layer: false,
+                dmi: true,
+            };
+            row.into()
+        };
+        detail.system.media_types = vec!["dvd5wii".to_string()];
+        let mut original_dmi = vec![0x11; 0x54];
+        original_dmi[..5].copy_from_slice(&[1, 2, 3, 4, 5]);
+        detail.disc.dmi = Some(original_dmi.clone());
+        let dmi_text = |bytes: &[u8]| {
+            bytes
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<String>()
+        };
+        let mut media = media_rows();
+        media[0].code = "dvd5wii".to_string();
+        media[0].dmi = true;
+        let mut systems = systems_with_edc(true);
+        systems[0].has_dmi = true;
+        systems[0].media_types = vec!["dvd5wii".to_string()];
+
+        let mut form = form_from_detail(&detail);
+        form.dmi = None;
+        let omitted = build_sparse_edit_changes(&form, &detail, &media, &systems);
+        assert!(omitted.get("dmi").is_none());
+
+        form.dmi = Some("  ".to_string());
+        let blank = build_sparse_edit_changes(&form, &detail, &media, &systems);
+        assert_eq!(blank["dmi"], serde_json::json!({ "remove": { "old": format_header_hex_dump(&original_dmi) } }));
+
+        let mut changed_dmi = original_dmi.clone();
+        changed_dmi[4] = 6;
+        form.dmi = Some(dmi_text(&changed_dmi));
+        let changed = build_sparse_edit_changes(&form, &detail, &media, &systems);
+        assert_eq!(changed["dmi"], serde_json::json!({
+            "modify": {
+                "old": format_header_hex_dump(&original_dmi),
+                "new": format_header_hex_dump(&changed_dmi)
+            }
+        }));
+
+        let mut zeroed_dmi = original_dmi.clone();
+        zeroed_dmi[4..].fill(0);
+        form.dmi = Some(dmi_text(&zeroed_dmi));
+        let discarded = build_sparse_edit_changes(&form, &detail, &media, &systems);
+        assert_eq!(discarded["dmi"], blank["dmi"]);
+
+        systems[0].has_dmi = false;
+        form.dmi = Some(String::new());
+        let unavailable = build_sparse_edit_changes(&form, &detail, &media, &systems);
+        assert!(unavailable.get("dmi").is_none());
+    }
+
+    #[test]
+    fn dmi_add_and_resolve_uses_truncated_effective_value() {
+        let mut form = new_disc_form();
+        form.system_code = "SYS".to_string();
+        form.media_type = "xgd".to_string();
+        let mut media = media_rows();
+        media[0].code = "xgd".to_string();
+        media[0].dmi = true;
+        let mut systems = systems_with_edc(true);
+        systems[0].has_dmi = true;
+        systems[0].media_types = vec!["xgd".to_string()];
+        let mut bytes = vec![0x11; 0x55];
+        bytes[4] = 0x22;
+        form.dmi = Some(bytes.iter().map(|byte| format!("{byte:02X}")).collect());
+
+        let changes = build_new_disc_changes(&form, &media, &systems);
+        let effective = queue_service::resolve_submission_snapshot(&serde_json::json!({}), &changes).unwrap();
+        assert_eq!(changes["dmi"]["add"]["new"], format_header_hex_dump(&bytes[..0x54]));
+        assert_eq!(effective["dmi"], format_header_hex_dump(&bytes[..0x54]));
+
+        bytes[4..0x54].fill(0);
+        bytes[0x54] = 0x22;
+        form.dmi = Some(bytes.iter().map(|byte| format!("{byte:02X}")).collect());
+        let discarded = build_new_disc_changes(&form, &media, &systems);
+        assert!(discarded.get("dmi").is_none());
+        let effective = queue_service::resolve_submission_snapshot(&serde_json::json!({}), &discarded).unwrap();
+        assert!(effective["dmi"].is_null());
     }
 
     #[test]

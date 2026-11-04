@@ -11,6 +11,7 @@ pub struct MediaType {
     name: String,
     layer_count: i32,
     pic: bool,
+    dmi: bool,
     rom_extension: String,
     has_dummy_layer: bool,
 }
@@ -30,6 +31,10 @@ impl MediaType {
 
     pub fn has_pic(&self) -> bool {
         self.pic
+    }
+
+    pub fn has_dmi(&self) -> bool {
+        self.dmi
     }
 
     pub fn rom_extension(&self) -> &str {
@@ -69,6 +74,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for MediaType {
             name: String::new(),
             layer_count: 1,
             pic: false,
+            dmi: false,
             rom_extension: String::new(),
             has_dummy_layer: false,
         })
@@ -90,6 +96,7 @@ pub struct MediaTypeRow {
     pub name: String,
     pub layer_count: i32,
     pub pic: bool,
+    pub dmi: bool,
     pub rom_extension: String,
     pub has_dummy_layer: bool,
 }
@@ -101,6 +108,7 @@ impl From<MediaTypeRow> for MediaType {
             name: row.name,
             layer_count: row.layer_count,
             pic: row.pic,
+            dmi: row.dmi,
             rom_extension: row.rom_extension,
             has_dummy_layer: row.has_dummy_layer,
         }
@@ -370,6 +378,7 @@ pub struct System {
     pub has_sector_ranges: bool,
     pub has_header: bool,
     pub has_bca: bool,
+    pub has_dmi: bool,
     pub has_sample_start: bool,
     pub has_offset_extra: bool,
     pub archives_dirty: bool,
@@ -392,6 +401,10 @@ impl System {
 
     pub fn has_error_count_for_media_type(&self, media_type: &MediaType) -> bool {
         self.has_error_count && media_type.is_cd() && self.supports_media_type(media_type)
+    }
+
+    pub fn has_dmi_for_media_type(&self, media_type: &MediaType) -> bool {
+        self.has_dmi && media_type.dmi
     }
 }
 
@@ -463,6 +476,7 @@ pub struct Disc {
     pub pic: Option<Vec<u8>>,
     pub header: Option<Vec<u8>>,
     pub bca: Option<Vec<u8>>,
+    pub dmi: Option<Vec<u8>>,
     pub status: DiscStatus,
 }
 
@@ -1171,6 +1185,7 @@ mod tests {
             name: code.to_string(),
             layer_count: 1,
             pic: false,
+            dmi: false,
             rom_extension: rom_extension.to_string(),
             has_dummy_layer: false,
         }
@@ -1202,6 +1217,7 @@ mod tests {
             has_sector_ranges: false,
             has_header: false,
             has_bca: false,
+            has_dmi: false,
             has_sample_start: false,
             has_offset_extra: false,
             archives_dirty: false,
@@ -1293,6 +1309,20 @@ mod tests {
         assert!(sys.has_error_count_for_media_type(&cd));
         assert!(!sys.has_error_count_for_media_type(&media_type("dvd5", "iso")));
         assert!(!sys.has_error_count_for_media_type(&media_type("other", "bin")));
+    }
+
+    #[test]
+    fn dmi_eligibility_uses_only_both_capability_flags() {
+        let mut system = system_with_media(&[]);
+        let mut media = media_type("unlisted-media", "iso");
+
+        assert!(!system.has_dmi_for_media_type(&media));
+        system.has_dmi = true;
+        assert!(!system.has_dmi_for_media_type(&media));
+        media.dmi = true;
+        assert!(system.has_dmi_for_media_type(&media));
+        system.has_dmi = false;
+        assert!(!system.has_dmi_for_media_type(&media));
     }
 
     #[test]

@@ -20,6 +20,9 @@ use crate::AppState;
 /// surfaces this exact value so the disc view can suppress the "Added" row.
 const NO_ADDED_SENTINEL: DateTime<Utc> = DateTime::<Utc>::UNIX_EPOCH;
 
+// Fixed bytes present at the end of all Wii DMI
+const WII_DMI_TRAILER: &[u8] = include_bytes!("../data/wii_dmi_trailer.bin");
+
 fn format_minute_timestamp(timestamp: Option<&DateTime<Utc>>) -> String {
     timestamp
         .map(|timestamp| timestamp.format("%Y-%m-%d %H:%M UTC").to_string())
@@ -130,6 +133,11 @@ struct DiscViewTemplate {
     show_sbi: bool,
     pvd_rows: Vec<PvdRow>,
     show_pvd: bool,
+    dmi_rows: Vec<HeaderRow>,
+    dmi_placeholder_rows: Vec<HeaderRow>,
+    dmi_invalid: bool,
+    dmi_is_gamecube: bool,
+    dmi_show_placeholder: bool,
     pic_rows: Vec<HeaderRow>,
     pic_length: String,
     pic_invalid: bool,
@@ -723,6 +731,39 @@ async fn disc_view(
         .as_ref()
         .map(|data| parse_scsi_dump(data));
 
+    let dmi_dump = detail
+        .disc
+        .dmi
+        .as_deref()
+        .map(parse_scsi_dump);
+    let dmi_rows = dmi_dump
+        .as_ref()
+        .map(|dump| dump.rows.clone())
+        .unwrap_or_default();
+    let is_wii_dmi = matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii");
+    let dmi_show_placeholder = dmi_rows.len() == 5
+        && (is_wii_dmi
+            || (detail.disc.system_code == "XBOX"
+                && detail.disc.media_type.code() == "xgd"));
+    let dmi_placeholder_rows = if dmi_show_placeholder {
+        let trailer = if is_wii_dmi {
+            assert_eq!(
+                WII_DMI_TRAILER.len(),
+                (0x80 - 5) * 16,
+                "wii_dmi_trailer.bin must contain exactly 0x7B rows (0x7B0 bytes)",
+            );
+            WII_DMI_TRAILER.to_vec()
+        } else {
+            vec![0; (0x80 - 5) * 16]
+        };
+        parse_header_rows_at_offset(&trailer, 5)
+    } else {
+        Vec::new()
+    };
+    let dmi_invalid = dmi_dump.as_ref().is_some_and(|dump| {
+        dump.length != Some(2048) || dump.invalid
+    });
+
     let cue_disc_meta = parse_cue_disc_meta(detail.disc.cue.as_deref().unwrap_or_default());
     
     let universal_hash = detail
@@ -907,6 +948,11 @@ async fn disc_view(
             show_sbi,
             pvd_rows,
             show_pvd: detail.system.has_pvd,
+            dmi_rows,
+            dmi_placeholder_rows,
+            dmi_invalid,
+            dmi_is_gamecube: detail.disc.media_type.code() == "dvd5gc",
+            dmi_show_placeholder,
             pic_rows: pic_dump
                 .as_ref()
                 .map(|dump| dump.rows.clone())
@@ -1665,10 +1711,14 @@ fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
 }
 
 fn parse_header_rows(data: &[u8]) -> Vec<HeaderRow> {
+    parse_header_rows_at_offset(data, 0)
+}
+
+fn parse_header_rows_at_offset(data: &[u8], starting_row: usize) -> Vec<HeaderRow> {
     data.chunks(16)
         .enumerate()
         .map(|(i, chunk)| HeaderRow {
-            offset: format!("{:04X}", i * 16),
+            offset: format!("{:04X}", (starting_row + i) * 16),
             hex_contents: format_hex_bytes(chunk),
             ascii: chunk
                 .iter()
@@ -2226,6 +2276,11 @@ mod tests {
             show_sbi: false,
             pvd_rows: Vec::new(),
             show_pvd: false,
+            dmi_rows: Vec::new(),
+            dmi_placeholder_rows: Vec::new(),
+            dmi_invalid: false,
+            dmi_is_gamecube: false,
+            dmi_show_placeholder: false,
             pic_rows: Vec::new(),
             pic_length: String::new(),
             pic_invalid: false,

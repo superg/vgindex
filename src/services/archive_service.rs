@@ -765,6 +765,7 @@ mod tests {
             has_sector_ranges: false,
             has_header: false,
             has_bca: false,
+            has_dmi: false,
             has_sample_start: false,
             has_offset_extra: false,
             archives_dirty: false,

@@ -671,6 +671,7 @@ function applyMediaFieldVisibility() {
     if (!mediaSel || typeof MEDIA_HAS_PIC === 'undefined' || typeof MEDIA_IS_CD === 'undefined') return;
     var code = mediaSel.value;
     var showPic = !!MEDIA_HAS_PIC[code];
+    var showDmi = !!MEDIA_HAS_DMI[code] && systemHasFlag('has_dmi');
     var showErrorCount = !!MEDIA_IS_CD[code] && systemHasFlag('has_error_count');
     document.querySelectorAll('[data-media-flag="has_pic"]').forEach(function (el) {
         var wasHidden = el.style.display === 'none';
@@ -683,6 +684,9 @@ function applyMediaFieldVisibility() {
                 autoExpand(ta);
             });
         }
+    });
+    document.querySelectorAll('[data-media-flag="has_dmi"]').forEach(function (el) {
+        setFormFieldVisible(el, showDmi);
     });
     document.querySelectorAll('[data-media-codes]').forEach(function (el) {
         var allowed = (el.getAttribute('data-media-codes') || '').split(/\s+/);

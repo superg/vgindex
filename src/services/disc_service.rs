@@ -172,6 +172,37 @@ pub(crate) fn parse_binary_hex_input(text: &str) -> Result<Vec<u8>, String> {
     }
 }
 
+pub(crate) fn parse_dmi_input(
+    text: &str,
+    media_type_code: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+
+    let mut bytes = parse_binary_hex_input(text).map_err(|error| format!("DMI: {error}"))?;
+    if bytes.len() <= 4 {
+        return Err("DMI: data beyond the four-byte header is required".into());
+    }
+
+    let (required_length, error_message) = match media_type_code {
+        "xgd" => (0x54, "DMI: Xbox DMI requires 84 bytes"),
+        "dvd5wii" | "dvd9wii" => (0x54, "DMI: Wii DMI requires 84 bytes"),
+        _ => (0x804, "DMI: Requires 2052 bytes (.manufacturer file)"),
+    };
+    if bytes.len() < required_length {
+        return Err(error_message.into());
+    }
+    bytes.truncate(required_length);
+
+    // Silently ignore zeroed DMI data
+    if bytes[4..].iter().all(|byte| *byte == 0) {
+        return Ok(None);
+    }
+
+    Ok(Some(bytes))
+}
+
 fn parse_addressed_hex_dump(text: &str) -> Result<Vec<u8>, String> {
     let mut result = Vec::new();
     for (line_num, line) in text.lines().enumerate() {
@@ -662,7 +693,7 @@ pub async fn get_system(pool: &PgPool, code: &str) -> AppResult<System> {
 
 async fn enrich_media_type(pool: &PgPool, disc: &mut Disc) -> AppResult<()> {
     let row: MediaTypeRow = sqlx::query_as(
-        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer FROM media_types WHERE code = $1",
+        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer, dmi FROM media_types WHERE code = $1",
     )
     .bind(disc.media_type.code())
     .fetch_one(pool)
@@ -887,6 +918,12 @@ pub async fn update_disc(
         .filter(|s| !s.is_empty())
         .map(|s| parse_binary_hex_input(&s).map_err(|e| AppError::BadRequest(format!("PIC: {e}"))))
         .transpose()?;
+    let dmi = data["dmi"]
+        .as_str()
+        .map(|s| parse_dmi_input(s, media_type.unwrap_or_default()))
+        .transpose()
+        .map_err(|e| AppError::BadRequest(e))?
+        .flatten();
     let bca = data["bca"]
         .as_str()
         .map(normalize_newlines)
@@ -936,13 +973,13 @@ pub async fn update_disc(
          comments = $13, contents = $14,
          error_count = $15, exe_date = $16, edc = $17,
          layerbreaks = $18,
-         pvd = $19, pic = $20, bca = $21, header = $22,
-         protection = $23, sbi = $24,
-         universal_hash = $25,
-         cue = $26,
-         status = $27::disc_status_enum,
-         disc_title_foreign = $29
-         WHERE id = $28",
+         pvd = $19, pic = $20, dmi = $21, bca = $22, header = $23,
+         protection = $24, sbi = $25,
+         universal_hash = $26,
+         cue = $27,
+         status = $28::disc_status_enum,
+         disc_title_foreign = $30
+         WHERE id = $29",
     )
     .bind(title) // $1
     .bind(system_code) // $2
@@ -964,15 +1001,16 @@ pub async fn update_disc(
     .bind(&layerbreaks) // $18
     .bind(&pvd) // $19
     .bind(&pic) // $20
-    .bind(&bca) // $21
-    .bind(&header) // $22
-    .bind(protection) // $23
-    .bind(sbi) // $24
-    .bind(&universal_hash) // $25
-    .bind(cue) // $26
-    .bind(status) // $27
-    .bind(disc_id) // $28
-    .bind(disc_title_foreign) // $29
+    .bind(&dmi) // $21
+    .bind(&bca) // $22
+    .bind(&header) // $23
+    .bind(protection) // $24
+    .bind(sbi) // $25
+    .bind(&universal_hash) // $26
+    .bind(cue) // $27
+    .bind(status) // $28
+    .bind(disc_id) // $29
+    .bind(disc_title_foreign) // $30
     .execute(&mut *conn)
     .await?;
 
@@ -1340,6 +1378,91 @@ mod tests {
     }
 
     #[test]
+    fn dmi_parser_distinguishes_blank_and_present_values() {
+        assert_eq!(parse_dmi_input("  \n ", "dvd5"), Ok(None));
+
+        let mut bytes = vec![0x11; 0x804];
+        bytes[..5].copy_from_slice(&[1, 2, 3, 4, 5]);
+        let text = bytes.iter().map(|byte| format!("{byte:02X}")).collect::<String>();
+        assert_eq!(parse_dmi_input(&text, "dvd5"), Ok(Some(bytes)));
+    }
+
+    #[test]
+    fn dmi_parser_requires_data_beyond_four_byte_header_and_labels_malformed_input() {
+        assert_eq!(
+            parse_dmi_input("01 02 03", "dvd5wii").unwrap_err(),
+            "DMI: data beyond the four-byte header is required"
+        );
+        assert_eq!(
+            parse_dmi_input("01 02 03 04", "dvd5wii").unwrap_err(),
+            "DMI: data beyond the four-byte header is required"
+        );
+
+        let malformed = parse_dmi_input("01 02 0X 04 05", "dvd5wii").unwrap_err();
+        assert!(malformed.starts_with("DMI: "));
+    }
+
+    #[test]
+    fn dmi_parser_discards_nonempty_all_zero_payload() {
+        for media_type in ["dvd5wii", "dvd9wii"] {
+            let mut zeroed = vec![0; 0x54];
+            zeroed[..4].copy_from_slice(&[1, 2, 3, 4]);
+            let zeroed_text = zeroed
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<String>();
+            assert_eq!(parse_dmi_input(&zeroed_text, media_type), Ok(None));
+
+            let mut nonzero = zeroed;
+            nonzero[5] = 5;
+            let nonzero_text = nonzero
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<String>();
+            assert_eq!(parse_dmi_input(&nonzero_text, media_type), Ok(Some(nonzero)));
+        }
+    }
+
+    #[test]
+    fn xgd_dmi_requires_exact_length_and_truncates_overlong_input_before_zero_classification() {
+        assert_eq!(
+            parse_dmi_input("01 02 03 04 05", "xgd").unwrap_err(),
+            "DMI: Xbox DMI requires 84 bytes"
+        );
+
+        let short = vec![0x11; 0x53];
+        let short_text = short.iter().map(|byte| format!("{byte:02X}")).collect::<String>();
+        assert_eq!(
+            parse_dmi_input(&short_text, "xgd").unwrap_err(),
+            "DMI: Xbox DMI requires 84 bytes"
+        );
+
+        let exact = vec![0x11; 0x54];
+        let exact_text = exact.iter().map(|byte| format!("{byte:02X}")).collect::<String>();
+        assert_eq!(parse_dmi_input(&exact_text, "xgd"), Ok(Some(exact)));
+
+        let mut overlong = vec![0x11; 0x55];
+        overlong[4] = 0x22;
+        let overlong_text = overlong
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<String>();
+        assert_eq!(
+            parse_dmi_input(&overlong_text, "xgd"),
+            Ok(Some(overlong[..0x54].to_vec()))
+        );
+
+        let mut zero_after_truncation = vec![0x11; 0x55];
+        zero_after_truncation[4..0x54].fill(0);
+        zero_after_truncation[0x54] = 0x22;
+        let zero_text = zero_after_truncation
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<String>();
+        assert_eq!(parse_dmi_input(&zero_text, "xgd"), Ok(None));
+    }
+
+    #[test]
     fn pvd_hex_parser_keeps_existing_stored_length_limit() {
         let bytes: Vec<u8> = (0u8..96).collect();
         let compact = bytes
@@ -1454,11 +1577,12 @@ mod tests {
             name: "DVD-9".to_string(),
             layer_count: 2,
             pic: false,
+            dmi: false,
             rom_extension: "iso".to_string(),
             has_dummy_layer: false,
         }
         .into();
-        let detail = DiscDetail {
+        let mut detail = DiscDetail {
             disc: Disc {
                 id: 1,
                 system_code: "SYS".to_string(),
@@ -1488,6 +1612,7 @@ mod tests {
                 pic: None,
                 header: Some(vec![0xab, 0xcd]),
                 bca: None,
+                dmi: None,
                 status: DiscStatus::Verified,
             },
             system: System {
@@ -1515,6 +1640,7 @@ mod tests {
                 has_sector_ranges: false,
                 has_header: false,
                 has_bca: false,
+                has_dmi: false,
                 has_sample_start: false,
                 has_offset_extra: false,
                 archives_dirty: false,
@@ -1567,7 +1693,15 @@ mod tests {
             modified_at: None,
         };
 
-        let snapshot = build_snapshot_from_disc(&detail);
+        let mut snapshot = build_snapshot_from_disc(&detail);
+        assert!(snapshot["dmi"].is_null());
+
+        detail.disc.dmi = Some(vec![0xde, 0xad, 0xbe, 0xef, 0x01, 0x23]);
+        snapshot = build_snapshot_from_disc(&detail);
+        assert_eq!(
+            snapshot["dmi"].as_str().unwrap(),
+            format_hex_dump_snapshot(&[0xde, 0xad, 0xbe, 0xef, 0x01, 0x23], 0)
+        );
         let layers = snapshot["ring_codes"][0]["layers"].as_array().unwrap();
 
         assert_eq!(layers.len(), 3);
@@ -1664,7 +1798,7 @@ pub async fn regenerate_cue_entry(conn: &mut PgConnection, disc_id: i32) -> AppR
         .await?
         .ok_or(AppError::NotFound)?;
     let media_type: MediaTypeRow = sqlx::query_as(
-        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer FROM media_types WHERE code = $1",
+        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer, dmi FROM media_types WHERE code = $1",
     )
     .bind(disc.media_type.code())
     .fetch_one(&mut *conn)
@@ -2262,6 +2396,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "layerbreaks": detail.disc.layerbreaks.clone().unwrap_or_default(),
         "pvd": detail.disc.pvd.as_ref().map(|d| format_pvd_hex_snapshot(d)),
         "pic": detail.disc.pic.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
+        "dmi": detail.disc.dmi.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
         "bca": detail.disc.bca.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
         "bca_mastering": detail.bca_mastering.iter().map(|d| crate::services::validation::format_bca_mastering_record(d)).collect::<Vec<_>>(),
         "header": detail.disc.header.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),

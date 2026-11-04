@@ -467,6 +467,96 @@
 </section>
 {% endif %}
 
+{% if !dmi_rows.is_empty() %}
+<section class="left-section detail-section dmi-section">
+    {% if dmi_show_placeholder %}
+    <h3>DMI<button type="button" class="dmi-toggle" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-placeholder-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded);"></button></h3>
+    {% if dmi_invalid %}<p class="binary-metadata"><span class="binary-metadata-warning">Unexpected SCSI header</span></p>{% endif %}
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table dmi-table">
+        <thead>
+            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+        </thead>
+        <tbody>
+            {% for row in dmi_rows.iter().take(5) %}
+            <tr>
+                <td><code>{{ row.offset }}</code></td>
+                <td><code>{{ row.hex_contents }}</code></td>
+                <td><code>{{ row.ascii }}</code></td>
+            </tr>
+            {% endfor %}
+            {% for row in dmi_placeholder_rows %}
+            <tr class="dmi-placeholder-remainder" hidden>
+                <td><code>{{ row.offset }}</code></td>
+                <td><code>{{ row.hex_contents }}</code></td>
+                <td><code>{{ row.ascii }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else if dmi_is_gamecube && dmi_rows.len() > 4 %}
+    <h3>DMI<button type="button" class="dmi-toggle" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-gc-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded);"></button></h3>
+    {% if dmi_invalid %}<p class="binary-metadata"><span class="binary-metadata-warning">Unexpected SCSI header</span></p>{% endif %}
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table dmi-table">
+        <thead>
+            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+        </thead>
+        <tbody>
+            {% for row in dmi_rows.iter().take(4) %}
+            <tr><td><code>{{ row.offset }}</code></td><td><code>{{ row.hex_contents }}</code></td><td><code>{{ row.ascii }}</code></td></tr>
+            {% endfor %}
+            {% for row in dmi_rows.iter().skip(4) %}
+            <tr class="dmi-gc-remainder" hidden><td><code>{{ row.offset }}</code></td><td><code>{{ row.hex_contents }}</code></td><td><code>{{ row.ascii }}</code></td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else if dmi_rows.len() > 20 %}
+    <details>
+        <summary><h3>DMI</h3></summary>
+        {% if dmi_invalid %}<p class="binary-metadata"><span class="binary-metadata-warning">Unexpected SCSI header</span></p>{% endif %}
+        <div class="table-scroll table-scroll-compact">
+        <table class="table-nowrap binary-table dmi-table">
+            <thead>
+                <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+            </thead>
+            <tbody>
+                {% for row in dmi_rows %}
+                <tr>
+                    <td><code>{{ row.offset }}</code></td>
+                    <td><code>{{ row.hex_contents }}</code></td>
+                    <td><code>{{ row.ascii }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </details>
+    {% else %}
+    <h3>DMI</h3>
+    {% if dmi_invalid %}<p class="binary-metadata"><span class="binary-metadata-warning">Unexpected SCSI header</span></p>{% endif %}
+    <div class="table-scroll table-scroll-compact">
+    <table class="table-nowrap binary-table dmi-table">
+        <thead>
+            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
+        </thead>
+        <tbody>
+            {% for row in dmi_rows %}
+            <tr>
+                <td><code>{{ row.offset }}</code></td>
+                <td><code>{{ row.hex_contents }}</code></td>
+                <td><code>{{ row.ascii }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
 {% if show_sector_ranges && !sector_ranges.is_empty() %}
 <section class="left-section detail-section">
     <h3>Sector Ranges</h3>

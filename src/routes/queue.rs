@@ -23,7 +23,7 @@ use super::compact_query_url;
 use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
     build_check_options, build_flat_changes, build_lang_check_options, build_media_has_dummy_layer_json,
-    build_media_has_pic_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
+    build_media_has_dmi_json, build_media_has_pic_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
     build_media_rom_extensions_json, build_new_disc_changes, build_sparse_disc_submission_changes,
     build_sparse_edit_changes, build_system_options, build_systems_json, fetch_ref_data,
     max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
@@ -650,6 +650,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
         bca: string("bca"),
         bca_mastering: strings("bca_mastering"),
         header: string("header"),
+        dmi: string("dmi"),
         protection: string("protection"),
         sector_ranges,
         sbi: string("sbi"),
@@ -1057,6 +1058,14 @@ fn build_review_template(
             .collect(),
         show_header: has_sys(|s| s.has_header),
         header_hex: json_opt_str("header"),
+        show_dmi: disc_edit::dmi_available_for_selection(
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            system_code,
+            media_type_code,
+        ),
+        media_has_dmi_json: build_media_has_dmi_json(&ref_data.all_media_types),
+        dmi_hex: json_opt_str("dmi"),
 
         show_universal_hash: has_sys(|s| s.has_universal_hash),
         show_protection: has_sys(|s| s.has_protection),
@@ -1517,6 +1526,7 @@ fn build_review_diff_context(
         "header",
         "bca",
         "pic",
+        "dmi",
         "cuesheet",
         "dat",
     ] {
@@ -1579,6 +1589,12 @@ fn apply_review_diff_context(
                 template.show_pvd = system.has_pvd;
                 template.show_bca = system.has_bca;
                 template.show_header = system.has_header;
+                template.show_dmi = system.has_dmi
+                    && ref_data
+                        .all_media_types
+                        .iter()
+                        .find(|media| media.code == template.media_type_code)
+                        .map_or(false, |media| media.dmi);
                 template.has_sample_start = system.has_sample_start;
             }
         }
@@ -1597,6 +1613,12 @@ fn apply_review_diff_context(
                 .iter()
                 .find(|media| media.code == old_media_type)
                 .map_or(false, |media| media.pic);
+            template.show_dmi = disc_edit::dmi_available_for_selection(
+                &ref_data.all_systems,
+                &ref_data.all_media_types,
+                &template.system_code,
+                &old_media_type,
+            );
         }
 
         template.show_error_count = disc_edit::error_count_available_for_selection(
@@ -2799,6 +2821,7 @@ mod tests {
             has_sector_ranges: true,
             has_header: true,
             has_bca: true,
+            has_dmi: false,
             has_sample_start: true,
             has_offset_extra: true,
             archives_dirty: false,
@@ -2817,6 +2840,7 @@ mod tests {
                     name: "DVD-ROM".to_string(),
                     layer_count: 2,
                     pic: false,
+                    dmi: false,
                     rom_extension: "iso".to_string(),
                     has_dummy_layer: false,
                 },
@@ -2825,6 +2849,7 @@ mod tests {
                     name: "Blu-ray".to_string(),
                     layer_count: 2,
                     pic: false,
+                    dmi: false,
                     rom_extension: "iso".to_string(),
                     has_dummy_layer: false,
                 },
@@ -3840,8 +3865,10 @@ mod tests {
 
     #[test]
     fn review_annotations_include_added_removed_sets_and_old_multiline_sidecars() {
-        let db = old_snapshot();
-        let submitted = submitted_snapshot();
+        let mut db = old_snapshot();
+        db["dmi"] = serde_json::json!("0000 : 01 02 03 04 05");
+        let mut submitted = submitted_snapshot();
+        submitted["dmi"] = serde_json::json!("0000 : 01 02 03 04 06");
         let ref_data = ref_data();
         let mut template = build_template(&submitted);
 
@@ -3882,6 +3909,10 @@ mod tests {
             .review_old_multiline
             .iter()
             .any(|old| old.field == "cue" && old.value == "old cue"));
+        assert!(template
+            .review_old_multiline
+            .iter()
+            .any(|old| old.field == "dmi" && old.value == "0000 : 01 02 03 04 05"));
         assert!(template
             .review_old_multiline
             .iter()
