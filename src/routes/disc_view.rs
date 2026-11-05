@@ -141,6 +141,9 @@ struct DiscViewTemplate {
     dmi_download_available: bool,
     dmi_is_gamecube: bool,
     dmi_show_placeholder: bool,
+    xbox_mid: String,
+    xbox_dmi_time: String,
+    xbox_ringcode: String,
     pic_rows: Vec<HeaderRow>,
     pic_length: String,
     pic_invalid: bool,
@@ -746,8 +749,9 @@ async fn disc_view(
     let is_wii_dmi = matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii");
     let dmi_show_placeholder = dmi_rows.len() == 5
         && (is_wii_dmi
-            || (detail.disc.system_code == "XBOX"
-                && detail.disc.media_type.code() == "xgd"));
+            || detail.disc.media_type.code() == "xgd");
+    let (xbox_mid, xbox_dmi_time, xbox_ringcode) =
+        parse_xbox_dmi(&detail.disc.system_code, detail.disc.dmi.as_deref());
     let dmi_placeholder_rows = if dmi_show_placeholder {
         let trailer = if is_wii_dmi {
             assert_eq!(
@@ -767,9 +771,7 @@ async fn disc_view(
         .system
         .has_dmi_for_media_type(&detail.disc.media_type)
         && detail.disc.dmi.as_ref().is_some_and(|data| {
-            if matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii")
-                || (detail.disc.system_code == "XBOX" && detail.disc.media_type.code() == "xgd")
-            {
+            if matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii" | "xgd") {
                 data.len() == 84
             } else {
                 data.len() == 2052
@@ -973,6 +975,9 @@ async fn disc_view(
             dmi_download_available,
             dmi_is_gamecube: detail.disc.media_type.code() == "dvd5gc",
             dmi_show_placeholder,
+            xbox_mid,
+            xbox_dmi_time,
+            xbox_ringcode,
             pic_rows: pic_dump
                 .as_ref()
                 .map(|dump| dump.rows.clone())
@@ -1754,6 +1759,72 @@ fn parse_header_rows_at_offset(data: &[u8], starting_row: usize) -> Vec<HeaderRo
         .collect()
 }
 
+fn parse_xbox_dmi(system_code: &str, stored_dmi: Option<&[u8]>) -> (String, String, String) {
+    const FILETIME_UNIX_EPOCH: u64 = 0x19DB1DED53E8000;
+
+    let is_360 = match system_code {
+        "XBOX" => false,
+        "XBOX360" => true,
+        _ => return (String::new(), String::new(), String::new()),
+    };
+    let Some(payload) = stored_dmi.and_then(|data| data.get(4..)) else {
+        return (String::new(), String::new(), String::new());
+    };
+
+    // Last 4 bytes of media GUID matches ringcode
+    let ringcode = if is_360 {
+        payload
+            .get(0x2C..0x30)
+            .map(|b| b.iter().map(|x| format!("{x:02X}")).collect())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let to_ascii = |bytes: &[u8]| -> String {
+        bytes
+            .iter()
+            .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+            .collect()
+    };
+
+    let mid = if is_360 {
+        payload
+            .get(0x40..0x50)
+            .map(|row| {
+                let end = row.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+                to_ascii(&row[..end])
+            })
+            .unwrap_or_default()
+    } else {
+        payload.get(0x8..0x10).map(to_ascii).unwrap_or_default()
+    };
+
+    let time = payload
+        .get(0x10..0x18)
+        .and_then(|b| <[u8; 8]>::try_from(b).ok())
+        .map(u64::from_le_bytes)
+        .and_then(|filetime| filetime.checked_sub(FILETIME_UNIX_EPOCH))
+        .and_then(|ticks| {
+            DateTime::<Utc>::from_timestamp(
+                (ticks / 10_000_000) as i64,
+                ((ticks % 10_000_000) * 100) as u32,
+            )
+        })
+        .map(|dt| {
+            if !is_360 {
+                dt.format("%Y-%m-%d").to_string()
+            } else if dt.timestamp_subsec_nanos() == 0 {
+                dt.format("%Y-%m-%d %H:%M:%S").to_string()
+            } else {
+                dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string()
+            }
+        })
+        .unwrap_or_default();
+
+    (mid, time, ringcode)
+}
+
 fn parse_scsi_dump(data: &[u8]) -> ScsiDump {
     let (length, invalid, payload) = match data {
         [msb, lsb, third, fourth, payload @ ..] => {
@@ -2072,18 +2143,18 @@ async fn disc_dmi_download(
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
 
-    if !detail
-        .system
-        .has_dmi_for_media_type(&detail.disc.media_type)
-    {
+    if !detail.system.has_dmi_for_media_type(&detail.disc.media_type) {
+        return Err(AppError::NotFound);
+    }
+
+    // Xbox 360 DMIs always have trailers, not deterministic
+    if detail.disc.media_type.code() == "xgd" && detail.disc.system_code == "XBOX360" {
         return Err(AppError::NotFound);
     }
 
     let stored_dmi = detail.disc.dmi.ok_or(AppError::NotFound)?;
     let is_wii_dmi = matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii");
-    let is_xbox_placeholder_dmi = detail.disc.system_code == "XBOX"
-        && detail.disc.media_type.code() == "xgd";
-    let is_placeholder_dmi = is_wii_dmi || is_xbox_placeholder_dmi;
+    let is_placeholder_dmi = is_wii_dmi || detail.disc.media_type.code() == "xgd";
     let payload = stored_dmi.get(4..).filter(|payload| {
         payload.len() == if is_placeholder_dmi { 80 } else { 2048 }
     }).ok_or(AppError::NotFound)?;
@@ -2365,6 +2436,9 @@ mod tests {
             dmi_download_available: false,
             dmi_is_gamecube: false,
             dmi_show_placeholder: false,
+            xbox_mid: String::new(),
+            xbox_dmi_time: String::new(),
+            xbox_ringcode: String::new(),
             pic_rows: Vec::new(),
             pic_length: String::new(),
             pic_invalid: false,

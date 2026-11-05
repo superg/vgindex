@@ -3399,7 +3399,7 @@ body:has(.disc-edit) footer.container hr {
 }
 
 textarea.hex-scrollable {
-    max-height: 400px;
+    max-height: 600px;
     overflow-y: auto;
     resize: vertical;
 }
