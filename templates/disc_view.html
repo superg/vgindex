@@ -604,6 +604,7 @@
             metadataRows.forEach(function(metadata) {
                 metadata.style.transform = '';
                 metadata.style.transformOrigin = '';
+                metadata.style.zoom = '';
             });
             wrapper.style.height = '';
             wrapper.style.overflow = '';
@@ -617,8 +618,7 @@
                 table.style.transform = 'scale(' + scale + ')';
                 table.style.transformOrigin = 'top left';
                 metadataRows.forEach(function(metadata) {
-                    metadata.style.transform = 'scale(' + scale + ')';
-                    metadata.style.transformOrigin = 'top left';
+                    metadata.style.zoom = scale;
                 });
                 wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
                 wrapper.style.overflow = 'hidden';
