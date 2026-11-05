@@ -97,7 +97,7 @@ pub fn canonicalize_disc_snapshot_hex_fields(snapshot: &mut Value) {
     if let Some(Value::String(value)) = fields.get_mut("dat") {
         *value = normalize_dat_hash_case(value);
     }
-    for field in ["pvd", "header", "bca", "pic"] {
+    for field in ["pvd", "header", "bca", "pic", "dmi"] {
         if let Some(Value::String(value)) = fields.get_mut(field) {
             *value = normalize_hex_dump_case(value);
         }
@@ -147,6 +147,7 @@ mod tests {
             "header": "000a : cc dd                                           cd",
             "bca": "eeff",
             "pic": "a1b2",
+            "dmi": "000a : cc dd                                           cd",
             "dat": "<rom crc=\"ABCDEF12\" md5=\"AABB\" sha1=\"CCDD\" />"
         });
 
@@ -167,6 +168,10 @@ mod tests {
         );
         assert_eq!(snapshot["bca"], "EEFF");
         assert_eq!(snapshot["pic"], "A1B2");
+        assert_eq!(
+            snapshot["dmi"],
+            "000A : CC DD                                           cd"
+        );
         assert_eq!(
             snapshot["dat"],
             "<rom crc=\"abcdef12\" md5=\"aabb\" sha1=\"ccdd\" />"

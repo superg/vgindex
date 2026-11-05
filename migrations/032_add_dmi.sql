@@ -1,0 +1,16 @@
+ALTER TABLE discs
+ADD COLUMN IF NOT EXISTS dmi BYTEA;
+
+ALTER TABLE systems
+ADD COLUMN IF NOT EXISTS has_dmi BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE media_types
+ADD COLUMN IF NOT EXISTS dmi BOOLEAN NOT NULL DEFAULT FALSE;
+
+UPDATE systems
+SET has_dmi = TRUE
+WHERE code IN ('PC', 'MAC', 'GAMEWAVE', 'GC', 'WII', 'XBOX', 'XBOX360');
+
+UPDATE media_types
+SET dmi = TRUE
+WHERE code IN ('xgd', 'dvd5', 'dvd9', 'dvd5wii', 'dvd5gc', 'dvd9wii');

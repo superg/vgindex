@@ -20,6 +20,9 @@ use crate::AppState;
 /// surfaces this exact value so the disc view can suppress the "Added" row.
 const NO_ADDED_SENTINEL: DateTime<Utc> = DateTime::<Utc>::UNIX_EPOCH;
 
+// Fixed bytes present at the end of all Wii DMI
+const WII_DMI_TRAILER: &[u8] = include_bytes!("../data/wii_dmi_trailer.bin");
+
 fn format_minute_timestamp(timestamp: Option<&DateTime<Utc>>) -> String {
     timestamp
         .map(|timestamp| timestamp.format("%Y-%m-%d %H:%M UTC").to_string())
@@ -67,6 +70,7 @@ pub fn routes() -> Router<AppState> {
         .route("/disc/{id}", get(disc_view))
         .route("/disc/{id}/cue", get(disc_cue_download))
         .route("/disc/{id}/sbi", get(disc_sbi_download))
+        .route("/disc/{id}/dmi", get(disc_dmi_download))
         .route("/disc/{id}/lsd", get(disc_lsd_download))
 }
 
@@ -130,6 +134,14 @@ struct DiscViewTemplate {
     show_sbi: bool,
     pvd_rows: Vec<PvdRow>,
     show_pvd: bool,
+    dmi_rows: Vec<HeaderRow>,
+    dmi_placeholder_rows: Vec<HeaderRow>,
+    dmi_length: String,
+    dmi_invalid: bool,
+    dmi_download_available: bool,
+    xbox_mid: String,
+    xbox_dmi_time: String,
+    xbox_ringcode: String,
     pic_rows: Vec<HeaderRow>,
     pic_length: String,
     pic_invalid: bool,
@@ -723,6 +735,46 @@ async fn disc_view(
         .as_ref()
         .map(|data| parse_scsi_dump(data));
 
+    let dmi_dump = detail
+        .disc
+        .dmi
+        .as_deref()
+        .map(parse_scsi_dump);
+    let dmi_rows = dmi_dump
+        .as_ref()
+        .map(|dump| dump.rows.clone())
+        .unwrap_or_default();
+    let is_wii_dmi = matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii");
+    let (xbox_mid, xbox_dmi_time, xbox_ringcode) =
+        parse_xbox_dmi(&detail.disc.system_code, detail.disc.dmi.as_deref());
+    let dmi_placeholder_rows = if dmi_rows.len() == 5
+        && (is_wii_dmi || detail.disc.media_type.code() == "xgd")
+    {
+        let trailer = if is_wii_dmi {
+            assert_eq!(
+                WII_DMI_TRAILER.len(),
+                (0x80 - 5) * 16,
+                "wii_dmi_trailer.bin must contain exactly 0x7B rows (0x7B0 bytes)",
+            );
+            WII_DMI_TRAILER.to_vec()
+        } else {
+            vec![0; (0x80 - 5) * 16]
+        };
+        parse_header_rows_at_offset(&trailer, 5)
+    } else {
+        Vec::new()
+    };
+    let dmi_download_available = detail
+        .system
+        .has_dmi_for_media_type(&detail.disc.media_type)
+        && detail.disc.dmi.as_ref().is_some_and(|data| {
+            if matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii" | "xgd") {
+                data.len() == 84
+            } else {
+                data.len() == 2052
+            }
+        });
+
     let cue_disc_meta = parse_cue_disc_meta(detail.disc.cue.as_deref().unwrap_or_default());
     
     let universal_hash = detail
@@ -907,6 +959,20 @@ async fn disc_view(
             show_sbi,
             pvd_rows,
             show_pvd: detail.system.has_pvd,
+            dmi_rows,
+            dmi_placeholder_rows,
+            dmi_length: dmi_dump
+                .as_ref()
+                .and_then(|dump| dump.length)
+                .map(|length| length.to_string())
+                .unwrap_or_default(),
+            dmi_invalid: dmi_dump.as_ref().is_some_and(|dump| {
+                dump.length != Some(2048) || dump.invalid
+            }),
+            dmi_download_available,
+            xbox_mid,
+            xbox_dmi_time,
+            xbox_ringcode,
             pic_rows: pic_dump
                 .as_ref()
                 .map(|dump| dump.rows.clone())
@@ -916,9 +982,9 @@ async fn disc_view(
                 .and_then(|dump| dump.length)
                 .map(|length| length.to_string())
                 .unwrap_or_default(),
-            pic_invalid: pic_dump
-                .as_ref()
-                .is_some_and(|dump| dump.invalid),
+            pic_invalid: pic_dump.as_ref().is_some_and(|dump| {
+                dump.length != Some(4096) || dump.invalid
+            }),
             cue_catalog: cue_disc_meta.catalog,
             cue_title: cue_disc_meta.title,
             cue_performer: cue_disc_meta.performer,
@@ -945,7 +1011,7 @@ async fn disc_view(
                 .map(|length| length.to_string())
                 .unwrap_or_default(),
             bca_invalid: bca_dump.as_ref().is_some_and(|dump| {
-                dump.invalid || dump.length != Some(188)
+                dump.length != Some(188) || dump.invalid
             }),
             bca_mastering_rows,
             show_bca: detail.system.has_bca,
@@ -1665,10 +1731,14 @@ fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
 }
 
 fn parse_header_rows(data: &[u8]) -> Vec<HeaderRow> {
+    parse_header_rows_at_offset(data, 0)
+}
+
+fn parse_header_rows_at_offset(data: &[u8], starting_row: usize) -> Vec<HeaderRow> {
     data.chunks(16)
         .enumerate()
         .map(|(i, chunk)| HeaderRow {
-            offset: format!("{:04X}", i * 16),
+            offset: format!("{:04X}", (starting_row + i) * 16),
             hex_contents: format_hex_bytes(chunk),
             ascii: chunk
                 .iter()
@@ -1682,6 +1752,72 @@ fn parse_header_rows(data: &[u8]) -> Vec<HeaderRow> {
                 .collect(),
         })
         .collect()
+}
+
+fn parse_xbox_dmi(system_code: &str, stored_dmi: Option<&[u8]>) -> (String, String, String) {
+    const FILETIME_UNIX_EPOCH: u64 = 0x19DB1DED53E8000;
+
+    let is_360 = match system_code {
+        "XBOX" => false,
+        "XBOX360" => true,
+        _ => return (String::new(), String::new(), String::new()),
+    };
+    let Some(payload) = stored_dmi.and_then(|data| data.get(4..)) else {
+        return (String::new(), String::new(), String::new());
+    };
+
+    // Last 4 bytes of media GUID matches ringcode
+    let ringcode = if is_360 {
+        payload
+            .get(0x2C..0x30)
+            .map(|b| b.iter().map(|x| format!("{x:02X}")).collect())
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let to_ascii = |bytes: &[u8]| -> String {
+        bytes
+            .iter()
+            .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+            .collect()
+    };
+
+    let mid = if is_360 {
+        payload
+            .get(0x40..0x50)
+            .map(|row| {
+                let end = row.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+                to_ascii(&row[..end])
+            })
+            .unwrap_or_default()
+    } else {
+        payload.get(0x8..0x10).map(to_ascii).unwrap_or_default()
+    };
+
+    let time = payload
+        .get(0x10..0x18)
+        .and_then(|b| <[u8; 8]>::try_from(b).ok())
+        .map(u64::from_le_bytes)
+        .and_then(|filetime| filetime.checked_sub(FILETIME_UNIX_EPOCH))
+        .and_then(|ticks| {
+            DateTime::<Utc>::from_timestamp(
+                (ticks / 10_000_000) as i64,
+                ((ticks % 10_000_000) * 100) as u32,
+            )
+        })
+        .map(|dt| {
+            if !is_360 {
+                dt.format("%Y-%m-%d").to_string()
+            } else if dt.timestamp_subsec_nanos() == 0 {
+                dt.format("%Y-%m-%d %H:%M:%S").to_string()
+            } else {
+                dt.format("%Y-%m-%d %H:%M:%S%.6f").to_string()
+            }
+        })
+        .unwrap_or_default();
+
+    (mid, time, ringcode)
 }
 
 fn parse_scsi_dump(data: &[u8]) -> ScsiDump {
@@ -1993,6 +2129,68 @@ async fn disc_lsd_download(
     ))
 }
 
+async fn disc_dmi_download(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    id: Result<Path<i32>, PathRejection>,
+) -> AppResult<impl IntoResponse> {
+    let id = crate::routes::path_i32(id)?;
+    let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
+
+    if !detail.system.has_dmi_for_media_type(&detail.disc.media_type) {
+        return Err(AppError::NotFound);
+    }
+
+    // Xbox 360 DMIs always have trailers, not deterministic
+    if detail.disc.media_type.code() == "xgd" && detail.disc.system_code == "XBOX360" {
+        return Err(AppError::NotFound);
+    }
+
+    let stored_dmi = detail.disc.dmi.ok_or(AppError::NotFound)?;
+    let is_wii_dmi = matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii");
+    let is_placeholder_dmi = is_wii_dmi || detail.disc.media_type.code() == "xgd";
+    let payload = stored_dmi.get(4..).filter(|payload| {
+        payload.len() == if is_placeholder_dmi { 80 } else { 2048 }
+    }).ok_or(AppError::NotFound)?;
+
+    let mut buf = Vec::with_capacity(2048);
+    buf.extend_from_slice(payload);
+    if is_placeholder_dmi {
+        let trailer = if is_wii_dmi {
+            WII_DMI_TRAILER
+        } else {
+            &[]
+        };
+        buf.extend_from_slice(trailer);
+        buf.resize(2048, 0);
+    }
+
+    let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
+    let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
+    let rom_base_name = build_rom_base_name(
+        &detail.disc.title,
+        &region_names,
+        &language_codes,
+        detail.disc.disc_number.as_deref(),
+        detail.disc.disc_title.as_deref(),
+        detail.disc.filename_suffix.as_deref(),
+    );
+    let filename = format!("{rom_base_name}.dmi");
+    let disposition = format!("attachment; filename=\"{filename}\"");
+
+    Ok((
+        [
+            (
+                http::header::CONTENT_TYPE,
+                "application/octet-stream".to_string(),
+            ),
+            (http::header::CONTENT_DISPOSITION, disposition),
+        ],
+        buf,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2226,6 +2424,14 @@ mod tests {
             show_sbi: false,
             pvd_rows: Vec::new(),
             show_pvd: false,
+            dmi_rows: Vec::new(),
+            dmi_placeholder_rows: Vec::new(),
+            dmi_length: String::new(),
+            dmi_invalid: false,
+            dmi_download_available: false,
+            xbox_mid: String::new(),
+            xbox_dmi_time: String::new(),
+            xbox_ringcode: String::new(),
             pic_rows: Vec::new(),
             pic_length: String::new(),
             pic_invalid: false,

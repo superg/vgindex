@@ -28,7 +28,9 @@ CREATE TABLE media_types (
     name TEXT NOT NULL UNIQUE,
     layer_count INTEGER NOT NULL,
     pic INTEGER NOT NULL,
-    rom_extension TEXT NOT NULL
+    dmi INTEGER NOT NULL,
+    rom_extension TEXT NOT NULL,
+    has_dummy_layer INTEGER NOT NULL
 );
 
 CREATE TABLE categories (
@@ -75,6 +77,7 @@ CREATE TABLE systems (
     has_pvd INTEGER NOT NULL,
     has_header INTEGER NOT NULL,
     has_bca INTEGER NOT NULL,
+    has_dmi INTEGER NOT NULL,
     has_sample_start INTEGER NOT NULL,
     has_offset_extra INTEGER NOT NULL
 );
@@ -107,9 +110,16 @@ CREATE TABLE discs (
     pvd BLOB,
     header BLOB,
     bca BLOB,
+    dmi BLOB,
     pic BLOB,
     cue TEXT,
     status TEXT NOT NULL CHECK (status IN ('Questionable', 'Unverified', 'Verified'))
+);
+
+CREATE TABLE disc_bca_mastering (
+    id INTEGER PRIMARY KEY,
+    disc_id INTEGER NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
+    data BLOB NOT NULL CHECK (length(data) = 16)
 );
 
 CREATE TABLE disc_regions (
@@ -173,7 +183,16 @@ struct MediaTypeRow {
     name: String,
     layer_count: i32,
     pic: bool,
+    dmi: bool,
     rom_extension: String,
+    has_dummy_layer: bool,
+}
+
+#[derive(sqlx::FromRow)]
+struct DiscBcaMasteringRow {
+    id: i32,
+    disc_id: i32,
+    data: Vec<u8>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -216,6 +235,7 @@ struct SystemRow {
     has_pvd: bool,
     has_header: bool,
     has_bca: bool,
+    has_dmi: bool,
     has_sample_start: bool,
     has_offset_extra: bool,
 }
@@ -249,6 +269,7 @@ struct DiscRow {
     pvd: Option<Vec<u8>>,
     header: Option<Vec<u8>>,
     bca: Option<Vec<u8>>,
+    dmi: Option<Vec<u8>>,
     pic: Option<Vec<u8>>,
     cue: Option<String>,
     status: String,
@@ -486,7 +507,11 @@ async fn generate_export_inner(
         table = "discs"
     );
     tracing::info!(
-        rows = export_disc_regions(&mut postgres, &mut output).await?,
+        rows = export_disc_bca_mastering(&mut postgres, &mut output).await?,
+        table = "disc_bca_mastering"
+    );
+    tracing::info!(
+        rows = export_disc_regions(&mut postgres, &mut output).await?, 
         table = "disc_regions"
     );
     tracing::info!(
@@ -565,16 +590,19 @@ async fn export_media_types(
 ) -> AppResult<u64> {
     let mut count = 0;
     let mut rows = sqlx::query_as::<_, MediaTypeRow>(
-        "SELECT code, name, layer_count, pic, rom_extension FROM media_types ORDER BY code",
+        "SELECT code, name, layer_count, pic, dmi, rom_extension, has_dummy_layer
+         FROM media_types ORDER BY code",
     )
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
-        sqlx::query("INSERT INTO media_types VALUES (?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO media_types VALUES (?, ?, ?, ?, ?, ?, ?)")
             .bind(row.code)
             .bind(row.name)
             .bind(row.layer_count)
             .bind(row.pic)
+            .bind(row.dmi)
             .bind(row.rom_extension)
+            .bind(row.has_dummy_layer)
             .execute(&mut **sqlite)
             .await?;
         count += 1;
@@ -649,14 +677,14 @@ async fn export_systems(
                 has_title_foreign, has_disc_number, has_disc_title, has_disc_title_foreign,
                 has_serial, has_edition, has_barcode, has_version, has_exe_date, has_edc,
                 has_error_count, has_universal_hash, has_protection,
-                has_sector_ranges, has_sbi, has_pvd, has_header, has_bca,
+                has_sector_ranges, has_sbi, has_pvd, has_header, has_bca, has_dmi,
                 has_sample_start, has_offset_extra
          FROM systems ORDER BY code",
     )
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.code)
         .bind(row.system_type)
@@ -682,6 +710,7 @@ async fn export_systems(
         .bind(row.has_pvd)
         .bind(row.has_header)
         .bind(row.has_bca)
+        .bind(row.has_dmi)
         .bind(row.has_sample_start)
         .bind(row.has_offset_extra)
         .execute(&mut **sqlite)
@@ -706,7 +735,7 @@ async fn export_discs(
                 to_json(layerbreaks)::text AS layerbreaks,
                 universal_hash, comments, contents, protection,
                 to_json(sector_ranges)::text AS sector_ranges,
-                sbi, pvd, header, bca, pic, cue, status::text AS status
+                sbi, pvd, header, bca, dmi, pic, cue, status::text AS status
          FROM discs
          WHERE status <> 'Disabled'
          ORDER BY id",
@@ -714,7 +743,7 @@ async fn export_discs(
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.id)
         .bind(row.system_code)
@@ -743,11 +772,35 @@ async fn export_discs(
         .bind(row.pvd)
         .bind(row.header)
         .bind(row.bca)
+        .bind(row.dmi)
         .bind(row.pic)
         .bind(row.cue)
         .bind(row.status)
         .execute(&mut **sqlite)
         .await?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+async fn export_disc_bca_mastering(
+    postgres: &mut Transaction<'_, Postgres>,
+    sqlite: &mut Transaction<'_, Sqlite>,
+) -> AppResult<u64> {
+    let mut count = 0;
+    let mut rows = sqlx::query_as::<_, DiscBcaMasteringRow>(
+        "SELECT b.id, b.disc_id, b.data
+         FROM disc_bca_mastering b JOIN discs d ON d.id = b.disc_id
+         WHERE d.status <> 'Disabled' ORDER BY b.id",
+    )
+    .fetch(&mut **postgres);
+    while let Some(row) = rows.try_next().await? {
+        sqlx::query("INSERT INTO disc_bca_mastering VALUES (?, ?, ?)")
+            .bind(row.id)
+            .bind(row.disc_id)
+            .bind(row.data)
+            .execute(&mut **sqlite)
+            .await?;
         count += 1;
     }
     Ok(count)

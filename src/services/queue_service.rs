@@ -715,6 +715,7 @@ fn is_nullable_scalar_field(key: &str) -> bool {
             | "header"
             | "bca"
             | "pic"
+            | "dmi"
             | "cuesheet"
             | "dat"
             | "layerbreaks"
