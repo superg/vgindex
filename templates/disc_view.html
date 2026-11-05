@@ -469,7 +469,7 @@
 
 {% if !dmi_rows.is_empty() %}
 <section class="left-section detail-section dmi-section">
-    {% if dmi_show_placeholder %}
+    {% if !dmi_placeholder_rows.is_empty() %}
     <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-placeholder-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
     {% let is_360 = system_code == "XBOX360" %}
     <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
@@ -504,8 +504,8 @@
     </table>
     </div>
     {% if dmi_download_available && !is_360 %}<p><a href="/disc/{{ disc_id }}/dmi">Download DMI</a></p>{% endif %}
-    {% else if dmi_is_gamecube && dmi_rows.len() > 4 %}
-    <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-gc-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
+    {% else %}
+    <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
     <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table dmi-table">
@@ -517,49 +517,7 @@
             <tr><td><code>{{ row.offset }}</code></td><td><code>{{ row.hex_contents }}</code></td><td><code>{{ row.ascii }}</code></td></tr>
             {% endfor %}
             {% for row in dmi_rows.iter().skip(4) %}
-            <tr class="dmi-gc-remainder" hidden><td><code>{{ row.offset }}</code></td><td><code>{{ row.hex_contents }}</code></td><td><code>{{ row.ascii }}</code></td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-    {% if dmi_download_available %}<p><a href="/disc/{{ disc_id }}/dmi">Download DMI</a></p>{% endif %}
-    {% else if dmi_rows.len() > 20 %}
-    <details>
-        <summary><h3>DMI</h3></summary>
-        <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
-        <div class="table-scroll table-scroll-compact">
-        <table class="table-nowrap binary-table dmi-table">
-            <thead>
-                <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
-            </thead>
-            <tbody>
-                {% for row in dmi_rows %}
-                <tr>
-                    <td><code>{{ row.offset }}</code></td>
-                    <td><code>{{ row.hex_contents }}</code></td>
-                    <td><code>{{ row.ascii }}</code></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        </div>
-        {% if dmi_download_available %}<p><a href="/disc/{{ disc_id }}/dmi">Download DMI</a></p>{% endif %}
-    </details>
-    {% else %}
-    <h3>DMI</h3>
-    <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
-    <div class="table-scroll table-scroll-compact">
-    <table class="table-nowrap binary-table dmi-table">
-        <thead>
-            <tr><th>Row</th><th>Contents</th><th>ASCII</th></tr>
-        </thead>
-        <tbody>
-            {% for row in dmi_rows %}
-            <tr>
-                <td><code>{{ row.offset }}</code></td>
-                <td><code>{{ row.hex_contents }}</code></td>
-                <td><code>{{ row.ascii }}</code></td>
-            </tr>
+            <tr class="dmi-remainder" hidden><td><code>{{ row.offset }}</code></td><td><code>{{ row.hex_contents }}</code></td><td><code>{{ row.ascii }}</code></td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -642,11 +600,11 @@
             }
             table.style.transform = '';
             table.style.transformOrigin = '';
-            var metadata = wrapper.closest('.detail-section')?.querySelector('.binary-metadata');
-            if (metadata) {
+            var metadataRows = wrapper.closest('.detail-section')?.querySelectorAll('.binary-metadata') || [];
+            metadataRows.forEach(function(metadata) {
                 metadata.style.transform = '';
                 metadata.style.transformOrigin = '';
-            }
+            });
             wrapper.style.height = '';
             wrapper.style.overflow = '';
             wrapper.style.width = '';
@@ -658,10 +616,10 @@
                 var scale = containerWidth / tableWidth;
                 table.style.transform = 'scale(' + scale + ')';
                 table.style.transformOrigin = 'top left';
-                if (metadata) {
+                metadataRows.forEach(function(metadata) {
                     metadata.style.transform = 'scale(' + scale + ')';
                     metadata.style.transformOrigin = 'top left';
-                }
+                });
                 wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
                 wrapper.style.overflow = 'hidden';
                 refreshDetailSectionFit(wrapper, true);

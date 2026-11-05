@@ -139,8 +139,6 @@ struct DiscViewTemplate {
     dmi_length: String,
     dmi_invalid: bool,
     dmi_download_available: bool,
-    dmi_is_gamecube: bool,
-    dmi_show_placeholder: bool,
     xbox_mid: String,
     xbox_dmi_time: String,
     xbox_ringcode: String,
@@ -747,12 +745,11 @@ async fn disc_view(
         .map(|dump| dump.rows.clone())
         .unwrap_or_default();
     let is_wii_dmi = matches!(detail.disc.media_type.code(), "dvd5wii" | "dvd9wii");
-    let dmi_show_placeholder = dmi_rows.len() == 5
-        && (is_wii_dmi
-            || detail.disc.media_type.code() == "xgd");
     let (xbox_mid, xbox_dmi_time, xbox_ringcode) =
         parse_xbox_dmi(&detail.disc.system_code, detail.disc.dmi.as_deref());
-    let dmi_placeholder_rows = if dmi_show_placeholder {
+    let dmi_placeholder_rows = if dmi_rows.len() == 5
+        && (is_wii_dmi || detail.disc.media_type.code() == "xgd")
+    {
         let trailer = if is_wii_dmi {
             assert_eq!(
                 WII_DMI_TRAILER.len(),
@@ -973,8 +970,6 @@ async fn disc_view(
                 dump.length != Some(2048) || dump.invalid
             }),
             dmi_download_available,
-            dmi_is_gamecube: detail.disc.media_type.code() == "dvd5gc",
-            dmi_show_placeholder,
             xbox_mid,
             xbox_dmi_time,
             xbox_ringcode,
@@ -2434,8 +2429,6 @@ mod tests {
             dmi_length: String::new(),
             dmi_invalid: false,
             dmi_download_available: false,
-            dmi_is_gamecube: false,
-            dmi_show_placeholder: false,
             xbox_mid: String::new(),
             xbox_dmi_time: String::new(),
             xbox_ringcode: String::new(),
