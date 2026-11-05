@@ -471,7 +471,7 @@
 <section class="left-section detail-section dmi-section">
     {% if dmi_show_placeholder %}
     <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-placeholder-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
-    {% if dmi_invalid %}<p class="binary-metadata"><span class="binary-metadata-warning">Unexpected SCSI header</span></p>{% endif %}
+    <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table dmi-table">
         <thead>
@@ -498,7 +498,7 @@
     {% if dmi_download_available %}<p><a href="/disc/{{ disc_id }}/dmi">Download DMI</a></p>{% endif %}
     {% else if dmi_is_gamecube && dmi_rows.len() > 4 %}
     <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-gc-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
-    {% if dmi_invalid %}<p class="binary-metadata"><span class="binary-metadata-warning">Unexpected SCSI header</span></p>{% endif %}
+    <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table dmi-table">
         <thead>
@@ -518,7 +518,7 @@
     {% else if dmi_rows.len() > 20 %}
     <details>
         <summary><h3>DMI</h3></summary>
-        {% if dmi_invalid %}<p class="binary-metadata"><span class="binary-metadata-warning">Unexpected SCSI header</span></p>{% endif %}
+        <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
         <div class="table-scroll table-scroll-compact">
         <table class="table-nowrap binary-table dmi-table">
             <thead>
@@ -539,7 +539,7 @@
     </details>
     {% else %}
     <h3>DMI</h3>
-    {% if dmi_invalid %}<p class="binary-metadata"><span class="binary-metadata-warning">Unexpected SCSI header</span></p>{% endif %}
+    <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table dmi-table">
         <thead>

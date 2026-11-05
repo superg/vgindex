@@ -1072,14 +1072,14 @@ async fn edit_page(
                 .disc
                 .pic
                 .as_ref()
-                .map(|data| format_header_hex_dump(data))
+                .map(|data| format_compact_hex(data))
                 .unwrap_or_default(),
             show_bca: detail.system.has_bca,
             bca_hex: detail
                 .disc
                 .bca
                 .as_ref()
-                .map(|data| format_header_hex_dump(data))
+                .map(|data| format_compact_hex(data))
                 .unwrap_or_default(),
             show_bca_mastering: validation::media_allows_bca_mastering(&detail.disc.media_type.code()),
             bca_masterings: detail
@@ -1105,7 +1105,7 @@ async fn edit_page(
                 detail.disc.media_type.code(),
             ),
             media_has_dmi_json: media_has_dmi_json.clone(),
-            dmi_hex: detail.disc.dmi.as_deref().map(|data| format_header_hex_dump(data)).unwrap_or_default(),
+            dmi_hex: detail.disc.dmi.as_deref().map(|data| format_compact_hex(data)).unwrap_or_default(),
 
             show_universal_hash: detail.system.has_universal_hash,
             show_protection: detail.system.has_protection,
@@ -1882,13 +1882,13 @@ async fn render_form_with_context(
 
         layerbreaks: form.layerbreak.clone(),
         show_pvd: has_sys(|s| s.has_pvd),
-        pvd_hex: normalize_hex_dump_for_render(form.pvd.as_deref(), true),
+        pvd_hex: normalize_hex_dump_for_render(form.pvd.as_deref(), HexStyle::Pvd),
         show_pic: media_pic,
         media_has_pic_json,
         media_has_dummy_layer_json,
-        pic_hex: normalize_hex_dump_for_render(form.pic.as_deref(), false),
+        pic_hex: normalize_hex_dump_for_render(form.pic.as_deref(), HexStyle::Compact),
         show_bca: has_sys(|s| s.has_bca),
-        bca_hex: normalize_hex_dump_for_render(form.bca.as_deref(), false),
+        bca_hex: normalize_hex_dump_for_render(form.bca.as_deref(), HexStyle::Compact),
         show_bca_mastering: validation::media_allows_bca_mastering(form.media_type.trim()),
         bca_masterings: form
             .bca_mastering
@@ -1901,7 +1901,7 @@ async fn render_form_with_context(
             })
             .collect(),
         show_header: has_sys(|s| s.has_header),
-        header_hex: normalize_hex_dump_for_render(form.header.as_deref(), false),
+        header_hex: normalize_hex_dump_for_render(form.header.as_deref(), HexStyle::Header),
         show_dmi: dmi_available_for_selection(
             &ref_data.all_systems,
             &ref_data.all_media_types,
@@ -1909,7 +1909,7 @@ async fn render_form_with_context(
             &form.media_type,
         ),
         media_has_dmi_json,
-        dmi_hex: normalize_hex_dump_for_render(form.dmi.as_deref(), false),
+        dmi_hex: normalize_hex_dump_for_render(form.dmi.as_deref(), HexStyle::Compact),
 
         show_universal_hash: has_sys(|s| s.has_universal_hash),
         show_protection: has_sys(|s| s.has_protection),
@@ -2258,7 +2258,14 @@ fn norm_opt_multiline_str(s: Option<&str>) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-fn normalize_hex_dump_for_render(text: Option<&str>, is_pvd: bool) -> String {
+#[derive(Clone, Copy)]
+enum HexStyle {
+    Pvd,
+    Header,
+    Compact,
+}
+
+fn normalize_hex_dump_for_render(text: Option<&str>, style: HexStyle) -> String {
     let Some(text) = text else {
         return String::new();
     };
@@ -2268,10 +2275,10 @@ fn normalize_hex_dump_for_render(text: Option<&str>, is_pvd: bool) -> String {
     let Ok(bytes) = disc_service::parse_binary_hex_input(text) else {
         return text.to_string();
     };
-    if is_pvd {
-        format_pvd_hex_dump(&bytes)
-    } else {
-        format_header_hex_dump(&bytes)
+    match style {
+        HexStyle::Pvd => format_pvd_hex_dump(&bytes),
+        HexStyle::Header => format_header_hex_dump(&bytes),
+        HexStyle::Compact => format_compact_hex(&bytes),
     }
 }
 
@@ -3199,13 +3206,13 @@ pub(crate) fn build_flat_changes(
         "edc": new_edc,
         "layerbreaks": new_layerbreaks,
         "pvd": norm_opt_multiline_str(form.pvd.as_deref()).map(|s| normalize_pvd_hex_dump(&s)),
-        "pic": norm_opt_multiline_str(form.pic.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
-        "bca": norm_opt_multiline_str(form.bca.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
+        "pic": norm_opt_multiline_str(form.pic.as_deref()).map(|s| normalize_compact_hex(&s)),
+        "bca": norm_opt_multiline_str(form.bca.as_deref()).map(|s| normalize_compact_hex(&s)),
         "bca_mastering": new_bca_mastering,
         "header": norm_opt_multiline_str(form.header.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
         "dmi": norm_opt_multiline_str(form.dmi.as_deref())
             .and_then(|text| disc_service::parse_dmi_input(&text, form.media_type.trim()).ok().flatten())
-            .map(|bytes| format_header_hex_dump(&bytes)),
+            .map(|bytes| format_compact_hex(&bytes)),
         "protection": norm_opt_multiline_str(form.protection.as_deref()),
         "sbi": new_sbi,
         "universal_hash": new_universal_hash,
@@ -3962,7 +3969,7 @@ fn build_add_submission_changes(
             if let Ok(bytes) = disc_service::parse_binary_hex_input(bca) {
                 derived_bca_mastering = derive_bca_mastering_tail(&bytes);
                 add_form.bca = if !bytes.is_empty() && bytes.len() == 192 {
-                    Some(format_header_hex_dump(&bytes))
+                    Some(format_compact_hex(&bytes))
                 } else {
                     None
                 };
@@ -4005,13 +4012,22 @@ mod operation_delta_tests {
 
     #[test]
     fn optional_binary_hex_fields_do_not_autofill_blank_values() {
-        assert_eq!(normalize_hex_dump_for_render(None, true), "");
+        assert_eq!(normalize_hex_dump_for_render(None, HexStyle::Pvd), "");
 
         for blank in ["", "   ", "\r\n\t"] {
-            assert_eq!(normalize_hex_dump_for_render(Some(blank), true), "", "PVD");
-            for field in ["Header", "BCA", "PIC"] {
+            assert_eq!(
+                normalize_hex_dump_for_render(Some(blank), HexStyle::Pvd),
+                "",
+                "PVD"
+            );
+            for (field, style) in [
+                ("Header", HexStyle::Header),
+                ("BCA", HexStyle::Compact),
+                ("PIC", HexStyle::Compact),
+                ("DMI", HexStyle::Compact),
+            ] {
                 assert_eq!(
-                    normalize_hex_dump_for_render(Some(blank), false),
+                    normalize_hex_dump_for_render(Some(blank), style),
                     "",
                     "{field}"
                 );
@@ -4022,15 +4038,32 @@ mod operation_delta_tests {
     #[test]
     fn nonempty_pvd_is_canonicalized_for_render() {
         assert_eq!(
-            normalize_hex_dump_for_render(Some("a1 b2"), true),
+            normalize_hex_dump_for_render(Some("a1 b2"), HexStyle::Pvd),
             format_pvd_hex_dump(&[0xa1, 0xb2])
+        );
+    }
+
+    #[test]
+    fn compact_fields_render_as_space_separated_hex_from_either_input_format() {
+        let expected = "A1 B2 C3";
+        let hex_dump = format_header_hex_dump(&[0xa1, 0xb2, 0xc3]);
+        for input in [hex_dump.as_str(), "a1 b2 c3", "a1b2c3"] {
+            assert_eq!(
+                normalize_hex_dump_for_render(Some(input), HexStyle::Compact),
+                expected
+            );
+            assert_eq!(normalize_compact_hex(input), expected);
+        }
+        assert_eq!(
+            normalize_hex_dump_for_render(Some("a1 b2 c3"), HexStyle::Header),
+            format_header_hex_dump(&[0xa1, 0xb2, 0xc3])
         );
     }
 
     #[test]
     fn invalid_binary_hex_input_is_preserved_for_render() {
         assert_eq!(
-            normalize_hex_dump_for_render(Some("not hex"), true),
+            normalize_hex_dump_for_render(Some("not hex"), HexStyle::Pvd),
             "not hex"
         );
     }
@@ -4285,7 +4318,7 @@ mod operation_delta_tests {
             bca: None,
             bca_mastering: vec![],
             header: None,
-            dmi: detail.disc.dmi.as_ref().map(|data| format_header_hex_dump(data)),
+            dmi: detail.disc.dmi.as_ref().map(|data| format_compact_hex(data)),
             protection: detail.disc.protection.clone(),
             sector_ranges: None,
             sbi: detail.disc.sbi.clone(),
@@ -5371,12 +5404,13 @@ mod operation_delta_tests {
         );
         let expected = format_header_hex_dump(&[0xa1, 0xb2, 0xc3, 0xd4]);
         let expected_pvd = format_pvd_hex_dump(&pvd_bytes[..82]);
-        let expected_dmi = format_header_hex_dump(&dmi_bytes);
+        let expected_compact = format_compact_hex(&[0xa1, 0xb2, 0xc3, 0xd4]);
+        let expected_dmi = format_compact_hex(&dmi_bytes);
 
         assert_eq!(snapshot["pvd"].as_str().unwrap(), expected_pvd);
         assert_eq!(snapshot["header"].as_str().unwrap(), expected);
-        assert_eq!(snapshot["bca"].as_str().unwrap(), expected);
-        assert_eq!(snapshot["pic"].as_str().unwrap(), expected);
+        assert_eq!(snapshot["bca"].as_str().unwrap(), expected_compact);
+        assert_eq!(snapshot["pic"].as_str().unwrap(), expected_compact);
         assert_eq!(snapshot["dmi"].as_str().unwrap(), expected_dmi);
         assert_eq!(
             snapshot["sbi"],
@@ -5680,7 +5714,7 @@ mod operation_delta_tests {
 
         assert_eq!(
             changes["bca"]["add"]["new"],
-            format_header_hex_dump(&bytes[..192])
+            format_compact_hex(&bytes[..192])
         );
         assert_eq!(changes["bca_mastering"], serde_json::json!({ "add": ["10".repeat(16)] }));
         let resolved = queue_service::resolve_submission_snapshot(
@@ -5688,7 +5722,7 @@ mod operation_delta_tests {
             &changes,
         )
         .unwrap();
-        assert_eq!(resolved["bca"], format_header_hex_dump(&bytes[..192]));
+        assert_eq!(resolved["bca"], format_compact_hex(&bytes[..192]));
         assert_eq!(resolved["bca_mastering"], serde_json::json!(["10".repeat(16)]));
     }
 
@@ -6096,7 +6130,7 @@ mod operation_delta_tests {
 
         form.dmi = Some("  ".to_string());
         let blank = build_sparse_edit_changes(&form, &detail, &media, &systems);
-        assert_eq!(blank["dmi"], serde_json::json!({ "remove": { "old": format_header_hex_dump(&original_dmi) } }));
+        assert_eq!(blank["dmi"], serde_json::json!({ "remove": { "old": format_compact_hex(&original_dmi) } }));
 
         let mut changed_dmi = original_dmi.clone();
         changed_dmi[4] = 6;
@@ -6104,8 +6138,8 @@ mod operation_delta_tests {
         let changed = build_sparse_edit_changes(&form, &detail, &media, &systems);
         assert_eq!(changed["dmi"], serde_json::json!({
             "modify": {
-                "old": format_header_hex_dump(&original_dmi),
-                "new": format_header_hex_dump(&changed_dmi)
+                "old": format_compact_hex(&original_dmi),
+                "new": format_compact_hex(&changed_dmi)
             }
         }));
 
@@ -6120,12 +6154,12 @@ mod operation_delta_tests {
         let unavailable = build_sparse_edit_changes(&form, &detail, &media, &systems);
         assert_eq!(
             unavailable["dmi"],
-            serde_json::json!({ "remove": { "old": format_header_hex_dump(&original_dmi) } })
+            serde_json::json!({ "remove": { "old": format_compact_hex(&original_dmi) } })
         );
     }
 
     #[test]
-    fn dmi_add_and_resolve_uses_truncated_effective_value() {
+    fn dmi_add_and_resolve_uses_truncated_xgd_effective_value() {
         let mut form = new_disc_form();
         form.system_code = "SYS".to_string();
         form.media_type = "xgd".to_string();
@@ -6141,8 +6175,8 @@ mod operation_delta_tests {
 
         let changes = build_new_disc_changes(&form, &media, &systems);
         let effective = queue_service::resolve_submission_snapshot(&serde_json::json!({}), &changes).unwrap();
-        assert_eq!(changes["dmi"]["add"]["new"], format_header_hex_dump(&bytes[..0x54]));
-        assert_eq!(effective["dmi"], format_header_hex_dump(&bytes[..0x54]));
+        assert_eq!(changes["dmi"]["add"]["new"], format_compact_hex(&bytes[..0x54]));
+        assert_eq!(effective["dmi"], format_compact_hex(&bytes[..0x54]));
 
         bytes[4..0x54].fill(0);
         bytes[0x54] = 0x22;
@@ -6876,6 +6910,16 @@ pub(crate) fn normalize_binary_hex_dump(text: &str) -> String {
     let bytes = disc_service::parse_binary_hex_input(text)
         .expect("binary hex fields should be validated before normalization");
     format_header_hex_dump(&bytes)
+}
+
+pub(crate) fn normalize_compact_hex(text: &str) -> String {
+    let bytes = disc_service::parse_binary_hex_input(text)
+        .expect("binary hex fields should be validated before normalization");
+    format_compact_hex(&bytes)
+}
+
+pub(crate) fn format_compact_hex(data: &[u8]) -> String {
+    disc_service::format_space_separated_hex(data)
 }
 
 pub(crate) fn format_pvd_hex_dump(data: &[u8]) -> String {

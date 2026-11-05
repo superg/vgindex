@@ -1700,7 +1700,7 @@ mod tests {
         snapshot = build_snapshot_from_disc(&detail);
         assert_eq!(
             snapshot["dmi"].as_str().unwrap(),
-            format_hex_dump_snapshot(&[0xde, 0xad, 0xbe, 0xef, 0x01, 0x23], 0)
+            "DE AD BE EF 01 23"
         );
         let layers = snapshot["ring_codes"][0]["layers"].as_array().unwrap();
 
@@ -2291,6 +2291,13 @@ fn format_hex_dump_snapshot(data: &[u8], base_addr: usize) -> String {
     out
 }
 
+pub(crate) fn format_space_separated_hex(data: &[u8]) -> String {
+    data.iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn format_pvd_hex_snapshot(data: &[u8]) -> String {
     const PVD_FULL_SIZE: usize = 96;
     const PVD_STORED_SIZE: usize = 82;
@@ -2395,9 +2402,9 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "edc": edc_value,
         "layerbreaks": detail.disc.layerbreaks.clone().unwrap_or_default(),
         "pvd": detail.disc.pvd.as_ref().map(|d| format_pvd_hex_snapshot(d)),
-        "pic": detail.disc.pic.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
-        "dmi": detail.disc.dmi.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
-        "bca": detail.disc.bca.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
+        "pic": detail.disc.pic.as_ref().map(|d| format_space_separated_hex(d)),
+        "dmi": detail.disc.dmi.as_ref().map(|d| format_space_separated_hex(d)),
+        "bca": detail.disc.bca.as_ref().map(|d| format_space_separated_hex(d)),
         "bca_mastering": detail.bca_mastering.iter().map(|d| crate::services::validation::format_bca_mastering_record(d)).collect::<Vec<_>>(),
         "header": detail.disc.header.as_ref().map(|d| format_hex_dump_snapshot(d, 0x0000)),
         "protection": detail.disc.protection,

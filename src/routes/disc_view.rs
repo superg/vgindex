@@ -136,6 +136,7 @@ struct DiscViewTemplate {
     show_pvd: bool,
     dmi_rows: Vec<HeaderRow>,
     dmi_placeholder_rows: Vec<HeaderRow>,
+    dmi_length: String,
     dmi_invalid: bool,
     dmi_download_available: bool,
     dmi_is_gamecube: bool,
@@ -762,9 +763,6 @@ async fn disc_view(
     } else {
         Vec::new()
     };
-    let dmi_invalid = dmi_dump.as_ref().is_some_and(|dump| {
-        dump.length != Some(2048) || dump.invalid
-    });
     let dmi_download_available = detail
         .system
         .has_dmi_for_media_type(&detail.disc.media_type)
@@ -964,7 +962,14 @@ async fn disc_view(
             show_pvd: detail.system.has_pvd,
             dmi_rows,
             dmi_placeholder_rows,
-            dmi_invalid,
+            dmi_length: dmi_dump
+                .as_ref()
+                .and_then(|dump| dump.length)
+                .map(|length| length.to_string())
+                .unwrap_or_default(),
+            dmi_invalid: dmi_dump.as_ref().is_some_and(|dump| {
+                dump.length != Some(2048) || dump.invalid
+            }),
             dmi_download_available,
             dmi_is_gamecube: detail.disc.media_type.code() == "dvd5gc",
             dmi_show_placeholder,
@@ -977,9 +982,9 @@ async fn disc_view(
                 .and_then(|dump| dump.length)
                 .map(|length| length.to_string())
                 .unwrap_or_default(),
-            pic_invalid: pic_dump
-                .as_ref()
-                .is_some_and(|dump| dump.invalid),
+            pic_invalid: pic_dump.as_ref().is_some_and(|dump| {
+                dump.length != Some(4096) || dump.invalid
+            }),
             cue_catalog: cue_disc_meta.catalog,
             cue_title: cue_disc_meta.title,
             cue_performer: cue_disc_meta.performer,
@@ -1006,7 +1011,7 @@ async fn disc_view(
                 .map(|length| length.to_string())
                 .unwrap_or_default(),
             bca_invalid: bca_dump.as_ref().is_some_and(|dump| {
-                dump.invalid || dump.length != Some(188)
+                dump.length != Some(188) || dump.invalid
             }),
             bca_mastering_rows,
             show_bca: detail.system.has_bca,
@@ -2355,6 +2360,7 @@ mod tests {
             show_pvd: false,
             dmi_rows: Vec::new(),
             dmi_placeholder_rows: Vec::new(),
+            dmi_length: String::new(),
             dmi_invalid: false,
             dmi_download_available: false,
             dmi_is_gamecube: false,
