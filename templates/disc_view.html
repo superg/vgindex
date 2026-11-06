@@ -400,7 +400,7 @@
 <section class="left-section detail-section">
     <details>
         <summary><h3>BCA</h3></summary>
-        <p class="binary-metadata"><strong>Length</strong> <code>{{ bca_length }}</code>{% if bca_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
+        <p class="binary-metadata"><strong>BCA Length</strong> <code>{{ bca_length }}</code>{% if bca_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
         <div class="table-scroll table-scroll-compact">
         <table class="table-nowrap binary-table">
             <thead>
@@ -423,10 +423,15 @@
 
 {% if !pic_rows.is_empty() %}
 <section class="left-section detail-section">
+    <h3>PIC</h3>
+    <p class="binary-metadata"><strong>PIC Length</strong> <code>{{ pic_length }}</code>{% if pic_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
+    {% if let Some(disc_type) = pic_metadata.disc_type %}<p class="binary-metadata"><strong>Disc Type</strong> <code>{{ disc_type }}</code></p>{% else %}<p class="binary-metadata"><span class="binary-metadata-warning">Unknown disc type</span></p>{% endif %}
+    {% if let Some(physical_size) = pic_metadata.physical_size %}<p class="binary-metadata"><strong>Physical Size</strong> <code>{{ physical_size }}</code></p>{% endif %}
+    {% if pic_metadata.size_mismatch %}<p class="binary-metadata"><span class="binary-metadata-warning">PIC size mismatch</span></p>{% endif %}
+    {% if pic_metadata.layerbreak_mismatch %}<p class="binary-metadata"><span class="binary-metadata-warning">PIC layerbreak(s) mismatch</span></p>{% endif %}
     {% if pic_rows.len() > 20 %}
     <details>
-        <summary><h3>PIC</h3></summary>
-        <p class="binary-metadata"><strong>Length</strong> <code>{{ pic_length }}</code>{% if pic_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
+        <summary><h3>Bytes</h3></summary>
         <div class="table-scroll table-scroll-compact">
         <table class="table-nowrap binary-table">
             <thead>
@@ -445,8 +450,6 @@
         </div>
     </details>
     {% else %}
-    <h3>PIC</h3>
-    <p class="binary-metadata"><strong>Length</strong> <code>{{ pic_length }}</code>{% if pic_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
         <thead>
@@ -472,7 +475,7 @@
     {% if !dmi_placeholder_rows.is_empty() %}
     <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-placeholder-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
     {% let is_360 = system_code == "XBOX360" %}
-    <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
+    <p class="binary-metadata"><strong>DMI Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     {% if system_code == "XBOX" || is_360 %}
     {% if !xbox_mid.is_empty() %}<p class="binary-metadata"><strong>{% if is_360 %}XeMID{% else %}XMID{% endif %}</strong> <code>{{ xbox_mid }}</code></p>{% endif %}
     {% if !xbox_dmi_time.is_empty() %}<p class="binary-metadata"><strong>{% if is_360 %}Datetime{% else %}Date{% endif %}</strong> <code>{{ xbox_dmi_time }}</code></p>{% endif %}
@@ -506,7 +509,7 @@
     {% if dmi_download_available && !is_360 %}<p><a href="/disc/{{ disc_id }}/dmi">Download DMI</a></p>{% endif %}
     {% else %}
     <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
-    <p class="binary-metadata"><strong>Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
+    <p class="binary-metadata"><strong>DMI Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table dmi-table">
         <thead>

@@ -145,6 +145,7 @@ struct DiscViewTemplate {
     pic_rows: Vec<HeaderRow>,
     pic_length: String,
     pic_invalid: bool,
+    pic_metadata: PicMetadata,
     cue_catalog: String,
     cue_title: String,
     cue_performer: String,
@@ -541,6 +542,26 @@ struct ScsiDump {
     invalid: bool,
 }
 
+struct PicMetadata {
+    disc_type: Option<String>,
+    physical_size: Option<u64>,
+    layerbreaks: Vec<u64>,
+    size_mismatch: bool,
+    layerbreak_mismatch: bool,
+}
+
+impl Default for PicMetadata {
+    fn default() -> Self {
+        Self {
+            disc_type: None,
+            physical_size: None,
+            layerbreaks: Vec::new(),
+            size_mismatch: false,
+            layerbreak_mismatch: false,
+        }
+    }
+}
+
 impl Default for ScsiDump {
     fn default() -> Self {
         Self {
@@ -734,6 +755,31 @@ async fn disc_view(
         .pic
         .as_ref()
         .map(|data| parse_scsi_dump(data));
+    let dat_size = match detail.files.as_slice() {
+        [file] if file.track_number.as_deref() == Some("0") => {
+            u64::try_from(file.size).ok()
+        }
+        _ => None,
+    };
+    let pic_metadata = detail
+        .disc
+        .pic
+        .as_deref()
+        .map(|data| parse_pic_metadata(data, dat_size))
+        .unwrap_or_default();
+    let pic_layerbreak_mismatch = {
+        let stored_layerbreaks = detail.disc.layerbreaks.as_deref().unwrap_or_default();
+        let breaks = stored_layerbreaks
+            .iter()
+            .map(|&value| u64::try_from(value).ok())
+            .collect::<Option<Vec<_>>>();
+        !stored_layerbreaks.is_empty()
+            && breaks.is_some_and(|breaks| breaks != pic_metadata.layerbreaks)
+    };
+    let pic_metadata = PicMetadata {
+        layerbreak_mismatch: pic_layerbreak_mismatch,
+        ..pic_metadata
+    };
 
     let dmi_dump = detail
         .disc
@@ -985,6 +1031,7 @@ async fn disc_view(
             pic_invalid: pic_dump.as_ref().is_some_and(|dump| {
                 dump.length != Some(4096) || dump.invalid
             }),
+            pic_metadata,
             cue_catalog: cue_disc_meta.catalog,
             cue_title: cue_disc_meta.title,
             cue_performer: cue_disc_meta.performer,
@@ -1019,6 +1066,110 @@ async fn disc_view(
         .render()
         .unwrap(),
     ))
+}
+
+fn parse_pic_metadata(pic: &[u8], dat_size: Option<u64>) -> PicMetadata {
+    let mut metadata = PicMetadata::default();
+    let Some(body) = pic.get(4..) else {
+        return metadata;
+    };
+    let Some(first_block) = body.get(..0x20) else {
+        return metadata;
+    };
+
+    let type_code = &first_block[8..11];
+    let (disc_type, block_size) = match type_code {
+        b"BDR" => ("BD-R", 0x70),
+        b"BDE" => ("BD-RE", 0x70),
+        b"BDO" => ("BD-ROM", 0x40),
+        b"BDU" => ("UHD BD-ROM", 0x40),
+        b"XG4" => ("XGD4", 0x40),
+        _ => return metadata,
+    };
+    metadata.disc_type = Some(disc_type.to_string());
+
+    if block_size == 0x70 {
+        return metadata;
+    }
+    let block_count = match body[3] {
+        0x08 => 1,
+        0x10 => 2,
+        0x18 => 3,
+        _ => return metadata,
+    };
+    let Some(blocks) = body.get(..block_count * block_size) else {
+        return metadata;
+    };
+
+    let mut full_sectors = 0u64;
+    let mut layerbreaks = Vec::with_capacity(block_count.saturating_sub(1));
+    let mut used_sectors = None;
+    let mut layer_count = None;
+    let mut sectors_to_end = None;
+
+    for (index, block) in blocks.chunks_exact(block_size).enumerate() {
+        let block_layer_count = block[12] >> 4;
+        let Some(block_sectors_to_end) =
+            u32::from_be_bytes(block[20..24].try_into().unwrap()).checked_sub(1)
+        else {
+            return metadata;
+        };
+        let start = u32::from_be_bytes(block[24..28].try_into().unwrap());
+        let end = u32::from_be_bytes(block[28..32].try_into().unwrap());
+
+        // Validate DI block
+        if &block[..2] != b"DI"
+            || block[6] != b' '
+            || &block[8..11] != type_code
+            || usize::from(block[5]) != index
+            || start > end.saturating_add(2)
+            || layer_count.is_some_and(|count| count != block_layer_count)
+            || sectors_to_end.is_some_and(|total| total != block_sectors_to_end)
+        {
+            return metadata;
+        }
+        layer_count = Some(block_layer_count);
+        sectors_to_end = Some(block_sectors_to_end);
+
+        let Some(sectors) = u64::from(end)
+            .checked_add(2)
+            .and_then(|end| end.checked_sub(u64::from(start)))
+        else {
+            return metadata;
+        };
+        let Some(total_sectors) = full_sectors.checked_add(sectors) else {
+            return metadata;
+        };
+        full_sectors = total_sectors;
+
+        if index + 1 == block_count {
+            used_sectors = full_sectors
+                .checked_sub(sectors)
+                .and_then(|previous| {
+                    u64::from(sectors_to_end?)
+                        .checked_sub(u64::from(start))
+                        .and_then(|last| previous.checked_add(last + 2))
+                });
+            if used_sectors.is_none() {
+                return metadata;
+            }
+        } else {
+            layerbreaks.push(full_sectors);
+        }
+    }
+
+    if layer_count.is_none_or(|count| usize::from(count) != block_count) {
+        return metadata;
+    }
+
+    metadata.physical_size = full_sectors.checked_mul(2048);
+    metadata.size_mismatch = dat_size.is_some_and(|size| {
+        used_sectors
+            .and_then(|sectors| sectors.checked_mul(2048))
+            .is_some_and(|used_size| size != used_size)
+    });
+    metadata.layerbreaks = layerbreaks;
+    metadata
 }
 
 fn layerbreak_from_pic(pic: &[u8]) -> Option<String> {
@@ -2435,6 +2586,7 @@ mod tests {
             pic_rows: Vec::new(),
             pic_length: String::new(),
             pic_invalid: false,
+            pic_metadata: PicMetadata::default(),
             cue_catalog: String::new(),
             cue_title: String::new(),
             cue_performer: String::new(),
