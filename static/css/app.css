@@ -3463,6 +3463,20 @@ textarea.full-width-textarea {
     box-sizing: border-box;
     width: 100%;
 }
+.disc-edit textarea[name="dump_log"] {
+    max-height: 12rem;
+    overflow-y: auto;
+    font-family: var(--pico-font-family-monospace);
+}
+.dump-log-fill-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.dump-log-fill-controls button {
+    width: auto;
+    margin: 0;
+}
 .disc-edit label:has(textarea[name="review_comment"]) {
     display: block;
     width: fit-content;
@@ -4102,7 +4116,7 @@ textarea.full-width-textarea {
 }
 .disc-edit .dump-log-fill-controls {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     gap: 0.75rem;
     margin-top: 1rem;
