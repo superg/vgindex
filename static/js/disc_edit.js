@@ -1356,17 +1356,12 @@ function enableAddMinimalFieldsForSubmit(form) {
 
 function initDumpLogDragDrop() {
     var textarea = document.querySelector('textarea[name="dump_log"]');
-    var button = document.getElementById('dump-log-fill-btn');
-    if (!textarea || !button) return;
+    var fillButton = document.getElementById('dump-log-fill-btn');
+    var uploadButton = document.getElementById('dump-log-upload-btn');
+    var fileInput = document.getElementById('dump-log-file-input');
+    if (!textarea || !fillButton) return;
 
-    textarea.addEventListener('dragover', function (e) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
-    });
-
-    textarea.addEventListener('drop', function (e) {
-        e.preventDefault();
-        var file = e.dataTransfer.files[0];
+    function loadDumpLogFile(file) {
         if (!file) return;
         if (!file.name.toLowerCase().endsWith('.log')) {
             setDumpLogFillStatus('Only redumper .log files are supported.');
@@ -1380,9 +1375,29 @@ function initDumpLogDragDrop() {
         reader.onload = function (ev) {
             textarea.value = ev.target.result;
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            button.click();
+            fillButton.click();
         };
         reader.readAsText(file);
+    }
+
+    if (uploadButton && fileInput) {
+        uploadButton.addEventListener('click', function () {
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', function () {
+            loadDumpLogFile(fileInput.files[0]);
+            fileInput.value = '';
+        });
+    }
+
+    textarea.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    });
+
+    textarea.addEventListener('drop', function (e) {
+        e.preventDefault();
+        loadDumpLogFile(e.dataTransfer.files[0]);
     });
 }
 
