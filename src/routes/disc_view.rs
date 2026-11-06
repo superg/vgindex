@@ -545,7 +545,7 @@ struct ScsiDump {
 struct PicMetadata {
     disc_type: Option<String>,
     physical_size: Option<u64>,
-    layerbreaks: Vec<u64>,
+    layerbreaks: Option<Vec<u64>>,
     size_mismatch: bool,
     layerbreak_mismatch: bool,
 }
@@ -555,7 +555,7 @@ impl Default for PicMetadata {
         Self {
             disc_type: None,
             physical_size: None,
-            layerbreaks: Vec::new(),
+            layerbreaks: None,
             size_mismatch: false,
             layerbreak_mismatch: false,
         }
@@ -769,12 +769,18 @@ async fn disc_view(
         .unwrap_or_default();
     let pic_layerbreak_mismatch = {
         let stored_layerbreaks = detail.disc.layerbreaks.as_deref().unwrap_or_default();
-        let breaks = stored_layerbreaks
-            .iter()
-            .map(|&value| u64::try_from(value).ok())
-            .collect::<Option<Vec<_>>>();
         !stored_layerbreaks.is_empty()
-            && breaks.is_some_and(|breaks| breaks != pic_metadata.layerbreaks)
+            && pic_metadata
+                .layerbreaks
+                .as_ref()
+                .filter(|pic_breaks| !pic_breaks.is_empty())
+                .is_some_and(|pic_breaks| {
+                    pic_breaks
+                        .iter()
+                        .map(|&value| i32::try_from(value).ok())
+                        .collect::<Option<Vec<_>>>()
+                        .is_none_or(|pic_breaks| stored_layerbreaks != pic_breaks)
+                })
     };
     let pic_metadata = PicMetadata {
         layerbreak_mismatch: pic_layerbreak_mismatch,
@@ -1077,6 +1083,9 @@ fn parse_pic_metadata(pic: &[u8], dat_size: Option<u64>) -> PicMetadata {
         return metadata;
     };
 
+    if &first_block[..2] != b"DI" {
+        return metadata;
+    }
     let type_code = &first_block[8..11];
     let (disc_type, block_size) = match type_code {
         b"BDR" => ("BD-R", 0x70),
@@ -1168,7 +1177,7 @@ fn parse_pic_metadata(pic: &[u8], dat_size: Option<u64>) -> PicMetadata {
             .and_then(|sectors| sectors.checked_mul(2048))
             .is_some_and(|used_size| size != used_size)
     });
-    metadata.layerbreaks = layerbreaks;
+    metadata.layerbreaks = Some(layerbreaks);
     metadata
 }
 
