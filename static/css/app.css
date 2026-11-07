@@ -3468,6 +3468,9 @@ textarea.full-width-textarea {
     overflow-y: auto;
     font-family: var(--pico-font-family-monospace);
 }
+.disc-edit textarea.dump-log-scrollable {
+    overflow-y: scroll;
+}
 .dump-log-fill-controls {
     display: flex;
     align-items: center;
@@ -3528,6 +3531,9 @@ textarea.full-width-textarea {
 }
 .validation-result-new {
     background: #0062b8;
+}
+.validation-errors.dump-log-fill {
+    background: #ff8c00;
 }
 .validation-result a {
     color: #0062b8;
