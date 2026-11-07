@@ -373,7 +373,7 @@ async fn get_disc_language_codes(pool: &PgPool, disc_id: i32) -> Vec<String> {
     .unwrap_or_default()
 }
 
-fn timestamp_now() -> String {
+pub fn timestamp_now() -> String {
     chrono::Utc::now().format("%Y-%m-%d %H-%M-%S").to_string()
 }
 
@@ -505,6 +505,93 @@ async fn generate_datfile_archive(
     zip_datfile_xml(&description, &xml)
 }
 
+#[derive(sqlx::FromRow)]
+struct UserDatfileDisc {
+    #[sqlx(flatten)]
+    disc: DatfileDisc,
+    system_code: String,
+    region_names: Vec<String>,
+    language_codes: Vec<String>,
+}
+
+pub async fn generate_user_datfile(
+    pool: &PgPool,
+    metadata: &ArchiveMetadata,
+    user_id: i32,
+    username: &str,
+    system_code: Option<&str>,
+) -> AppResult<ArchiveResult> {
+    let discs: Vec<UserDatfileDisc> = sqlx::query_as(
+        "SELECT d.id, d.title,
+                d.filename_suffix, d.disc_number, d.disc_title,
+                d.serial, d.version,
+                c.name AS category_name,
+                d.media_type_code,
+                mt.rom_extension,
+                d.system_code,
+                ARRAY(SELECT r.name::TEXT FROM disc_regions dr JOIN regions r ON r.code = dr.region_code
+                      WHERE dr.disc_id = d.id ORDER BY r.sort_order) AS region_names,
+                ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
+                      WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes
+         FROM discs d
+         JOIN categories c ON c.id = d.category_id
+         JOIN media_types mt ON mt.code = d.media_type_code
+         WHERE d.status NOT IN ('Disabled', 'Questionable')
+           AND EXISTS (SELECT 1 FROM disc_dumpers dd WHERE dd.disc_id = d.id AND dd.user_id = $1)
+           AND ($2::TEXT IS NULL OR d.system_code = $2)",
+    )
+    .bind(user_id)
+    .bind(system_code)
+    .fetch_all(pool)
+    .await?;
+    if discs.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    let systems = crate::services::disc_service::get_all_systems(pool).await?;
+    let disc_ids: Vec<i32> = discs.iter().map(|d| d.disc.id).collect();
+    let mut files_by_disc: HashMap<i32, Vec<File>> = HashMap::new();
+    let all_files: Vec<File> = sqlx::query_as("SELECT * FROM files WHERE disc_id = ANY($1)")
+        .bind(&disc_ids)
+        .fetch_all(pool)
+        .await?;
+    for file in all_files {
+        files_by_disc.entry(file.disc_id).or_default().push(file);
+    }
+
+    let mut games: Vec<GameEntry> = Vec::with_capacity(discs.len());
+    for row in &discs {
+        let disc = &row.disc;
+        let files = files_by_disc.remove(&disc.id).unwrap_or_default();
+        let cue_active = systems
+            .iter()
+            .any(|sys| sys.code == row.system_code && dat_disc_has_active_cue(disc, sys));
+        games.push(build_game_entry(
+            disc,
+            &files,
+            &row.region_names,
+            &row.language_codes,
+            cue_active,
+        ));
+    }
+    sort_games_by_name(&mut games);
+
+    let username = sanitize_filename(username);
+    let dat_name = match system_code.and_then(|code| systems.iter().find(|sys| sys.code == code)) {
+        Some(sys) => format!("{username} - {}", sys.dat_system_name()),
+        None => username,
+    };
+    let ts = timestamp_now();
+    let description = format!("{dat_name} - Datfile ({}) ({ts})", discs.len());
+    let metadata = metadata.clone();
+    tokio::task::spawn_blocking(move || {
+        let xml = render_datfile_xml(&metadata, &dat_name, &description, &ts, &games);
+        zip_datfile_xml(&description, &xml)
+    })
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?
+}
+
 async fn build_datfile_games(
     pool: &PgPool,
     sys: &System,
@@ -519,64 +606,84 @@ async fn build_datfile_games(
 
         let region_names = get_disc_region_names(pool, disc.id).await;
         let language_codes = get_disc_language_codes(pool, disc.id).await;
-        let game_name = build_rom_base_name(
-            &disc.title,
-            &region_names,
-            &language_codes,
-            disc.disc_number.as_deref(),
-            disc.disc_title.as_deref(),
-            disc.filename_suffix.as_deref(),
-        );
-        let game_description = build_rom_base_description(
-            &disc.title,
-            &region_names,
-            &language_codes,
-            disc.disc_number.as_deref(),
-            disc.disc_title.as_deref(),
-            disc.filename_suffix.as_deref(),
-        );
-
-        let total_tracks = files.iter().filter(|f| f.track_number.is_some()).count();
         let cue_active = dat_disc_has_active_cue(disc, sys);
-        let mut roms: Vec<RomEntry> = files
-            .iter()
-            .filter(|file| dat_file_is_active(file, cue_active))
-            .map(|file| {
-                let is_cue = file.track_number.is_none();
-                let ext = if is_cue {
-                    "cue"
-                } else {
-                    disc.rom_extension.as_str()
-                };
-                RomEntry {
-                    name: build_rom_name(
-                        &game_name,
-                        file.track_number.as_deref(),
-                        total_tracks,
-                        ext,
-                    ),
-                    size: file.size,
-                    crc: file.crc32.clone(),
-                    md5: file.md5.clone(),
-                    sha1: file.sha1.clone(),
-                    is_cue,
-                }
-            })
-            .collect();
-        sort_dat_rom_entries(&mut roms);
-
-        games.push(GameEntry {
-            id: disc.id,
-            name: game_name,
-            description: game_description,
-            category: disc.category_name.clone(),
-            serials: clean_dat_strings(&disc.serial),
-            version: clean_dat_optional(disc.version.as_deref()),
-            roms,
-        });
+        games.push(build_game_entry(
+            disc,
+            &files,
+            &region_names,
+            &language_codes,
+            cue_active,
+        ));
     }
-    games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    sort_games_by_name(&mut games);
     Ok(games)
+}
+
+fn sort_games_by_name(games: &mut [GameEntry]) {
+    games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+}
+
+fn build_game_entry(
+    disc: &DatfileDisc,
+    files: &[File],
+    region_names: &[String],
+    language_codes: &[String],
+    cue_active: bool,
+) -> GameEntry {
+    let game_name = build_rom_base_name(
+        &disc.title,
+        region_names,
+        language_codes,
+        disc.disc_number.as_deref(),
+        disc.disc_title.as_deref(),
+        disc.filename_suffix.as_deref(),
+    );
+    let game_description = build_rom_base_description(
+        &disc.title,
+        region_names,
+        language_codes,
+        disc.disc_number.as_deref(),
+        disc.disc_title.as_deref(),
+        disc.filename_suffix.as_deref(),
+    );
+
+    let total_tracks = files.iter().filter(|f| f.track_number.is_some()).count();
+    let mut roms: Vec<RomEntry> = files
+        .iter()
+        .filter(|file| dat_file_is_active(file, cue_active))
+        .map(|file| {
+            let is_cue = file.track_number.is_none();
+            let ext = if is_cue {
+                "cue"
+            } else {
+                disc.rom_extension.as_str()
+            };
+            RomEntry {
+                name: build_rom_name(
+                    &game_name,
+                    file.track_number.as_deref(),
+                    total_tracks,
+                    ext,
+                ),
+                size: file.size,
+                crc: file.crc32.clone(),
+                md5: file.md5.clone(),
+                sha1: file.sha1.clone(),
+                is_cue,
+            }
+        })
+        .collect();
+    sort_dat_rom_entries(&mut roms);
+
+    GameEntry {
+        id: disc.id,
+        name: game_name,
+        description: game_description,
+        category: disc.category_name.clone(),
+        serials: clean_dat_strings(&disc.serial),
+        version: clean_dat_optional(disc.version.as_deref()),
+        roms,
+    }
 }
 
 fn render_datfile_xml(
@@ -1034,6 +1141,19 @@ struct CueDisc {
     cue: String,
 }
 
+pub fn zip_text_files(files: &[(String, String)]) -> AppResult<Vec<u8>> {
+    let err = |e: &dyn std::fmt::Display| AppError::Internal(e.to_string());
+    let mut buf = Vec::new();
+    let mut zip = ZipWriter::new(std::io::Cursor::new(&mut buf));
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    for (name, text) in files {
+        zip.start_file(name, options).map_err(|e| err(&e))?;
+        zip.write_all(text.as_bytes()).map_err(|e| err(&e))?;
+    }
+    zip.finish().map_err(|e| err(&e))?;
+    Ok(buf)
+}
+
 async fn generate_cuesheet_archive(pool: &PgPool, system: &str, ts: &str) -> AppResult<ArchiveResult> {
     let sys: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(system)
@@ -1062,32 +1182,19 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str, ts: &str) -> App
 
     let cue_count = discs.len();
 
-    let mut buf = Vec::new();
-    {
-        let mut zip = ZipWriter::new(std::io::Cursor::new(&mut buf));
-        let options =
-            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-
-        for disc in &discs {
-            let region_names = get_disc_region_names(pool, disc.id).await;
-            let language_codes = get_disc_language_codes(pool, disc.id).await;
-            let base_name = build_rom_base_name(
-                &disc.title,
-                &region_names,
-                &language_codes,
-                disc.disc_number.as_deref(),
-                disc.disc_title.as_deref(),
-                disc.filename_suffix.as_deref(),
-            );
-            let filename = format!("{base_name}.cue");
-            zip.start_file(&filename, options)
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            zip.write_all(disc.cue.as_bytes())
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-        }
-
-        zip.finish()
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+    let mut files = Vec::with_capacity(cue_count);
+    for disc in discs {
+        let region_names = get_disc_region_names(pool, disc.id).await;
+        let language_codes = get_disc_language_codes(pool, disc.id).await;
+        let base_name = build_rom_base_name(
+            &disc.title,
+            &region_names,
+            &language_codes,
+            disc.disc_number.as_deref(),
+            disc.disc_title.as_deref(),
+            disc.filename_suffix.as_deref(),
+        );
+        files.push((format!("{base_name}.cue"), disc.cue));
     }
 
     let zip_filename = format!(
@@ -1097,7 +1204,7 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str, ts: &str) -> App
         ts
     );
     Ok(ArchiveResult {
-        data: buf,
+        data: zip_text_files(&files)?,
         filename: zip_filename,
     })
 }

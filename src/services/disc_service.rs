@@ -691,6 +691,47 @@ pub async fn get_system(pool: &PgPool, code: &str) -> AppResult<System> {
         .ok_or(AppError::NotFound)
 }
 
+pub async fn list_dumped_discs(
+    pool: &PgPool,
+    user_id: i32,
+    system_code: Option<&str>,
+    with_cue: bool,
+) -> AppResult<Vec<(String, String, Option<String>)>> {
+    type Row = (String, Option<String>, Option<String>, Option<String>, Vec<String>, Vec<String>, Option<String>, String);
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT d.title, d.disc_number, d.disc_title, d.filename_suffix,
+                ARRAY(SELECT r.name::TEXT FROM disc_regions dr JOIN regions r ON r.code = dr.region_code
+                      WHERE dr.disc_id = d.id ORDER BY r.sort_order),
+                ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
+                      WHERE dl.disc_id = d.id ORDER BY l.sort_order),
+                CASE WHEN $3 THEN d.cue END,
+                d.system_code
+         FROM discs d
+         WHERE EXISTS (SELECT 1 FROM disc_dumpers dd WHERE dd.disc_id = d.id AND dd.user_id = $1)
+           AND ($2::TEXT IS NULL OR d.system_code = $2)
+           AND d.status NOT IN ('Disabled', 'Questionable')
+           AND (NOT $3 OR d.cue <> '')",
+    )
+    .bind(user_id)
+    .bind(system_code)
+    .bind(with_cue)
+    .fetch_all(pool)
+    .await?;
+    if rows.is_empty() {
+        return Err(AppError::NotFound);
+    }
+
+    let mut discs: Vec<_> = rows
+        .into_iter()
+        .map(|(title, number, disc_title, suffix, regions, languages, cue, system)| {
+            let name = build_rom_base_name(&title, &regions, &languages, number.as_deref(), disc_title.as_deref(), suffix.as_deref());
+            (system, name, cue)
+        })
+        .collect();
+    discs.sort_by_key(|(_, name, _)| name.to_lowercase());
+    Ok(discs)
+}
+
 async fn enrich_media_type(pool: &PgPool, disc: &mut Disc) -> AppResult<()> {
     let row: MediaTypeRow = sqlx::query_as(
         "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer, dmi FROM media_types WHERE code = $1",
