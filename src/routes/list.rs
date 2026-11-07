@@ -42,7 +42,6 @@ async fn list_have(
         &state.pool,
         user.id,
         syscode.as_deref(),
-        user.role.can_view_disabled_discs(),
         false,
     )
     .await?;
@@ -67,7 +66,6 @@ async fn list_cues(
         &state.pool,
         user.id,
         syscode.as_deref(),
-        user.role.can_view_disabled_discs(),
         true,
     )
     .await?

@@ -695,7 +695,6 @@ pub async fn list_dumped_discs(
     pool: &PgPool,
     user_id: i32,
     system_code: Option<&str>,
-    include_disabled: bool,
     with_cue: bool,
 ) -> AppResult<Vec<(String, String, Option<String>)>> {
     type Row = (String, Option<String>, Option<String>, Option<String>, Vec<String>, Vec<String>, Option<String>, String);
@@ -705,17 +704,16 @@ pub async fn list_dumped_discs(
                       WHERE dr.disc_id = d.id ORDER BY r.sort_order),
                 ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
                       WHERE dl.disc_id = d.id ORDER BY l.sort_order),
-                CASE WHEN $4 THEN d.cue END,
+                CASE WHEN $3 THEN d.cue END,
                 d.system_code
          FROM discs d
          WHERE EXISTS (SELECT 1 FROM disc_dumpers dd WHERE dd.disc_id = d.id AND dd.user_id = $1)
            AND ($2::TEXT IS NULL OR d.system_code = $2)
-           AND ($3 OR d.status <> 'Disabled')
-           AND (NOT $4 OR d.cue <> '')",
+           AND d.status NOT IN ('Disabled', 'Questionable')
+           AND (NOT $3 OR d.cue <> '')",
     )
     .bind(user_id)
     .bind(system_code)
-    .bind(include_disabled)
     .bind(with_cue)
     .fetch_all(pool)
     .await?;
