@@ -5,6 +5,7 @@ pub mod disc_edit;
 pub mod disc_view;
 pub mod discs;
 pub mod downloads;
+pub mod list;
 pub mod main_page;
 pub mod maintenance;
 pub mod queue;
@@ -51,6 +52,7 @@ pub fn build_router() -> Router<AppState> {
         .merge(disc_view::routes())
         .merge(disc_edit::routes())
         .merge(downloads::routes())
+        .merge(list::routes())
         .merge(queue::routes())
         .merge(api::routes())
         .merge(maintenance::routes())
