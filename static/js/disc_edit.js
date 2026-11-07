@@ -1252,6 +1252,15 @@ function restoreDumpLogFillStatus() {
         if (!message) return;
         window.sessionStorage.removeItem(DUMP_LOG_FILL_STATUS_KEY);
         setDumpLogFillStatus(message);
+        
+        var validationErrors = document.querySelector('.validation-errors');
+        if (validationErrors) {
+            validationErrors.classList.add('dump-log-fill');
+            var strong = validationErrors.querySelector('strong:first-child');
+            if (strong) {
+                strong.textContent = 'Please fill in these required fields:';
+            }
+        }
     } catch (_error) {
         // Storage can be unavailable in privacy-restricted browser contexts.
     }
@@ -1367,7 +1376,7 @@ function initDumpLogDragDrop() {
             setDumpLogFillStatus('Only redumper .log files are supported.');
             return;
         }
-        if (file.size > 4 * 1024 * 1024) {
+        if (file.size > 3 * 1024 * 1024) {
             setDumpLogFillStatus('Log file is too large.');
             return;
         }
@@ -1376,6 +1385,9 @@ function initDumpLogDragDrop() {
             textarea.value = ev.target.result;
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
             fillButton.click();
+        };
+        reader.onerror = function () {
+            setDumpLogFillStatus('Failed to read the selected log file.');
         };
         reader.readAsText(file);
     }
