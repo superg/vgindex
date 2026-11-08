@@ -214,11 +214,11 @@ pub(crate) fn parse_extras_input(
     let mut extras: Vec<DiscExtra> = Vec::new();
     for (index, line) in text.lines().enumerate() {
         let line = line.trim();
-        if !line.starts_with("<rom ") {
+        if line.is_empty() {
             continue;
         }
         let row = index + 1;
-        let name = extract_attr(line, "name").unwrap_or_default();
+        let name = crate::services::validation::validate_rom_line(line, row)?;
         let extension = name
             .rsplit_once('.')
             .map(|(_, extension)| extension.to_ascii_lowercase())
@@ -233,18 +233,13 @@ pub(crate) fn parse_extras_input(
                 extra_type.extension, extra_type.size
             ));
         }
-        let hash = |attr: &str, length: usize| -> Result<String, String> {
-            extract_attr(line, attr)
-                .map(|value| value.to_ascii_lowercase())
-                .filter(|value| value.len() == length && value.chars().all(|c| c.is_ascii_hexdigit()))
-                .ok_or_else(|| format!("line {row}: {attr} must be {length} hex digits"))
-        };
+        let hash = |attr: &str| extract_attr(line, attr).unwrap_or_default().to_ascii_lowercase();
         let extra = DiscExtra {
             file_type: extra_type.extension.to_string(),
             size: extra_type.size,
-            crc32: hash("crc", 8)?,
-            md5: hash("md5", 32)?,
-            sha1: hash("sha1", 40)?,
+            crc32: hash("crc"),
+            md5: hash("md5"),
+            sha1: hash("sha1"),
         };
         if extras.iter().any(|e| {
             e.file_type == extra.file_type
