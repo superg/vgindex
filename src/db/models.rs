@@ -514,6 +514,15 @@ pub struct File {
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DiscExtra {
+    pub file_type: String,
+    pub size: i64,
+    pub crc32: String,
+    pub md5: String,
+    pub sha1: String,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct DiscSubmission {
     pub id: i32,
     pub submission_type: SubmissionType,
@@ -574,6 +583,7 @@ pub struct DiscDetail {
     pub languages: Vec<Language>,
     pub ring_entries: Vec<RingEntryView>,
     pub files: Vec<File>,
+    pub extras: Vec<DiscExtra>,
     pub dumpers: Vec<DumperInfo>,
     pub disc_submission_count: i64,
     pub sector_ranges: Vec<ProtectionRange>,

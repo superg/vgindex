@@ -231,9 +231,15 @@ pub async fn regenerate_system_archives(
     let Some(sys) = sys else { return Ok(None) };
 
     let ts = timestamp_now();
-    let datfile = generate_datfile_archive(pool, metadata, &sys, &ts).await?;
+    let datfile = generate_datfile_archive(pool, metadata, &sys, &ts, false).await?;
     store_archive(&sys.code, "dat", &datfile)
         .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    if archive_type_supported_by_system(&sys, "extras", false).unwrap_or(false) {
+        let result = generate_datfile_archive(pool, metadata, &sys, &ts, true).await?;
+        store_archive(&sys.code, "extras", &result)
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+    }
 
     let has_bin_media = system_has_bin_media(pool, &sys.media_types).await;
     if archive_type_supported_by_system(&sys, "cue", has_bin_media).unwrap_or(false) {
@@ -308,6 +314,10 @@ fn archive_type_supported_by_system(
         "dat" => Ok(true),
         "cue" => Ok(has_bin_media),
         "sbi" => Ok(sys.has_sbi && has_bin_media),
+        "extras" => Ok(sys
+            .media_types
+            .iter()
+            .any(|code| crate::services::validation::media_extra_file_types(code).is_some())),
         _ => Err(AppError::NotFound),
     }
 }
@@ -317,7 +327,7 @@ async fn archive_type_is_available(
     system: &str,
     archive_type: &str,
 ) -> AppResult<bool> {
-    if !matches!(archive_type, "dat" | "cue" | "sbi") {
+    if !matches!(archive_type, "dat" | "cue" | "sbi" | "extras") {
         return Err(AppError::NotFound);
     }
 
@@ -347,30 +357,6 @@ async fn system_has_bin_media(pool: &PgPool, media_type_codes: &[String]) -> boo
             .await
             .unwrap_or_default();
     extensions.iter().any(|ext| is_cd_rom_extension(ext))
-}
-
-async fn get_disc_region_names(pool: &PgPool, disc_id: i32) -> Vec<String> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT r.name FROM disc_regions dr
-         JOIN regions r ON r.code = dr.region_code
-         WHERE dr.disc_id = $1 ORDER BY r.sort_order",
-    )
-    .bind(disc_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default()
-}
-
-async fn get_disc_language_codes(pool: &PgPool, disc_id: i32) -> Vec<String> {
-    sqlx::query_scalar::<_, String>(
-        "SELECT l.code FROM disc_languages dl
-         JOIN languages l ON l.code = dl.language_code
-         WHERE dl.disc_id = $1 ORDER BY l.sort_order",
-    )
-    .bind(disc_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default()
 }
 
 pub fn timestamp_now() -> String {
@@ -471,6 +457,8 @@ struct DatfileDisc {
     category_name: String,
     media_type_code: String,
     rom_extension: String,
+    region_names: Vec<String>,
+    language_codes: Vec<String>,
 }
 
 async fn generate_datfile_archive(
@@ -478,6 +466,7 @@ async fn generate_datfile_archive(
     metadata: &ArchiveMetadata,
     sys: &System,
     ts: &str,
+    extras: bool,
 ) -> AppResult<ArchiveResult> {
     let discs: Vec<DatfileDisc> = sqlx::query_as(
         "SELECT d.id, d.title,
@@ -485,22 +474,29 @@ async fn generate_datfile_archive(
                 d.serial, d.version,
                 c.name AS category_name,
                 d.media_type_code,
-                mt.rom_extension
+                mt.rom_extension,
+                ARRAY(SELECT r.name::TEXT FROM disc_regions dr JOIN regions r ON r.code = dr.region_code
+                      WHERE dr.disc_id = d.id ORDER BY r.sort_order) AS region_names,
+                ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
+                      WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes
          FROM discs d
          JOIN categories c ON c.id = d.category_id
          JOIN media_types mt ON mt.code = d.media_type_code
          WHERE d.system_code = $1 AND d.status NOT IN ('Disabled', 'Questionable')
+           AND (NOT $2 OR EXISTS (SELECT 1 FROM disc_extras e WHERE e.disc_id = d.id))
          ORDER BY d.title",
     )
     .bind(&sys.code)
+    .bind(extras)
     .fetch_all(pool)
     .await?;
 
     let disc_count = discs.len();
     let dat_name = sys.dat_system_name();
-    let games = build_datfile_games(pool, sys, &discs).await?;
+    let games = build_datfile_games(pool, sys, &discs, extras).await?;
 
-    let description = format!("{} - Datfile ({}) ({})", dat_name, disc_count, ts);
+    let kind = if extras { "Extras Datfile" } else { "Datfile" };
+    let description = format!("{} - {} ({}) ({})", dat_name, kind, disc_count, ts);
     let xml = render_datfile_xml(metadata, &dat_name, &description, &ts, &games);
     zip_datfile_xml(&description, &xml)
 }
@@ -510,8 +506,6 @@ struct UserDatfileDisc {
     #[sqlx(flatten)]
     disc: DatfileDisc,
     system_code: String,
-    region_names: Vec<String>,
-    language_codes: Vec<String>,
 }
 
 pub async fn generate_user_datfile(
@@ -528,11 +522,11 @@ pub async fn generate_user_datfile(
                 c.name AS category_name,
                 d.media_type_code,
                 mt.rom_extension,
-                d.system_code,
                 ARRAY(SELECT r.name::TEXT FROM disc_regions dr JOIN regions r ON r.code = dr.region_code
                       WHERE dr.disc_id = d.id ORDER BY r.sort_order) AS region_names,
                 ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
-                      WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes
+                      WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes,
+                d.system_code
          FROM discs d
          JOIN categories c ON c.id = d.category_id
          JOIN media_types mt ON mt.code = d.media_type_code
@@ -569,8 +563,9 @@ pub async fn generate_user_datfile(
         games.push(build_game_entry(
             disc,
             &files,
-            &row.region_names,
-            &row.language_codes,
+            &[],
+            &disc.region_names,
+            &disc.language_codes,
             cue_active,
         ));
     }
@@ -596,22 +591,33 @@ async fn build_datfile_games(
     pool: &PgPool,
     sys: &System,
     discs: &[DatfileDisc],
+    extras: bool,
 ) -> AppResult<Vec<GameEntry>> {
     let mut games: Vec<GameEntry> = Vec::with_capacity(discs.len());
     for disc in discs {
-        let files: Vec<File> = sqlx::query_as("SELECT * FROM files WHERE disc_id = $1")
+        let (files, disc_extras): (Vec<File>, Vec<DiscExtra>) = if extras {
+            let disc_extras = sqlx::query_as(
+                "SELECT file_type, size, crc32, md5, sha1 FROM disc_extras WHERE disc_id = $1",
+            )
             .bind(disc.id)
             .fetch_all(pool)
             .await?;
+            (Vec::new(), disc_extras)
+        } else {
+            let files = sqlx::query_as("SELECT * FROM files WHERE disc_id = $1")
+                .bind(disc.id)
+                .fetch_all(pool)
+                .await?;
+            (files, Vec::new())
+        };
 
-        let region_names = get_disc_region_names(pool, disc.id).await;
-        let language_codes = get_disc_language_codes(pool, disc.id).await;
         let cue_active = dat_disc_has_active_cue(disc, sys);
         games.push(build_game_entry(
             disc,
             &files,
-            &region_names,
-            &language_codes,
+            &disc_extras,
+            &disc.region_names,
+            &disc.language_codes,
             cue_active,
         ));
     }
@@ -626,6 +632,7 @@ fn sort_games_by_name(games: &mut [GameEntry]) {
 fn build_game_entry(
     disc: &DatfileDisc,
     files: &[File],
+    extras: &[DiscExtra],
     region_names: &[String],
     language_codes: &[String],
     cue_active: bool,
@@ -673,6 +680,18 @@ fn build_game_entry(
             }
         })
         .collect();
+    roms.extend(
+        crate::services::disc_service::name_extras(extras, &game_name)
+            .into_iter()
+            .map(|(name, extra)| RomEntry {
+                name,
+                size: extra.size,
+                crc: extra.crc32.clone(),
+                md5: extra.md5.clone(),
+                sha1: extra.sha1.clone(),
+                is_cue: false,
+            }),
+    );
     sort_dat_rom_entries(&mut roms);
 
     GameEntry {
@@ -891,6 +910,8 @@ mod tests {
             category_name: "Games".to_string(),
             media_type_code: media_type_code.to_string(),
             rom_extension: rom_extension.to_string(),
+            region_names: vec![],
+            language_codes: vec![],
         }
     }
 
@@ -1139,6 +1160,8 @@ struct CueDisc {
     disc_title: Option<String>,
     filename_suffix: Option<String>,
     cue: String,
+    region_names: Vec<String>,
+    language_codes: Vec<String>,
 }
 
 pub fn zip_text_files(files: &[(String, String)]) -> AppResult<Vec<u8>> {
@@ -1166,7 +1189,11 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str, ts: &str) -> App
     }
 
     let discs: Vec<CueDisc> = sqlx::query_as(
-        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.cue
+        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.cue,
+                ARRAY(SELECT r.name::TEXT FROM disc_regions dr JOIN regions r ON r.code = dr.region_code
+                      WHERE dr.disc_id = d.id ORDER BY r.sort_order) AS region_names,
+                ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
+                      WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes
          FROM discs d
          JOIN media_types mt ON mt.code = d.media_type_code
          WHERE d.system_code = $1 AND d.status NOT IN ('Disabled', 'Questionable')
@@ -1184,12 +1211,10 @@ async fn generate_cuesheet_archive(pool: &PgPool, system: &str, ts: &str) -> App
 
     let mut files = Vec::with_capacity(cue_count);
     for disc in discs {
-        let region_names = get_disc_region_names(pool, disc.id).await;
-        let language_codes = get_disc_language_codes(pool, disc.id).await;
         let base_name = build_rom_base_name(
             &disc.title,
-            &region_names,
-            &language_codes,
+            &disc.region_names,
+            &disc.language_codes,
             disc.disc_number.as_deref(),
             disc.disc_title.as_deref(),
             disc.filename_suffix.as_deref(),
@@ -1221,6 +1246,8 @@ struct SbiArchiveDisc {
     disc_title: Option<String>,
     filename_suffix: Option<String>,
     sbi: String,
+    region_names: Vec<String>,
+    language_codes: Vec<String>,
 }
 
 async fn generate_sbi_archive(pool: &PgPool, system: &str, ts: &str) -> AppResult<ArchiveResult> {
@@ -1235,7 +1262,11 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str, ts: &str) -> AppResul
     }
 
     let discs: Vec<SbiArchiveDisc> = sqlx::query_as(
-        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.sbi
+        "SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix, d.sbi,
+                ARRAY(SELECT r.name::TEXT FROM disc_regions dr JOIN regions r ON r.code = dr.region_code
+                      WHERE dr.disc_id = d.id ORDER BY r.sort_order) AS region_names,
+                ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
+                      WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes
          FROM discs d
          JOIN media_types mt ON mt.code = d.media_type_code
          WHERE d.system_code = $1 AND d.sbi IS NOT NULL AND d.sbi != ''
@@ -1256,12 +1287,10 @@ async fn generate_sbi_archive(pool: &PgPool, system: &str, ts: &str) -> AppResul
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
         for disc in &discs {
-            let region_names = get_disc_region_names(pool, disc.id).await;
-            let language_codes = get_disc_language_codes(pool, disc.id).await;
             let base_name = build_rom_base_name(
                 &disc.title,
-                &region_names,
-                &language_codes,
+                &disc.region_names,
+                &disc.language_codes,
                 disc.disc_number.as_deref(),
                 disc.disc_title.as_deref(),
                 disc.filename_suffix.as_deref(),

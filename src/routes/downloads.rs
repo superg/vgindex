@@ -24,6 +24,7 @@ pub fn routes() -> Router<AppState> {
         .route("/datfile/{system}/{features}", get(download_dat_variant))
         .route("/cues/{system}", get(download_cue))
         .route("/sbi/{system}", get(download_sbi))
+        .route("/extras/{system}", get(download_extras))
         .route("/downloads/database", get(download_database))
 }
 
@@ -44,6 +45,7 @@ struct SystemDownload {
     has_dat: bool,
     has_cue: bool,
     has_sbi: bool,
+    has_extras: bool,
     version: Option<String>,
 }
 
@@ -192,6 +194,10 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
                 && r.media_types
                     .iter()
                     .any(|code| cd_media_codes.contains(code)),
+            has_extras: r
+                .media_types
+                .iter()
+                .any(|code| crate::services::validation::media_extra_file_types(code).is_some()),
         });
     }
 
@@ -286,6 +292,10 @@ async fn download_sbi(State(state): State<AppState>, Path(system): Path<String>)
     serve_archive(&state, &system, "sbi").await
 }
 
+async fn download_extras(State(state): State<AppState>, Path(system): Path<String>) -> Response {
+    serve_archive(&state, &system, "extras").await
+}
+
 async fn download_database(_user: RequireAuth, request: Request) -> Response {
     let Some(export) = database_export_service::latest_export() else {
         return AppError::NotFound.into_response();
@@ -365,6 +375,7 @@ mod tests {
                     has_dat: true,
                     has_cue: false,
                     has_sbi: false,
+                    has_extras: true,
                     version: Some("2026-10-14 09:30:00".to_string()),
                 },
                 SystemDownload {
@@ -373,6 +384,7 @@ mod tests {
                     has_dat: true,
                     has_cue: true,
                     has_sbi: false,
+                    has_extras: false,
                     version: None,
                 },
             ],

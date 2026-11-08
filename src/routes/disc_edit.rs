@@ -189,6 +189,9 @@ pub(crate) struct DiscEditTemplate {
 
     pub cue: String,
     pub files_xml: String,
+    pub show_extras: bool,
+    pub media_has_extras_json: String,
+    pub extras: String,
 
     pub status: String,
 
@@ -626,6 +629,17 @@ pub(crate) fn build_media_has_dmi_json(all_media_types: &[EditMediaTypeRow]) -> 
     serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
 }
 
+pub(crate) fn build_media_has_extras_json(all_media_types: &[EditMediaTypeRow]) -> String {
+    let mut map = serde_json::Map::new();
+    for m in all_media_types {
+        map.insert(
+            m.code.clone(),
+            serde_json::json!(validation::media_extra_file_types(&m.code).is_some()),
+        );
+    }
+    serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
+}
+
 pub(crate) fn dmi_available_for_selection(
     all_systems: &[System],
     all_media_types: &[EditMediaTypeRow],
@@ -879,6 +893,7 @@ async fn edit_page(
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let media_has_dmi_json = build_media_has_dmi_json(&ref_data.all_media_types);
+    let media_has_extras_json = build_media_has_extras_json(&ref_data.all_media_types);
     let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let max_layers = detail.disc.media_type.max_layers();
@@ -1142,6 +1157,9 @@ async fn edit_page(
                 .map(|c| simplify_cue(c, rom_extension))
                 .unwrap_or_default(),
             files_xml,
+            show_extras: validation::media_extra_file_types(&detail.disc.media_type.code()).is_some(),
+            media_has_extras_json,
+            extras: disc_service::format_extras_lines(&detail.extras).join("\n"),
 
             status: detail.disc.status.to_string(),
 
@@ -1248,6 +1266,7 @@ pub struct DiscEditForm {
     pub cue: Option<String>,
     #[serde(rename = "dat")]
     pub files_xml: Option<String>,
+    pub extras: Option<String>,
     #[serde(default)]
     pub status: String,
     pub submission_comment: Option<String>,
@@ -1315,6 +1334,7 @@ struct FormValidationOptions {
     require_cuesheet: bool,
     require_layerbreak: bool,
     validate_bca_mastering_data: bool,
+    single_extra_per_type: bool,
 }
 
 impl FormValidationOptions {
@@ -1329,6 +1349,7 @@ impl FormValidationOptions {
             require_cuesheet: true,
             require_layerbreak: true,
             validate_bca_mastering_data: true,
+            single_extra_per_type: false,
         }
     }
 
@@ -1350,6 +1371,7 @@ impl FormValidationOptions {
             require_cuesheet: !is_verification,
             require_layerbreak: !is_verification,
             validate_bca_mastering_data: false,
+            single_extra_per_type: true,
         }
     }
 }
@@ -1470,6 +1492,26 @@ fn validate_form_with_options(
                     errors.push(format!("SBI: {}", e));
                 }
             }
+        }
+    }
+
+    if let Some(ref text) = form.extras {
+        match disc_service::parse_extras_input(text, media_code) {
+            Err(e) => errors.push(format!("Extras: {}", e)),
+            Ok(extras) if options.single_extra_per_type => {
+                let mut types: Vec<&str> = extras.iter().map(|e| e.file_type.as_str()).collect();
+                types.sort_unstable();
+                let mut repeated: Vec<&str> = types
+                    .windows(2)
+                    .filter(|pair| pair[0] == pair[1])
+                    .map(|pair| pair[0])
+                    .collect();
+                repeated.dedup();
+                for extension in repeated {
+                    errors.push(format!("Extras: only one .{extension} file can be submitted"));
+                }
+            }
+            Ok(_) => {}
         }
     }
 
@@ -1743,6 +1785,7 @@ async fn render_form_with_context(
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let media_has_dmi_json = build_media_has_dmi_json(&ref_data.all_media_types);
+    let media_has_extras_json = build_media_has_extras_json(&ref_data.all_media_types);
     let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let submit_as_usernames_json = if is_add_mode && can_moderate {
@@ -1935,6 +1978,9 @@ async fn render_form_with_context(
             .as_deref()
             .map(normalize_dat_hash_case)
             .unwrap_or_default(),
+        show_extras: validation::media_extra_file_types(form.media_type.trim()).is_some(),
+        media_has_extras_json,
+        extras: form.extras.clone().unwrap_or_default(),
 
         status: normalized_disc_status(&form.status),
 
@@ -2652,6 +2698,7 @@ async fn add_page(
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let media_has_dmi_json = build_media_has_dmi_json(&ref_data.all_media_types);
+    let media_has_extras_json = build_media_has_extras_json(&ref_data.all_media_types);
     let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let can_submit_as = user.role.can_moderate();
@@ -2760,6 +2807,9 @@ async fn add_page(
 
             cue: String::new(),
             files_xml: String::new(),
+            show_extras: false,
+            media_has_extras_json,
+            extras: String::new(),
 
             status: "Unverified".to_string(),
 
@@ -3220,6 +3270,10 @@ pub(crate) fn build_flat_changes(
         "dat": norm_opt_multiline_str(form.files_xml.as_deref())
             .map(|s| simplify_files_xml(&s, rom_ext))
             .map(|dat| normalize_dat_hash_case(&dat)),
+        "extras": norm_opt_multiline_str(form.extras.as_deref())
+            .and_then(|s| disc_service::parse_extras_input(&s, form.media_type.trim()).ok())
+            .map(|extras| disc_service::format_extras_lines(&extras))
+            .unwrap_or_default(),
         "regions": new_regions,
         "languages": new_languages,
         "ring_codes": new_ring_codes,
@@ -3873,6 +3927,27 @@ fn build_history_changes(
     }
 
     {
+        let key = "extras";
+        let media_code = form.media_type.trim();
+        let mut old_values = json_str_vec(db_obj.get(key).unwrap_or(&serde_json::Value::Null));
+        let new_values = json_str_vec(form_obj.get(key).unwrap_or(&serde_json::Value::Null));
+        if !(allow_removal && include_status) {
+            let replaced = |line: &String| {
+                disc_service::limited_extra_type(line, media_code).is_some_and(|file_type| {
+                    new_values.iter().any(|new| {
+                        disc_service::limited_extra_type(new, media_code).as_ref()
+                            == Some(&file_type)
+                    })
+                })
+            };
+            old_values.retain(|old| new_values.contains(old) || replaced(old));
+        }
+        if let Some(change) = set_operation_change(&old_values, &new_values, true) {
+            changes.insert(key.to_string(), change);
+        }
+    }
+
+    {
         let key = "dat";
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let new = form_obj.get(key).unwrap_or(&serde_json::Value::Null);
@@ -4271,6 +4346,7 @@ mod operation_delta_tests {
             disc_submission_count: 0,
             sector_ranges: vec![],
             bca_mastering: vec![],
+            extras: vec![],
             added_at: None,
             modified_at: None,
         }
@@ -4330,6 +4406,7 @@ mod operation_delta_tests {
             }),
             cue: detail.disc.cue.clone(),
             files_xml: None,
+            extras: None,
             status: detail.disc.status.to_string(),
             submission_comment: None,
             submit_as: None,
@@ -4397,6 +4474,7 @@ mod operation_delta_tests {
             files_xml: Some(
                 r#"<rom name="New Game.iso" size="1" crc="11111111" md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" sha1="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" />"#.to_string(),
             ),
+            extras: None,
             status: "Verified".to_string(),
             submission_comment: None,
             submit_as: None,
@@ -6634,7 +6712,6 @@ mod operation_delta_tests {
         let script = include_str!("../../static/js/disc_edit.js");
         let css = include_str!("../../static/css/app.css").replace("\r\n", "\n");
 
-        let dump_log_pos = template.find(r#"textarea name="dump_log""#).unwrap();
         assert!(template.contains(r#"<input type="file" id="dump-log-file-input" accept=".log" hidden>"#));
         assert!(!template.contains(r#"<small id="dump-log-fill-status""#));
 

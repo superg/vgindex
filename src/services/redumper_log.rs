@@ -24,6 +24,7 @@ pub struct ParsedRedumperLog {
     pub bca: Option<String>,
     pub cuesheet: Option<String>,
     pub dat: Option<String>,
+    pub extras: Option<String>,
     /// `None` means no protection information was found. `Some("")` means
     /// `protection: none` was explicitly reported and the field should clear.
     pub protection: Option<String>,
@@ -157,10 +158,12 @@ fn parse_internal(
     }
 
     if let Some(hash) = hash.as_deref() {
-        result.dat = consecutive_matching_after(hash, "dat:", |line| {
+        let is_rom_line = |line: &str| {
             let line = line.trim();
             line.starts_with("<rom ") && line.ends_with("/>")
-        });
+        };
+        result.dat = consecutive_matching_after(hash, "dat:", is_rom_line);
+        result.extras = consecutive_matching_after(hash, "dat (extra):", is_rom_line);
     }
 
     result.protection = protection(
@@ -896,7 +899,7 @@ dat:
     }
 
     #[test]
-    fn dat_extra_entries_are_excluded_without_a_blank_separator() {
+    fn dat_extra_entries_are_separate_from_dat_without_a_blank_separator() {
         let log = r#"*** HASH (time check: 0s)
 dat:
 <rom name="xbox47.iso" size="7825162240" crc="ffaf1dcc" md5="e057504a77b4e0ad6271ea76f352a68f" sha1="4c4377a74a07ec2af8c7ef11ae30490f48d0ef13" />
@@ -904,10 +907,17 @@ dat (extra):
 <rom name="xbox47.dmi" size="2048" crc="043bf884" md5="efe2e7d26f6a375ea6a5e17074bcc908" sha1="ab7246ac85974768f7f3fb79bd6f7bad33e818c8" />
 <rom name="xbox47.pfi" size="2048" crc="8fc52135" md5="51badb1da2cc5fb0b272061dab9ef75b" sha1="1b1c6e61835799dd182dea5b3f3f35447216a8ac" />"#;
 
+        let parsed = parse(log, &[]);
         assert_eq!(
-            parse(log, &[]).dat.as_deref(),
+            parsed.dat.as_deref(),
             Some(
                 r#"<rom name="xbox47.iso" size="7825162240" crc="ffaf1dcc" md5="e057504a77b4e0ad6271ea76f352a68f" sha1="4c4377a74a07ec2af8c7ef11ae30490f48d0ef13" />"#
+            )
+        );
+        assert_eq!(
+            parsed.extras.as_deref(),
+            Some(
+                "<rom name=\"xbox47.dmi\" size=\"2048\" crc=\"043bf884\" md5=\"efe2e7d26f6a375ea6a5e17074bcc908\" sha1=\"ab7246ac85974768f7f3fb79bd6f7bad33e818c8\" />\n<rom name=\"xbox47.pfi\" size=\"2048\" crc=\"8fc52135\" md5=\"51badb1da2cc5fb0b272061dab9ef75b\" sha1=\"1b1c6e61835799dd182dea5b3f3f35447216a8ac\" />"
             )
         );
     }

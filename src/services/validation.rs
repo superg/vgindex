@@ -76,6 +76,24 @@ pub fn media_allows_bca_mastering(media_code: &str) -> bool {
     matches!(media_code, "dvd5gc" | "dvd5wii" | "dvd9wii")
 }
 
+pub struct ExtraFileType {
+    pub extension: &'static str,
+    pub size: i64,
+    pub max_count: Option<usize>,
+}
+
+pub fn media_extra_file_types(media_code: &str) -> Option<&'static [ExtraFileType]> {
+    const XGD: &[ExtraFileType] = &[
+        ExtraFileType { extension: "dmi", size: 2048, max_count: None },
+        ExtraFileType { extension: "pfi", size: 2048, max_count: Some(1) },
+        ExtraFileType { extension: "ss", size: 2048, max_count: None },
+    ];
+    match media_code {
+        "xgd" => Some(XGD),
+        _ => None,
+    }
+}
+
 pub fn normalize_bca_mastering_input(input: &str) -> String {
     input
         .chars()

@@ -15,6 +15,7 @@ const MEDIA_ROM_EXTENSIONS = {{ media_rom_extensions_json|safe }};
 const MEDIA_IS_CD = {{ media_is_cd_json|safe }};
 const MEDIA_HAS_PIC = {{ media_has_pic_json|safe }};
 const MEDIA_HAS_DMI = {{ media_has_dmi_json|safe }};
+const MEDIA_HAS_EXTRAS = {{ media_has_extras_json|safe }};
 const MEDIA_HAS_DUMMY_LAYER = {{ media_has_dummy_layer_json|safe }};
 const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{% endif %}{% endfor %}];
 const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
@@ -658,6 +659,17 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         {% if self.has_old_multiline("files_xml") %}
         <label class="review-old-textarea">Previous
             <textarea rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" readonly>{{ self.old_multiline("files_xml") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
+
+    <div class="multiline-review-field{% if !self.highlight_class("extras").is_empty() %} {{ self.highlight_class("extras") }}{% endif %}" id="extras-field"{% if !show_extras %} style="display:none"{% endif %}>
+        <label>Extras Dat
+            <textarea name="extras" rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" placeholder='<rom name="..." size="..." crc="..." md5="..." sha1="..." />'>{{ extras }}</textarea>
+        </label>
+        {% if self.has_old_multiline("extras") %}
+        <label class="review-old-textarea">Previous
+            <textarea rows="5" spellcheck="false" class="hex-dump-input auto-expand fixed-80" readonly>{{ self.old_multiline("extras") }}</textarea>
         </label>
         {% endif %}
     </div>

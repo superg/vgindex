@@ -670,6 +670,20 @@ function applyMediaFieldVisibility() {
     var mediaSel = document.getElementById('media-select');
     if (!mediaSel || typeof MEDIA_HAS_PIC === 'undefined' || typeof MEDIA_IS_CD === 'undefined') return;
     var code = mediaSel.value;
+    var extrasField = document.getElementById('extras-field');
+    if (extrasField && typeof MEDIA_HAS_EXTRAS !== 'undefined') {
+        var showExtras = !!MEDIA_HAS_EXTRAS[code];
+        var wasHidden = extrasField.style.display === 'none';
+        extrasField.style.display = showExtras ? '' : 'none';
+        extrasField.querySelectorAll('input, select, textarea').forEach(function (ctrl) {
+            ctrl.disabled = !showExtras && !ctrl.readOnly;
+        });
+        if (showExtras && wasHidden) {
+            extrasField.querySelectorAll('textarea.auto-expand').forEach(function (ta) {
+                autoExpand(ta);
+            });
+        }
+    }
     var showPic = !!MEDIA_HAS_PIC[code];
     var showDmi = !!MEDIA_HAS_DMI[code] && systemHasFlag('has_dmi');
     var showErrorCount = !!MEDIA_IS_CD[code] && systemHasFlag('has_error_count');
@@ -1305,6 +1319,7 @@ function applyParsedRedumperLog(data) {
         'bca',
         'cuesheet',
         'dat',
+        'extras',
         'protection'
     ].forEach(function (name) {
         applied += applyParsedField(name, data[name]);

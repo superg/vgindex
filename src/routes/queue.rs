@@ -23,7 +23,7 @@ use super::compact_query_url;
 use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
     build_check_options, build_flat_changes, build_lang_check_options, build_media_has_dummy_layer_json,
-    build_media_has_dmi_json, build_media_has_pic_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
+    build_media_has_dmi_json, build_media_has_extras_json, build_media_has_pic_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
     build_media_rom_extensions_json, build_new_disc_changes, build_sparse_disc_submission_changes,
     build_sparse_edit_changes, build_system_options, build_systems_json, fetch_ref_data,
     max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
@@ -657,6 +657,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
         universal_hash: string("universal_hash"),
         cue: string("cuesheet"),
         files_xml: string("dat"),
+        extras: Some(strings("extras").join("\n")),
         status: string("status").unwrap_or_else(|| "Unverified".to_string()),
         submission_comment: sub.submission_comment.clone(),
         submit_as: None,
@@ -683,6 +684,7 @@ fn apply_draft_verification_target_fields(
         .unwrap_or_default()
         .to_string();
     form.files_xml = target_snapshot["dat"].as_str().map(str::to_string);
+    form.extras = Some(array_strings(&target_snapshot["extras"]).join("\n"));
 }
 
 async fn submission_detail(
@@ -1084,6 +1086,10 @@ fn build_review_template(
 
         cue: json_opt_str("cuesheet"),
         files_xml: json_opt_str("dat"),
+        show_extras: crate::services::validation::media_extra_file_types(media_type_code)
+            .is_some(),
+        media_has_extras_json: build_media_has_extras_json(&ref_data.all_media_types),
+        extras: json_str_vec("extras").join("\n"),
 
         status,
 
@@ -1331,7 +1337,7 @@ fn sector_ranges_display(value: &serde_json::Value) -> String {
 fn multiline_display_value(field: &str, value: &serde_json::Value) -> String {
     if field == "sector_ranges" {
         sector_ranges_display(value)
-    } else if field == "bca_mastering" {
+    } else if matches!(field, "bca_mastering" | "extras") {
         array_strings(value).join("\n")
     } else {
         review_display_value(value)
@@ -1529,6 +1535,7 @@ fn build_review_diff_context(
         "dmi",
         "cuesheet",
         "dat",
+        "extras",
     ] {
         let old = &db_snapshot[field];
         let new = &submitted_snapshot[field];
@@ -1619,6 +1626,8 @@ fn apply_review_diff_context(
                 &template.system_code,
                 &old_media_type,
             );
+            template.show_extras =
+                crate::services::validation::media_extra_file_types(&old_media_type).is_some();
         }
 
         template.show_error_count = disc_edit::error_count_available_for_selection(
@@ -1780,6 +1789,7 @@ fn compute_field_highlights(
         "pic",
         "cuesheet",
         "dat",
+        "extras",
         "status",
     ];
 

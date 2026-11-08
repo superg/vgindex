@@ -29,6 +29,7 @@
                 {% if sys.has_dat %}<a href="/datfile/{{ sys.code }}">Datfile</a>{% endif %}
                 {% if sys.has_cue %}<a href="/cues/{{ sys.code }}">Cuesheets</a>{% endif %}
                 {% if sys.has_sbi %}<a href="/sbi/{{ sys.code }}">SBI</a>{% endif %}
+                {% if sys.has_extras %}<a href="/extras/{{ sys.code }}">Extras Datfile</a>{% endif %}
             </td>
         </tr>
         {% endfor %}

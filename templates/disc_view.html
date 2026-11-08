@@ -552,6 +552,33 @@
 </section>
 {% endif %}
 
+{% if !extras.is_empty() %}
+<section class="left-section detail-section">
+    <h3>Extras</h3>
+    <div class="table-scroll table-scroll-compact scroll-only">
+    <table class="disc-table files-table">
+        <thead>
+            <tr>
+                <th style="text-align: left;">Filename</th>
+                <th class="col-num">Size</th><th>CRC-32</th><th>MD5</th><th>SHA-1</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for extra in extras %}
+            <tr>
+                <td style="text-align: left;" title="{{ extra.label }}"><code>{{ extra.label }}</code></td>
+                <td class="col-num"><code>{{ extra.size }}</code></td>
+                <td><code>{{ extra.crc32 }}</code></td>
+                <td><code>{{ extra.md5 }}</code></td>
+                <td><code>{{ extra.sha1 }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
 <div class="disc-bottom-actions">
     {% if can_edit %}
     <a href="/disc/{{ disc_id }}/edit" role="button">Edit</a>
