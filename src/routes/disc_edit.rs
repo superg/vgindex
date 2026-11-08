@@ -1498,6 +1498,9 @@ fn validate_form_with_options(
     if let Some(ref text) = form.extras {
         match disc_service::parse_extras_input(text, media_code) {
             Err(e) => errors.push(format!("Extras: {}", e)),
+            Ok(extras) if extras.is_empty() && !text.trim().is_empty() => {
+                errors.push("Extras: no valid <rom ...> entries found".to_string());
+            }
             Ok(extras) if options.single_extra_per_type => {
                 let mut types: Vec<&str> = extras.iter().map(|e| e.file_type.as_str()).collect();
                 types.sort_unstable();
@@ -3271,8 +3274,10 @@ pub(crate) fn build_flat_changes(
             .map(|s| simplify_files_xml(&s, rom_ext))
             .map(|dat| normalize_dat_hash_case(&dat)),
         "extras": norm_opt_multiline_str(form.extras.as_deref())
-            .and_then(|s| disc_service::parse_extras_input(&s, form.media_type.trim()).ok())
-            .map(|extras| disc_service::format_extras_lines(&extras))
+            .map(|s| match disc_service::parse_extras_input(&s, form.media_type.trim()) {
+                Ok(extras) => disc_service::format_extras_lines(&extras),
+                Err(_) => s.lines().map(str::to_string).collect(),
+            })
             .unwrap_or_default(),
         "regions": new_regions,
         "languages": new_languages,
