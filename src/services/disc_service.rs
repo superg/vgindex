@@ -2434,10 +2434,7 @@ async fn parse_and_insert_files(
 }
 
 fn extract_attr(line: &str, attr: &str) -> Option<String> {
-    let needle = format!("{attr}=\"");
-    let start = line.find(&needle)? + needle.len();
-    let end = line[start..].find('"')? + start;
-    Some(line[start..end].to_string())
+    crate::services::validation::dat_extract_attr(line, attr)
 }
 
 fn extract_track_number(filename: &str) -> Option<String> {

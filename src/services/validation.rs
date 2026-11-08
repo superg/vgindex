@@ -579,11 +579,16 @@ pub fn validate_rom_line(line: &str, row: usize) -> Result<String, String> {
     Ok(name)
 }
 
-fn dat_extract_attr(line: &str, attr: &str) -> Option<String> {
-    let needle = format!("{}=\"", attr);
-    let start = line.find(&needle)? + needle.len();
-    let end = line[start..].find('"')? + start;
-    Some(line[start..end].to_string())
+pub(crate) fn dat_extract_attr(line: &str, attr: &str) -> Option<String> {
+    let mut rest = line.strip_prefix("<rom")?;
+    loop {
+        let (key, after_key) = rest.trim_start().split_once("=\"")?;
+        let (value, after_value) = after_key.split_once('"')?;
+        if key == attr {
+            return Some(value.to_string());
+        }
+        rest = after_value;
+    }
 }
 
 fn dat_extract_track_number(filename: &str) -> Option<String> {
