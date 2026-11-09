@@ -726,8 +726,15 @@ async fn disc_view(
     });
     append_synthetic_img_file(&mut files);
 
+    let mut disc_extras = detail.extras.clone();
+    let dmi_extra = detail
+        .disc
+        .dmi
+        .as_deref()
+        .filter(|_| detail.system.code == "XBOX")
+        .map(|dmi| disc_service::add_dmi_extra(&mut disc_extras, dmi));
     let extras: Vec<ViewExtra> =
-        disc_service::name_extras(&detail.extras, &rom_base_name)
+        disc_service::name_extras(&disc_extras, &rom_base_name, dmi_extra.as_ref())
             .into_iter()
             .map(|(label, extra)| ViewExtra {
                 label,

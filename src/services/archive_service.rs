@@ -564,6 +564,7 @@ pub async fn generate_user_datfile(
             disc,
             &files,
             &[],
+            None,
             &disc.region_names,
             &disc.language_codes,
             cue_active,
@@ -595,7 +596,7 @@ async fn build_datfile_games(
 ) -> AppResult<Vec<GameEntry>> {
     let mut games: Vec<GameEntry> = Vec::with_capacity(discs.len());
     for disc in discs {
-        let (files, disc_extras): (Vec<File>, Vec<DiscExtra>) = if extras {
+        let (files, mut disc_extras): (Vec<File>, Vec<DiscExtra>) = if extras {
             let disc_extras = sqlx::query_as(
                 "SELECT file_type, size, crc32, md5, sha1 FROM disc_extras WHERE disc_id = $1",
             )
@@ -611,11 +612,23 @@ async fn build_datfile_games(
             (files, Vec::new())
         };
 
+        let mut dmi_extra = None;
+        if extras && sys.code == "XBOX" {
+            let dmi: Option<Vec<u8>> = sqlx::query_scalar("SELECT dmi FROM discs WHERE id = $1")
+                .bind(disc.id)
+                .fetch_one(pool)
+                .await?;
+            dmi_extra = dmi.map(|dmi| {
+                crate::services::disc_service::add_dmi_extra(&mut disc_extras, &dmi)
+            });
+        }
+
         let cue_active = dat_disc_has_active_cue(disc, sys);
         games.push(build_game_entry(
             disc,
             &files,
             &disc_extras,
+            dmi_extra.as_ref(),
             &disc.region_names,
             &disc.language_codes,
             cue_active,
@@ -633,6 +646,7 @@ fn build_game_entry(
     disc: &DatfileDisc,
     files: &[File],
     extras: &[DiscExtra],
+    dmi_extra: Option<&DiscExtra>,
     region_names: &[String],
     language_codes: &[String],
     cue_active: bool,
@@ -681,7 +695,7 @@ fn build_game_entry(
         })
         .collect();
     roms.extend(
-        crate::services::disc_service::name_extras(extras, &game_name)
+        crate::services::disc_service::name_extras(extras, &game_name, dmi_extra)
             .into_iter()
             .map(|(name, extra)| RomEntry {
                 name,

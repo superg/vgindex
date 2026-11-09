@@ -292,14 +292,26 @@ pub(crate) fn limited_extra_type(line: &str, media_type_code: &str) -> Option<St
         .then_some(extra.file_type)
 }
 
+pub(crate) fn add_dmi_extra(extras: &mut Vec<DiscExtra>, dmi: &[u8]) -> DiscExtra {
+    let mut padded = dmi.get(4..).unwrap_or_default().to_vec();
+    padded.resize(2048, 0);
+    let (size, crc32, md5, sha1) = compute_file_hashes(&padded);
+    let dmi = DiscExtra { file_type: "dmi".into(), size, crc32, md5, sha1 };
+    extras.retain(|e| *e != dmi);
+    extras.insert(0, dmi.clone());
+    dmi
+}
+
 pub(crate) fn name_extras<'a>(
     extras: &'a [DiscExtra],
     base_name: &str,
+    primary: Option<&DiscExtra>,
 ) -> Vec<(String, &'a DiscExtra)> {
     extras
         .iter()
         .map(|e| {
-            let shared = extras.iter().filter(|o| o.file_type == e.file_type).count() > 1;
+            let shared = primary != Some(e)
+                && extras.iter().filter(|o| o.file_type == e.file_type).count() > 1;
             let name = if shared {
                 format!("{base_name} ({}).{}", e.crc32, e.file_type)
             } else {
@@ -1557,6 +1569,21 @@ mod tests {
         assert!(parse_binary_hex_input("ABC").is_err());
         assert!(parse_binary_hex_input("01 02 XX").is_err());
         assert!(parse_binary_hex_input("0000 : 01 02\n03 04").is_err());
+    }
+
+    #[test]
+    fn dmi_extra_is_padded_deduplicated_and_never_suffixed() {
+        let mut extras = Vec::new();
+        let dmi = add_dmi_extra(&mut extras, &[1, 2, 3]);
+        assert_eq!(dmi.size, 2048);
+        let other = DiscExtra { crc32: "0".into(), ..dmi.clone() };
+        extras.push(other);
+        let dmi = add_dmi_extra(&mut extras, &[1, 2, 3]);
+        let names: Vec<_> = name_extras(&extras, "Game", Some(&dmi))
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(names, ["Game.dmi", "Game (0).dmi"]);
     }
 
     #[test]

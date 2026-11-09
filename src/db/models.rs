@@ -513,7 +513,7 @@ pub struct File {
     pub sha1: String,
 }
 
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct DiscExtra {
     pub file_type: String,
     pub size: i64,
