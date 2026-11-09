@@ -731,7 +731,10 @@ async fn disc_view(
         .disc
         .dmi
         .as_deref()
-        .filter(|_| detail.system.code == "XBOX")
+        .filter(|_| {
+            detail.system.code == "XBOX"
+                && !disc_service::DMI_EXCLUDED_DISC_IDS.contains(&detail.disc.id)
+        })
         .map(|dmi| disc_service::add_dmi_extra(&mut disc_extras, dmi));
     let extras: Vec<ViewExtra> =
         disc_service::name_extras(&disc_extras, &rom_base_name, dmi_extra.as_ref())

@@ -292,6 +292,9 @@ pub(crate) fn limited_extra_type(line: &str, media_type_code: &str) -> Option<St
         .then_some(extra.file_type)
 }
 
+// Hardcoded Xbox disc IDs whose DMI must never be added as an extra
+pub(crate) const DMI_EXCLUDED_DISC_IDS: [i32; 4] = [48905, 49747, 51936, 54518];
+
 pub(crate) fn add_dmi_extra(extras: &mut Vec<DiscExtra>, dmi: &[u8]) -> DiscExtra {
     let mut padded = dmi.get(4..).unwrap_or_default().to_vec();
     padded.resize(2048, 0);
