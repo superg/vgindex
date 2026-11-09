@@ -492,7 +492,7 @@ async fn generate_datfile_archive(
     .await?;
 
     let disc_count = discs.len();
-    let dat_name = sys.dat_system_name();
+    let dat_name = format!("{}{}", sys.dat_system_name(), if extras { " - Extras" } else { "" });
     let games = build_datfile_games(pool, sys, &discs, extras).await?;
 
     let kind = if extras { "Extras Datfile" } else { "Datfile" };
