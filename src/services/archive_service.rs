@@ -495,8 +495,7 @@ async fn generate_datfile_archive(
     let dat_name = format!("{}{}", sys.dat_system_name(), if extras { " - Extras" } else { "" });
     let games = build_datfile_games(pool, sys, &discs, extras).await?;
 
-    let kind = if extras { "Extras Datfile" } else { "Datfile" };
-    let description = format!("{} - {} ({}) ({})", dat_name, kind, disc_count, ts);
+    let description = format!("{} - Datfile ({}) ({})", dat_name, disc_count, ts);
     let xml = render_datfile_xml(metadata, &dat_name, &description, &ts, &games);
     zip_datfile_xml(&description, &xml)
 }
