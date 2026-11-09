@@ -684,7 +684,6 @@ fn apply_draft_verification_target_fields(
         .unwrap_or_default()
         .to_string();
     form.files_xml = target_snapshot["dat"].as_str().map(str::to_string);
-    form.extras = Some(array_strings(&target_snapshot["extras"]).join("\n"));
 }
 
 async fn submission_detail(
