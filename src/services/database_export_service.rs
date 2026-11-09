@@ -122,6 +122,16 @@ CREATE TABLE disc_bca_mastering (
     data BLOB NOT NULL CHECK (length(data) = 16)
 );
 
+CREATE TABLE IF NOT EXISTS disc_extras (
+    id INTEGER PRIMARY KEY,
+    disc_id INTEGER NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
+    file_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    crc32 TEXT NOT NULL,
+    md5 TEXT NOT NULL,
+    sha1 TEXT NOT NULL
+);
+
 CREATE TABLE disc_regions (
     disc_id INTEGER NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
     region_code TEXT NOT NULL REFERENCES regions(code),
@@ -273,6 +283,17 @@ struct DiscRow {
     pic: Option<Vec<u8>>,
     cue: Option<String>,
     status: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct DiscExtraRow {
+    id: i32,
+    disc_id: i32,
+    file_type: String,
+    size: i64,
+    crc32: String,
+    md5: String,
+    sha1: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -509,6 +530,10 @@ async fn generate_export_inner(
     tracing::info!(
         rows = export_disc_bca_mastering(&mut postgres, &mut output).await?,
         table = "disc_bca_mastering"
+    );
+    tracing::info!(
+        rows = export_disc_extras(&mut postgres, &mut output).await?, 
+        table = "disc_extras"
     );
     tracing::info!(
         rows = export_disc_regions(&mut postgres, &mut output).await?, 
@@ -799,6 +824,33 @@ async fn export_disc_bca_mastering(
             .bind(row.id)
             .bind(row.disc_id)
             .bind(row.data)
+            .execute(&mut **sqlite)
+            .await?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+async fn export_disc_extras(
+    postgres: &mut Transaction<'_, Postgres>,
+    sqlite: &mut Transaction<'_, Sqlite>,
+) -> AppResult<u64> {
+    let mut count = 0;
+    let mut rows = sqlx::query_as::<_, DiscExtraRow>(
+        "SELECT de.id, de.disc_id, de.file_type, de.size, de.crc32, de.md5, de.sha1
+         FROM disc_extras de JOIN discs d ON d.id = de.disc_id
+         WHERE d.status <> 'Disabled' ORDER BY de.disc_id, de.id",
+    )
+    .fetch(&mut **postgres);
+    while let Some(row) = rows.try_next().await? {
+        sqlx::query("INSERT INTO disc_extras VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(row.id)
+            .bind(row.disc_id)
+            .bind(row.file_type)
+            .bind(row.size)
+            .bind(row.crc32)
+            .bind(row.md5)
+            .bind(row.sha1)
             .execute(&mut **sqlite)
             .await?;
         count += 1;

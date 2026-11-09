@@ -1265,12 +1265,35 @@ fn resolve_submission_snapshot_with_mode(
         return Ok(resolved);
     };
 
+    let media_code = match change_obj.get("media_type") {
+        Some(node) => apply_scalar_operation("media_type", node)?,
+        None => db_snapshot["media_type"].clone(),
+    }
+    .as_str()
+    .unwrap_or_default()
+    .to_string();
+
     for (key, value) in change_obj {
         match key.as_str() {
             "regions" | "languages" | "serial" | "edition" | "barcode" | "bca_mastering" => {
                 let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
                 let updated = apply_set_operation(&old, value)?;
                 resolved_obj.insert(key.clone(), updated);
+            }
+            "extras" => {
+                let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
+                let mut updated = json_str_vec(&apply_set_operation(&old, value)?);
+                let added = json_str_vec(&value["add"]);
+                for line in &added {
+                    if let Some(file_type) = disc_service::limited_extra_type(line, &media_code) {
+                        updated.retain(|existing| {
+                            existing == line
+                                || disc_service::limited_extra_type(existing, &media_code).as_ref()
+                                    != Some(&file_type)
+                        });
+                    }
+                }
+                resolved_obj.insert(key.clone(), serde_json::json!(updated));
             }
             "ring_codes" => {
                 let old = resolved_obj

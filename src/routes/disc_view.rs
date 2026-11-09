@@ -130,6 +130,7 @@ struct DiscViewTemplate {
     track_rows: Vec<ViewTrackTableRow>,
     track_col_vis: TrackColVis,
     files: Vec<ViewFile>,
+    extras: Vec<ViewExtra>,
     sbi_rows: Vec<SbiRow>,
     show_sbi: bool,
     pvd_rows: Vec<PvdRow>,
@@ -436,6 +437,14 @@ fn build_ring_rows(entries: &[RingEntryView], ring_display_layers: usize) -> Vec
         .collect()
 }
 
+struct ViewExtra {
+    label: String,
+    size: i64,
+    crc32: String,
+    md5: String,
+    sha1: String,
+}
+
 struct ViewFile {
     name: String,
     file_suffix: String,
@@ -716,6 +725,25 @@ async fn disc_view(
             .then_with(|| a.name.cmp(&b.name))
     });
     append_synthetic_img_file(&mut files);
+
+    let mut disc_extras = detail.extras.clone();
+    let dmi_extra = detail
+        .disc
+        .dmi
+        .as_deref()
+        .filter(|_| detail.system.code == "XBOX")
+        .map(|dmi| disc_service::add_dmi_extra(&mut disc_extras, dmi));
+    let extras: Vec<ViewExtra> =
+        disc_service::name_extras(&disc_extras, &rom_base_name, dmi_extra.as_ref())
+            .into_iter()
+            .map(|(label, extra)| ViewExtra {
+                label,
+                size: extra.size,
+                crc32: extra.crc32.clone(),
+                md5: extra.md5.clone(),
+                sha1: extra.sha1.clone(),
+            })
+            .collect();
 
     let track_rows = if cue_active {
         detail
@@ -1007,6 +1035,7 @@ async fn disc_view(
             track_rows,
             track_col_vis,
             files,
+            extras,
             sbi_rows,
             show_sbi,
             pvd_rows,
@@ -2580,6 +2609,7 @@ mod tests {
                 visible_count: 0,
             },
             files: Vec::new(),
+            extras: Vec::new(),
             sbi_rows: Vec::new(),
             show_sbi: false,
             pvd_rows: Vec::new(),

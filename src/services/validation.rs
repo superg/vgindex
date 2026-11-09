@@ -76,6 +76,24 @@ pub fn media_allows_bca_mastering(media_code: &str) -> bool {
     matches!(media_code, "dvd5gc" | "dvd5wii" | "dvd9wii")
 }
 
+pub struct ExtraFileType {
+    pub extension: &'static str,
+    pub size: i64,
+    pub max_count: Option<usize>,
+}
+
+pub fn media_extra_file_types(media_code: &str) -> Option<&'static [ExtraFileType]> {
+    const XGD: &[ExtraFileType] = &[
+        ExtraFileType { extension: "dmi", size: 2048, max_count: None },
+        ExtraFileType { extension: "pfi", size: 2048, max_count: Some(1) },
+        ExtraFileType { extension: "ss", size: 2048, max_count: None },
+    ];
+    match media_code {
+        "xgd" => Some(XGD),
+        _ => None,
+    }
+}
+
 pub fn normalize_bca_mastering_input(input: &str) -> String {
     input
         .chars()
@@ -513,35 +531,7 @@ pub fn validate_dat(text: &str) -> Result<(), String> {
             continue;
         }
         let row = line_num + 1;
-        if !line.starts_with("<rom ") || !line.ends_with("/>") {
-            return Err(format!("row {}: expected <rom ... /> format", row));
-        }
-        let name = dat_extract_attr(line, "name")
-            .ok_or_else(|| format!("row {}: missing 'name' attribute", row))?;
-        if name.is_empty() {
-            return Err(format!("row {}: 'name' cannot be empty", row));
-        }
-        let size_str = dat_extract_attr(line, "size")
-            .ok_or_else(|| format!("row {}: missing 'size' attribute", row))?;
-        size_str
-            .parse::<u64>()
-            .map_err(|_| format!("row {}: 'size' must be a non-negative integer", row))?;
-        let crc = dat_extract_attr(line, "crc")
-            .ok_or_else(|| format!("row {}: missing 'crc' attribute", row))?;
-        if crc.len() != 8 || !crc.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!("row {}: 'crc' must be 8 hex characters", row));
-        }
-        let md5 = dat_extract_attr(line, "md5")
-            .ok_or_else(|| format!("row {}: missing 'md5' attribute", row))?;
-        if md5.len() != 32 || !md5.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!("row {}: 'md5' must be 32 hex characters", row));
-        }
-        let sha1 = dat_extract_attr(line, "sha1")
-            .ok_or_else(|| format!("row {}: missing 'sha1' attribute", row))?;
-        if sha1.len() != 40 || !sha1.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(format!("row {}: 'sha1' must be 40 hex characters", row));
-        }
-        names.push((row, name));
+        names.push((row, validate_rom_line(line, row)?));
     }
 
     if names.len() > 1 {
@@ -557,11 +547,48 @@ pub fn validate_dat(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn dat_extract_attr(line: &str, attr: &str) -> Option<String> {
-    let needle = format!("{}=\"", attr);
-    let start = line.find(&needle)? + needle.len();
-    let end = line[start..].find('"')? + start;
-    Some(line[start..end].to_string())
+pub fn validate_rom_line(line: &str, row: usize) -> Result<String, String> {
+    if !line.starts_with("<rom ") || !line.ends_with("/>") {
+        return Err(format!("row {}: expected <rom ... /> format", row));
+    }
+    let name = dat_extract_attr(line, "name")
+        .ok_or_else(|| format!("row {}: missing 'name' attribute", row))?;
+    if name.is_empty() {
+        return Err(format!("row {}: 'name' cannot be empty", row));
+    }
+    let size_str = dat_extract_attr(line, "size")
+        .ok_or_else(|| format!("row {}: missing 'size' attribute", row))?;
+    size_str
+        .parse::<u64>()
+        .map_err(|_| format!("row {}: 'size' must be a non-negative integer", row))?;
+    let crc = dat_extract_attr(line, "crc")
+        .ok_or_else(|| format!("row {}: missing 'crc' attribute", row))?;
+    if crc.len() != 8 || !crc.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("row {}: 'crc' must be 8 hex characters", row));
+    }
+    let md5 = dat_extract_attr(line, "md5")
+        .ok_or_else(|| format!("row {}: missing 'md5' attribute", row))?;
+    if md5.len() != 32 || !md5.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("row {}: 'md5' must be 32 hex characters", row));
+    }
+    let sha1 = dat_extract_attr(line, "sha1")
+        .ok_or_else(|| format!("row {}: missing 'sha1' attribute", row))?;
+    if sha1.len() != 40 || !sha1.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("row {}: 'sha1' must be 40 hex characters", row));
+    }
+    Ok(name)
+}
+
+pub(crate) fn dat_extract_attr(line: &str, attr: &str) -> Option<String> {
+    let mut rest = line.strip_prefix("<rom")?;
+    loop {
+        let (key, after_key) = rest.trim_start().split_once("=\"")?;
+        let (value, after_value) = after_key.split_once('"')?;
+        if key == attr {
+            return Some(value.to_string());
+        }
+        rest = after_value;
+    }
 }
 
 fn dat_extract_track_number(filename: &str) -> Option<String> {

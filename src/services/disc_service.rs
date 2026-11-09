@@ -203,6 +203,125 @@ pub(crate) fn parse_dmi_input(
     Ok(Some(bytes))
 }
 
+pub(crate) fn parse_extras_input(
+    text: &str,
+    media_type_code: &str,
+) -> Result<Vec<DiscExtra>, String> {
+    let Some(types) = crate::services::validation::media_extra_file_types(media_type_code) else {
+        return Ok(Vec::new());
+    };
+
+    let mut extras: Vec<DiscExtra> = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let row = index + 1;
+        let name = crate::services::validation::validate_rom_line(line, row)?;
+        let extension = name
+            .rsplit_once('.')
+            .map(|(_, extension)| extension.to_ascii_lowercase())
+            .unwrap_or_default();
+        let Some(extra_type) = types.iter().find(|t| t.extension == extension) else {
+            return Err(format!("line {row}: '{name}' has an unsupported extension"));
+        };
+        let size: Option<i64> = extract_attr(line, "size").and_then(|s| s.parse().ok());
+        if size != Some(extra_type.size) {
+            return Err(format!(
+                "line {row}: .{} size must be {}",
+                extra_type.extension, extra_type.size
+            ));
+        }
+        let hash = |attr: &str| extract_attr(line, attr).unwrap_or_default().to_ascii_lowercase();
+        let extra = DiscExtra {
+            file_type: extra_type.extension.to_string(),
+            size: extra_type.size,
+            crc32: hash("crc"),
+            md5: hash("md5"),
+            sha1: hash("sha1"),
+        };
+        if extras.iter().any(|e| {
+            e.file_type == extra.file_type
+                && e.crc32 == extra.crc32
+                && e.md5 == extra.md5
+                && e.sha1 == extra.sha1
+        }) {
+            return Err(format!("line {row}: duplicate entry"));
+        }
+        extras.push(extra);
+    }
+
+    for extra_type in types {
+        let count = extras
+            .iter()
+            .filter(|e| e.file_type == extra_type.extension)
+            .count();
+        if let Some(max) = extra_type.max_count.filter(|max| count > *max) {
+            return Err(format!(
+                "at most {max} .{} file(s) allowed",
+                extra_type.extension
+            ));
+        }
+    }
+
+    extras.sort_by(|a, b| (&a.file_type, &a.crc32).cmp(&(&b.file_type, &b.crc32)));
+    Ok(extras)
+}
+
+pub(crate) fn format_extras_lines(extras: &[DiscExtra]) -> Vec<String> {
+    extras
+        .iter()
+        .map(|e| {
+            format!(
+                r#"<rom name="extra.{}" size="{}" crc="{}" md5="{}" sha1="{}" />"#,
+                e.file_type, e.size, e.crc32, e.md5, e.sha1
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn limited_extra_type(line: &str, media_type_code: &str) -> Option<String> {
+    let extra = parse_extras_input(line, media_type_code)
+        .ok()?
+        .into_iter()
+        .next()?;
+    crate::services::validation::media_extra_file_types(media_type_code)?
+        .iter()
+        .any(|t| t.extension == extra.file_type && t.max_count.is_some())
+        .then_some(extra.file_type)
+}
+
+pub(crate) fn add_dmi_extra(extras: &mut Vec<DiscExtra>, dmi: &[u8]) -> DiscExtra {
+    let mut padded = dmi.get(4..).unwrap_or_default().to_vec();
+    padded.resize(2048, 0);
+    let (size, crc32, md5, sha1) = compute_file_hashes(&padded);
+    let dmi = DiscExtra { file_type: "dmi".into(), size, crc32, md5, sha1 };
+    extras.retain(|e| *e != dmi);
+    extras.insert(0, dmi.clone());
+    dmi
+}
+
+pub(crate) fn name_extras<'a>(
+    extras: &'a [DiscExtra],
+    base_name: &str,
+    primary: Option<&DiscExtra>,
+) -> Vec<(String, &'a DiscExtra)> {
+    extras
+        .iter()
+        .map(|e| {
+            let shared = primary != Some(e)
+                && extras.iter().filter(|o| o.file_type == e.file_type).count() > 1;
+            let name = if shared {
+                format!("{base_name} ({}).{}", e.crc32, e.file_type)
+            } else {
+                format!("{base_name}.{}", e.file_type)
+            };
+            (name, e)
+        })
+        .collect()
+}
+
 fn parse_addressed_hex_dump(text: &str) -> Result<Vec<u8>, String> {
     let mut result = Vec::new();
     for (line_num, line) in text.lines().enumerate() {
@@ -802,6 +921,13 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_all(pool)
     .await?;
 
+    let extras: Vec<DiscExtra> = sqlx::query_as(
+        "SELECT file_type, size, crc32, md5, sha1 FROM disc_extras WHERE disc_id = $1 ORDER BY file_type, crc32",
+    )
+    .bind(disc_id)
+    .fetch_all(pool)
+    .await?;
+
     let dumpers: Vec<DumperInfo> = sqlx::query_as(
         "SELECT u.id AS user_id,
                 u.username
@@ -858,6 +984,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         languages,
         ring_entries: ring_views,
         files,
+        extras,
         dumpers,
         disc_submission_count,
         sector_ranges,
@@ -1317,6 +1444,32 @@ pub async fn update_disc(
         }
     }
 
+    if let Some(value) = data.get("extras") {
+        let extras = parse_extras_input(
+            &parse_text_array(value).join("\n"),
+            media_type.unwrap_or_default(),
+        )
+        .map_err(|e| AppError::BadRequest(format!("Extras: {e}")))?;
+        sqlx::query("DELETE FROM disc_extras WHERE disc_id = $1")
+            .bind(disc_id)
+            .execute(&mut *conn)
+            .await?;
+        for extra in &extras {
+            sqlx::query(
+                "INSERT INTO disc_extras (disc_id, file_type, size, crc32, md5, sha1)
+                 VALUES ($1, $2, $3, $4, $5, $6)",
+            )
+            .bind(disc_id)
+            .bind(&extra.file_type)
+            .bind(extra.size)
+            .bind(&extra.crc32)
+            .bind(&extra.md5)
+            .bind(&extra.sha1)
+            .execute(&mut *conn)
+            .await?;
+        }
+    }
+
     regenerate_cue_entry(&mut *conn, disc_id).await?;
 
     Ok(())
@@ -1416,6 +1569,21 @@ mod tests {
         assert!(parse_binary_hex_input("ABC").is_err());
         assert!(parse_binary_hex_input("01 02 XX").is_err());
         assert!(parse_binary_hex_input("0000 : 01 02\n03 04").is_err());
+    }
+
+    #[test]
+    fn dmi_extra_is_padded_deduplicated_and_never_suffixed() {
+        let mut extras = Vec::new();
+        let dmi = add_dmi_extra(&mut extras, &[1, 2, 3]);
+        assert_eq!(dmi.size, 2048);
+        let other = DiscExtra { crc32: "0".into(), ..dmi.clone() };
+        extras.push(other);
+        let dmi = add_dmi_extra(&mut extras, &[1, 2, 3]);
+        let names: Vec<_> = name_extras(&extras, "Game", Some(&dmi))
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(names, ["Game.dmi", "Game (0).dmi"]);
     }
 
     #[test]
@@ -1730,6 +1898,7 @@ mod tests {
             disc_submission_count: 0,
             sector_ranges: vec![],
             bca_mastering: vec![],
+            extras: vec![],
             added_at: None,
             modified_at: None,
         };
@@ -2292,10 +2461,7 @@ async fn parse_and_insert_files(
 }
 
 fn extract_attr(line: &str, attr: &str) -> Option<String> {
-    let needle = format!("{attr}=\"");
-    let start = line.find(&needle)? + needle.len();
-    let end = line[start..].find('"')? + start;
-    Some(line[start..end].to_string())
+    crate::services::validation::dat_extract_attr(line, attr)
 }
 
 fn extract_track_number(filename: &str) -> Option<String> {
@@ -2458,6 +2624,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "ring_codes": ring_codes,
         "sector_ranges": sector_ranges,
         "dat": if files_xml.is_empty() { serde_json::Value::Null } else { serde_json::json!(files_xml) },
+        "extras": format_extras_lines(&detail.extras),
     });
     canonicalize_disc_snapshot_hex_fields(&mut snapshot);
     snapshot
