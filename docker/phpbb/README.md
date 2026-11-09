@@ -97,7 +97,7 @@ the internal Docker proxy address, such as `172.18.0.6`.
 By default, Apache trusts forwarded IPs only from private Docker/LAN ranges:
 
 ```text
-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,,::1,fc00::/7,fe80::/10
 ```
 
 For production, you can tighten this to the exact Compose subnet or proxy
