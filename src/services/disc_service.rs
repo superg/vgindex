@@ -174,7 +174,7 @@ pub(crate) fn parse_binary_hex_input(text: &str) -> Result<Vec<u8>, String> {
 
 pub(crate) fn parse_dmi_input(
     text: &str,
-    media_type_code: &str,
+    required_length: usize,
 ) -> Result<Option<Vec<u8>>, String> {
     if text.trim().is_empty() {
         return Ok(None);
@@ -185,13 +185,8 @@ pub(crate) fn parse_dmi_input(
         return Err("DMI: data beyond the four-byte header is required".into());
     }
 
-    let (required_length, error_message) = match media_type_code {
-        "xgd" => (0x54, "DMI: Xbox DMI requires 84 bytes"),
-        "dvd5wii" | "dvd9wii" => (0x54, "DMI: Wii DMI requires 84 bytes"),
-        _ => (0x804, "DMI: Requires 2052 bytes (.manufacturer file)"),
-    };
     if bytes.len() < required_length {
-        return Err(error_message.into());
+        return Err(format!("DMI: Requires {required_length} bytes (with 4-byte SCSI header)"));
     }
     bytes.truncate(required_length);
 
@@ -291,9 +286,6 @@ pub(crate) fn limited_extra_type(line: &str, media_type_code: &str) -> Option<St
         .any(|t| t.extension == extra.file_type && t.max_count.is_some())
         .then_some(extra.file_type)
 }
-
-// Hardcoded Xbox disc IDs whose DMI must never be added as an extra
-pub(crate) const DMI_EXCLUDED_DISC_IDS: [i32; 4] = [48905, 49747, 51936, 54518];
 
 pub(crate) fn add_dmi_extra(extras: &mut Vec<DiscExtra>, dmi: &[u8]) -> DiscExtra {
     let mut padded = dmi.get(4..).unwrap_or_default().to_vec();
@@ -854,11 +846,17 @@ pub async fn list_dumped_discs(
     Ok(discs)
 }
 
+const MEDIA_TYPE_FOR_SYSTEM_SQL: &str = "SELECT mt.code, mt.name, mt.layer_count, mt.pic, mt.rom_extension, mt.has_dummy_layer, mt.dmi, mt.dmi_length,
+            (SELECT t.trailer FROM system_media_dmi_trailers t
+             WHERE t.system_code = $2 AND t.media_type_code = mt.code) AS dmi_trailer
+     FROM media_types mt WHERE mt.code = $1";
+
 async fn enrich_media_type(pool: &PgPool, disc: &mut Disc) -> AppResult<()> {
     let row: MediaTypeRow = sqlx::query_as(
-        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer, dmi FROM media_types WHERE code = $1",
+        MEDIA_TYPE_FOR_SYSTEM_SQL,
     )
     .bind(disc.media_type.code())
+    .bind(&disc.system_code)
     .fetch_one(pool)
     .await?;
     disc.media_type = row.into();
@@ -1089,9 +1087,20 @@ pub async fn update_disc(
         .filter(|s| !s.is_empty())
         .map(|s| parse_binary_hex_input(&s).map_err(|e| AppError::BadRequest(format!("PIC: {e}"))))
         .transpose()?;
+    let dmi_length: i32 = sqlx::query_scalar(
+        "SELECT mt.dmi_length
+         FROM discs d
+         JOIN media_types mt ON mt.code = COALESCE($2, d.media_type_code)
+         WHERE d.id = $1",
+    )
+    .bind(disc_id)
+    .bind(media_type.filter(|s| !s.trim().is_empty()))
+    .fetch_optional(&mut *conn)
+    .await?
+    .unwrap_or(FULL_DMI_LENGTH);
     let dmi = data["dmi"]
         .as_str()
-        .map(|s| parse_dmi_input(s, media_type.unwrap_or_default()))
+        .map(|s| parse_dmi_input(s, dmi_length.max(0) as usize))
         .transpose()
         .map_err(|e| AppError::BadRequest(e))?
         .flatten();
@@ -1591,32 +1600,32 @@ mod tests {
 
     #[test]
     fn dmi_parser_distinguishes_blank_and_present_values() {
-        assert_eq!(parse_dmi_input("  \n ", "dvd5"), Ok(None));
+        assert_eq!(parse_dmi_input("  \n ", 0x804), Ok(None));
 
         let mut bytes = vec![0x11; 0x804];
         bytes[..5].copy_from_slice(&[1, 2, 3, 4, 5]);
         let text = bytes.iter().map(|byte| format!("{byte:02X}")).collect::<String>();
-        assert_eq!(parse_dmi_input(&text, "dvd5"), Ok(Some(bytes)));
+        assert_eq!(parse_dmi_input(&text, 0x804), Ok(Some(bytes)));
     }
 
     #[test]
     fn dmi_parser_requires_data_beyond_four_byte_header_and_labels_malformed_input() {
         assert_eq!(
-            parse_dmi_input("01 02 03", "dvd5wii").unwrap_err(),
+            parse_dmi_input("01 02 03", 0x54).unwrap_err(),
             "DMI: data beyond the four-byte header is required"
         );
         assert_eq!(
-            parse_dmi_input("01 02 03 04", "dvd5wii").unwrap_err(),
+            parse_dmi_input("01 02 03 04", 0x54).unwrap_err(),
             "DMI: data beyond the four-byte header is required"
         );
 
-        let malformed = parse_dmi_input("01 02 0X 04 05", "dvd5wii").unwrap_err();
+        let malformed = parse_dmi_input("01 02 0X 04 05", 0x54).unwrap_err();
         assert!(malformed.starts_with("DMI: "));
     }
 
     #[test]
     fn dmi_parser_discards_nonempty_all_zero_payload() {
-        for media_type in ["dvd5wii", "dvd9wii"] {
+        for media_type in [0x54usize] {
             let mut zeroed = vec![0; 0x54];
             zeroed[..4].copy_from_slice(&[1, 2, 3, 4]);
             let zeroed_text = zeroed
@@ -1638,20 +1647,20 @@ mod tests {
     #[test]
     fn xgd_dmi_requires_exact_length_and_truncates_overlong_input_before_zero_classification() {
         assert_eq!(
-            parse_dmi_input("01 02 03 04 05", "xgd").unwrap_err(),
-            "DMI: Xbox DMI requires 84 bytes"
+            parse_dmi_input("01 02 03 04 05", 0x54).unwrap_err(),
+            "DMI: Requires 84 bytes (with 4-byte SCSI header)"
         );
 
         let short = vec![0x11; 0x53];
         let short_text = short.iter().map(|byte| format!("{byte:02X}")).collect::<String>();
         assert_eq!(
-            parse_dmi_input(&short_text, "xgd").unwrap_err(),
-            "DMI: Xbox DMI requires 84 bytes"
+            parse_dmi_input(&short_text, 0x54).unwrap_err(),
+            "DMI: Requires 84 bytes (with 4-byte SCSI header)"
         );
 
         let exact = vec![0x11; 0x54];
         let exact_text = exact.iter().map(|byte| format!("{byte:02X}")).collect::<String>();
-        assert_eq!(parse_dmi_input(&exact_text, "xgd"), Ok(Some(exact)));
+        assert_eq!(parse_dmi_input(&exact_text, 0x54), Ok(Some(exact)));
 
         let mut overlong = vec![0x11; 0x55];
         overlong[4] = 0x22;
@@ -1660,7 +1669,7 @@ mod tests {
             .map(|byte| format!("{byte:02X}"))
             .collect::<String>();
         assert_eq!(
-            parse_dmi_input(&overlong_text, "xgd"),
+            parse_dmi_input(&overlong_text, 0x54),
             Ok(Some(overlong[..0x54].to_vec()))
         );
 
@@ -1671,7 +1680,7 @@ mod tests {
             .iter()
             .map(|byte| format!("{byte:02X}"))
             .collect::<String>();
-        assert_eq!(parse_dmi_input(&zero_text, "xgd"), Ok(None));
+        assert_eq!(parse_dmi_input(&zero_text, 0x54), Ok(None));
     }
 
     #[test]
@@ -1792,6 +1801,8 @@ mod tests {
             dmi: false,
             rom_extension: "iso".to_string(),
             has_dummy_layer: false,
+            dmi_length: 0x804,
+            dmi_trailer: None,
         }
         .into();
         let mut detail = DiscDetail {
@@ -1825,6 +1836,7 @@ mod tests {
                 header: Some(vec![0xab, 0xcd]),
                 bca: None,
                 dmi: None,
+                dmi_extra_excluded: false,
                 status: DiscStatus::Verified,
             },
             system: System {
@@ -1855,6 +1867,7 @@ mod tests {
                 has_dmi: false,
                 has_sample_start: false,
                 has_offset_extra: false,
+                dmi_extra: false,
                 archives_dirty: false,
             },
             regions: vec![],
@@ -2011,9 +2024,10 @@ pub async fn regenerate_cue_entry(conn: &mut PgConnection, disc_id: i32) -> AppR
         .await?
         .ok_or(AppError::NotFound)?;
     let media_type: MediaTypeRow = sqlx::query_as(
-        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer, dmi FROM media_types WHERE code = $1",
+        MEDIA_TYPE_FOR_SYSTEM_SQL,
     )
     .bind(disc.media_type.code())
+    .bind(&disc.system_code)
     .fetch_one(&mut *conn)
     .await?;
     disc.media_type = media_type.into();

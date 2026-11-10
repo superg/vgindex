@@ -480,8 +480,9 @@ async fn generate_datfile_archive(
                       WHERE dr.disc_id = d.id ORDER BY r.sort_order) AS region_names,
                 ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
                       WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes,
-                CASE WHEN $2 AND d.system_code = 'XBOX' THEN d.dmi END AS dmi
+                CASE WHEN $2 AND s.dmi_extra AND NOT d.dmi_extra_excluded THEN d.dmi END AS dmi
          FROM discs d
+         JOIN systems s ON s.code = d.system_code
          JOIN categories c ON c.id = d.category_id
          JOIN media_types mt ON mt.code = d.media_type_code
          WHERE d.system_code = $1 AND d.status NOT IN ('Disabled', 'Questionable')
@@ -617,7 +618,6 @@ async fn build_datfile_games(
         let dmi_extra = disc
             .dmi
             .as_deref()
-            .filter(|_| !crate::services::disc_service::DMI_EXCLUDED_DISC_IDS.contains(&disc.id))
             .map(|dmi| crate::services::disc_service::add_dmi_extra(&mut disc_extras, dmi));
 
         let cue_active = dat_disc_has_active_cue(disc, sys);
@@ -905,6 +905,7 @@ mod tests {
             has_dmi: false,
             has_sample_start: false,
             has_offset_extra: false,
+            dmi_extra: false,
             archives_dirty: false,
         }
     }

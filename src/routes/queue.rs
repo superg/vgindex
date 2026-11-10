@@ -2834,6 +2834,7 @@ mod tests {
             has_dmi: false,
             has_sample_start: true,
             has_offset_extra: true,
+            dmi_extra: false,
             archives_dirty: false,
         }
     }
@@ -2853,6 +2854,7 @@ mod tests {
                     dmi: false,
                     rom_extension: "iso".to_string(),
                     has_dummy_layer: false,
+                    dmi_length: 0x804,
                 },
                 disc_edit::EditMediaTypeRow {
                     code: "BD".to_string(),
@@ -2862,6 +2864,7 @@ mod tests {
                     dmi: false,
                     rom_extension: "iso".to_string(),
                     has_dummy_layer: false,
+                    dmi_length: 0x804,
                 },
             ],
             all_categories: vec![
