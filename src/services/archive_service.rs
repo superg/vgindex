@@ -923,6 +923,7 @@ mod tests {
             rom_extension: rom_extension.to_string(),
             region_names: vec![],
             language_codes: vec![],
+            dmi: None,
         }
     }
 
