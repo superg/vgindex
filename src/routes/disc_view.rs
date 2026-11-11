@@ -827,14 +827,16 @@ async fn disc_view(
     let stored_dmi_rows = detail.disc.media_type.dmi_length().saturating_sub(4).div_ceil(16);
     let dmi_placeholder_rows = if dmi_rows.len() == stored_dmi_rows
         && detail.disc.media_type.dmi_is_padded()
+        && !detail.disc.dmi_no_primary
     {
         parse_header_rows_at_offset(detail.disc.media_type.dmi_trailer(), stored_dmi_rows)
     } else {
         Vec::new()
     };
-    let dmi_download_available = detail
-        .system
-        .dmi_download_for_media_type(&detail.disc.media_type)
+    let dmi_download_available = !detail.disc.dmi_no_primary
+        && detail
+            .system
+            .dmi_download_for_media_type(&detail.disc.media_type)
         && detail
             .disc
             .dmi
@@ -2306,9 +2308,10 @@ async fn disc_dmi_download(
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
 
-    if !detail
-        .system
-        .dmi_download_for_media_type(&detail.disc.media_type)
+    if detail.disc.dmi_no_primary
+        || !detail
+            .system
+            .dmi_download_for_media_type(&detail.disc.media_type)
     {
         return Err(AppError::NotFound);
     }
