@@ -19,7 +19,7 @@ const MAX_API_BODY_BYTES: usize = 4 * 1024 * 1024;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/disc", get(disc_json))
-        .route("/api/search", get(search))
+        .route("/api/discs", get(discs_search))
         .route("/api/transliterate", post(transliterate))
         .route("/api/parse-redumper-log", post(parse_redumper_log))
         .layer(DefaultBodyLimit::max(MAX_API_BODY_BYTES))
@@ -132,9 +132,9 @@ struct DiscQuery {
 }
 
 /// List of disc IDs containing provided hash
-async fn search(
+async fn discs_search(
     State(state): State<AppState>,
-    query: Result<Query<SearchQuery>, QueryRejection>,
+    query: Result<Query<DiscsQuery>, QueryRejection>,
 ) -> AppResult<Json<Vec<i32>>> {
     let Query(q) = query
         .map_err(|_| AppError::BadRequest("Invalid query parameters".into()))?;
@@ -174,7 +174,7 @@ async fn search(
 }
 
 #[derive(serde::Deserialize)]
-struct SearchQuery {
+struct DiscsQuery {
     crc32: Option<String>,
     md5: Option<String>,
     sha1: Option<String>,
