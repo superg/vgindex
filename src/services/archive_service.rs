@@ -480,7 +480,7 @@ async fn generate_datfile_archive(
                       WHERE dr.disc_id = d.id ORDER BY r.sort_order) AS region_names,
                 ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
                       WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes,
-                CASE WHEN $2 AND s.dmi_extra AND NOT d.dmi_extra_excluded THEN d.dmi END AS dmi
+                CASE WHEN $2 AND s.has_primary_dmi AND NOT d.dmi_no_primary THEN d.dmi END AS dmi
          FROM discs d
          JOIN systems s ON s.code = d.system_code
          JOIN categories c ON c.id = d.category_id
@@ -905,7 +905,7 @@ mod tests {
             has_dmi: false,
             has_sample_start: false,
             has_offset_extra: false,
-            dmi_extra: false,
+            has_primary_dmi: false,
             archives_dirty: false,
             dmi_lengths: Default::default(),
         }

@@ -728,7 +728,7 @@ async fn disc_view(
         .disc
         .dmi
         .as_deref()
-        .filter(|_| detail.system.dmi_extra && !detail.disc.dmi_extra_excluded)
+        .filter(|_| detail.system.has_primary_dmi && !detail.disc.dmi_no_primary)
         .map(|dmi| disc_service::add_dmi_extra(&mut disc_extras, dmi));
     let extras: Vec<ViewExtra> =
         disc_service::name_extras(&disc_extras, &rom_base_name, dmi_extra.as_ref())

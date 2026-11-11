@@ -1859,7 +1859,7 @@ mod tests {
                 header: Some(vec![0xab, 0xcd]),
                 bca: None,
                 dmi: None,
-                dmi_extra_excluded: false,
+                dmi_no_primary: false,
                 status: DiscStatus::Verified,
             },
             system: System {
@@ -1890,7 +1890,7 @@ mod tests {
                 has_dmi: false,
                 has_sample_start: false,
                 has_offset_extra: false,
-                dmi_extra: false,
+                has_primary_dmi: false,
                 archives_dirty: false,
                 dmi_lengths: Default::default(),
             },

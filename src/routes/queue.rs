@@ -2834,7 +2834,7 @@ mod tests {
             has_dmi: false,
             has_sample_start: true,
             has_offset_extra: true,
-            dmi_extra: false,
+            has_primary_dmi: false,
             archives_dirty: false,
             dmi_lengths: Default::default(),
         }

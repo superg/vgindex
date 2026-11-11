@@ -4269,7 +4269,7 @@ mod operation_delta_tests {
             has_dmi: false,
             has_sample_start: true,
             has_offset_extra: true,
-            dmi_extra: false,
+            has_primary_dmi: false,
             archives_dirty: false,
             dmi_lengths: Default::default(),
         }
@@ -4354,7 +4354,7 @@ mod operation_delta_tests {
                 header: None,
                 bca: None,
                 dmi: None,
-                dmi_extra_excluded: false,
+                dmi_no_primary: false,
                 status: DiscStatus::Unverified,
             },
             system: test_system(),

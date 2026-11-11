@@ -1,16 +1,16 @@
 ALTER TABLE systems
-ADD COLUMN IF NOT EXISTS dmi_extra BOOLEAN NOT NULL DEFAULT FALSE;
+ADD COLUMN IF NOT EXISTS has_primary_dmi BOOLEAN NOT NULL DEFAULT FALSE;
 
 UPDATE systems
-SET dmi_extra = TRUE,
+SET has_primary_dmi = TRUE,
     archives_dirty = TRUE
 WHERE code = 'XBOX';
 
 ALTER TABLE discs
-ADD COLUMN IF NOT EXISTS dmi_extra_excluded BOOLEAN NOT NULL DEFAULT FALSE;
+ADD COLUMN IF NOT EXISTS dmi_no_primary BOOLEAN NOT NULL DEFAULT FALSE;
 
 UPDATE discs
-SET dmi_extra_excluded = TRUE
+SET dmi_no_primary = TRUE
 WHERE id IN (48905, 49747, 51936, 54518);
 
 CREATE TABLE IF NOT EXISTS system_media_dmi (

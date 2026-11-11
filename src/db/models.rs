@@ -413,7 +413,7 @@ pub struct System {
     pub has_dmi: bool,
     pub has_sample_start: bool,
     pub has_offset_extra: bool,
-    pub dmi_extra: bool,
+    pub has_primary_dmi: bool,
     pub archives_dirty: bool,
     #[sqlx(skip)]
     pub dmi_lengths: std::collections::HashMap<String, i32>,
@@ -520,7 +520,7 @@ pub struct Disc {
     pub header: Option<Vec<u8>>,
     pub bca: Option<Vec<u8>>,
     pub dmi: Option<Vec<u8>>,
-    pub dmi_extra_excluded: bool,
+    pub dmi_no_primary: bool,
     pub status: DiscStatus,
 }
 
@@ -1276,7 +1276,7 @@ mod tests {
             has_dmi: false,
             has_sample_start: false,
             has_offset_extra: false,
-            dmi_extra: false,
+            has_primary_dmi: false,
             dmi_lengths: Default::default(),
             archives_dirty: false,
         }
