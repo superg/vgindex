@@ -38,7 +38,7 @@ fi
 : "${PHPBB_ALLOW_PASSWORD_RESET:=true}"
 : "${PHPBB_FEED_ENABLE:=true}"
 : "${PHPBB_FEED_LIMIT_TOPIC:=5}"
-: "${PHPBB_REMOTE_IP_INTERNAL_PROXIES:=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}"
+: "${PHPBB_REMOTE_IP_INTERNAL_PROXIES:=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1,fc00::/7,fe80::/10}"
 
 escape_php_single() {
     printf "%s" "$1" | sed "s/'/'\\\\''/g"
