@@ -3099,6 +3099,7 @@ mod tests {
             has_offset_extra: false,
             dmi_extra: false,
             archives_dirty: false,
+            dmi_lengths: Default::default(),
         }
     }
 

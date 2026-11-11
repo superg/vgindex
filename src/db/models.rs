@@ -415,6 +415,8 @@ pub struct System {
     pub has_offset_extra: bool,
     pub dmi_extra: bool,
     pub archives_dirty: bool,
+    #[sqlx(skip)]
+    pub dmi_lengths: std::collections::HashMap<String, i32>,
 }
 
 impl System {
@@ -434,6 +436,14 @@ impl System {
 
     pub fn has_error_count_for_media_type(&self, media_type: &MediaType) -> bool {
         self.has_error_count && media_type.is_cd() && self.supports_media_type(media_type)
+    }
+
+    pub fn dmi_length_for_media_code(&self, media_code: &str) -> usize {
+        self.dmi_lengths
+            .get(media_code)
+            .copied()
+            .unwrap_or(FULL_DMI_LENGTH)
+            .max(0) as usize
     }
 
     pub fn dmi_download_for_media_type(&self, media_type: &MediaType) -> bool {
@@ -1267,6 +1277,7 @@ mod tests {
             has_sample_start: false,
             has_offset_extra: false,
             dmi_extra: false,
+            dmi_lengths: Default::default(),
             archives_dirty: false,
         }
     }

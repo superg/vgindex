@@ -477,7 +477,7 @@
     <p class="binary-metadata"><strong>DMI Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     {% if show_xgd_type %}
     {% if !xbox_mid.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_ringcode.is_empty() %}XMID{% else %}XeMID{% endif %}</strong> <code>{{ xbox_mid }}</code></p>{% endif %}
-    {% if !xbox_dmi_time.is_empty() %}<p class="binary-metadata"><strong>Date</strong> <code>{{ xbox_dmi_time }}</code></p>{% endif %}
+    {% if !xbox_dmi_time.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_dmi_time.len() > 12 %}Datetime{% else %}Date{% endif %}</strong> <code>{{ xbox_dmi_time }}</code></p>{% endif %}
     {% if !xbox_ringcode.is_empty() %}<p class="binary-metadata"><strong>Ringcode</strong> <code>{{ xbox_ringcode }}</code></p>{% endif %}
     {% endif %}
     <div class="table-scroll table-scroll-compact">

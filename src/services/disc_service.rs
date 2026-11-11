@@ -789,20 +789,39 @@ pub fn sort_ring_codes_json(entries: &mut [serde_json::Value], max_layers: usize
 }
 
 pub async fn get_all_systems(pool: &PgPool) -> AppResult<Vec<System>> {
-    Ok(sqlx::query_as(
+    let mut systems: Vec<System> = sqlx::query_as(
         "SELECT * FROM systems
          ORDER BY LOWER(CONCAT_WS(' ', NULLIF(manufacturer, ''), name))",
     )
     .fetch_all(pool)
-    .await?)
+    .await?;
+    let rows: Vec<(String, String, i32)> = sqlx::query_as(
+        "SELECT system_code, media_type_code, dmi_length FROM system_media_dmi",
+    )
+    .fetch_all(pool)
+    .await?;
+    for (system_code, media_code, length) in rows {
+        if let Some(system) = systems.iter_mut().find(|s| s.code == system_code) {
+            system.dmi_lengths.insert(media_code, length);
+        }
+    }
+    Ok(systems)
 }
 
 pub async fn get_system(pool: &PgPool, code: &str) -> AppResult<System> {
-    sqlx::query_as("SELECT * FROM systems WHERE code = $1")
+    let mut system: System = sqlx::query_as("SELECT * FROM systems WHERE code = $1")
         .bind(code)
         .fetch_optional(pool)
         .await?
-        .ok_or(AppError::NotFound)
+        .ok_or(AppError::NotFound)?;
+    let rows: Vec<(String, i32)> = sqlx::query_as(
+        "SELECT media_type_code, dmi_length FROM system_media_dmi WHERE system_code = $1",
+    )
+    .bind(code)
+    .fetch_all(pool)
+    .await?;
+    system.dmi_lengths.extend(rows);
+    Ok(system)
 }
 
 pub async fn list_dumped_discs(
@@ -846,10 +865,12 @@ pub async fn list_dumped_discs(
     Ok(discs)
 }
 
-const MEDIA_TYPE_FOR_SYSTEM_SQL: &str = "SELECT mt.code, mt.name, mt.layer_count, mt.pic, mt.rom_extension, mt.has_dummy_layer, mt.dmi, mt.dmi_length,
-            (SELECT t.trailer FROM system_media_dmi_trailers t
-             WHERE t.system_code = $2 AND t.media_type_code = mt.code) AS dmi_trailer
-     FROM media_types mt WHERE mt.code = $1";
+const MEDIA_TYPE_FOR_SYSTEM_SQL: &str = "SELECT mt.code, mt.name, mt.layer_count, mt.pic, mt.rom_extension, mt.has_dummy_layer, mt.dmi,
+            COALESCE(sm.dmi_length, 2052) AS dmi_length,
+            sm.trailer AS dmi_trailer
+     FROM media_types mt
+     LEFT JOIN system_media_dmi sm ON sm.system_code = $2 AND sm.media_type_code = mt.code
+     WHERE mt.code = $1";
 
 async fn enrich_media_type(pool: &PgPool, disc: &mut Disc) -> AppResult<()> {
     let row: MediaTypeRow = sqlx::query_as(
@@ -1088,12 +1109,14 @@ pub async fn update_disc(
         .map(|s| parse_binary_hex_input(&s).map_err(|e| AppError::BadRequest(format!("PIC: {e}"))))
         .transpose()?;
     let dmi_length: i32 = sqlx::query_scalar(
-        "SELECT mt.dmi_length
+        "SELECT sm.dmi_length
          FROM discs d
-         JOIN media_types mt ON mt.code = COALESCE($2, d.media_type_code)
+         JOIN system_media_dmi sm ON sm.system_code = COALESCE($2, d.system_code)
+                                 AND sm.media_type_code = COALESCE($3, d.media_type_code)
          WHERE d.id = $1",
     )
     .bind(disc_id)
+    .bind(system_code.filter(|s| !s.trim().is_empty()))
     .bind(media_type.filter(|s| !s.trim().is_empty()))
     .fetch_optional(&mut *conn)
     .await?
@@ -1869,6 +1892,7 @@ mod tests {
                 has_offset_extra: false,
                 dmi_extra: false,
                 archives_dirty: false,
+                dmi_lengths: Default::default(),
             },
             regions: vec![],
             languages: vec![],
