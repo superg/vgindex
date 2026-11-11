@@ -164,7 +164,8 @@ async fn discs_search(
     };
     let sql = format!(
         "SELECT id FROM discs WHERE status <> 'Disabled' AND id IN \
-         (SELECT disc_id FROM files WHERE LOWER({column}) = $1{universal}) ORDER BY id"
+         (SELECT disc_id FROM files WHERE track_number IS NOT NULL \
+         AND LOWER({column}) = $1{universal}) ORDER BY id"
     );
     let ids = sqlx::query_scalar(&sql)
         .bind(&hash)
