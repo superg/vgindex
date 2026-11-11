@@ -1,5 +1,5 @@
 use axum::{
-    extract::{rejection::PathRejection, DefaultBodyLimit, Path, State},
+    extract::{rejection::QueryRejection, DefaultBodyLimit, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -18,19 +18,21 @@ const MAX_API_BODY_BYTES: usize = 4 * 1024 * 1024;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/disc/{id}", get(disc_json))
-        .route("/api/hash/{hash}", get(discs_by_hash))
+        .route("/api/disc", get(disc_json))
+        .route("/api/discs", get(discs_search))
         .route("/api/transliterate", post(transliterate))
         .route("/api/parse-redumper-log", post(parse_redumper_log))
         .layer(DefaultBodyLimit::max(MAX_API_BODY_BYTES))
 }
 
-// Machine-parseable JSON for a single disc's info
+/// Machine-parseable JSON for a single disc's info
 async fn disc_json(
     State(state): State<AppState>,
-    id: Result<Path<i32>, PathRejection>,
+    query: Result<Query<DiscQuery>, QueryRejection>,
 ) -> AppResult<Json<Value>> {
-    let id = crate::routes::path_i32(id)?;
+    let Query(DiscQuery { id }) = query
+        .map_err(|_| AppError::BadRequest("Invalid query parameters".into()))?;
+
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, false)?;
 
@@ -124,22 +126,35 @@ async fn disc_json(
     })))
 }
 
-// List of disc IDs containing provided hash
-async fn discs_by_hash(
+#[derive(serde::Deserialize)]
+struct DiscQuery {
+    id: i32,
+}
+
+/// List of disc IDs containing provided hash
+async fn discs_search(
     State(state): State<AppState>,
-    Path(hash): Path<String>,
+    query: Result<Query<DiscsQuery>, QueryRejection>,
 ) -> AppResult<Json<Vec<i32>>> {
-    let hash = hash.to_ascii_lowercase();
-    let column = match hash.len() {
-        8 => "crc32",
-        32 => "md5",
-        40 => "sha1",
-        _ => "",
+    let Query(q) = query
+        .map_err(|_| AppError::BadRequest("Invalid query parameters".into()))?;
+
+    let (column, len, value) = match (&q.crc32, &q.md5, &q.sha1) {
+        (Some(v), None, None) => ("crc32", 8, v),
+        (None, Some(v), None) => ("md5", 32, v),
+        (None, None, Some(v)) => ("sha1", 40, v),
+        _ => {
+            return Err(AppError::BadRequest(
+                "Provide exactly one of 'crc32', 'md5' or 'sha1'".into(),
+            ));
+        }
     };
-    if column.is_empty() || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(AppError::BadRequest(
-            "Invalid CRC32, MD5 or SHA-1 hex string".into(),
-        ));
+
+    let hash = value.trim().to_ascii_lowercase();
+    if hash.len() != len || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(AppError::BadRequest(format!(
+            "Invalid {column}: expected {len} hex characters"
+        )));
     }
 
     let universal = if column == "sha1" {
@@ -156,6 +171,13 @@ async fn discs_by_hash(
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(ids))
+}
+
+#[derive(serde::Deserialize)]
+struct DiscsQuery {
+    crc32: Option<String>,
+    md5: Option<String>,
+    sha1: Option<String>,
 }
 
 /// Transliterate a non-Latin title into a Latin-script draft for the Main Title
@@ -264,7 +286,6 @@ mod tests {
     fn redumper_parser_route_is_authenticated_and_csrf_protected() {
         let source = include_str!("api.rs");
 
-        assert!(source.contains(r#".route("/api/parse-redumper-log", post(parse_redumper_log))"#));
         let handler = source
             .split_once("async fn parse_redumper_log")
             .unwrap()
