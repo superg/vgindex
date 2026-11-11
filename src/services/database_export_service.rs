@@ -86,7 +86,7 @@ CREATE TABLE systems (
 CREATE TABLE system_media_dmi (
     system_code TEXT NOT NULL REFERENCES systems(code),
     media_type_code TEXT NOT NULL REFERENCES media_types(code),
-    deterministic_length INTEGER NOT NULL CHECK (deterministic_length > 4),
+    dmi_length INTEGER NOT NULL CHECK (dmi_length > 4),
     trailer BLOB NOT NULL,
     PRIMARY KEY (system_code, media_type_code)
 );
@@ -265,7 +265,7 @@ struct SystemRow {
 struct SystemMediaDmiRow {
     system_code: String,
     media_type_code: String,
-    deterministic_length: i32,
+    dmi_length: i32,
     trailer: Vec<u8>,
 }
 
@@ -776,7 +776,7 @@ async fn export_system_media_dmi(
 ) -> AppResult<u64> {
     let mut count = 0;
     let mut rows = sqlx::query_as::<_, SystemMediaDmiRow>(
-        "SELECT system_code, media_type_code, deterministic_length, trailer
+        "SELECT system_code, media_type_code, dmi_length, trailer
          FROM system_media_dmi ORDER BY system_code, media_type_code",
     )
     .fetch(&mut **postgres);
@@ -784,7 +784,7 @@ async fn export_system_media_dmi(
         sqlx::query("INSERT INTO system_media_dmi VALUES (?, ?, ?, ?)")
             .bind(row.system_code)
             .bind(row.media_type_code)
-            .bind(row.deterministic_length)
+            .bind(row.dmi_length)
             .bind(row.trailer)
             .execute(&mut **sqlite)
             .await?;
