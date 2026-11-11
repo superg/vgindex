@@ -293,7 +293,7 @@ fn ring_layer_label(layer_index: usize, layer_count: usize) -> String {
     }
 }
 
-fn can_show_disc_view_protection(
+pub(crate) fn can_show_disc_view_protection(
     system_code: &str,
     has_protection: bool,
     is_logged_in: bool,
