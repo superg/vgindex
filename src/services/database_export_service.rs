@@ -79,7 +79,16 @@ CREATE TABLE systems (
     has_bca INTEGER NOT NULL,
     has_dmi INTEGER NOT NULL,
     has_sample_start INTEGER NOT NULL,
-    has_offset_extra INTEGER NOT NULL
+    has_offset_extra INTEGER NOT NULL,
+    has_primary_dmi INTEGER NOT NULL
+);
+
+CREATE TABLE system_media_dmi (
+    system_code TEXT NOT NULL REFERENCES systems(code),
+    media_type_code TEXT NOT NULL REFERENCES media_types(code),
+    dmi_length INTEGER NOT NULL CHECK (dmi_length > 4),
+    trailer BLOB NOT NULL,
+    PRIMARY KEY (system_code, media_type_code)
 );
 
 CREATE TABLE discs (
@@ -111,6 +120,7 @@ CREATE TABLE discs (
     header BLOB,
     bca BLOB,
     dmi BLOB,
+    dmi_no_primary INTEGER NOT NULL,
     pic BLOB,
     cue TEXT,
     status TEXT NOT NULL CHECK (status IN ('Questionable', 'Unverified', 'Verified'))
@@ -248,6 +258,15 @@ struct SystemRow {
     has_dmi: bool,
     has_sample_start: bool,
     has_offset_extra: bool,
+    has_primary_dmi: bool,
+}
+
+#[derive(sqlx::FromRow)]
+struct SystemMediaDmiRow {
+    system_code: String,
+    media_type_code: String,
+    dmi_length: i32,
+    trailer: Vec<u8>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -280,6 +299,7 @@ struct DiscRow {
     header: Option<Vec<u8>>,
     bca: Option<Vec<u8>>,
     dmi: Option<Vec<u8>>,
+    dmi_no_primary: bool,
     pic: Option<Vec<u8>>,
     cue: Option<String>,
     status: String,
@@ -524,6 +544,10 @@ async fn generate_export_inner(
         table = "systems"
     );
     tracing::info!(
+        rows = export_system_media_dmi(&mut postgres, &mut output).await?,
+        table = "system_media_dmi"
+    );
+    tracing::info!(
         rows = export_discs(&mut postgres, &mut output).await?,
         table = "discs"
     );
@@ -703,13 +727,13 @@ async fn export_systems(
                 has_serial, has_edition, has_barcode, has_version, has_exe_date, has_edc,
                 has_error_count, has_universal_hash, has_protection,
                 has_sector_ranges, has_sbi, has_pvd, has_header, has_bca, has_dmi,
-                has_sample_start, has_offset_extra
+                has_sample_start, has_offset_extra, has_primary_dmi
          FROM systems ORDER BY code",
     )
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.code)
         .bind(row.system_type)
@@ -738,8 +762,32 @@ async fn export_systems(
         .bind(row.has_dmi)
         .bind(row.has_sample_start)
         .bind(row.has_offset_extra)
+        .bind(row.has_primary_dmi)
         .execute(&mut **sqlite)
         .await?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+async fn export_system_media_dmi(
+    postgres: &mut Transaction<'_, Postgres>,
+    sqlite: &mut Transaction<'_, Sqlite>,
+) -> AppResult<u64> {
+    let mut count = 0;
+    let mut rows = sqlx::query_as::<_, SystemMediaDmiRow>(
+        "SELECT system_code, media_type_code, dmi_length, trailer
+         FROM system_media_dmi ORDER BY system_code, media_type_code",
+    )
+    .fetch(&mut **postgres);
+    while let Some(row) = rows.try_next().await? {
+        sqlx::query("INSERT INTO system_media_dmi VALUES (?, ?, ?, ?)")
+            .bind(row.system_code)
+            .bind(row.media_type_code)
+            .bind(row.dmi_length)
+            .bind(row.trailer)
+            .execute(&mut **sqlite)
+            .await?;
         count += 1;
     }
     Ok(count)
@@ -760,7 +808,7 @@ async fn export_discs(
                 to_json(layerbreaks)::text AS layerbreaks,
                 universal_hash, comments, contents, protection,
                 to_json(sector_ranges)::text AS sector_ranges,
-                sbi, pvd, header, bca, dmi, pic, cue, status::text AS status
+                sbi, pvd, header, bca, dmi, dmi_no_primary, pic, cue, status::text AS status
          FROM discs
          WHERE status <> 'Disabled'
          ORDER BY id",
@@ -768,7 +816,7 @@ async fn export_discs(
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.id)
         .bind(row.system_code)
@@ -798,6 +846,7 @@ async fn export_discs(
         .bind(row.header)
         .bind(row.bca)
         .bind(row.dmi)
+        .bind(row.dmi_no_primary)
         .bind(row.pic)
         .bind(row.cue)
         .bind(row.status)

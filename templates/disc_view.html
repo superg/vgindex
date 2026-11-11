@@ -474,12 +474,11 @@
 <section class="left-section detail-section dmi-section">
     {% if !dmi_placeholder_rows.is_empty() %}
     <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-placeholder-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
-    {% let is_360 = system_code == "XBOX360" %}
     <p class="binary-metadata"><strong>DMI Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
-    {% if system_code == "XBOX" || is_360 %}
-    {% if !xbox_mid.is_empty() %}<p class="binary-metadata"><strong>{% if is_360 %}XeMID{% else %}XMID{% endif %}</strong> <code>{{ xbox_mid }}</code></p>{% endif %}
-    {% if !xbox_dmi_time.is_empty() %}<p class="binary-metadata"><strong>{% if is_360 %}Datetime{% else %}Date{% endif %}</strong> <code>{{ xbox_dmi_time }}</code></p>{% endif %}
-    {% if is_360 && !xbox_ringcode.is_empty() %}<p class="binary-metadata"><strong>Ringcode</strong> <code>{{ xbox_ringcode }}</code></p>{% endif %}
+    {% if show_xgd_type %}
+    {% if !xbox_mid.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_ringcode.is_empty() %}XMID{% else %}XeMID{% endif %}</strong> <code>{{ xbox_mid }}</code></p>{% endif %}
+    {% if !xbox_dmi_time.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_dmi_time.len() > 12 %}Datetime{% else %}Date{% endif %}</strong> <code>{{ xbox_dmi_time }}</code></p>{% endif %}
+    {% if !xbox_ringcode.is_empty() %}<p class="binary-metadata"><strong>Ringcode</strong> <code>{{ xbox_ringcode }}</code></p>{% endif %}
     {% endif %}
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table dmi-table">
@@ -495,21 +494,24 @@
             </tr>
             {% endfor %}
             {% for row in dmi_placeholder_rows %}
-            {% if !is_360 || loop.index0 < 0x5E %}
             <tr class="dmi-placeholder-remainder" hidden>
                 <td><code>{{ row.offset }}</code></td>
                 <td><code>{{ row.hex_contents }}</code></td>
                 <td><code>{{ row.ascii }}</code></td>
             </tr>
-            {% endif %}
             {% endfor %}
         </tbody>
     </table>
     </div>
-    {% if dmi_download_available && !is_360 %}<p><a href="/disc/{{ disc_id }}/dmi">Download DMI</a></p>{% endif %}
+    {% if dmi_download_available %}<p><a href="/disc/{{ disc_id }}/dmi">Download DMI</a></p>{% endif %}
     {% else %}
     <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
     <p class="binary-metadata"><strong>DMI Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
+    {% if show_xgd_type %}
+    {% if !xbox_mid.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_ringcode.is_empty() %}XMID{% else %}XeMID{% endif %}</strong> <code>{{ xbox_mid }}</code></p>{% endif %}
+    {% if !xbox_dmi_time.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_dmi_time.len() > 12 %}Datetime{% else %}Date{% endif %}</strong> <code>{{ xbox_dmi_time }}</code></p>{% endif %}
+    {% if !xbox_ringcode.is_empty() %}<p class="binary-metadata"><strong>Ringcode</strong> <code>{{ xbox_ringcode }}</code></p>{% endif %}
+    {% endif %}
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table dmi-table">
         <thead>

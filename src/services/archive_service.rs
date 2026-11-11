@@ -459,6 +459,7 @@ struct DatfileDisc {
     rom_extension: String,
     region_names: Vec<String>,
     language_codes: Vec<String>,
+    dmi: Option<Vec<u8>>,
 }
 
 async fn generate_datfile_archive(
@@ -478,8 +479,10 @@ async fn generate_datfile_archive(
                 ARRAY(SELECT r.name::TEXT FROM disc_regions dr JOIN regions r ON r.code = dr.region_code
                       WHERE dr.disc_id = d.id ORDER BY r.sort_order) AS region_names,
                 ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
-                      WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes
+                      WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes,
+                CASE WHEN $2 AND s.has_primary_dmi AND NOT d.dmi_no_primary THEN d.dmi END AS dmi
          FROM discs d
+         JOIN systems s ON s.code = d.system_code
          JOIN categories c ON c.id = d.category_id
          JOIN media_types mt ON mt.code = d.media_type_code
          WHERE d.system_code = $1 AND d.status NOT IN ('Disabled', 'Questionable')
@@ -525,6 +528,7 @@ pub async fn generate_user_datfile(
                       WHERE dr.disc_id = d.id ORDER BY r.sort_order) AS region_names,
                 ARRAY(SELECT l.code::TEXT FROM disc_languages dl JOIN languages l ON l.code = dl.language_code
                       WHERE dl.disc_id = d.id ORDER BY l.sort_order) AS language_codes,
+                NULL::BYTEA AS dmi,
                 d.system_code
          FROM discs d
          JOIN categories c ON c.id = d.category_id
@@ -611,16 +615,10 @@ async fn build_datfile_games(
             (files, Vec::new())
         };
 
-        let mut dmi_extra = None;
-        if extras && sys.code == "XBOX" {
-            let dmi: Option<Vec<u8>> = sqlx::query_scalar("SELECT dmi FROM discs WHERE id = $1")
-                .bind(disc.id)
-                .fetch_one(pool)
-                .await?;
-            dmi_extra = dmi.map(|dmi| {
-                crate::services::disc_service::add_dmi_extra(&mut disc_extras, &dmi)
-            });
-        }
+        let dmi_extra = disc
+            .dmi
+            .as_deref()
+            .map(|dmi| crate::services::disc_service::add_dmi_extra(&mut disc_extras, dmi));
 
         let cue_active = dat_disc_has_active_cue(disc, sys);
         games.push(build_game_entry(
@@ -907,7 +905,9 @@ mod tests {
             has_dmi: false,
             has_sample_start: false,
             has_offset_extra: false,
+            has_primary_dmi: false,
             archives_dirty: false,
+            dmi_lengths: Default::default(),
         }
     }
 
@@ -925,6 +925,7 @@ mod tests {
             rom_extension: rom_extension.to_string(),
             region_names: vec![],
             language_codes: vec![],
+            dmi: None,
         }
     }
 

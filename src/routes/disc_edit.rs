@@ -855,6 +855,19 @@ pub(crate) fn max_layers_for_media(all_media_types: &[EditMediaTypeRow], code: &
         .unwrap_or(1)
 }
 
+pub(crate) fn dmi_length_for_selection(
+    all_systems: &[System],
+    system_code: &str,
+    media_code: &str,
+) -> usize {
+    all_systems
+        .iter()
+        .find(|s| s.code == system_code)
+        .map_or(crate::db::models::FULL_DMI_LENGTH as usize, |s| {
+            s.dmi_length_for_media_code(media_code)
+        })
+}
+
 pub(crate) fn ring_layers(media_layers: u32) -> u32 {
     media_layers + 1
 }
@@ -1597,7 +1610,7 @@ fn validate_form_with_options(
         dmi_available_for_selection(all_systems, all_media_types, system_code, media_code);
     if dmi_available {
         if let Some(text) = form.dmi.as_deref() {
-            if let Err(error) = disc_service::parse_dmi_input(text, media_code) {
+            if let Err(error) = disc_service::parse_dmi_input(text, dmi_length_for_selection(all_systems, system_code, media_code)) {
                 errors.push(error);
             }
         }
@@ -3264,7 +3277,7 @@ pub(crate) fn build_flat_changes(
         "bca_mastering": new_bca_mastering,
         "header": norm_opt_multiline_str(form.header.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
         "dmi": norm_opt_multiline_str(form.dmi.as_deref())
-            .and_then(|text| disc_service::parse_dmi_input(&text, form.media_type.trim()).ok().flatten())
+            .and_then(|text| disc_service::parse_dmi_input(&text, dmi_length_for_selection(all_systems, form.system_code.trim(), form.media_type.trim())).ok().flatten())
             .map(|bytes| format_compact_hex(&bytes)),
         "protection": norm_opt_multiline_str(form.protection.as_deref()),
         "sbi": new_sbi,
@@ -4199,6 +4212,8 @@ mod operation_delta_tests {
             dmi: false,
             rom_extension: "iso".to_string(),
             has_dummy_layer: false,
+            dmi_length: 0x804,
+            dmi_trailer: None,
         }
         .into()
     }
@@ -4254,7 +4269,9 @@ mod operation_delta_tests {
             has_dmi: false,
             has_sample_start: true,
             has_offset_extra: true,
+            has_primary_dmi: false,
             archives_dirty: false,
+            dmi_lengths: Default::default(),
         }
     }
 
@@ -4337,6 +4354,7 @@ mod operation_delta_tests {
                 header: None,
                 bca: None,
                 dmi: None,
+                dmi_no_primary: false,
                 status: DiscStatus::Unverified,
             },
             system: test_system(),
@@ -6048,6 +6066,8 @@ mod operation_delta_tests {
             dmi: false,
             rom_extension: "bin".to_string(),
             has_dummy_layer: false,
+            dmi_length: 0x804,
+            dmi_trailer: None,
         }
         .into();
         detail.disc.layerbreaks = None;
@@ -6185,6 +6205,8 @@ mod operation_delta_tests {
                 pic: false,
                 rom_extension: "iso".to_string(),
                 has_dummy_layer: false,
+                dmi_length: 0x804,
+                dmi_trailer: None,
                 dmi: true,
             };
             row.into()
@@ -6205,6 +6227,7 @@ mod operation_delta_tests {
         let mut systems = systems_with_edc(true);
         systems[0].has_dmi = true;
         systems[0].media_types = vec!["dvd5wii".to_string()];
+        systems[0].dmi_lengths.insert("dvd5wii".to_string(), 0x54);
 
         let mut form = form_from_detail(&detail);
         form.dmi = None;
@@ -6252,6 +6275,7 @@ mod operation_delta_tests {
         let mut systems = systems_with_edc(true);
         systems[0].has_dmi = true;
         systems[0].media_types = vec!["xgd".to_string()];
+        systems[0].dmi_lengths.insert("xgd".to_string(), 0x54);
         let mut bytes = vec![0x11; 0x55];
         bytes[4] = 0x22;
         form.dmi = Some(bytes.iter().map(|byte| format!("{byte:02X}")).collect());

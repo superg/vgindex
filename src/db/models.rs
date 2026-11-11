@@ -14,6 +14,16 @@ pub struct MediaType {
     dmi: bool,
     rom_extension: String,
     has_dummy_layer: bool,
+    #[serde(default = "default_dmi_length")]
+    dmi_length: i32,
+    #[serde(default)]
+    dmi_trailer: Option<Vec<u8>>,
+}
+
+pub const FULL_DMI_LENGTH: i32 = 0x804;
+
+fn default_dmi_length() -> i32 {
+    FULL_DMI_LENGTH
 }
 
 impl MediaType {
@@ -35,6 +45,22 @@ impl MediaType {
 
     pub fn has_dmi(&self) -> bool {
         self.dmi
+    }
+
+    pub fn dmi_length(&self) -> usize {
+        self.dmi_length.max(0) as usize
+    }
+
+    pub fn dmi_is_padded(&self) -> bool {
+        self.dmi_length < FULL_DMI_LENGTH
+    }
+
+    pub fn dmi_is_complete(&self) -> bool {
+        !self.dmi_is_padded() || self.dmi_length().saturating_sub(4) + self.dmi_trailer().len() == 2048
+    }
+
+    pub fn dmi_trailer(&self) -> &[u8] {
+        self.dmi_trailer.as_deref().unwrap_or_default()
     }
 
     pub fn rom_extension(&self) -> &str {
@@ -77,6 +103,8 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for MediaType {
             dmi: false,
             rom_extension: String::new(),
             has_dummy_layer: false,
+            dmi_length: FULL_DMI_LENGTH,
+            dmi_trailer: None,
         })
     }
 }
@@ -99,6 +127,8 @@ pub struct MediaTypeRow {
     pub dmi: bool,
     pub rom_extension: String,
     pub has_dummy_layer: bool,
+    pub dmi_length: i32,
+    pub dmi_trailer: Option<Vec<u8>>,
 }
 
 impl From<MediaTypeRow> for MediaType {
@@ -111,6 +141,8 @@ impl From<MediaTypeRow> for MediaType {
             dmi: row.dmi,
             rom_extension: row.rom_extension,
             has_dummy_layer: row.has_dummy_layer,
+            dmi_length: row.dmi_length,
+            dmi_trailer: row.dmi_trailer,
         }
     }
 }
@@ -381,7 +413,10 @@ pub struct System {
     pub has_dmi: bool,
     pub has_sample_start: bool,
     pub has_offset_extra: bool,
+    pub has_primary_dmi: bool,
     pub archives_dirty: bool,
+    #[sqlx(skip)]
+    pub dmi_lengths: std::collections::HashMap<String, i32>,
 }
 
 impl System {
@@ -403,8 +438,16 @@ impl System {
         self.has_error_count && media_type.is_cd() && self.supports_media_type(media_type)
     }
 
-    pub fn has_dmi_for_media_type(&self, media_type: &MediaType) -> bool {
-        self.has_dmi && media_type.dmi
+    pub fn dmi_length_for_media_code(&self, media_code: &str) -> usize {
+        self.dmi_lengths
+            .get(media_code)
+            .copied()
+            .unwrap_or(FULL_DMI_LENGTH)
+            .max(0) as usize
+    }
+
+    pub fn dmi_download_for_media_type(&self, media_type: &MediaType) -> bool {
+        self.has_dmi && media_type.dmi && media_type.dmi_is_complete()
     }
 }
 
@@ -477,6 +520,7 @@ pub struct Disc {
     pub header: Option<Vec<u8>>,
     pub bca: Option<Vec<u8>>,
     pub dmi: Option<Vec<u8>>,
+    pub dmi_no_primary: bool,
     pub status: DiscStatus,
 }
 
@@ -1198,6 +1242,8 @@ mod tests {
             dmi: false,
             rom_extension: rom_extension.to_string(),
             has_dummy_layer: false,
+            dmi_length: FULL_DMI_LENGTH,
+            dmi_trailer: None,
         }
     }
 
@@ -1230,6 +1276,8 @@ mod tests {
             has_dmi: false,
             has_sample_start: false,
             has_offset_extra: false,
+            has_primary_dmi: false,
+            dmi_lengths: Default::default(),
             archives_dirty: false,
         }
     }
@@ -1319,20 +1367,6 @@ mod tests {
         assert!(sys.has_error_count_for_media_type(&cd));
         assert!(!sys.has_error_count_for_media_type(&media_type("dvd5", "iso")));
         assert!(!sys.has_error_count_for_media_type(&media_type("other", "bin")));
-    }
-
-    #[test]
-    fn dmi_eligibility_uses_only_both_capability_flags() {
-        let mut system = system_with_media(&[]);
-        let mut media = media_type("unlisted-media", "iso");
-
-        assert!(!system.has_dmi_for_media_type(&media));
-        system.has_dmi = true;
-        assert!(!system.has_dmi_for_media_type(&media));
-        media.dmi = true;
-        assert!(system.has_dmi_for_media_type(&media));
-        system.has_dmi = false;
-        assert!(!system.has_dmi_for_media_type(&media));
     }
 
     #[test]
