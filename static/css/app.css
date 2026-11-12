@@ -4247,6 +4247,19 @@ tr.field-changed > td { background-color: rgba(255, 235, 59, 0.18); }
     white-space: nowrap;
     width: 1%;
 }
+.submission-info .changes-table {
+    table-layout: fixed;
+    width: 100%;
+}
+.submission-info .changes-table td:first-child {
+    width: 9rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.submission-info .changes-table pre {
+    margin: 0;
+    overflow-x: hidden;
+}
 .submission-info .table-fit-section {
     display: table;
     width: min(68rem, 100%);
