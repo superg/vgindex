@@ -9,10 +9,10 @@
         <tr>
             <td><strong>{{ row.field }}</strong></td>
             {% if let Some(old) = row.old %}
-            <td{% if row.new.is_none() %} colspan="2"{% endif %}><small><strong>Removed</strong></small><pre class="pre-wrap item-removed">{{ old }}</pre></td>
+            <td{% if row.new.is_none() %} colspan="2"{% endif %}><small><strong>{% if row.new.is_none() %}Removed{% else %}Old{% endif %}</strong></small><pre class="pre-wrap item-removed">{{ old }}</pre></td>
             {% endif %}
             {% if let Some(new) = row.new %}
-            <td{% if row.old.is_none() %} colspan="2"{% endif %}><small><strong>Added</strong></small><pre class="pre-wrap item-added">{{ new }}</pre></td>
+            <td{% if row.old.is_none() %} colspan="2"{% endif %}><small><strong>{% if row.old.is_none() %}Added{% else %}New{% endif %}</strong></small><pre class="pre-wrap item-added">{{ new }}</pre></td>
             {% endif %}
         </tr>
         {% endfor %}
