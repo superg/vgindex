@@ -1697,10 +1697,111 @@ struct QueueDetailTemplate {
     created_at_display: String,
     reviewed_at_display: String,
     target_disc_id: i32,
-    changes_original_json: String,
-    changes_json: String,
+    submitted_changes: Vec<ChangeRow>,
+    approved_changes: Vec<ChangeRow>,
 }
 impl SiteConfig for QueueDetailTemplate {}
+
+struct ChangeRow {
+    field: String,
+    old: Option<String>,
+    new: Option<String>,
+}
+
+fn change_rows(changes: Option<&serde_json::Value>) -> Vec<ChangeRow> {
+    let mut rows = Vec::new();
+    for (field, node) in changes.and_then(|c| c.as_object()).into_iter().flatten() {
+        push_change_rows(&mut rows, field.clone(), field, node);
+    }
+    rows
+}
+
+fn push_change_rows(
+    rows: &mut Vec<ChangeRow>,
+    path: String,
+    key: &str,
+    node: &serde_json::Value,
+) {
+    let text = |v: Option<&serde_json::Value>| {
+        v.map(|v| multiline_display_value(key, v))
+            .filter(|s| !s.trim().is_empty())
+    };
+    let set_text = |op: &str| Some(array_strings(&node[op]).join("\n")).filter(|s| !s.is_empty());
+    let side = |op: &str, key: &str| node.get(op).and_then(|o| o.get(key));
+    let is_scalar_op = ["add", "modify", "remove"]
+        .iter()
+        .any(|op| node.get(op).is_some_and(|o| o.is_object()));
+    let is_set_op = ["add", "remove"]
+        .iter()
+        .any(|op| node.get(op).is_some_and(|o| o.is_array()));
+    // Account for legacy status history
+    let is_bare_old_new = node.get("old").is_some() || node.get("new").is_some();
+    let (old, new) = if is_bare_old_new {
+        (text(node.get("old")), text(node.get("new")))
+    } else if is_scalar_op {
+        (
+            text(side("modify", "old").or(side("remove", "old"))),
+            text(side("add", "new").or(side("modify", "new"))),
+        )
+    } else if is_set_op {
+        (set_text("remove"), set_text("add"))
+    } else {
+        // Recurse for ringcode changes
+        match node {
+            serde_json::Value::Array(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    let label = item["id"]
+                        .as_i64()
+                        .map(|id| format!("#{id}"))
+                        .or_else(|| item["index"].as_i64().map(|index| index.to_string()))
+                        .unwrap_or_else(|| format!("new {}", i + 1));
+                    push_change_rows(rows, format!("{path} > {label}"), key, item);
+                }
+                return;
+            }
+            serde_json::Value::Object(map) => {
+                let start = rows.len();
+                for (child_key, child) in map
+                    .iter()
+                    .filter(|(k, _)| !matches!(k.as_str(), "id" | "index" | "remove"))
+                {
+                    push_change_rows(rows, format!("{path} > {child_key}"), child_key, child);
+                }
+                if map.get("remove").and_then(|v| v.as_bool()) == Some(true) {
+                    if rows.len() == start {
+                        rows.push(ChangeRow {
+                            field: path,
+                            old: Some("(removed)".to_string()),
+                            new: None,
+                        });
+                    }
+                    for row in &mut rows[start..] {
+                        if row.old.is_none() {
+                            row.old = row.new.take();
+                        }
+                    }
+                }
+                return;
+            }
+            _ => (None, Some(review_display_value(node))),
+        }
+    };
+    rows.push(ChangeRow {
+        field: path,
+        old: old.map(|text| limit_line_length(&text)),
+        new: new.map(|text| limit_line_length(&text)),
+    });
+}
+
+fn limit_line_length(text: &str) -> String {
+    text.split('\n')
+        .map(|line| match line.char_indices().nth(1260) {
+            Some((cut, _)) => format!("{}...[trimmed]", &line[..cut]),
+            None => line.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 fn pretty_optional_json(value: Option<&serde_json::Value>) -> String {
     match value {
@@ -1735,8 +1836,18 @@ async fn render_readonly_detail(
             .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
             .unwrap_or_default(),
         target_disc_id: sub.target_disc_id.unwrap_or(0),
-        changes_original_json: pretty_optional_json(sub.changes_original.as_ref()),
-        changes_json: serde_json::to_string_pretty(&sub.changes).unwrap_or_default(),
+        submitted_changes: change_rows(
+            sub.changes_original
+                .as_ref()
+                .filter(|original| !original.is_null())
+                .or(Some(&sub.changes)),
+        ),
+        approved_changes: change_rows(
+            sub.changes_original
+                .as_ref()
+                .filter(|original| !original.is_null())
+                .map(|_| &sub.changes),
+        ),
     };
 
     Ok(Html(template.render().unwrap()))
@@ -3559,8 +3670,8 @@ mod tests {
             created_at_display: "2026-01-01 00:00 UTC".to_string(),
             reviewed_at_display: String::new(),
             target_disc_id: 3,
-            changes_original_json: String::new(),
-            changes_json: "{}".to_string(),
+            submitted_changes: vec![],
+            approved_changes: vec![],
         };
 
         let html = template.render().unwrap();
@@ -3586,26 +3697,51 @@ mod tests {
             created_at_display: "2026-01-01 00:00 UTC".to_string(),
             reviewed_at_display: "2026-01-02 00:00 UTC".to_string(),
             target_disc_id: 3,
-            changes_original_json: "{\n  \"status\": \"original\"\n}".to_string(),
-            changes_json: "{\n  \"status\": \"final\"\n}".to_string(),
+            submitted_changes: change_rows(Some(&serde_json::json!({
+                "title": { "modify": { "old": "Old title", "new": "New title" } }
+            }))),
+            approved_changes: change_rows(Some(&serde_json::json!({
+                "serial": { "add": ["A-1"] },
+                "comments": { "new": "Legacy comment" },
+                "ring_codes": [{ "id": 7, "layers": [{ "index": 1,
+                    "mould_sids": { "remove": { "old": "IFPI 947M" } } }] }]
+            }))),
         };
 
         let html = template.render().unwrap();
 
-        let original_pos = html.find("Original JSON").unwrap();
-        let final_pos = html.find("Final JSON").unwrap();
+        let original_pos = html.find("Submitted Changes").unwrap();
+        let final_pos = html.find("Approved Changes").unwrap();
         assert!(original_pos < final_pos);
+        assert!(html.contains("Old title") && html.contains("New title"));
+        assert!(html.contains("A-1"));
+        assert!(html.contains("Legacy comment"));
+        assert!(html.contains("ring_codes &gt; #7 &gt; layers &gt; 1 &gt; mould_sids"));
+        assert!(html.contains("IFPI 947M"));
+        let removed = change_rows(Some(&serde_json::json!({
+            "ring_codes": [{ "id": 9, "remove": true }]
+        })));
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].field, "ring_codes > #9");
+        assert_eq!(removed[0].old.as_deref(), Some("(removed)"));
+        assert!(removed[0].new.is_none());
+        let removed = change_rows(Some(&serde_json::json!({
+            "ring_codes": [{ "id": 9, "remove": true, "comment": "x",
+                "layers": [{ "index": 0, "toolstamps": { "remove": { "old": "T1" } } }] }]
+        })));
+        assert_eq!(removed.len(), 2);
+        assert!(removed.iter().all(|r| r.old.is_some() && r.new.is_none()));
+        assert!(!html.contains("&quot;new&quot;"));
         assert!(!html.contains("Raw JSON"));
         assert!(html.contains("2026-01-01 00:00 UTC"));
         assert!(html.contains("2026-01-02 00:00 UTC"));
     }
 
     #[test]
-    fn review_template_shows_final_json_without_original_json_when_absent() {
+    fn review_template_does_not_show_raw_json_boxes() {
         let html = build_template(&submitted_snapshot()).render().unwrap();
 
         assert!(!html.contains("Original JSON"));
-        assert!(html.contains("Final JSON"));
         assert!(!html.contains("Raw JSON"));
     }
 

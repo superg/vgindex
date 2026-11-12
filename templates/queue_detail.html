@@ -1,5 +1,26 @@
 {% extends "base.html" %}
 
+{% macro changes_details(title, rows, open_by_default) %}
+{% if !rows.is_empty() %}
+<details{% if open_by_default %} open{% endif %}>
+    <summary>{{ title }}</summary>
+    <table class="table-compact changes-table">
+        {% for row in rows %}
+        <tr>
+            <td><strong>{{ row.field }}</strong></td>
+            {% if let Some(old) = row.old %}
+            <td{% if row.new.is_none() %} colspan="2"{% endif %}><small><strong>{% if row.new.is_none() %}Removed{% else %}Old{% endif %}</strong></small><pre class="pre-wrap item-removed">{{ old }}</pre></td>
+            {% endif %}
+            {% if let Some(new) = row.new %}
+            <td{% if row.old.is_none() %} colspan="2"{% endif %}><small><strong>{% if row.old.is_none() %}Added{% else %}New{% endif %}</strong></small><pre class="pre-wrap item-added">{{ new }}</pre></td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+    </table>
+</details>
+{% endif %}
+{% endmacro %}
+
 {% block title %}Submission #{{ submission_id }}{% endblock %}
 
 {% block content %}
@@ -23,19 +44,8 @@
         {% endif %}
     </table>
 
-    {% if !changes_original_json.is_empty() %}
-    <details>
-        <summary>Original JSON</summary>
-        <pre class="raw-json"><code>{{ changes_original_json }}</code></pre>
-    </details>
-    {% endif %}
-
-    {% if !changes_json.is_empty() %}
-    <details>
-        <summary>Final JSON</summary>
-        <pre class="raw-json"><code>{{ changes_json }}</code></pre>
-    </details>
-    {% endif %}
+    {% call changes_details("Submitted Changes", submitted_changes, false) %}
+    {% call changes_details("Approved Changes", approved_changes, true) %}
 </div>
 
 {% if !dump_log_display.is_empty() %}
