@@ -1529,7 +1529,7 @@ nav[aria-label="Pagination"] ul {
     transform: rotate(90deg);
 }
 
-/* Dump Log (submission review) — collapsible, fixed 30-line height, resizable */
+/* Dump Log (submission review) — collapsible, sized to content */
 .dump-log-details > summary {
     list-style: none;
     width: fit-content;
@@ -1557,13 +1557,6 @@ nav[aria-label="Pagination"] ul {
 }
 .dump-log-details[open] > summary h3::after {
     transform: rotate(90deg);
-}
-.dump-log-content {
-    /* ~30 lines at line-height 1.4 (1 line = 1.4em of the 0.85rem font) */
-    height: 42em;
-    min-height: 4em;
-    overflow: auto;
-    resize: vertical;
 }
 
 /* Title box — bordered container around main title and foreign title */
@@ -3464,8 +3457,6 @@ textarea.full-width-textarea {
     width: 100%;
 }
 .disc-edit textarea[name="dump_log"] {
-    max-height: 12rem;
-    overflow-y: auto;
     font-family: var(--pico-font-family-monospace);
 }
 .disc-edit textarea.dump-log-scrollable {
