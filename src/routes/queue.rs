@@ -1788,9 +1788,19 @@ fn push_change_rows(
     };
     rows.push(ChangeRow {
         field: path,
-        old,
-        new,
+        old: old.map(|text| limit_line_length(&text)),
+        new: new.map(|text| limit_line_length(&text)),
     });
+}
+
+fn limit_line_length(text: &str) -> String {
+    text.split('\n')
+        .map(|line| match line.char_indices().nth(1260) {
+            Some((cut, _)) => format!("{}...[trimmed]", &line[..cut]),
+            None => line.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn pretty_optional_json(value: Option<&serde_json::Value>) -> String {

@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% macro changes_details(title, rows) %}
+{% macro changes_details(title, rows, open_by_default) %}
 {% if !rows.is_empty() %}
-<details>
+<details{% if open_by_default %} open{% endif %}>
     <summary>{{ title }}</summary>
     <table class="table-compact changes-table">
         {% for row in rows %}
         <tr>
             <td><strong>{{ row.field }}</strong></td>
             {% if let Some(old) = row.old %}
-            <td{% if row.new.is_none() %} colspan="2"{% endif %}><pre class="pre-wrap item-removed">{{ old }}</pre></td>
+            <td{% if row.new.is_none() %} colspan="2"{% endif %}><small><strong>Removed</strong></small><pre class="pre-wrap item-removed">{{ old }}</pre></td>
             {% endif %}
             {% if let Some(new) = row.new %}
-            <td{% if row.old.is_none() %} colspan="2"{% endif %}><pre class="pre-wrap item-added">{{ new }}</pre></td>
+            <td{% if row.old.is_none() %} colspan="2"{% endif %}><small><strong>Added</strong></small><pre class="pre-wrap item-added">{{ new }}</pre></td>
             {% endif %}
         </tr>
         {% endfor %}
@@ -44,8 +44,8 @@
         {% endif %}
     </table>
 
-    {% call changes_details("Submitted Changes", submitted_changes) %}
-    {% call changes_details("Approved Changes", approved_changes) %}
+    {% call changes_details("Submitted Changes", submitted_changes, false) %}
+    {% call changes_details("Approved Changes", approved_changes, true) %}
 </div>
 
 {% if !dump_log_display.is_empty() %}
