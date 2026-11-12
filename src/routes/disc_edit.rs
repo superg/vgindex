@@ -6718,9 +6718,12 @@ mod operation_delta_tests {
             r#"<label>Logs Archive URL
         <input type="text" name="extra_upload_url" value="{{ extra_upload_url }}">"#
         ));
-        assert!(css.contains(".disc-edit textarea[name=\"dump_log\"]"));
-        assert!(css.contains("max-height: 12rem;"));
-        assert!(css.contains("font-family: var(--pico-font-family-monospace);"));
+        assert!(template.contains(
+            r#"<textarea name="dump_log" rows="9" class="auto-expand full-width-textarea fixed-80""#
+        ));
+        assert!(css.contains(
+            ".disc-edit textarea[name=\"dump_log\"] {\n    font-family: var(--pico-font-family-monospace);\n}"
+        ));
         assert!(!template.contains(
             r#"<textarea name="dump_log" rows="5" class="hex-dump-input auto-expand fixed-80">"#
         ));
