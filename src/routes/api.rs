@@ -1,15 +1,14 @@
 use axum::{
-    extract::{rejection::QueryRejection, DefaultBodyLimit, Query, State},
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::post,
     Json, Router,
 };
-use serde_json::{json, Value};
 
 use crate::auth::{csrf, middleware::RequireAuth};
 use crate::db::models::UserRole;
-use crate::error::{AppError, AppResult};
+use crate::error::AppError;
 use crate::services::{disc_service, redumper_log};
 use crate::transliteration::{Script, TransliterationError};
 use crate::AppState;
@@ -18,167 +17,9 @@ const MAX_API_BODY_BYTES: usize = 4 * 1024 * 1024;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/disc", get(disc_json))
-        .route("/api/discs", get(discs_search))
         .route("/api/transliterate", post(transliterate))
         .route("/api/parse-redumper-log", post(parse_redumper_log))
         .layer(DefaultBodyLimit::max(MAX_API_BODY_BYTES))
-}
-
-/// Machine-parseable JSON for a single disc's info
-async fn disc_json(
-    State(state): State<AppState>,
-    query: Result<Query<DiscQuery>, QueryRejection>,
-) -> AppResult<Json<Value>> {
-    let Query(DiscQuery { id }) = query
-        .map_err(|_| AppError::BadRequest("Invalid query parameters".into()))?;
-
-    let detail = disc_service::get_disc_detail(&state.pool, id).await?;
-    disc_service::ensure_disc_status_visible(detail.disc.status, false)?;
-
-    let d = &detail.disc;
-    let hex = |b: &Option<Vec<u8>>| b.as_ref().map(hex::encode);
-    let protection = crate::routes::disc_view::can_show_disc_view_protection(
-        &detail.system.code,
-        detail.system.has_protection,
-        false,
-    )
-    .then(|| d.protection.clone());
-
-    let ring_codes: Vec<Value> = detail
-        .ring_entries
-        .iter()
-        .map(|e| {
-            let layers: Vec<Value> = e
-                .layers
-                .iter()
-                .map(|l| {
-                    json!({
-                        "layer": l.layer,
-                        "mastering_code": l.mastering_code,
-                        "mastering_sid": l.mastering_sid,
-                        "mould_sids": l.mould_sids,
-                        "toolstamps": l.toolstamps,
-                        "additional_moulds": l.additional_moulds,
-                    })
-                })
-                .collect();
-            json!({
-                "offset": e.offset_value,
-                "offset_extra": e.offset_extra_value,
-                "sample_data_start": e.sample_data_start,
-                "comment": e.comment,
-                "layers": layers,
-            })
-        })
-        .collect();
-
-    Ok(Json(json!({
-        "id": d.id,
-        "system": detail.system.code,
-        "media_type": d.media_type.code(),
-        "category": d.category,
-        "status": d.status,
-        "title": d.title,
-        "title_foreign": d.title_foreign,
-        "disc_title": d.disc_title,
-        "disc_title_foreign": d.disc_title_foreign,
-        "disc_number": d.disc_number,
-        "filename_suffix": d.filename_suffix,
-        "serial": d.serial,
-        "version": d.version,
-        "edition": d.edition,
-        "barcode": d.barcode,
-        "exe_date": d.exe_date,
-        "error_count": d.error_count,
-        "edc": d.edc,
-        "layerbreaks": d.layerbreaks,
-        "protection": protection.flatten(),
-        "comments": d.comments,
-        "contents": d.contents,
-        "regions": detail.regions.iter().map(|r| &r.code).collect::<Vec<_>>(),
-        "languages": detail.languages.iter().map(|l| &l.code).collect::<Vec<_>>(),
-        "added_at": detail.added_at,
-        "modified_at": detail.modified_at,
-        "files": detail.files.iter().map(|f| json!({
-            "track_number": f.track_number,
-            "size": f.size,
-            "crc32": f.crc32,
-            "md5": f.md5,
-            "sha1": f.sha1,
-        })).collect::<Vec<_>>(),
-        "extras": detail.extras.iter().map(|e| json!({
-            "type": e.file_type,
-            "size": e.size,
-            "crc32": e.crc32,
-            "md5": e.md5,
-            "sha1": e.sha1,
-        })).collect::<Vec<_>>(),
-        "ring_codes": ring_codes,
-        "sector_ranges": detail.sector_ranges.iter()
-            .map(|r| [r.range_start, r.range_end]).collect::<Vec<_>>(),
-        "cue": d.cue,
-        "universal_hash": hex(&d.universal_hash),
-        "pvd": hex(&d.pvd),
-        "pic": hex(&d.pic),
-        "header": hex(&d.header),
-        "bca_mastering": detail.bca_mastering.iter().map(hex::encode).collect::<Vec<_>>(),
-    })))
-}
-
-#[derive(serde::Deserialize)]
-struct DiscQuery {
-    id: i32,
-}
-
-/// List of disc IDs containing provided hash
-async fn discs_search(
-    State(state): State<AppState>,
-    query: Result<Query<DiscsQuery>, QueryRejection>,
-) -> AppResult<Json<Vec<i32>>> {
-    let Query(q) = query
-        .map_err(|_| AppError::BadRequest("Invalid query parameters".into()))?;
-
-    let (column, len, value) = match (&q.crc32, &q.md5, &q.sha1) {
-        (Some(v), None, None) => ("crc32", 8, v),
-        (None, Some(v), None) => ("md5", 32, v),
-        (None, None, Some(v)) => ("sha1", 40, v),
-        _ => {
-            return Err(AppError::BadRequest(
-                "Provide exactly one of 'crc32', 'md5' or 'sha1'".into(),
-            ));
-        }
-    };
-
-    let hash = value.trim().to_ascii_lowercase();
-    if hash.len() != len || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(AppError::BadRequest(format!(
-            "Invalid {column}: expected {len} hex characters"
-        )));
-    }
-
-    let universal = if column == "sha1" {
-        " UNION SELECT id FROM discs WHERE universal_hash = decode($1, 'hex')"
-    } else {
-        ""
-    };
-    let sql = format!(
-        "SELECT id FROM discs WHERE status <> 'Disabled' AND id IN \
-         (SELECT disc_id FROM files WHERE track_number IS NOT NULL \
-         AND LOWER({column}) = $1{universal}) ORDER BY id"
-    );
-    let ids = sqlx::query_scalar(&sql)
-        .bind(&hash)
-        .fetch_all(&state.pool)
-        .await?;
-    Ok(Json(ids))
-}
-
-#[derive(serde::Deserialize)]
-struct DiscsQuery {
-    crc32: Option<String>,
-    md5: Option<String>,
-    sha1: Option<String>,
 }
 
 /// Transliterate a non-Latin title into a Latin-script draft for the Main Title

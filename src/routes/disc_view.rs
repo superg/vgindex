@@ -1,10 +1,11 @@
 use askama::Template;
 use axum::{
-    extract::{rejection::PathRejection, Path, State},
+    extract::{rejection::{PathRejection, QueryRejection}, Path, Query, State},
     response::{Html, IntoResponse},
     routing::get,
-    Router,
+    Json, Router,
 };
+use serde_json::{json, Value};
 use chrono::{DateTime, Duration as ChronoDuration, NaiveDate, NaiveTime, Utc};
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
@@ -69,6 +70,113 @@ pub fn routes() -> Router<AppState> {
         .route("/disc/{id}/sbi", get(disc_sbi_download))
         .route("/disc/{id}/dmi", get(disc_dmi_download))
         .route("/disc/{id}/lsd", get(disc_lsd_download))
+        .route("/api/disc", get(disc_json))
+}
+
+/// Machine-parseable JSON for a single disc's info
+async fn disc_json(
+    State(state): State<AppState>,
+    query: Result<Query<DiscQuery>, QueryRejection>,
+) -> AppResult<Json<Value>> {
+    let Query(DiscQuery { id }) = query
+        .map_err(|_| AppError::BadRequest("Invalid query parameters".into()))?;
+
+    let detail = disc_service::get_disc_detail(&state.pool, id).await?;
+    disc_service::ensure_disc_status_visible(detail.disc.status, false)?;
+
+    let d = &detail.disc;
+    let hex = |b: &Option<Vec<u8>>| b.as_ref().map(hex::encode);
+    let protection = can_show_disc_view_protection(
+        &detail.system.code,
+        detail.system.has_protection,
+        false,
+    )
+    .then(|| d.protection.clone());
+
+    let ring_codes: Vec<Value> = detail
+        .ring_entries
+        .iter()
+        .map(|e| {
+            let layers: Vec<Value> = e
+                .layers
+                .iter()
+                .map(|l| {
+                    json!({
+                        "layer": l.layer,
+                        "mastering_code": l.mastering_code,
+                        "mastering_sid": l.mastering_sid,
+                        "mould_sids": l.mould_sids,
+                        "toolstamps": l.toolstamps,
+                        "additional_moulds": l.additional_moulds,
+                    })
+                })
+                .collect();
+            json!({
+                "offset": e.offset_value,
+                "offset_extra": e.offset_extra_value,
+                "sample_data_start": e.sample_data_start,
+                "comment": e.comment,
+                "layers": layers,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "id": d.id,
+        "system": detail.system.code,
+        "media_type": d.media_type.code(),
+        "category": d.category,
+        "status": d.status,
+        "title": d.title,
+        "title_foreign": d.title_foreign,
+        "disc_title": d.disc_title,
+        "disc_title_foreign": d.disc_title_foreign,
+        "disc_number": d.disc_number,
+        "filename_suffix": d.filename_suffix,
+        "serial": d.serial,
+        "version": d.version,
+        "edition": d.edition,
+        "barcode": d.barcode,
+        "exe_date": d.exe_date,
+        "error_count": d.error_count,
+        "edc": d.edc,
+        "layerbreaks": d.layerbreaks,
+        "protection": protection.flatten(),
+        "comments": d.comments,
+        "contents": d.contents,
+        "regions": detail.regions.iter().map(|r| &r.code).collect::<Vec<_>>(),
+        "languages": detail.languages.iter().map(|l| &l.code).collect::<Vec<_>>(),
+        "added_at": detail.added_at,
+        "modified_at": detail.modified_at,
+        "files": detail.files.iter().map(|f| json!({
+            "track_number": f.track_number,
+            "size": f.size,
+            "crc32": f.crc32,
+            "md5": f.md5,
+            "sha1": f.sha1,
+        })).collect::<Vec<_>>(),
+        "extras": detail.extras.iter().map(|e| json!({
+            "type": e.file_type,
+            "size": e.size,
+            "crc32": e.crc32,
+            "md5": e.md5,
+            "sha1": e.sha1,
+        })).collect::<Vec<_>>(),
+        "ring_codes": ring_codes,
+        "sector_ranges": detail.sector_ranges.iter()
+            .map(|r| [r.range_start, r.range_end]).collect::<Vec<_>>(),
+        "cue": d.cue,
+        "universal_hash": hex(&d.universal_hash),
+        "pvd": hex(&d.pvd),
+        "pic": hex(&d.pic),
+        "header": hex(&d.header),
+        "bca_mastering": detail.bca_mastering.iter().map(hex::encode).collect::<Vec<_>>(),
+    })))
+}
+
+#[derive(serde::Deserialize)]
+struct DiscQuery {
+    id: i32,
 }
 
 #[derive(Template)]

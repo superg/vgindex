@@ -1,10 +1,10 @@
 use askama::Template;
 use axum::{
-    extract::{Query, State},
+    extract::{rejection::QueryRejection, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
-    Router,
+    Json, Router,
 };
 use serde::Deserialize;
 use std::{
@@ -18,7 +18,7 @@ use tokio::sync::{Mutex, RwLock};
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
 use crate::db::models::{format_display_title, DiscStatus};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::services::disc_service::{
     self, disc_date_sort_sql, disc_order_by_sql, display_title_sort_sql,
 };
@@ -31,6 +31,57 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/discs", get(discs_page))
         .route("/api/disc-dumpers", get(disc_dumpers_directory))
+        .route("/api/discs", get(discs_search))
+}
+
+/// List of disc IDs containing provided hash
+async fn discs_search(
+    State(state): State<AppState>,
+    query: Result<Query<DiscHashQuery>, QueryRejection>,
+) -> AppResult<Json<Vec<i32>>> {
+    let Query(q) = query
+        .map_err(|_| AppError::BadRequest("Invalid query parameters".into()))?;
+
+    let (column, len, value) = match (&q.crc32, &q.md5, &q.sha1) {
+        (Some(v), None, None) => ("crc32", 8, v),
+        (None, Some(v), None) => ("md5", 32, v),
+        (None, None, Some(v)) => ("sha1", 40, v),
+        _ => {
+            return Err(AppError::BadRequest(
+                "Provide exactly one of 'crc32', 'md5' or 'sha1'".into(),
+            ));
+        }
+    };
+
+    let hash = value.trim().to_ascii_lowercase();
+    if hash.len() != len || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(AppError::BadRequest(format!(
+            "Invalid {column}: expected {len} hex characters"
+        )));
+    }
+
+    let universal = if column == "sha1" {
+        " UNION SELECT id FROM discs WHERE universal_hash = decode($1, 'hex')"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "SELECT id FROM discs WHERE status <> 'Disabled' AND id IN \
+         (SELECT disc_id FROM files WHERE track_number IS NOT NULL \
+         AND LOWER({column}) = $1{universal}) ORDER BY id"
+    );
+    let ids = sqlx::query_scalar(&sql)
+        .bind(&hash)
+        .fetch_all(&state.pool)
+        .await?;
+    Ok(Json(ids))
+}
+
+#[derive(serde::Deserialize)]
+struct DiscHashQuery {
+    crc32: Option<String>,
+    md5: Option<String>,
+    sha1: Option<String>,
 }
 
 pub const REFERENCE_CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 24);
@@ -763,6 +814,7 @@ fn normalize_status_filter(status: Option<&str>, can_view_disabled_discs: bool) 
         "questionable" => "Questionable".to_string(),
         "verified" => "Verified".to_string(),
         "unverified" => "Unverified".to_string(),
+        "trusted" => "Trusted".to_string(),
         _ => String::new(),
     }
 }
@@ -1682,6 +1734,8 @@ async fn discs_page(
         where_clauses.push("d.status = 'Verified'".to_string());
     } else if filter_status == "Unverified" {
         where_clauses.push("d.status = 'Unverified'".to_string());
+    } else if filter_status == "Trusted" {
+        where_clauses.push("d.status IN ('Verified', 'Unverified')".to_string());
     } else {
         where_clauses.push("d.status != 'Disabled'".to_string());
     }

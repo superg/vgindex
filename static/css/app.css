@@ -1532,7 +1532,9 @@ nav[aria-label="Pagination"] ul {
 /* Dump Log (submission review) — collapsible, sized to content */
 .dump-log-details > summary {
     list-style: none;
-    width: fit-content;
+    width: min(68rem, 100%);
+    margin-left: auto;
+    margin-right: auto;
     cursor: pointer;
 }
 .dump-log-details > summary::-webkit-details-marker {
@@ -1828,7 +1830,7 @@ header .site-nav-top {
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
     color: inherit;
     appearance: none;
-    overflow: visible;
+    overflow: hidden;
 }
 .user-menu-button:is(:hover, :focus) {
     background: #E8F2FA;

@@ -69,6 +69,7 @@
                     {% if can_view_disabled_discs %}
                     <option value="All Statuses" {% if filter_status == "All Statuses" %}selected{% endif %}>All Statuses (🟢🔵🟡🔴)</option>
                     {% endif %}
+                    <option value="Trusted" {% if filter_status == "Trusted" %}selected{% endif %}>Trusted (🟢🔵)</option>
                     <option value="Verified" {% if filter_status == "Verified" %}selected{% endif %}>Verified (🟢)</option>
                     <option value="Unverified" {% if filter_status == "Unverified" %}selected{% endif %}>Unverified (🔵)</option>
                     <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable (🟡)</option>
@@ -486,6 +487,7 @@
             }
             select.value = current;
             loaded = true;
+            document.dispatchEvent(new Event('dumpers-loaded'));
         }
 
         function load() {
@@ -669,6 +671,8 @@
 
         updateAdvancedSearchWidths();
         window.addEventListener('resize', updateAdvancedSearchWidths);
+        document.addEventListener('dumpers-loaded', updateAdvancedSearchWidths);
+        window.addEventListener('load', updateAdvancedSearchWidths);
     }
 
     document.addEventListener('DOMContentLoaded', function() {
