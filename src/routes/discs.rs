@@ -535,13 +535,22 @@ fn like_contains(expr: &str) -> String {
     format!(r#"LIKE '%' || {} || '%' ESCAPE '\'"#, like_escaped(expr))
 }
 
+fn accent_aware_contains(column: &str, bind: &str) -> String {
+    format!(
+        "(search_fold({column}) {} AND (search_fold({bind}) = LOWER({bind}) OR LOWER({column}) {}))",
+        like_contains(&format!("search_fold({bind})")),
+        like_contains(&format!("LOWER({bind})")),
+    )
+}
+
 fn quick_search_clause(bind_idx: u32, hash_candidate_bind_idx: Option<u32>) -> String {
     let bind = format!("${bind_idx}");
-    let title_like = like_contains(&format!("search_fold({bind})"));
+    let title_match = accent_aware_contains("d.title", &bind);
+    let title_foreign_match = accent_aware_contains("d.title_foreign", &bind);
     let serial_like = like_contains(&bind);
     let mut clause = format!(
-        r#"(search_fold(d.title) {title_like}
-             OR search_fold(d.title_foreign) {title_like}
+        r#"({title_match}
+             OR {title_foreign_match}
              OR compact_disc_array_search(d.serial) {serial_like}"#
     );
 
@@ -637,6 +646,8 @@ fn title_text_search_clause(field: TitleTextField, bind_idx: u32, exact: bool) -
     };
     let predicate = if exact {
         format!("d.{column} = ${bind_idx}")
+    } else if fold == "search_fold" {
+        accent_aware_contains(&format!("d.{column}"), &format!("${bind_idx}"))
     } else {
         format!(
             "{fold}(d.{column}) {}",
@@ -718,17 +729,11 @@ fn add_array_text_clauses(
 }
 
 fn comments_search_clause(bind_idx: u32) -> String {
-    format!(
-        "search_fold(d.comments) {}",
-        like_contains(&format!("search_fold(${bind_idx})"))
-    )
+    accent_aware_contains("d.comments", &format!("${bind_idx}"))
 }
 
 fn contents_search_clause(bind_idx: u32) -> String {
-    format!(
-        "search_fold(d.contents) {}",
-        like_contains(&format!("search_fold(${bind_idx})"))
-    )
+    accent_aware_contains("d.contents", &format!("${bind_idx}"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3370,7 +3375,7 @@ mod tests {
     fn title_text_clauses_use_base_columns_and_gate_foreign_titles() {
         assert_eq!(
             title_text_search_clause(TitleTextField::Title, 5, false),
-            format!("search_fold(d.title) {}", like_contains("search_fold($5)"))
+            accent_aware_contains("d.title", "$5")
         );
         assert_eq!(
             title_text_search_clause(TitleTextField::Title, 5, true),
@@ -3379,8 +3384,8 @@ mod tests {
         assert_eq!(
             title_text_search_clause(TitleTextField::ForeignTitle, 6, false),
             format!(
-                "(s.has_title_foreign AND search_fold(d.title_foreign) {})",
-                like_contains("search_fold($6)")
+                "(s.has_title_foreign AND {})",
+                accent_aware_contains("d.title_foreign", "$6")
             )
         );
         assert_eq!(
@@ -3418,7 +3423,7 @@ mod tests {
         assert_eq!(bind_idx, 7);
         assert_eq!(
             clauses[0],
-            format!("search_fold(d.title) {}", like_contains("search_fold($5)"))
+            accent_aware_contains("d.title", "$5")
         );
         assert_eq!(clauses[1], "(s.has_title_foreign AND d.title_foreign = $6)");
         assert!(clauses[2].contains("unnest(d.serial)"));
@@ -3457,11 +3462,11 @@ mod tests {
 
         assert_eq!(
             comments_clause,
-            format!("search_fold(d.comments) {}", like_contains("search_fold($7)"))
+            accent_aware_contains("d.comments", "$7")
         );
         assert_eq!(
             contents_clause,
-            format!("search_fold(d.contents) {}", like_contains("search_fold($8)"))
+            accent_aware_contains("d.contents", "$8")
         );
     }
 
