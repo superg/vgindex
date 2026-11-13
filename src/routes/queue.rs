@@ -838,7 +838,7 @@ async fn submission_detail(
             sub.submission_type,
             true,
         );
-        let highlights = compute_field_highlights(&snapshot, db_snapshot);
+        let highlights = compute_field_highlights(&snapshot, db_snapshot, &sub.changes);
         apply_highlights(&mut template, highlights);
     }
     apply_retargeted_notice(
@@ -1346,15 +1346,34 @@ fn multiline_display_value(field: &str, value: &serde_json::Value) -> String {
 fn compose_review_comments(old: &serde_json::Value, submitted: &serde_json::Value) -> String {
     let old_text = review_display_value(old);
     let submitted_text = review_display_value(submitted);
+    let new_lines = new_comment_lines(&old_text, &submitted_text);
     let mut sections = Vec::new();
     if !old_text.trim().is_empty() {
         sections.push(old_text);
     }
-    sections.push(COMMENTS_REVIEW_DELIMITER.to_string());
-    if !submitted_text.trim().is_empty() {
-        sections.push(submitted_text);
+    if !new_lines.is_empty() {
+        sections.push(COMMENTS_REVIEW_DELIMITER.to_string());
+        sections.push(new_lines);
     }
     sections.join("\n\n")
+}
+
+fn new_comment_lines(old_text: &str, submitted_text: &str) -> String {
+    let existing: std::collections::HashSet<&str> = old_text.lines().collect();
+    let mut kept: Vec<&str> = Vec::new();
+    for line in submitted_text.lines() {
+        if line.trim().is_empty() {
+            if kept.last().is_some_and(|last| !last.trim().is_empty()) {
+                kept.push("");
+            }
+        } else if !existing.contains(line) {
+            kept.push(line);
+        }
+    }
+    while kept.last().is_some_and(|last| last.trim().is_empty()) {
+        kept.pop();
+    }
+    kept.join("\n")
 }
 
 fn comments_text_contains_review_delimiter(comments: Option<&str>) -> bool {
@@ -1544,6 +1563,13 @@ fn build_review_diff_context(
                 value: multiline_display_value(field, old),
             });
         }
+    }
+
+    if review_value_changed(&db_snapshot["comments"], &submitted_snapshot["comments"]) {
+        context.old_multiline.push(ReviewOldMultiline {
+            field: "submitted_comments".to_string(),
+            value: review_display_value(&submitted_snapshot["comments"]),
+        });
     }
 
     context
@@ -1868,6 +1894,7 @@ struct FieldHighlights {
 fn compute_field_highlights(
     changes: &serde_json::Value,
     db_snapshot: &serde_json::Value,
+    submitted_changes: &serde_json::Value,
 ) -> FieldHighlights {
     let mut changed_fields = Vec::new();
 
@@ -2190,6 +2217,14 @@ fn compute_field_highlights(
     let ring_highlights_json =
         serde_json::to_string(&ring_highlights).unwrap_or_else(|_| "[]".to_string());
 
+    if let Some(submitted) = submitted_changes.as_object() {
+        for field in submitted.keys() {
+            if !review_value_changed(&db_snapshot[field.as_str()], &changes[field.as_str()]) {
+                changed_fields.push(format!("{}:same", template_field_name(field)));
+            }
+        }
+    }
+
     FieldHighlights {
         changed_fields,
         region_highlights,
@@ -2360,7 +2395,7 @@ async fn render_latest_review_with_errors(
             sub.submission_type,
             true,
         );
-        let highlights = compute_field_highlights(&snapshot, &db_snapshot);
+        let highlights = compute_field_highlights(&snapshot, &db_snapshot, &sub.changes);
         apply_highlights(&mut template, highlights);
     }
 
@@ -2626,7 +2661,7 @@ async fn review_submit(
                 sub.submission_type,
                 false,
             );
-            let highlights = compute_field_highlights(&submitted_snapshot, &db_snapshot);
+            let highlights = compute_field_highlights(&submitted_snapshot, &db_snapshot, &sub.changes);
             apply_highlights(&mut template, highlights);
         }
 
@@ -2778,7 +2813,7 @@ async fn review_submit(
                     sub.submission_type,
                     false,
                 );
-                let highlights = compute_field_highlights(&submitted_snapshot, &db_snapshot);
+                let highlights = compute_field_highlights(&submitted_snapshot, &db_snapshot, &sub.changes);
                 apply_highlights(&mut template, highlights);
             }
 
@@ -4129,20 +4164,20 @@ mod tests {
         let mut submitted = db.clone();
         submitted["universal_hash"] = serde_json::json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
 
-        let highlights = compute_field_highlights(&submitted, &db);
+        let highlights = compute_field_highlights(&submitted, &db, &serde_json::json!({}));
         assert!(highlights
             .changed_fields
             .contains(&"universal_hash:changed".to_string()));
 
         db["universal_hash"] = serde_json::Value::Null;
-        let highlights = compute_field_highlights(&submitted, &db);
+        let highlights = compute_field_highlights(&submitted, &db, &serde_json::json!({}));
         assert!(highlights
             .changed_fields
             .contains(&"universal_hash:added".to_string()));
 
         db["universal_hash"] = serde_json::json!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         submitted["universal_hash"] = serde_json::Value::Null;
-        let highlights = compute_field_highlights(&submitted, &db);
+        let highlights = compute_field_highlights(&submitted, &db, &serde_json::json!({}));
         assert!(highlights
             .changed_fields
             .contains(&"universal_hash:removed".to_string()));
@@ -4161,7 +4196,7 @@ mod tests {
             queue_service::resolve_submission_snapshot(&db, &serde_json::json!({})).unwrap();
         let submitted = queue_service::resolve_submission_snapshot(&db, &changes).unwrap();
 
-        let highlights = compute_field_highlights(&submitted, &canonical_db);
+        let highlights = compute_field_highlights(&submitted, &canonical_db, &serde_json::json!({}));
         let context =
             build_review_diff_context(&submitted, &canonical_db, &ref_data(), SubmissionType::Edit);
 

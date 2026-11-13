@@ -3278,6 +3278,10 @@ body:has(.disc-edit) footer.container hr {
 
 /* Ring code edit table */
 .disc-edit fieldset:has(#ring-editor) {
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin-inline: auto;
     padding-top: 0.4rem;
     padding-bottom: 0.45rem;
     text-align: center;
@@ -4196,6 +4200,13 @@ textarea.full-width-textarea {
 .field-removed > .inline-field-label {
     padding: 0 4px;
     border-radius: 2px;
+}
+
+.field-same > .disc-meta-label::before,
+.field-same > .inline-field-label::before,
+.multiline-review-field.field-same > label::before,
+label.field-same:not(.disc-meta-row)::before {
+    content: "🟢 ";
 }
 .item-added { background-color: rgba(76, 175, 80, 0.18); }
 .item-removed { background-color: rgba(244, 67, 54, 0.18); }
