@@ -4202,6 +4202,7 @@ textarea.full-width-textarea {
 
 .field-same > .disc-meta-label::before,
 .field-same > .inline-field-label::before,
+.field-same > fieldset > legend::before,
 .multiline-review-field.field-same > label::before,
 label.field-same:not(.disc-meta-row)::before {
     content: "🟢 ";
