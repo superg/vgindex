@@ -2661,7 +2661,7 @@ async fn review_submit(
                 sub.submission_type,
                 false,
             );
-            let highlights = compute_field_highlights(&submitted_snapshot, &db_snapshot, &sub.changes);
+            let highlights = compute_field_highlights(&snapshot, &db_snapshot, &sub.changes);
             apply_highlights(&mut template, highlights);
         }
 
@@ -2813,7 +2813,7 @@ async fn review_submit(
                     sub.submission_type,
                     false,
                 );
-                let highlights = compute_field_highlights(&submitted_snapshot, &db_snapshot, &sub.changes);
+                let highlights = compute_field_highlights(&snapshot, &db_snapshot, &sub.changes);
                 apply_highlights(&mut template, highlights);
             }
 
