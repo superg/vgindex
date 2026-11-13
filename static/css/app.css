@@ -480,15 +480,6 @@ table.striped td {
     background: color-mix(in srgb, var(--pico-primary) 20%, transparent);
 }
 
-/* Disc count line — centered, match title font size */
-details + p {
-    text-align: center;
-    margin-bottom: 0.15rem;
-}
-details + p small {
-    font-size: 0.8rem;
-}
-
 /* Align pagination with the left edge of its result table. */
 nav[aria-label="Pagination"] {
     width: 100%;
