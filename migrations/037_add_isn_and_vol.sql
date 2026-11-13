@@ -11,3 +11,7 @@ SET internal_serial = substring(comments FROM '(?:^|\n)\[T:ISN\] ?([^\n]*)'),
     )
 WHERE comments LIKE '%[T:ISN]%'
    OR comments LIKE '%[T:VOL]%';
+
+ALTER TABLE systems
+ADD COLUMN IF NOT EXISTS has_internal_serial BOOLEAN NOT NULL DEFAULT TRUE,
+ADD COLUMN IF NOT EXISTS has_volume_label BOOLEAN NOT NULL DEFAULT TRUE;

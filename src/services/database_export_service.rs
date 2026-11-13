@@ -80,7 +80,9 @@ CREATE TABLE systems (
     has_dmi INTEGER NOT NULL,
     has_sample_start INTEGER NOT NULL,
     has_offset_extra INTEGER NOT NULL,
-    has_primary_dmi INTEGER NOT NULL
+    has_primary_dmi INTEGER NOT NULL,
+    has_internal_serial INTEGER NOT NULL,
+    has_volume_label INTEGER NOT NULL
 );
 
 CREATE TABLE system_media_dmi (
@@ -261,6 +263,8 @@ struct SystemRow {
     has_sample_start: bool,
     has_offset_extra: bool,
     has_primary_dmi: bool,
+    has_internal_serial: bool,
+    has_volume_label: bool,
 }
 
 #[derive(sqlx::FromRow)]
@@ -731,13 +735,14 @@ async fn export_systems(
                 has_serial, has_edition, has_barcode, has_version, has_exe_date, has_edc,
                 has_error_count, has_universal_hash, has_protection,
                 has_sector_ranges, has_sbi, has_pvd, has_header, has_bca, has_dmi,
-                has_sample_start, has_offset_extra, has_primary_dmi
+                has_sample_start, has_offset_extra, has_primary_dmi,
+                has_internal_serial, has_volume_label
          FROM systems ORDER BY code",
     )
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.code)
         .bind(row.system_type)
@@ -767,6 +772,8 @@ async fn export_systems(
         .bind(row.has_sample_start)
         .bind(row.has_offset_extra)
         .bind(row.has_primary_dmi)
+        .bind(row.has_internal_serial)
+        .bind(row.has_volume_label)
         .execute(&mut **sqlite)
         .await?;
         count += 1;

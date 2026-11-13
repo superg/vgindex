@@ -414,6 +414,8 @@ pub(crate) fn build_systems_json(all_systems: &[System]) -> (String, String) {
                 "has_sbi": s.has_sbi,
                 "has_sample_start": s.has_sample_start,
                 "has_offset_extra": s.has_offset_extra,
+                "has_internal_serial": s.has_internal_serial,
+                "has_volume_label": s.has_volume_label,
             }),
         );
     }
@@ -4286,6 +4288,8 @@ mod operation_delta_tests {
             has_sample_start: true,
             has_offset_extra: true,
             has_primary_dmi: false,
+            has_internal_serial: true,
+            has_volume_label: true,
             archives_dirty: false,
             dmi_lengths: Default::default(),
         }

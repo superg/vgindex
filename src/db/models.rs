@@ -414,6 +414,8 @@ pub struct System {
     pub has_sample_start: bool,
     pub has_offset_extra: bool,
     pub has_primary_dmi: bool,
+    pub has_internal_serial: bool,
+    pub has_volume_label: bool,
     pub archives_dirty: bool,
     #[sqlx(skip)]
     pub dmi_lengths: std::collections::HashMap<String, i32>,
@@ -1279,6 +1281,8 @@ mod tests {
             has_sample_start: false,
             has_offset_extra: false,
             has_primary_dmi: false,
+            has_internal_serial: false,
+            has_volume_label: false,
             dmi_lengths: Default::default(),
             archives_dirty: false,
         }

@@ -3000,6 +3000,8 @@ mod tests {
             has_sample_start: true,
             has_offset_extra: true,
             has_primary_dmi: false,
+            has_internal_serial: true,
+            has_volume_label: true,
             archives_dirty: false,
             dmi_lengths: Default::default(),
         }
