@@ -537,11 +537,11 @@ fn like_contains(expr: &str) -> String {
 
 fn quick_search_clause(bind_idx: u32, hash_candidate_bind_idx: Option<u32>) -> String {
     let bind = format!("${bind_idx}");
-    let title_like = like_contains(&bind);
+    let title_like = like_contains(&format!("search_fold({bind})"));
     let serial_like = like_contains(&bind);
     let mut clause = format!(
-        r#"(LOWER(d.title) {title_like}
-             OR LOWER(d.title_foreign) {title_like}
+        r#"(search_fold(d.title) {title_like}
+             OR search_fold(d.title_foreign) {title_like}
              OR compact_disc_array_search(d.serial) {serial_like}"#
     );
 
@@ -628,19 +628,19 @@ enum TitleTextField {
 }
 
 fn title_text_search_clause(field: TitleTextField, bind_idx: u32, exact: bool) -> String {
-    let (column, capability) = match field {
-        TitleTextField::Title => ("title", None),
-        TitleTextField::ForeignTitle => ("title_foreign", Some("has_title_foreign")),
-        TitleTextField::DiscNumber => ("disc_number", Some("has_disc_number")),
-        TitleTextField::DiscTitle => ("disc_title", Some("has_disc_title")),
-        TitleTextField::ForeignDiscTitle => ("disc_title_foreign", Some("has_disc_title_foreign")),
+    let (column, capability, fold) = match field {
+        TitleTextField::Title => ("title", None, "search_fold"),
+        TitleTextField::ForeignTitle => ("title_foreign", Some("has_title_foreign"), "search_fold"),
+        TitleTextField::DiscNumber => ("disc_number", Some("has_disc_number"), "LOWER"),
+        TitleTextField::DiscTitle => ("disc_title", Some("has_disc_title"), "search_fold"),
+        TitleTextField::ForeignDiscTitle => ("disc_title_foreign", Some("has_disc_title_foreign"), "search_fold"),
     };
     let predicate = if exact {
         format!("d.{column} = ${bind_idx}")
     } else {
         format!(
-            "LOWER(d.{column}) {}",
-            like_contains(&format!("LOWER(${bind_idx})"))
+            "{fold}(d.{column}) {}",
+            like_contains(&format!("{fold}(${bind_idx})"))
         )
     };
 
@@ -719,15 +719,15 @@ fn add_array_text_clauses(
 
 fn comments_search_clause(bind_idx: u32) -> String {
     format!(
-        "LOWER(d.comments) {}",
-        like_contains(&format!("LOWER(${bind_idx})"))
+        "search_fold(d.comments) {}",
+        like_contains(&format!("search_fold(${bind_idx})"))
     )
 }
 
 fn contents_search_clause(bind_idx: u32) -> String {
     format!(
-        "LOWER(d.contents) {}",
-        like_contains(&format!("LOWER(${bind_idx})"))
+        "search_fold(d.contents) {}",
+        like_contains(&format!("search_fold(${bind_idx})"))
     )
 }
 
@@ -3223,8 +3223,9 @@ mod tests {
     fn quick_search_clause_for_text_terms_uses_only_indexed_title_foreign_title_and_serial() {
         let clause = quick_search_clause(3, None);
 
-        assert!(clause.contains("LOWER(d.title) LIKE"));
-        assert!(clause.contains("LOWER(d.title_foreign) LIKE"));
+        assert!(clause.contains("search_fold(d.title) LIKE"));
+        assert!(clause.contains("search_fold(d.title_foreign) LIKE"));
+        assert!(clause.contains("replace(search_fold($3)"));
         assert!(clause.contains("compact_disc_array_search(d.serial) LIKE"));
         assert!(!clause.contains("disc_title"));
         assert!(!clause.contains("barcode"));
@@ -3369,7 +3370,7 @@ mod tests {
     fn title_text_clauses_use_base_columns_and_gate_foreign_titles() {
         assert_eq!(
             title_text_search_clause(TitleTextField::Title, 5, false),
-            format!("LOWER(d.title) {}", like_contains("LOWER($5)"))
+            format!("search_fold(d.title) {}", like_contains("search_fold($5)"))
         );
         assert_eq!(
             title_text_search_clause(TitleTextField::Title, 5, true),
@@ -3378,8 +3379,8 @@ mod tests {
         assert_eq!(
             title_text_search_clause(TitleTextField::ForeignTitle, 6, false),
             format!(
-                "(s.has_title_foreign AND LOWER(d.title_foreign) {})",
-                like_contains("LOWER($6)")
+                "(s.has_title_foreign AND search_fold(d.title_foreign) {})",
+                like_contains("search_fold($6)")
             )
         );
         assert_eq!(
@@ -3417,7 +3418,7 @@ mod tests {
         assert_eq!(bind_idx, 7);
         assert_eq!(
             clauses[0],
-            format!("LOWER(d.title) {}", like_contains("LOWER($5)"))
+            format!("search_fold(d.title) {}", like_contains("search_fold($5)"))
         );
         assert_eq!(clauses[1], "(s.has_title_foreign AND d.title_foreign = $6)");
         assert!(clauses[2].contains("unnest(d.serial)"));
@@ -3456,11 +3457,11 @@ mod tests {
 
         assert_eq!(
             comments_clause,
-            format!("LOWER(d.comments) {}", like_contains("LOWER($7)"))
+            format!("search_fold(d.comments) {}", like_contains("search_fold($7)"))
         );
         assert_eq!(
             contents_clause,
-            format!("LOWER(d.contents) {}", like_contains("LOWER($8)"))
+            format!("search_fold(d.contents) {}", like_contains("search_fold($8)"))
         );
     }
 
@@ -3530,7 +3531,7 @@ mod tests {
 
         assert_eq!(bind_idx, 14);
         assert_eq!(clauses.len(), 8);
-        assert!(clauses[1].contains("LOWER($8)"));
+        assert!(clauses[1].contains("search_fold($8)"));
         assert!(clauses[2].contains("LOWER($9)"));
         assert!(clauses[3].contains("LOWER($10)"));
         assert!(clauses[4].contains("LOWER($11)"));
@@ -3830,6 +3831,22 @@ mod tests {
         let contents_index = include_str!("../../migrations/014_index_disc_contents_search.sql");
         assert!(contents_index.contains("idx_discs_contents_trgm"));
         assert!(contents_index.contains("LOWER(contents) gin_trgm_ops"));
+
+        let fold_indexes =
+            include_str!("../../migrations/036_accent_insensitive_text_search.sql");
+        for column in [
+            "title",
+            "title_foreign",
+            "disc_title",
+            "disc_title_foreign",
+            "comments",
+            "contents",
+        ] {
+            assert!(
+                fold_indexes.contains(&format!("public.search_fold({column}) gin_trgm_ops")),
+                "missing search_fold index for {column}"
+            );
+        }
 
         let ring_field_indexes = include_str!("../../migrations/020_index_ring_code_fields.sql");
         assert!(ring_field_indexes.contains("ringcode_field_search_text(TEXT)"));
