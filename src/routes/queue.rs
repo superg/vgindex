@@ -4211,7 +4211,10 @@ mod tests {
         let context =
             build_review_diff_context(&submitted, &canonical_db, &ref_data(), SubmissionType::Edit);
 
-        assert!(highlights.changed_fields.is_empty());
+        assert_eq!(
+            highlights.changed_fields,
+            vec!["ring_codes:not_submitted".to_string()]
+        );
         assert!(context.annotations.is_empty());
         assert!(context.old_multiline.is_empty());
     }
