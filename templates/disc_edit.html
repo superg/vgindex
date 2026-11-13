@@ -199,7 +199,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         </label>
         <label class="disc-meta-row{% if !self.highlight_class("title_foreign").is_empty() %} {{ self.highlight_class("title_foreign") }}{% endif %}" data-add-requires-system-media data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}>
             <span class="disc-meta-label">Foreign Title:</span>
-            <input type="text" name="title_foreign" value="{{ title_foreign }}">
+            <input type="text" name="title_foreign" value="{{ title_foreign }}" title="Non-Latin Title">
             <button type="button" id="transliterate-btn" class="outline secondary transliterate-btn" data-target="title" title="Romanize the Foreign Title into the Title field (draft — review the result)">Transliterate</button>
             {% for ann in self.annotations_for("title_foreign") %}
             <div class="review-field-annotation">
@@ -238,7 +238,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         </label>
         <label class="disc-meta-row{% if !self.highlight_class("disc_title_foreign").is_empty() %} {{ self.highlight_class("disc_title_foreign") }}{% endif %}" data-add-requires-system-media data-field-flag="has_disc_title_foreign"{% if !show_disc_title_foreign %} style="display:none"{% endif %}>
             <span class="disc-meta-label">Foreign Disc Title:</span>
-            <input type="text" name="disc_title_foreign" value="{{ disc_title_foreign }}">
+            <input type="text" name="disc_title_foreign" value="{{ disc_title_foreign }}" title="Non-Latin Disc Title">
             {% for ann in self.annotations_for("disc_title_foreign") %}
             <div class="review-field-annotation">
                 <span class="review-field-annotation-label">{{ ann.label }}:</span>

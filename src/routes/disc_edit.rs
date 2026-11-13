@@ -3815,6 +3815,12 @@ fn filter_unsupported_fields_for_changes(
     if !system.has_exe_date {
         filtered.exe_date = None;
     }
+    if !system.has_internal_serial {
+        filtered.internal_serial = None;
+    }
+    if !system.has_volume_label {
+        filtered.volume_label = None;
+    }
     if !system.has_edc {
         filtered.edc.clear();
     }
