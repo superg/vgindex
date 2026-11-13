@@ -509,6 +509,8 @@ pub struct Disc {
     pub filename_suffix: Option<String>,
     pub error_count: Option<i32>,
     pub exe_date: Option<String>,
+    pub internal_serial: Option<String>,
+    pub volume_label: Option<String>,
     pub edc: bool,
     pub layerbreaks: Option<Vec<i32>>,
     pub protection: Option<String>,

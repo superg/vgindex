@@ -157,6 +157,8 @@ pub(crate) struct DiscEditTemplate {
     pub error_count: String,
     pub show_exe_date: bool,
     pub exe_date: String,
+    pub internal_serial: String,
+    pub volume_label: String,
     pub show_edc: bool,
     pub edc_value: String,
 
@@ -1077,6 +1079,8 @@ async fn edit_page(
                 .unwrap_or_default(),
             show_exe_date: detail.system.has_exe_date,
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
+            internal_serial: detail.disc.internal_serial.clone().unwrap_or_default(),
+            volume_label: detail.disc.volume_label.clone().unwrap_or_default(),
             show_edc: detail.system.has_edc,
             edc_value: bool_edc_value(detail.disc.edc),
 
@@ -1262,6 +1266,8 @@ pub struct DiscEditForm {
     pub contents: Option<String>,
     pub error_count: Option<String>,
     pub exe_date: Option<String>,
+    pub internal_serial: Option<String>,
+    pub volume_label: Option<String>,
     #[serde(default, deserialize_with = "one_or_many_strings")]
     pub edc: Vec<String>,
     #[serde(default, deserialize_with = "one_or_many_strings")]
@@ -1938,6 +1944,8 @@ async fn render_form_with_context(
         error_count: form.error_count.clone().unwrap_or_default(),
         show_exe_date: has_sys(|s| s.has_exe_date),
         exe_date: form.exe_date.clone().unwrap_or_default(),
+        internal_serial: form.internal_serial.clone().unwrap_or_default(),
+        volume_label: form.volume_label.clone().unwrap_or_default(),
         show_edc: has_sys(|s| s.has_edc),
         edc_value: form_edc_value(form),
 
@@ -2793,6 +2801,8 @@ async fn add_page(
             error_count: String::new(),
             show_exe_date: has_sys(|s| s.has_exe_date),
             exe_date: String::new(),
+            internal_serial: String::new(),
+            volume_label: String::new(),
             show_edc: has_sys(|s| s.has_edc),
             edc_value: String::new(),
 
@@ -3271,6 +3281,8 @@ pub(crate) fn build_flat_changes(
         "contents": norm_opt_multiline_str(form.contents.as_deref()),
         "error_count": new_error_count,
         "exe_date": norm_opt_multiline_str(form.exe_date.as_deref()),
+        "internal_serial": norm_opt_str(form.internal_serial.as_deref()),
+        "volume_label": norm_opt_str(form.volume_label.as_deref()),
         "edc": new_edc,
         "layerbreaks": new_layerbreaks,
         "pvd": norm_opt_multiline_str(form.pvd.as_deref()).map(|s| normalize_pvd_hex_dump(&s)),
@@ -3897,6 +3909,8 @@ fn build_history_changes(
         "version",
         "error_count",
         "exe_date",
+        "internal_serial",
+        "volume_label",
         "edc",
         "comments",
         "contents",
@@ -4345,6 +4359,8 @@ mod operation_delta_tests {
                 filename_suffix: Some("Old Suffix".to_string()),
                 error_count: Some(1),
                 exe_date: Some("2020-01-01".to_string()),
+                internal_serial: None,
+                volume_label: None,
                 edc: true,
                 layerbreaks: Some(vec![10, 20]),
                 protection: Some("old protection".to_string()),
@@ -4401,6 +4417,8 @@ mod operation_delta_tests {
             contents: detail.disc.contents.clone(),
             error_count: detail.disc.error_count.map(|v| v.to_string()),
             exe_date: detail.disc.exe_date.clone(),
+            internal_serial: detail.disc.internal_serial.clone(),
+            volume_label: detail.disc.volume_label.clone(),
             edc: if detail.disc.edc {
                 vec!["true".to_string()]
             } else {
@@ -4483,6 +4501,8 @@ mod operation_delta_tests {
             contents: Some("new contents".to_string()),
             error_count: Some("7".to_string()),
             exe_date: Some("2024-01-01".to_string()),
+            internal_serial: None,
+            volume_label: None,
             edc: vec!["true".to_string()],
             layerbreak: vec!["12345".to_string(), "67890".to_string()],
             pvd: None,

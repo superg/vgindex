@@ -138,6 +138,8 @@ async fn disc_json(
         "edition": d.edition,
         "barcode": d.barcode,
         "exe_date": d.exe_date,
+        "internal_serial": d.internal_serial,
+        "volume_label": d.volume_label,
         "error_count": d.error_count,
         "edc": d.edc,
         "layerbreaks": d.layerbreaks,
@@ -205,6 +207,8 @@ struct DiscViewTemplate {
     show_serial: bool,
     exe_date: String,
     show_exe_date: bool,
+    internal_serial: String,
+    volume_label: String,
     version: String,
     show_version: bool,
     edition: String,
@@ -1057,6 +1061,8 @@ async fn disc_view(
             serial: join_sorted_identifier_values(&detail.disc.serial),
             show_exe_date: detail.system.has_exe_date,
             exe_date: detail.disc.exe_date.clone().unwrap_or_default(),
+            internal_serial: detail.disc.internal_serial.clone().unwrap_or_default(),
+            volume_label: detail.disc.volume_label.clone().unwrap_or_default(),
             show_version: detail.system.has_version,
             version: detail.disc.version.clone().unwrap_or_default(),
             show_edition: detail.system.has_edition,
@@ -1825,8 +1831,6 @@ fn compute_track_col_vis(rows: &[ViewTrackTableRow]) -> TrackColVis {
 
 fn format_comments(raw: &str) -> String {
     const TAG_MAP: &[(&str, &str)] = &[
-        ("[T:VOL]", "<b>Volume Label</b>:"),
-        ("[T:ISN]", "<b>Internal Serial</b>:"),
         ("[T:ISBN]", "<b>ISBN</b>:"),
         ("[T:ALT]", "<b>Alternative Title</b>:"),
         ("[T:EAID]", "<b>Electronic Arts ID</b>:"),
@@ -1867,7 +1871,6 @@ fn format_comments(raw: &str) -> String {
         ("[T:GF]", "<b>Game Footage</b>:"),
         ("[T:RD]", "<b>Rolling Demos</b>:"),
         ("[T:SG]", "<b>Savegames</b>:"),
-        ("[T:VCD]", "<b>V-CD</b>"),
     ];
 
     let mut s = raw.to_string();
@@ -2637,6 +2640,8 @@ mod tests {
             show_serial: false,
             exe_date: String::new(),
             show_exe_date: false,
+            internal_serial: String::new(),
+            volume_label: String::new(),
             version: String::new(),
             show_version: false,
             edition: String::new(),

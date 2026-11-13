@@ -46,11 +46,17 @@
             {% if show_serial && !serial.is_empty() %}
             <tr><td><strong>{% if serial_count == 1 %}Disc Serial{% else %}Disc Serials{% endif %}</strong></td><td>{{ serial|safe }}</td></tr>
             {% endif %}
+            {% if !internal_serial.is_empty() %}
+            <tr><td><strong>Internal Serial</strong></td><td>{{ internal_serial }}</td></tr>
+            {% endif %}
             {% if show_edition && !edition.is_empty() %}
             <tr><td><strong>{% if edition_count == 1 %}Edition{% else %}Editions{% endif %}</strong></td><td class="disc-edition-cell"><span class="disc-edition-value">{{ edition|safe }}</span></td></tr>
             {% endif %}
             {% if show_barcode && !barcode.is_empty() %}
             <tr><td><strong>{% if barcode_count == 1 %}Barcode{% else %}Barcodes{% endif %}</strong></td><td>{{ barcode|safe }}</td></tr>
+            {% endif %}
+            {% if !volume_label.is_empty() %}
+            <tr><td><strong>Volume Label</strong></td><td>{{ volume_label }}</td></tr>
             {% endif %}
             {% if show_version && !version.is_empty() %}
             <tr><td><strong>Version</strong></td><td>{{ version }}</td></tr>

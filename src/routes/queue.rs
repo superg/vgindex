@@ -643,6 +643,8 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
         contents: string("contents"),
         error_count,
         exe_date: string("exe_date"),
+        internal_serial: string("internal_serial"),
+        volume_label: string("volume_label"),
         edc,
         layerbreak,
         pvd: string("pvd"),
@@ -1031,6 +1033,8 @@ fn build_review_template(
         error_count,
         show_exe_date: has_sys(|s| s.has_exe_date),
         exe_date: json_opt_str("exe_date"),
+        internal_serial: json_opt_str("internal_serial"),
+        volume_label: json_opt_str("volume_label"),
         show_edc: has_sys(|s| s.has_edc),
         edc_value,
 
@@ -1472,6 +1476,8 @@ fn build_review_diff_context(
         "version",
         "error_count",
         "exe_date",
+        "internal_serial",
+        "volume_label",
         "universal_hash",
     ] {
         let old = &db_snapshot[field];
@@ -1911,6 +1917,8 @@ fn compute_field_highlights(
         "version",
         "error_count",
         "exe_date",
+        "internal_serial",
+        "volume_label",
         "edc",
         "comments",
         "contents",

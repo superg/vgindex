@@ -108,6 +108,8 @@ CREATE TABLE discs (
     version TEXT,
     error_count INTEGER,
     exe_date TEXT,
+    internal_serial TEXT,
+    volume_label TEXT,
     edc INTEGER NOT NULL,
     layerbreaks TEXT CHECK (layerbreaks IS NULL OR json_valid(layerbreaks)),
     universal_hash BLOB,
@@ -287,6 +289,8 @@ struct DiscRow {
     version: Option<String>,
     error_count: Option<i32>,
     exe_date: Option<String>,
+    internal_serial: Option<String>,
+    volume_label: Option<String>,
     edc: bool,
     layerbreaks: Option<String>,
     universal_hash: Option<Vec<u8>>,
@@ -804,7 +808,7 @@ async fn export_discs(
                 to_json(serial)::text AS serial,
                 to_json(edition)::text AS edition,
                 to_json(barcode)::text AS barcode,
-                version, error_count, exe_date, edc,
+                version, error_count, exe_date, internal_serial, volume_label, edc,
                 to_json(layerbreaks)::text AS layerbreaks,
                 universal_hash, comments, contents, protection,
                 to_json(sector_ranges)::text AS sector_ranges,
@@ -816,7 +820,7 @@ async fn export_discs(
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO discs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.id)
         .bind(row.system_code)
@@ -834,6 +838,8 @@ async fn export_discs(
         .bind(row.version)
         .bind(row.error_count)
         .bind(row.exe_date)
+        .bind(row.internal_serial)
+        .bind(row.volume_label)
         .bind(row.edc)
         .bind(row.layerbreaks)
         .bind(row.universal_hash)

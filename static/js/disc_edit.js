@@ -860,6 +860,8 @@ var INDEPENDENT_INLINE_FIELDS = {
     'serial': true,
     'edition': true,
     'barcode': true,
+    'internal_serial': true,
+    'volume_label': true,
     'universal_hash': true
 };
 
@@ -870,6 +872,8 @@ var DEFAULT_WIDTHS = {
     'version': 6,
     'error_count': 6,
     'exe_date': 10,
+    'internal_serial': 18,
+    'volume_label': 18,
     'layerbreak': 8,
     'universal_hash': 18
 };
