@@ -4207,6 +4207,9 @@ textarea.full-width-textarea {
 label.field-same:not(.disc-meta-row)::before {
     content: "🟢 ";
 }
+.field-not-submitted > fieldset > legend::before {
+    content: "🔴 ";
+}
 .item-added { background-color: rgba(76, 175, 80, 0.18); }
 .item-removed { background-color: rgba(244, 67, 54, 0.18); }
 .item-changed { background-color: rgba(255, 235, 59, 0.18); }
