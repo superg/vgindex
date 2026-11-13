@@ -246,6 +246,7 @@ impl DiscEditTemplate {
                     "added" => "field-added",
                     "removed" => "field-removed",
                     "same" => "field-same",
+                    "not_submitted" => "field-not-submitted",
                     _ => "",
                 };
             }

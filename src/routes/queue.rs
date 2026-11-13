@@ -2217,8 +2217,19 @@ fn compute_field_highlights(
     let ring_highlights_json =
         serde_json::to_string(&ring_highlights).unwrap_or_else(|_| "[]".to_string());
 
+    let ring_codes_submitted = submitted_changes["ring_codes"]
+        .as_array()
+        .is_some_and(|ring_changes| !ring_changes.is_empty());
+    if ring_codes_submitted {
+        if !review_value_changed(&db_snapshot["ring_codes"], &changes["ring_codes"]) {
+            changed_fields.push("ring_codes:same".to_string());
+        }
+    } else {
+        changed_fields.push("ring_codes:not_submitted".to_string());
+    }
+
     if let Some(submitted) = submitted_changes.as_object() {
-        for field in submitted.keys() {
+        for field in submitted.keys().filter(|field| field.as_str() != "ring_codes") {
             if !review_value_changed(&db_snapshot[field.as_str()], &changes[field.as_str()]) {
                 changed_fields.push(format!("{}:same", template_field_name(field)));
             }
