@@ -515,9 +515,16 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     </div>
 
     <div class="disc-form-section disc-form-section-multiline" aria-label="Dump metadata">
-    <label data-add-requires-system-media{% if !self.highlight_class("comments").is_empty() %} class="{{ self.highlight_class("comments") }}"{% endif %}>Comments
-        <textarea name="comments" rows="5" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
-    </label>
+    <div class="multiline-review-field{% if !self.highlight_class("comments").is_empty() %} {{ self.highlight_class("comments") }}{% endif %}" data-add-requires-system-media>
+        <label>Comments
+            <textarea name="comments" rows="5" class="hex-dump-input auto-expand fixed-80">{{ comments }}</textarea>
+        </label>
+        {% if self.has_old_multiline("submitted_comments") %}
+        <label class="review-old-textarea">Submitted Comments
+            <textarea rows="5" class="hex-dump-input auto-expand fixed-80" readonly>{{ self.old_multiline("submitted_comments") }}</textarea>
+        </label>
+        {% endif %}
+    </div>
 
     <div class="multiline-review-field{% if !self.highlight_class("contents").is_empty() %} {{ self.highlight_class("contents") }}{% endif %}" data-add-requires-system-media>
         <label>Contents

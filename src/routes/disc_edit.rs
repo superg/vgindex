@@ -245,6 +245,7 @@ impl DiscEditTemplate {
                     "changed" => "field-changed",
                     "added" => "field-added",
                     "removed" => "field-removed",
+                    "same" => "field-same",
                     _ => "",
                 };
             }
