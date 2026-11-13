@@ -3833,7 +3833,7 @@ mod tests {
         assert!(contents_index.contains("LOWER(contents) gin_trgm_ops"));
 
         let fold_indexes =
-            include_str!("../../migrations/036_accent_insensitive_text_search.sql");
+            include_str!("../../migrations/036_unaccent_search.sql");
         for column in [
             "title",
             "title_foreign",
