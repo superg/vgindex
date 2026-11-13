@@ -3486,13 +3486,11 @@ textarea.full-width-textarea {
     text-indent: 0;
 }
 .multiline-review-field > label {
-    display: flex;
-    flex: 0 0 auto;
-    flex-direction: column;
+    display: block;
     width: auto;
 }
 .multiline-review-field > label > textarea {
-    flex: 0 0 auto;
+    display: block;
 }
 .review-old-textarea textarea {
     opacity: 0.95;
