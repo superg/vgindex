@@ -1205,6 +1205,14 @@ const SYSTEM_FLAGS: &[SystemFlagDefinition] = &[
         label: "EXE Date",
     },
     SystemFlagDefinition {
+        field: "has_internal_serial",
+        label: "Internal Serial",
+    },
+    SystemFlagDefinition {
+        field: "has_volume_label",
+        label: "Volume Label",
+    },
+    SystemFlagDefinition {
         field: "has_edc",
         label: "EDC",
     },
@@ -1251,14 +1259,6 @@ const SYSTEM_FLAGS: &[SystemFlagDefinition] = &[
     SystemFlagDefinition {
         field: "has_offset_extra",
         label: "Offset Extra",
-    },
-    SystemFlagDefinition {
-        field: "has_internal_serial",
-        label: "Internal Serial",
-    },
-    SystemFlagDefinition {
-        field: "has_volume_label",
-        label: "Volume Label",
     },
 ];
 

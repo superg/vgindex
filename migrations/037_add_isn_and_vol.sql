@@ -13,6 +13,10 @@ WHERE code IN (
     'FMT', 'NAOMI2', 'PHOTO-CD', 'LINDBERGH', 'KS573', 'SRE', 'KP2'
 );
 
+UPDATE systems
+SET has_volume_label = FALSE
+WHERE code IN ('AUDIO-CD', 'AJCD', 'HVN', 'HVNC', 'HVNJR', 'HVNXP', 'ION');
+
 ALTER TABLE discs
 ADD COLUMN IF NOT EXISTS internal_serial TEXT,
 ADD COLUMN IF NOT EXISTS volume_label TEXT;
