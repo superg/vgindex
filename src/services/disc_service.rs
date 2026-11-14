@@ -198,13 +198,8 @@ pub(crate) fn parse_dmi_input(
     Ok(Some(bytes))
 }
 
-pub(crate) fn parse_extras_input(
-    text: &str,
-    media_type_code: &str,
-) -> Result<Vec<DiscExtra>, String> {
-    let Some(types) = crate::services::validation::media_extra_file_types(media_type_code) else {
-        return Ok(Vec::new());
-    };
+pub(crate) fn parse_ss_extras(text: &str) -> Result<Vec<DiscExtra>, String> {
+    let types = crate::services::validation::dvd_extra_file_types();
 
     let mut extras: Vec<DiscExtra> = Vec::new();
     for (index, line) in text.lines().enumerate() {
@@ -268,20 +263,79 @@ pub(crate) fn format_extras_lines(extras: &[DiscExtra]) -> Vec<String> {
     extras
         .iter()
         .map(|e| {
+            let name = if crate::services::validation::is_cd_extra_type(&e.file_type) {
+                format!("Track {}.bin", e.file_type)
+            } else {
+                format!("extra.{}", e.file_type)
+            };
             format!(
-                r#"<rom name="extra.{}" size="{}" crc="{}" md5="{}" sha1="{}" />"#,
-                e.file_type, e.size, e.crc32, e.md5, e.sha1
+                r#"<rom name="{}" size="{}" crc="{}" md5="{}" sha1="{}" />"#,
+                name, e.size, e.crc32, e.md5, e.sha1
             )
         })
         .collect()
 }
 
-pub(crate) fn limited_extra_type(line: &str, media_type_code: &str) -> Option<String> {
-    let extra = parse_extras_input(line, media_type_code)
+pub(crate) fn parse_cd_extras(text: &str, normal_track_count: usize) -> Vec<DiscExtra> {
+    let mut extras = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let name = extract_attr(line, "name").expect("CD extras were validated");
+        let track = crate::services::validation::extract_cd_extra_track(&name)
+            .expect("CD extra track was validated");
+        let track = canonical_cd_extra_type(&track, normal_track_count);
+        let size = extract_attr(line, "size")
+            .and_then(|value| value.parse::<i64>().ok())
+            .expect("CD extra size was validated");
+        let hash = |attr: &str| {
+            extract_attr(line, attr)
+                .expect("CD extra hash was validated")
+                .to_ascii_lowercase()
+        };
+        extras.push(DiscExtra {
+            file_type: track,
+            size,
+            crc32: hash("crc"),
+            md5: hash("md5"),
+            sha1: hash("sha1"),
+        });
+    }
+    extras.sort_by(|a, b| a.file_type.cmp(&b.file_type));
+    extras
+}
+
+fn canonical_cd_extra_type(track: &str, normal_track_count: usize) -> String {
+    let (marker, session) = track
+        .split_once('.')
+        .map_or((track, None), |(marker, session)| (marker, Some(session)));
+    let marker = match (marker, normal_track_count >= 10) {
+        ("0" | "00", false) => "0",
+        ("0" | "00", true) => "00",
+        ("A" | "AA", false) => "A",
+        ("A" | "AA", true) => "AA",
+        _ => unreachable!("CD extra track was validated"),
+    };
+
+    match session {
+        Some(session) => format!(
+            "{marker}.{}",
+            session
+                .parse::<u32>()
+                .expect("CD extra session was validated")
+        ),
+        None => marker.to_string(),
+    }
+}
+
+pub(crate) fn limited_extra_type(line: &str) -> Option<String> {
+    let extra = parse_ss_extras(line)
         .ok()?
         .into_iter()
         .next()?;
-    crate::services::validation::media_extra_file_types(media_type_code)?
+    crate::services::validation::dvd_extra_file_types()
         .iter()
         .any(|t| t.extension == extra.file_type && t.max_count.is_some())
         .then_some(extra.file_type)
@@ -307,7 +361,9 @@ pub(crate) fn name_extras<'a>(
         .map(|e| {
             let shared = primary != Some(e)
                 && extras.iter().filter(|o| o.file_type == e.file_type).count() > 1;
-            let name = if shared {
+            let name = if crate::services::validation::is_cd_extra_type(&e.file_type) {
+                format!("{base_name} (Track {}).bin", e.file_type)
+            } else if shared {
                 format!("{base_name} ({}).{}", e.crc32, e.file_type)
             } else {
                 format!("{base_name}.{}", e.file_type)
@@ -865,7 +921,7 @@ pub async fn list_dumped_discs(
     Ok(discs)
 }
 
-const MEDIA_TYPE_FOR_SYSTEM_SQL: &str = "SELECT mt.code, mt.name, mt.layer_count, mt.pic, mt.rom_extension, mt.has_dummy_layer, mt.dmi,
+const MEDIA_TYPE_FOR_SYSTEM_SQL: &str = "SELECT mt.code, mt.name, mt.layer_count, mt.pic, mt.rom_extension, mt.has_dummy_layer, mt.has_ss, mt.dmi,
             COALESCE(sm.dmi_length, 2052) AS dmi_length,
             sm.trailer AS dmi_trailer
      FROM media_types mt
@@ -1017,19 +1073,28 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
 }
 
 #[derive(sqlx::FromRow)]
-struct SbiApplicabilityRow {
+struct DiscDataCapabilitiesRow {
     has_sbi: bool,
+    has_extras: bool,
+    has_ss: bool,
     rom_extension: String,
 }
 
-async fn disc_data_allows_sbi(
+struct DiscDataCapabilities {
+    has_sbi: bool,
+    has_extras: bool,
+    has_ss: bool,
+    media_is_cd: bool,
+}
+
+async fn disc_data_capabilities(
     conn: &mut PgConnection,
     disc_id: i32,
     system_code: Option<&str>,
     media_type: Option<&str>,
-) -> AppResult<bool> {
-    let row: Option<SbiApplicabilityRow> = sqlx::query_as(
-        "SELECT s.has_sbi, mt.rom_extension
+) -> AppResult<DiscDataCapabilities> {
+    let row: Option<DiscDataCapabilitiesRow> = sqlx::query_as(
+        "SELECT s.has_sbi, s.has_extras, mt.has_ss, mt.rom_extension
          FROM discs d
          JOIN systems s ON s.code = COALESCE($2, d.system_code)
          JOIN media_types mt ON mt.code = COALESCE($3, d.media_type_code)
@@ -1041,9 +1106,20 @@ async fn disc_data_allows_sbi(
     .fetch_optional(&mut *conn)
     .await?;
 
-    Ok(row.map_or(false, |row| {
-        row.has_sbi && is_cd_rom_extension(&row.rom_extension)
-    }))
+    Ok(row.map_or(
+        DiscDataCapabilities {
+            has_sbi: false,
+            has_extras: false,
+            has_ss: false,
+            media_is_cd: false,
+        },
+        |row| DiscDataCapabilities {
+            has_sbi: row.has_sbi && is_cd_rom_extension(&row.rom_extension),
+            has_extras: row.has_extras,
+            has_ss: row.has_ss,
+            media_is_cd: is_cd_rom_extension(&row.rom_extension),
+        },
+    ))
 }
 
 pub async fn update_disc(
@@ -1076,14 +1152,14 @@ pub async fn update_disc(
         .as_str()
         .map(normalize_newlines)
         .filter(|s| !s.is_empty());
-    let sbi_allowed = disc_data_allows_sbi(
+    let capabilities = disc_data_capabilities(
         &mut *conn,
         disc_id,
         system_code.filter(|s| !s.trim().is_empty()),
         media_type.filter(|s| !s.trim().is_empty()),
     )
     .await?;
-    let sbi = if sbi_allowed {
+    let sbi = if capabilities.has_sbi {
         data["sbi"]
             .as_str()
             .map(normalize_newlines)
@@ -1485,10 +1561,18 @@ pub async fn update_disc(
     }
 
     if let Some(value) = data.get("extras") {
-        let extras = parse_extras_input(
-            &parse_text_array(value).join("\n"),
-            media_type.unwrap_or_default(),
-        )
+        let extras_text = parse_text_array(value).join("\n");
+        let normal_track_count = data["dat"]
+            .as_str()
+            .map(crate::services::validation::dat_rom_count)
+            .unwrap_or_default();
+        let extras = if capabilities.has_extras && capabilities.media_is_cd {
+            Ok(parse_cd_extras(&extras_text, normal_track_count))
+        } else if capabilities.has_ss {
+            parse_ss_extras(&extras_text)
+        } else {
+            Ok(Vec::new())
+        }
         .map_err(|e| AppError::BadRequest(format!("Extras: {e}")))?;
         sqlx::query("DELETE FROM disc_extras WHERE disc_id = $1")
             .bind(disc_id)
@@ -1829,6 +1913,7 @@ mod tests {
             dmi: false,
             rom_extension: "iso".to_string(),
             has_dummy_layer: false,
+            has_ss: false,
             dmi_length: 0x804,
             dmi_trailer: None,
         }
@@ -1876,6 +1961,7 @@ mod tests {
                 name: "System".to_string(),
                 short_name: "SYS".to_string(),
                 media_types: vec!["dvd9".to_string()],
+                has_extras: false,
                 has_exe_date: false,
                 has_sbi: false,
                 has_pvd: false,

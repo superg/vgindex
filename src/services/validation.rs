@@ -1,4 +1,4 @@
-use crate::{db::models::extract_track_from_filename};
+use crate::db::models::extract_track_from_filename;
 
 pub fn validate_non_negative_int(s: &str) -> Result<i64, String> {
     let s = s.trim();
@@ -82,16 +82,13 @@ pub struct ExtraFileType {
     pub max_count: Option<usize>,
 }
 
-pub fn media_extra_file_types(media_code: &str) -> Option<&'static [ExtraFileType]> {
-    const XGD: &[ExtraFileType] = &[
+pub fn dvd_extra_file_types() -> &'static [ExtraFileType] {
+    const DVD_EXTRAS: &[ExtraFileType] = &[
         ExtraFileType { extension: "dmi", size: 2048, max_count: None },
         ExtraFileType { extension: "pfi", size: 2048, max_count: Some(1) },
         ExtraFileType { extension: "ss", size: 2048, max_count: None },
     ];
-    match media_code {
-        "xgd" => Some(XGD),
-        _ => None,
-    }
+    DVD_EXTRAS
 }
 
 pub fn normalize_bca_mastering_input(input: &str) -> String {
@@ -425,6 +422,18 @@ pub fn cuesheet_is_enhanced_cd(text: &str) -> bool {
             .all(|session| session.first().is_some_and(|is_audio| !is_audio))
 }
 
+pub fn cuesheet_session_numbers(text: &str) -> Vec<u32> {
+    text.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if !is_cue_session_line(line) {
+                return None;
+            }
+            line.strip_prefix("REM SESSION ")?.parse().ok()
+        })
+        .collect()
+}
+
 fn is_cue_rem_line(line: &str) -> bool {
     if matches!(line, "REM SINGLE-DENSITY AREA" | "REM HIGH-DENSITY AREA") {
         return true;
@@ -545,6 +554,104 @@ pub fn validate_dat(text: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+pub fn dat_rom_count(text: &str) -> usize {
+    text.lines()
+        .filter(|line| line.trim().starts_with("<rom "))
+        .count()
+}
+
+pub fn validate_cd_extras(text: &str, cue_sessions: &[u32]) -> Result<(), String> {
+    let mut track_keys = std::collections::HashSet::new();
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let row = index + 1;
+        let name = validate_rom_line(line, row)?;
+        let Some(track) = extract_cd_extra_track(&name) else {
+            return Err(format!(
+                "line {row}: '{name}' must be a lead-in or lead-out track name ending in .bin"
+            ));
+        };
+        let (marker, session) = track
+            .split_once('.')
+            .map_or((track.as_str(), None), |(marker, session)| {
+                (marker, Some(session))
+            });
+        let duplicate_marker = match marker {
+            "0" | "00" => "0",
+            "A" | "AA" => "A",
+            _ => return Err(format!("line {row}: invalid lead-in/lead-out track label")),
+        };
+
+        let session = if cue_sessions.len() > 1 {
+            let Some(session) = session else {
+                return Err(format!(
+                    "line {row}: a session suffix is required because the CUE has multiple sessions"
+                ));
+            };
+            let session = session
+                .parse::<u32>()
+                .map_err(|_| format!("line {row}: invalid CUE session suffix"))?;
+            if !cue_sessions.contains(&session) {
+                return Err(format!(
+                    "line {row}: session suffix .{session} is not present in the CUE"
+                ));
+            }
+            Some(session)
+        } else {
+            if session.is_some() {
+                return Err(format!(
+                    "line {row}: a session suffix is only allowed when the CUE has multiple sessions"
+                ));
+            }
+            None
+        };
+
+        let track_key = match session {
+            Some(session) => format!("{duplicate_marker}.{session}"),
+            None => duplicate_marker.to_string(),
+        };
+        if !track_keys.insert(track_key.clone()) {
+            return Err(format!("line {row}: duplicate track '{track_key}'"));
+        }
+
+        let size = dat_extract_attr(line, "size")
+            .and_then(|value| value.parse::<i64>().ok());
+        if size.is_none() {
+            return Err(format!("line {row}: size must be a non-negative integer"));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn extract_cd_extra_track(name: &str) -> Option<String> {
+    let lower = name.to_lowercase();
+    let stem = lower.strip_suffix(".bin")?;
+    let position = stem.rfind("track ")?;
+    let rest = &stem[position + 6..];
+    let track: String = rest
+        .chars()
+        .take_while(|character| character.is_ascii_alphanumeric() || *character == '.')
+        .collect::<String>()
+        .to_ascii_uppercase();
+    is_cd_extra_type(&track).then_some(track)
+}
+
+pub(crate) fn is_cd_extra_type(track: &str) -> bool {
+    let (marker, session) = track
+        .split_once('.')
+        .map_or((track, None), |(marker, session)| (marker, Some(session)));
+    track.len() <= 16
+        && matches!(marker, "0" | "00" | "A" | "AA")
+        && session.map_or(true, |session| {
+            !session.is_empty()
+                && session != "0"
+                && session.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 pub fn validate_rom_line(line: &str, row: usize) -> Result<String, String> {

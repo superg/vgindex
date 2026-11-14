@@ -14,6 +14,8 @@ pub struct MediaType {
     dmi: bool,
     rom_extension: String,
     has_dummy_layer: bool,
+    #[serde(default)]
+    has_ss: bool,
     #[serde(default = "default_dmi_length")]
     dmi_length: i32,
     #[serde(default)]
@@ -45,6 +47,10 @@ impl MediaType {
 
     pub fn has_dmi(&self) -> bool {
         self.dmi
+    }
+
+    pub fn has_ss(&self) -> bool {
+        self.has_ss
     }
 
     pub fn dmi_length(&self) -> usize {
@@ -103,6 +109,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for MediaType {
             dmi: false,
             rom_extension: String::new(),
             has_dummy_layer: false,
+            has_ss: false,
             dmi_length: FULL_DMI_LENGTH,
             dmi_trailer: None,
         })
@@ -127,6 +134,7 @@ pub struct MediaTypeRow {
     pub dmi: bool,
     pub rom_extension: String,
     pub has_dummy_layer: bool,
+    pub has_ss: bool,
     pub dmi_length: i32,
     pub dmi_trailer: Option<Vec<u8>>,
 }
@@ -141,6 +149,7 @@ impl From<MediaTypeRow> for MediaType {
             dmi: row.dmi,
             rom_extension: row.rom_extension,
             has_dummy_layer: row.has_dummy_layer,
+            has_ss: row.has_ss,
             dmi_length: row.dmi_length,
             dmi_trailer: row.dmi_trailer,
         }
@@ -392,6 +401,7 @@ pub struct System {
     pub name: String,
     pub short_name: String,
     pub media_types: Vec<String>,
+    pub has_extras: bool,
     pub has_exe_date: bool,
     pub has_sbi: bool,
     pub has_pvd: bool,
@@ -1246,6 +1256,7 @@ mod tests {
             dmi: false,
             rom_extension: rom_extension.to_string(),
             has_dummy_layer: false,
+            has_ss: false,
             dmi_length: FULL_DMI_LENGTH,
             dmi_trailer: None,
         }
@@ -1259,6 +1270,7 @@ mod tests {
             name: "System".to_string(),
             short_name: String::new(),
             media_types: media_types.iter().map(|code| code.to_string()).collect(),
+            has_extras: false,
             has_exe_date: false,
             has_sbi: false,
             has_pvd: false,

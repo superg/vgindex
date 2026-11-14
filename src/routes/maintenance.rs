@@ -3091,6 +3091,7 @@ mod tests {
             name: name.to_string(),
             short_name: code.to_string(),
             media_types: vec!["cd".to_string()],
+            has_extras: false,
             has_exe_date: false,
             has_sbi: false,
             has_pvd: false,
