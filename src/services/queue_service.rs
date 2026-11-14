@@ -1267,14 +1267,6 @@ fn resolve_submission_snapshot_with_mode(
         return Ok(resolved);
     };
 
-    let media_code = match change_obj.get("media_type") {
-        Some(node) => apply_scalar_operation("media_type", node)?,
-        None => db_snapshot["media_type"].clone(),
-    }
-    .as_str()
-    .unwrap_or_default()
-    .to_string();
-
     for (key, value) in change_obj {
         match key.as_str() {
             "regions" | "languages" | "serial" | "edition" | "barcode" | "bca_mastering" => {
@@ -1287,10 +1279,10 @@ fn resolve_submission_snapshot_with_mode(
                 let mut updated = json_str_vec(&apply_set_operation(&old, value)?);
                 let added = json_str_vec(&value["add"]);
                 for line in &added {
-                    if let Some(file_type) = disc_service::limited_extra_type(line, &media_code) {
+                    if let Some(file_type) = disc_service::limited_extra_type(line) {
                         updated.retain(|existing| {
                             existing == line
-                                || disc_service::limited_extra_type(existing, &media_code).as_ref()
+                                || disc_service::limited_extra_type(existing).as_ref()
                                     != Some(&file_type)
                         });
                     }

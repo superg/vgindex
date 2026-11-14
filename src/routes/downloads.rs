@@ -146,19 +146,24 @@ async fn download_bios_dat(Path(system): Path<String>, request: Request) -> Resp
 
 async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Html<String> {
     let authenticated = user.is_logged_in();
-    let media_types: Vec<MediaTypeCdRow> =
-        sqlx::query_as("SELECT code, rom_extension FROM media_types")
+    let media_types: Vec<MediaTypeRow> =
+        sqlx::query_as("SELECT code, rom_extension, has_ss FROM media_types")
             .fetch_all(&state.pool)
             .await
             .unwrap_or_default();
     let cd_media_codes: HashSet<String> = media_types
-        .into_iter()
+        .iter()
         .filter(|mt| crate::db::models::is_cd_rom_extension(&mt.rom_extension))
-        .map(|mt| mt.code)
+        .map(|mt| mt.code.clone())
+        .collect();
+    let ss_media_codes: HashSet<String> = media_types
+        .iter()
+        .filter(|mt| mt.has_ss)
+        .map(|mt| mt.code.clone())
         .collect();
 
     let rows: Vec<SystemDownloadRow> = sqlx::query_as(
-        "SELECT s.code, s.manufacturer, s.name, s.has_sbi, s.media_types
+        "SELECT s.code, s.manufacturer, s.name, s.has_sbi, s.has_extras, s.media_types
          FROM systems s
          WHERE EXISTS (SELECT 1 FROM discs d WHERE d.system_code = s.code)
          ORDER BY LOWER(CONCAT_WS(' ', NULLIF(s.manufacturer, ''), s.name))",
@@ -194,10 +199,10 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
                 && r.media_types
                     .iter()
                     .any(|code| cd_media_codes.contains(code)),
-            has_extras: r
-                .media_types
-                .iter()
-                .any(|code| crate::services::validation::media_extra_file_types(code).is_some()),
+            has_extras: r.media_types.iter().any(|code| {
+                (r.has_extras && cd_media_codes.contains(code))
+                    || ss_media_codes.contains(code)
+            }),
         });
     }
 
@@ -230,13 +235,15 @@ struct SystemDownloadRow {
     manufacturer: String,
     name: String,
     has_sbi: bool,
+    has_extras: bool,
     media_types: Vec<String>,
 }
 
 #[derive(sqlx::FromRow)]
-struct MediaTypeCdRow {
+struct MediaTypeRow {
     code: String,
     rom_extension: String,
+    has_ss: bool,
 }
 
 fn normalize_archive_system_code(system: &str) -> String {

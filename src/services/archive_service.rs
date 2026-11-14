@@ -231,23 +231,26 @@ pub async fn regenerate_system_archives(
     let Some(sys) = sys else { return Ok(None) };
 
     let ts = timestamp_now();
+    let has_bin_media = system_has_bin_media(pool, &sys.media_types).await;
+    let has_ss_media = system_has_ss_media(pool, &sys.media_types).await;
     let datfile = generate_datfile_archive(pool, metadata, &sys, &ts, false).await?;
     store_archive(&sys.code, "dat", &datfile)
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    if archive_type_supported_by_system(&sys, "extras", false).unwrap_or(false) {
+    if archive_type_supported_by_system(&sys, "extras", has_bin_media, has_ss_media)
+        .unwrap_or(false)
+    {
         let result = generate_datfile_archive(pool, metadata, &sys, &ts, true).await?;
         store_archive(&sys.code, "extras", &result)
             .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    let has_bin_media = system_has_bin_media(pool, &sys.media_types).await;
-    if archive_type_supported_by_system(&sys, "cue", has_bin_media).unwrap_or(false) {
+    if archive_type_supported_by_system(&sys, "cue", has_bin_media, has_ss_media).unwrap_or(false) {
         let result = generate_cuesheet_archive(pool, &sys.code, &ts).await?;
         store_archive(&sys.code, "cue", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
-    if archive_type_supported_by_system(&sys, "sbi", has_bin_media).unwrap_or(false) {
+    if archive_type_supported_by_system(&sys, "sbi", has_bin_media, has_ss_media).unwrap_or(false) {
         let result = generate_sbi_archive(pool, &sys.code, &ts).await?;
         store_archive(&sys.code, "sbi", &result).map_err(|e| AppError::Internal(e.to_string()))?;
     }
@@ -309,15 +312,13 @@ fn archive_type_supported_by_system(
     sys: &System,
     archive_type: &str,
     has_bin_media: bool,
+    has_ss_media: bool,
 ) -> AppResult<bool> {
     match archive_type {
         "dat" => Ok(true),
         "cue" => Ok(has_bin_media),
         "sbi" => Ok(sys.has_sbi && has_bin_media),
-        "extras" => Ok(sys
-            .media_types
-            .iter()
-            .any(|code| crate::services::validation::media_extra_file_types(code).is_some())),
+        "extras" => Ok((sys.has_extras && has_bin_media) || has_ss_media),
         _ => Err(AppError::NotFound),
     }
 }
@@ -337,13 +338,18 @@ async fn archive_type_is_available(
         .await?
         .ok_or(AppError::NotFound)?;
 
-    let has_bin_media = if matches!(archive_type, "cue" | "sbi") {
+    let has_bin_media = if matches!(archive_type, "cue" | "sbi" | "extras") {
         system_has_bin_media(pool, &sys.media_types).await
     } else {
         false
     };
+    let has_ss_media = if archive_type == "extras" {
+        system_has_ss_media(pool, &sys.media_types).await
+    } else {
+        false
+    };
 
-    archive_type_supported_by_system(&sys, archive_type, has_bin_media)
+    archive_type_supported_by_system(&sys, archive_type, has_bin_media, has_ss_media)
 }
 
 async fn system_has_bin_media(pool: &PgPool, media_type_codes: &[String]) -> bool {
@@ -357,6 +363,22 @@ async fn system_has_bin_media(pool: &PgPool, media_type_codes: &[String]) -> boo
             .await
             .unwrap_or_default();
     extensions.iter().any(|ext| is_cd_rom_extension(ext))
+}
+
+async fn system_has_ss_media(pool: &PgPool, media_type_codes: &[String]) -> bool {
+    if media_type_codes.is_empty() {
+        return false;
+    }
+    sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1 FROM media_types
+             WHERE code = ANY($1) AND has_ss
+         )",
+    )
+    .bind(media_type_codes)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false)
 }
 
 pub fn timestamp_now() -> String {
@@ -884,6 +906,7 @@ mod tests {
             name: "System".to_string(),
             short_name: String::new(),
             media_types: vec!["cd".to_string(), "gdrom".to_string(), "dvd5".to_string()],
+            has_extras: false,
             has_exe_date: false,
             has_sbi,
             has_pvd: false,
@@ -1059,18 +1082,18 @@ mod tests {
         let sbi_system = system(true);
         let plain_system = system(false);
 
-        assert!(archive_type_supported_by_system(&plain_system, "dat", false).unwrap());
-        assert!(archive_type_supported_by_system(&sbi_system, "sbi", true).unwrap());
-        assert!(!archive_type_supported_by_system(&sbi_system, "sbi", false).unwrap());
-        assert!(!archive_type_supported_by_system(&plain_system, "sbi", false).unwrap());
+        assert!(archive_type_supported_by_system(&plain_system, "dat", false, false).unwrap());
+        assert!(archive_type_supported_by_system(&sbi_system, "sbi", true, false).unwrap());
+        assert!(!archive_type_supported_by_system(&sbi_system, "sbi", false, false).unwrap());
+        assert!(!archive_type_supported_by_system(&plain_system, "sbi", false, false).unwrap());
     }
 
     #[test]
     fn archive_availability_uses_bin_media_for_cues() {
         let sys = system(false);
 
-        assert!(archive_type_supported_by_system(&sys, "cue", true).unwrap());
-        assert!(!archive_type_supported_by_system(&sys, "cue", false).unwrap());
+        assert!(archive_type_supported_by_system(&sys, "cue", true, false).unwrap());
+        assert!(!archive_type_supported_by_system(&sys, "cue", false, false).unwrap());
     }
 
     #[test]
