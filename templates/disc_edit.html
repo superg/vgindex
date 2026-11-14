@@ -457,7 +457,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         </div>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("internal_serial").is_empty() %} {{ self.highlight_class("internal_serial") }}{% endif %}" data-add-requires-system-media>
+    <div class="inline-field{% if !self.highlight_class("internal_serial").is_empty() %} {{ self.highlight_class("internal_serial") }}{% endif %}" data-add-requires-system-media data-field-flag="has_internal_serial">
         <span class="inline-field-label">Internal Serial</span>
         <div class="inline-field-values">
             <input type="text" name="internal_serial" value="{{ internal_serial }}">
@@ -472,7 +472,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         </div>
     </div>
 
-    <div class="inline-field{% if !self.highlight_class("volume_label").is_empty() %} {{ self.highlight_class("volume_label") }}{% endif %}" data-add-requires-system-media>
+    <div class="inline-field{% if !self.highlight_class("volume_label").is_empty() %} {{ self.highlight_class("volume_label") }}{% endif %}" data-add-requires-system-media data-field-flag="has_volume_label">
         <span class="inline-field-label">Volume Label</span>
         <div class="inline-field-values">
             <input type="text" name="volume_label" value="{{ volume_label }}">
