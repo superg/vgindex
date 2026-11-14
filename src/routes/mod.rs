@@ -99,8 +99,7 @@ pub(crate) fn is_safe_root_relative_url(url: &str) -> bool {
     url.starts_with('/')
         && !url.starts_with("//")
         && !url.contains('\\')
-        && !url.contains('\r')
-        && !url.contains('\n')
+        && !url.chars().any(char::is_control)
 }
 
 pub(crate) fn canonicalize_root_relative_url(url: &str) -> String {
@@ -233,6 +232,14 @@ mod tests {
     #[test]
     fn path_i32_returns_value_for_valid_extractor() {
         assert_eq!(path_i32(Ok(Path(123))).unwrap(), 123);
+    }
+
+    #[test]
+    fn safe_root_relative_urls_reject_control_characters() {
+        assert!(is_safe_root_relative_url("/discs?q=a b"));
+        for url in ["/\t/evil.example", "/ok\r\n", "/a\x01b", "/a\x7fb"] {
+            assert!(!is_safe_root_relative_url(url), "{url:?}");
+        }
     }
 
     #[test]
