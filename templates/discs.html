@@ -538,7 +538,7 @@
         var panel = document.getElementById('advanced-search-panel');
         if (!form || !toggle || !panel) return;
 
-        var systemsMedia = {{ systems_media_json|safe }};
+        var systemsMedia = {{ systems_media_json|script_json|safe }};
         var systemSelect = document.getElementById('system-filter');
         var mediaSelect = document.getElementById('media-filter');
         var originalMediaOptions = mediaSelect ? Array.prototype.slice.call(mediaSelect.options) : [];

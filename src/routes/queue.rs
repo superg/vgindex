@@ -3702,6 +3702,17 @@ mod tests {
     }
 
     #[test]
+    fn review_page_keeps_submitted_ring_codes_inside_its_script() {
+        let mut snapshot = old_snapshot();
+        snapshot["ring_codes"] = serde_json::json!([{
+            "layers": [{"mastering_code": "</script><script>alert(1)</script>"}]
+        }]);
+        let html = build_template(&snapshot).render().unwrap();
+        assert!(!html.contains("<script>alert(1)"));
+        assert!(html.contains(r"\u003c/script\u003e\u003cscript\u003ealert(1)"));
+    }
+
+    #[test]
     fn queue_detail_template_preserves_current_user_avatar() {
         let template = QueueDetailTemplate {
             current_user: Some(AuthenticatedUser {

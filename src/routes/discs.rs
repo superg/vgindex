@@ -17,6 +17,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::auth::middleware::{AuthenticatedUser, CurrentUser};
 use crate::config::SiteConfig;
+use crate::filters;
 use crate::db::models::{format_display_title, DiscStatus};
 use crate::error::{AppError, AppResult};
 use crate::services::disc_service::{

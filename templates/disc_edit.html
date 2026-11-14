@@ -4,21 +4,21 @@
 
 {% block head %}
 <script>
-const RING_CODES = {{ ring_codes_json|safe }};
+const RING_CODES = {{ ring_codes_json|script_json|safe }};
 const MAX_LAYERS = {{ max_layers }};
-const MEDIA_LAYERS = {{ media_layers_json|safe }};
-const SYSTEMS_MEDIA = {{ systems_media_json|safe }};
-const SYSTEMS_HAS_FLAGS = {{ systems_has_flags_json|safe }};
-const EDITION_SUGGESTIONS = {{ edition_suggestions_json|safe }};
-const SUBMIT_AS_USERNAMES = {{ submit_as_usernames_json|safe }};
-const MEDIA_ROM_EXTENSIONS = {{ media_rom_extensions_json|safe }};
-const MEDIA_IS_CD = {{ media_is_cd_json|safe }};
-const MEDIA_HAS_PIC = {{ media_has_pic_json|safe }};
-const MEDIA_HAS_DMI = {{ media_has_dmi_json|safe }};
-const MEDIA_HAS_EXTRAS = {{ media_has_extras_json|safe }};
-const MEDIA_HAS_DUMMY_LAYER = {{ media_has_dummy_layer_json|safe }};
-const LAYERBREAKS = [{% for lb in layerbreaks %}"{{ lb }}"{% if !loop.last %},{% endif %}{% endfor %}];
-const RING_HIGHLIGHTS = {{ ring_highlights_json|safe }};
+const MEDIA_LAYERS = {{ media_layers_json|script_json|safe }};
+const SYSTEMS_MEDIA = {{ systems_media_json|script_json|safe }};
+const SYSTEMS_HAS_FLAGS = {{ systems_has_flags_json|script_json|safe }};
+const EDITION_SUGGESTIONS = {{ edition_suggestions_json|script_json|safe }};
+const SUBMIT_AS_USERNAMES = {{ submit_as_usernames_json|script_json|safe }};
+const MEDIA_ROM_EXTENSIONS = {{ media_rom_extensions_json|script_json|safe }};
+const MEDIA_IS_CD = {{ media_is_cd_json|script_json|safe }};
+const MEDIA_HAS_PIC = {{ media_has_pic_json|script_json|safe }};
+const MEDIA_HAS_DMI = {{ media_has_dmi_json|script_json|safe }};
+const MEDIA_HAS_EXTRAS = {{ media_has_extras_json|script_json|safe }};
+const MEDIA_HAS_DUMMY_LAYER = {{ media_has_dummy_layer_json|script_json|safe }};
+const LAYERBREAKS = {{ layerbreaks|script_json_value|safe }};
+const RING_HIGHLIGHTS = {{ ring_highlights_json|script_json|safe }};
 const IS_ADD_MODE = {{ is_add_mode }};
 const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
 </script>

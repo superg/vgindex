@@ -4,6 +4,7 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod filters;
 mod hex_case;
 mod routes;
 mod services;

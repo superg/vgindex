@@ -16,6 +16,7 @@ use crate::auth::{
     middleware::{AuthenticatedUser, RequireAuth},
 };
 use crate::config::SiteConfig;
+use crate::filters;
 use crate::db::models::*;
 use crate::error::{AppError, AppResult};
 use crate::hex_case::{normalize_dat_hash_case, normalize_sbi_hex_case};
