@@ -1205,6 +1205,14 @@ const SYSTEM_FLAGS: &[SystemFlagDefinition] = &[
         label: "EXE Date",
     },
     SystemFlagDefinition {
+        field: "has_internal_serial",
+        label: "Internal Serial",
+    },
+    SystemFlagDefinition {
+        field: "has_volume_label",
+        label: "Volume Label",
+    },
+    SystemFlagDefinition {
         field: "has_edc",
         label: "EDC",
     },
@@ -1344,14 +1352,15 @@ const INSERT_SYSTEM_SQL: &str = "
          has_serial, has_edition, has_barcode, has_version, has_exe_date, has_edc,
          has_error_count, has_universal_hash, has_protection,
          has_sector_ranges, has_sbi, has_pvd, has_header, has_bca, has_dmi,
-         has_sample_start, has_offset_extra, archives_dirty)
+         has_sample_start, has_offset_extra, has_internal_serial, has_volume_label,
+         archives_dirty)
     VALUES
         ($1, $2, $3, $4, $5, $6,
          $7, $8, $9, $10,
          $11, $12, $13, $14, $15, $16,
          $17, $18, $19,
          $20, $21, $22, $23, $24, $25,
-         $26, $27, TRUE)";
+         $26, $27, $28, $29, TRUE)";
 
 const UPDATE_SYSTEM_SQL: &str = "
     UPDATE systems
@@ -1381,6 +1390,8 @@ const UPDATE_SYSTEM_SQL: &str = "
         has_dmi = $25,
         has_sample_start = $26,
         has_offset_extra = $27,
+        has_internal_serial = $28,
+        has_volume_label = $29,
         archives_dirty = TRUE
     WHERE code = $1";
 
@@ -2282,6 +2293,8 @@ fn system_flag_value(system: &System, field: &str) -> bool {
         "has_dmi" => system.has_dmi,
         "has_sample_start" => system.has_sample_start,
         "has_offset_extra" => system.has_offset_extra,
+        "has_internal_serial" => system.has_internal_serial,
+        "has_volume_label" => system.has_volume_label,
         _ => false,
     }
 }
@@ -2785,6 +2798,8 @@ fn bind_system_fields<'q>(
         .bind(row.flag("has_dmi"))
         .bind(row.flag("has_sample_start"))
         .bind(row.flag("has_offset_extra"))
+        .bind(row.flag("has_internal_serial"))
+        .bind(row.flag("has_volume_label"))
 }
 
 async fn save_validated_lookup_rows(
@@ -3098,6 +3113,8 @@ mod tests {
             has_sample_start: false,
             has_offset_extra: false,
             has_primary_dmi: false,
+            has_internal_serial: false,
+            has_volume_label: false,
             archives_dirty: false,
             dmi_lengths: Default::default(),
         }

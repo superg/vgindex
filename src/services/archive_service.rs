@@ -906,6 +906,8 @@ mod tests {
             has_sample_start: false,
             has_offset_extra: false,
             has_primary_dmi: false,
+            has_internal_serial: false,
+            has_volume_label: false,
             archives_dirty: false,
             dmi_lengths: Default::default(),
         }

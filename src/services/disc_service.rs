@@ -1095,6 +1095,8 @@ pub async fn update_disc(
     let universal_hash = parse_universal_hash_bytes(data["universal_hash"].as_str())?;
     let error_count = data["error_count"].as_i64().map(|v| v as i32);
     let exe_date = data["exe_date"].as_str().filter(|s| !s.is_empty());
+    let internal_serial = data["internal_serial"].as_str().filter(|s| !s.is_empty());
+    let volume_label = data["volume_label"].as_str().filter(|s| !s.is_empty());
     let edc = data["edc"].as_bool().unwrap_or(false);
     let pvd = data["pvd"]
         .as_str()
@@ -1181,7 +1183,8 @@ pub async fn update_disc(
          universal_hash = $26,
          cue = $27,
          status = $28::disc_status_enum,
-         disc_title_foreign = $30
+         disc_title_foreign = $30,
+         internal_serial = $31, volume_label = $32
          WHERE id = $29",
     )
     .bind(title) // $1
@@ -1214,6 +1217,8 @@ pub async fn update_disc(
     .bind(status) // $28
     .bind(disc_id) // $29
     .bind(disc_title_foreign) // $30
+    .bind(internal_serial) // $31
+    .bind(volume_label) // $32
     .execute(&mut *conn)
     .await?;
 
@@ -1848,6 +1853,8 @@ mod tests {
                 filename_suffix: None,
                 error_count: None,
                 exe_date: None,
+                internal_serial: None,
+                volume_label: None,
                 edc: false,
                 layerbreaks: None,
                 protection: None,
@@ -1891,6 +1898,8 @@ mod tests {
                 has_sample_start: false,
                 has_offset_extra: false,
                 has_primary_dmi: false,
+                has_internal_serial: false,
+                has_volume_label: false,
                 archives_dirty: false,
                 dmi_lengths: Default::default(),
             },
@@ -2647,6 +2656,8 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "contents": detail.disc.contents,
         "error_count": detail.disc.error_count,
         "exe_date": detail.disc.exe_date,
+        "internal_serial": detail.disc.internal_serial,
+        "volume_label": detail.disc.volume_label,
         "edc": edc_value,
         "layerbreaks": detail.disc.layerbreaks.clone().unwrap_or_default(),
         "pvd": detail.disc.pvd.as_ref().map(|d| format_pvd_hex_snapshot(d)),

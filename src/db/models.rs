@@ -414,6 +414,8 @@ pub struct System {
     pub has_sample_start: bool,
     pub has_offset_extra: bool,
     pub has_primary_dmi: bool,
+    pub has_internal_serial: bool,
+    pub has_volume_label: bool,
     pub archives_dirty: bool,
     #[sqlx(skip)]
     pub dmi_lengths: std::collections::HashMap<String, i32>,
@@ -509,6 +511,8 @@ pub struct Disc {
     pub filename_suffix: Option<String>,
     pub error_count: Option<i32>,
     pub exe_date: Option<String>,
+    pub internal_serial: Option<String>,
+    pub volume_label: Option<String>,
     pub edc: bool,
     pub layerbreaks: Option<Vec<i32>>,
     pub protection: Option<String>,
@@ -1277,6 +1281,8 @@ mod tests {
             has_sample_start: false,
             has_offset_extra: false,
             has_primary_dmi: false,
+            has_internal_serial: false,
+            has_volume_label: false,
             dmi_lengths: Default::default(),
             archives_dirty: false,
         }

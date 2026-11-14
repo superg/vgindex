@@ -705,6 +705,8 @@ fn is_nullable_scalar_field(key: &str) -> bool {
             | "version"
             | "error_count"
             | "exe_date"
+            | "internal_serial"
+            | "volume_label"
             | "comments"
             | "contents"
             | "protection"

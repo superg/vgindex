@@ -199,7 +199,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         </label>
         <label class="disc-meta-row{% if !self.highlight_class("title_foreign").is_empty() %} {{ self.highlight_class("title_foreign") }}{% endif %}" data-add-requires-system-media data-field-flag="has_title_foreign"{% if !show_title_foreign %} style="display:none"{% endif %}>
             <span class="disc-meta-label">Foreign Title:</span>
-            <input type="text" name="title_foreign" value="{{ title_foreign }}">
+            <input type="text" name="title_foreign" value="{{ title_foreign }}" title="Non-Latin Title">
             <button type="button" id="transliterate-btn" class="outline secondary transliterate-btn" data-target="title" title="Romanize the Foreign Title into the Title field (draft — review the result)">Transliterate</button>
             {% for ann in self.annotations_for("title_foreign") %}
             <div class="review-field-annotation">
@@ -238,7 +238,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         </label>
         <label class="disc-meta-row{% if !self.highlight_class("disc_title_foreign").is_empty() %} {{ self.highlight_class("disc_title_foreign") }}{% endif %}" data-add-requires-system-media data-field-flag="has_disc_title_foreign"{% if !show_disc_title_foreign %} style="display:none"{% endif %}>
             <span class="disc-meta-label">Foreign Disc Title:</span>
-            <input type="text" name="disc_title_foreign" value="{{ disc_title_foreign }}">
+            <input type="text" name="disc_title_foreign" value="{{ disc_title_foreign }}" title="Non-Latin Disc Title">
             {% for ann in self.annotations_for("disc_title_foreign") %}
             <div class="review-field-annotation">
                 <span class="review-field-annotation-label">{{ ann.label }}:</span>
@@ -447,6 +447,36 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         <div class="inline-field-values">
             <input type="text" name="exe_date" value="{{ exe_date }}" placeholder="YYYY-MM-DD">
             {% for ann in self.annotations_for("exe_date") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="inline-field{% if !self.highlight_class("internal_serial").is_empty() %} {{ self.highlight_class("internal_serial") }}{% endif %}" data-add-requires-system-media data-field-flag="has_internal_serial">
+        <span class="inline-field-label">Internal Serial</span>
+        <div class="inline-field-values">
+            <input type="text" name="internal_serial" value="{{ internal_serial }}">
+            {% for ann in self.annotations_for("internal_serial") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="inline-field{% if !self.highlight_class("volume_label").is_empty() %} {{ self.highlight_class("volume_label") }}{% endif %}" data-add-requires-system-media data-field-flag="has_volume_label">
+        <span class="inline-field-label">Volume Label</span>
+        <div class="inline-field-values">
+            <input type="text" name="volume_label" value="{{ volume_label }}">
+            {% for ann in self.annotations_for("volume_label") %}
             <div class="review-field-annotation">
                 <span class="review-field-annotation-label">{{ ann.label }}:</span>
                 {% for item in ann.values %}
