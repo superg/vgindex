@@ -1970,14 +1970,16 @@ fn link_tag(s: &str) -> Option<(usize, String)> {
         return None;
     }
     let end = s.find('>')?;
-    let url = s[7..end]
-        .trim_start_matches([' ', '='])
-        .split(['"', '\'', ' '])
-        .find(|part| !part.is_empty())?;
+    let value = s[7..end].trim_start_matches([' ', '=']);
+    let url = match value.chars().next()? {
+        quote @ ('"' | '\'') => value[1..].split(quote).next()?,
+        _ => value.split(' ').next()?,
+    };
+    let href = url.replace('"', "&quot;");
     ["/", "http://", "https://"]
         .iter()
         .any(|scheme| url.starts_with(scheme))
-        .then(|| (end + 1, format!(r#"<a href="{url}">"#)))
+        .then(|| (end + 1, format!(r#"<a href="{href}">"#)))
 }
 
 fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
@@ -2526,7 +2528,15 @@ mod tests {
         );
         assert_eq!(
             format_comments(r#"<A HREF = '/x?a&amp;b"c' onmouseover="alert(1)">x</a>"#),
-            r#"<a href="/x?a&amp;b">x</a>"#
+            r#"<a href="/x?a&amp;b&quot;c">x</a>"#
+        );
+        assert_eq!(
+            format_comments(r#"<a href="/discs?q=Assassin's">x</a>"#),
+            r#"<a href="/discs?q=Assassin's">x</a>"#
+        );
+        assert_eq!(
+            format_comments(r#"<a href=/x"onmouseover=alert(1)>x</a>"#),
+            r#"<a href="/x&quot;onmouseover=alert(1)">x</a>"#
         );
     }
 
