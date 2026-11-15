@@ -1966,10 +1966,10 @@ fn allowed_html_tag(s: &str) -> Option<usize> {
 }
 
 fn link_tag(s: &str) -> Option<(usize, String)> {
-    let end = s.find('>')?;
     if !s.get(..7)?.eq_ignore_ascii_case("<a href") {
         return None;
     }
+    let end = s.find('>')?;
     let url = s[7..end]
         .trim_start_matches([' ', '='])
         .split(['"', '\'', ' '])
