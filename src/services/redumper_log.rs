@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::services::validation;
 
 pub const MINIMUM_AUTOFILL_BUILD: u64 = 737;
-const MINIMUM_EXTRAS_BUILD: u64 = 769;
+const MINIMUM_XGD_EXTRAS_BUILD: u64 = 769;
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ParsedRedumperLog {
@@ -93,7 +93,7 @@ fn parse_internal(
     let dump = latest_section(&lines, "DUMP");
 
     let mut result = ParsedRedumperLog::default();
-    let has_extras_build = has_redumper_build_at_least(log, MINIMUM_EXTRAS_BUILD);
+    let has_xgd_extras_build = has_redumper_build_at_least(log, MINIMUM_XGD_EXTRAS_BUILD);
 
     if let Some(info) = info.as_deref() {
         result.version = scalar_value(info, "version:");
@@ -163,13 +163,22 @@ fn parse_internal(
         }
     }
 
+    let has_xgd_media = result.system_code.as_deref().is_some_and(|system_code| {
+        known_systems.iter().any(|(code, media_types)| {
+            code == system_code
+                && media_types
+                    .iter()
+                    .any(|media_type| media_type.eq_ignore_ascii_case("xgd"))
+        })
+    });
+
     if let Some(hash) = hash.as_deref() {
         let is_rom_line = |line: &str| {
             let line = line.trim();
             line.starts_with("<rom ") && line.ends_with("/>")
         };
         result.dat = consecutive_matching_after(hash, "dat:", is_rom_line);
-        if has_extras_build {
+        if !has_xgd_media || has_xgd_extras_build {
             result.extras = consecutive_matching_after(hash, "dat (extra):", is_rom_line);
         }
     }
@@ -908,15 +917,17 @@ dat:
 
     #[test]
     fn dat_extra_entries_are_separate_from_dat_without_a_blank_separator() {
-        let log = r#"*** HASH (time check: 0s)
+        let hash = r#"*** HASH (time check: 0s)
 dat:
 <rom name="xbox47.iso" size="7825162240" crc="ffaf1dcc" md5="e057504a77b4e0ad6271ea76f352a68f" sha1="4c4377a74a07ec2af8c7ef11ae30490f48d0ef13" />
 dat (extra):
 <rom name="xbox47.dmi" size="2048" crc="043bf884" md5="efe2e7d26f6a375ea6a5e17074bcc908" sha1="ab7246ac85974768f7f3fb79bd6f7bad33e818c8" />
 <rom name="xbox47.pfi" size="2048" crc="8fc52135" md5="51badb1da2cc5fb0b272061dab9ef75b" sha1="1b1c6e61835799dd182dea5b3f3f35447216a8ac" />"#;
+        let log = format!("*** INFO (time check: 0s)\nXBOX [disc.iso]:\n{hash}");
+        let known_systems = systems_with_media();
 
         let log_at_build_769 = format!("redumper (build: b769)\n{log}");
-        let parsed = parse(&log_at_build_769, &[]);
+        let parsed = parse_with_system_media(&log_at_build_769, &known_systems);
         assert_eq!(
             parsed.dat.as_deref(),
             Some(
@@ -932,7 +943,11 @@ dat (extra):
 
         for (build, expected) in [("b768", None), ("b769", parsed.extras.as_deref())] {
             let versioned_log = format!("redumper (build: {build})\n{log}");
-            assert_eq!(parse(&versioned_log, &[]).extras.as_deref(), expected);
+            assert_eq!(
+                parse_with_system_media(&versioned_log, &known_systems)
+                    .extras.as_deref(),
+                expected
+            );
         }
     }
 

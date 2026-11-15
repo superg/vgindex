@@ -193,7 +193,7 @@ pub(crate) struct DiscEditTemplate {
     pub cue: String,
     pub files_xml: String,
     pub show_extras: bool,
-    pub media_has_extras_json: String,
+    pub media_has_ss_json: String,
     pub extras: String,
 
     pub status: String,
@@ -342,6 +342,7 @@ pub(crate) struct EditMediaTypeRow {
     pub dmi: bool,
     pub rom_extension: String,
     pub has_dummy_layer: bool,
+    pub has_ss: bool,
 }
 
 #[derive(sqlx::FromRow)]
@@ -362,7 +363,7 @@ pub(crate) struct EditRefData {
 pub(crate) async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData> {
     let all_systems = disc_service::get_all_systems(pool).await?;
     let all_media_types: Vec<EditMediaTypeRow> = sqlx::query_as(
-        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer, dmi FROM media_types ORDER BY name",
+        "SELECT code, name, layer_count, pic, rom_extension, has_dummy_layer, has_ss, dmi FROM media_types ORDER BY name",
     )
     .fetch_all(pool)
     .await?;
@@ -394,6 +395,7 @@ pub(crate) fn build_systems_json(all_systems: &[System]) -> (String, String) {
         systems_has_flags_map.insert(
             s.code.clone(),
             serde_json::json!({
+                "has_extras": s.has_extras,
                 "has_title_foreign": s.has_title_foreign,
                 "has_disc_number": s.has_disc_number,
                 "has_disc_title": s.has_disc_title,
@@ -636,13 +638,10 @@ pub(crate) fn build_media_has_dmi_json(all_media_types: &[EditMediaTypeRow]) -> 
     serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
 }
 
-pub(crate) fn build_media_has_extras_json(all_media_types: &[EditMediaTypeRow]) -> String {
+pub(crate) fn build_media_has_ss_json(all_media_types: &[EditMediaTypeRow]) -> String {
     let mut map = serde_json::Map::new();
     for m in all_media_types {
-        map.insert(
-            m.code.clone(),
-            serde_json::json!(validation::media_extra_file_types(&m.code).is_some()),
-        );
+        map.insert(m.code.clone(), serde_json::json!(m.has_ss));
     }
     serde_json::to_string(&map).unwrap_or_else(|_| "{}".into())
 }
@@ -665,6 +664,27 @@ pub(crate) fn media_code_is_cd(all_media_types: &[EditMediaTypeRow], media_code:
         .iter()
         .find(|m| m.code == media_code)
         .map_or(false, |m| is_cd_rom_extension(&m.rom_extension))
+}
+
+pub(crate) fn media_has_ss(all_media_types: &[EditMediaTypeRow], media_code: &str) -> bool {
+    all_media_types
+        .iter()
+        .find(|media| media.code == media_code)
+        .is_some_and(|media| media.has_ss)
+}
+
+pub(crate) fn system_media_has_extras_for_selection(
+    all_systems: &[System],
+    all_media_types: &[EditMediaTypeRow],
+    system_code: &str,
+    media_code: &str,
+) -> bool {
+    let system_has_extras = all_systems
+        .iter()
+        .find(|system| system.code == system_code)
+        .is_some_and(|system| system.has_extras);
+    (system_has_extras && media_code_is_cd(all_media_types, media_code))
+        || media_has_ss(all_media_types, media_code)
 }
 
 pub(crate) fn error_count_available_for_selection(
@@ -913,7 +933,7 @@ async fn edit_page(
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let media_has_dmi_json = build_media_has_dmi_json(&ref_data.all_media_types);
-    let media_has_extras_json = build_media_has_extras_json(&ref_data.all_media_types);
+    let media_has_ss_json = build_media_has_ss_json(&ref_data.all_media_types);
     let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let max_layers = detail.disc.media_type.max_layers();
@@ -1179,8 +1199,9 @@ async fn edit_page(
                 .map(|c| simplify_cue(c, rom_extension))
                 .unwrap_or_default(),
             files_xml,
-            show_extras: validation::media_extra_file_types(&detail.disc.media_type.code()).is_some(),
-            media_has_extras_json,
+            show_extras: (detail.system.has_extras && detail.disc.media_type.is_cd())
+                || detail.disc.media_type.has_ss(),
+            media_has_ss_json,
             extras: disc_service::format_extras_lines(&detail.extras).join("\n"),
 
             status: detail.disc.status.to_string(),
@@ -1520,7 +1541,28 @@ fn validate_form_with_options(
     }
 
     if let Some(ref text) = form.extras {
-        match disc_service::parse_extras_input(text, media_code) {
+        let system_has_extras = all_systems
+            .iter()
+            .find(|system| system.code == system_code)
+            .is_some_and(|system| system.has_extras);
+        let media_has_ss = media_has_ss(all_media_types, media_code);
+        let media_is_cd = media_code_is_cd(all_media_types, media_code);
+        let parsed_extras = if system_has_extras && media_is_cd {
+            // Leadin/Leadout extras
+            let cue_sessions = validation::cuesheet_session_numbers(form.cue.as_deref().unwrap_or(""));
+            validation::validate_cd_extras(text, &cue_sessions).map(|()| {
+                disc_service::parse_cd_extras(
+                    text,
+                    validation::dat_rom_count(form.files_xml.as_deref().unwrap_or("")),
+                )
+            })
+        } else if media_has_ss {
+            // XGD extras
+            disc_service::parse_ss_extras(text)
+        } else {
+            Ok(Vec::new())
+        };
+        match parsed_extras {
             Err(e) => errors.push(format!("Extras: {}", e)),
             Ok(extras) if extras.is_empty() && !text.trim().is_empty() => {
                 errors.push("Extras: no valid <rom ...> entries found".to_string());
@@ -1812,7 +1854,7 @@ async fn render_form_with_context(
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let media_has_dmi_json = build_media_has_dmi_json(&ref_data.all_media_types);
-    let media_has_extras_json = build_media_has_extras_json(&ref_data.all_media_types);
+    let media_has_ss_json = build_media_has_ss_json(&ref_data.all_media_types);
     let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let submit_as_usernames_json = if is_add_mode && can_moderate {
@@ -2007,8 +2049,13 @@ async fn render_form_with_context(
             .as_deref()
             .map(normalize_dat_hash_case)
             .unwrap_or_default(),
-        show_extras: validation::media_extra_file_types(form.media_type.trim()).is_some(),
-        media_has_extras_json,
+        show_extras: system_media_has_extras_for_selection(
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            form.system_code.trim(),
+            form.media_type.trim(),
+        ),
+        media_has_ss_json,
         extras: form.extras.clone().unwrap_or_default(),
 
         status: normalized_disc_status(&form.status),
@@ -2144,6 +2191,7 @@ struct AddDiscMatchTarget {
     disc_id: i32,
     system_code: String,
     media_type: String,
+    cue: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2152,6 +2200,7 @@ struct AddDiscMatch {
     source: AddDiscMatchSource,
     system_code: String,
     media_type: String,
+    cue: Option<String>,
 }
 
 impl AddDiscMatch {
@@ -2170,6 +2219,7 @@ fn resolve_add_disc_match(
             source: AddDiscMatchSource::UniversalHash,
             system_code: target.system_code,
             media_type: target.media_type,
+            cue: target.cue,
         });
     }
     dat_match.map(|target| AddDiscMatch {
@@ -2177,6 +2227,7 @@ fn resolve_add_disc_match(
         source: AddDiscMatchSource::Dat,
         system_code: target.system_code,
         media_type: target.media_type,
+        cue: target.cue,
     })
 }
 
@@ -2189,10 +2240,11 @@ async fn fetch_add_disc_match_target(
         id: i32,
         system_code: String,
         media_type_code: String,
+        cue: Option<String>,
     }
 
     let row = sqlx::query_as::<_, Row>(
-        "SELECT id, system_code, media_type_code FROM discs WHERE id = $1",
+        "SELECT id, system_code, media_type_code, cue FROM discs WHERE id = $1",
     )
     .bind(disc_id)
     .fetch_optional(pool)
@@ -2203,6 +2255,7 @@ async fn fetch_add_disc_match_target(
         disc_id: row.id,
         system_code: row.system_code,
         media_type: row.media_type_code,
+        cue: row.cue,
     })
 }
 
@@ -2727,7 +2780,7 @@ async fn add_page(
     let media_is_cd_json = build_media_is_cd_json(&ref_data.all_media_types);
     let media_has_pic_json = build_media_has_pic_json(&ref_data.all_media_types);
     let media_has_dmi_json = build_media_has_dmi_json(&ref_data.all_media_types);
-    let media_has_extras_json = build_media_has_extras_json(&ref_data.all_media_types);
+    let media_has_ss_json = build_media_has_ss_json(&ref_data.all_media_types);
     let media_has_dummy_layer_json = build_media_has_dummy_layer_json(&ref_data.all_media_types);
     let edition_suggestions_json = build_edition_suggestions_json(&state).await?;
     let can_submit_as = user.role.can_moderate();
@@ -2839,7 +2892,7 @@ async fn add_page(
             cue: String::new(),
             files_xml: String::new(),
             show_extras: false,
-            media_has_extras_json,
+            media_has_ss_json,
             extras: String::new(),
 
             status: "Unverified".to_string(),
@@ -2994,8 +3047,30 @@ async fn add_submit(
     };
     let target_disc_id = add_match.as_ref().map(AddDiscMatch::target_disc_id);
     let is_verification = target_disc_id.is_some();
+    let matched_selection = add_match.as_ref().map(|matched| {
+        (
+            matched.system_code.as_str(),
+            matched.media_type.as_str(),
+        )
+    });
+    let mut validation_form = form.clone();
+    if let Some(matched) = &add_match {
+        validation_form.system_code = matched.system_code.clone();
+        validation_form.media_type = matched.media_type.clone();
+    }
+    let extras_need_existing_cue = validation_form
+        .extras
+        .as_deref()
+        .is_some_and(|extras| !extras.trim().is_empty())
+        && validation_form
+            .cue
+            .as_deref()
+            .map_or(true, |cue| cue.trim().is_empty());
+    if extras_need_existing_cue {
+        validation_form.cue = add_match.as_ref().and_then(|matched| matched.cue.clone());
+    }
     let mut errors = validate_add_submission_form(
-        &form,
+        &validation_form,
         &ref_data.all_media_types,
         &ref_data.all_systems,
         is_verification,
@@ -3003,18 +3078,14 @@ async fn add_submit(
     errors.extend(validate_add_submission_ring_offsets(
         &form,
         &ref_data.all_media_types,
-        add_match
-            .as_ref()
-            .map(|matched| matched.media_type.as_str()),
+        matched_selection.map(|(_, media_type)| media_type),
         user.role.can_moderate(),
     ));
     errors.extend(validate_add_submission_error_count(
         &form,
         &ref_data.all_systems,
         &ref_data.all_media_types,
-        add_match
-            .as_ref()
-            .map(|matched| (matched.system_code.as_str(), matched.media_type.as_str())),
+        matched_selection,
         user.role.can_moderate(),
     ));
     let can_submit_as = user.role.can_moderate() && draft_submission.is_none();
@@ -3304,9 +3375,33 @@ pub(crate) fn build_flat_changes(
             .map(|s| simplify_files_xml(&s, rom_ext))
             .map(|dat| normalize_dat_hash_case(&dat)),
         "extras": norm_opt_multiline_str(form.extras.as_deref())
-            .map(|s| match disc_service::parse_extras_input(&s, form.media_type.trim()) {
-                Ok(extras) => disc_service::format_extras_lines(&extras),
-                Err(_) => s.lines().map(str::to_string).collect(),
+            .map(|s| {
+                let system_has_extras = all_systems
+                    .iter()
+                    .find(|system| system.code == form.system_code.trim())
+                    .is_some_and(|system| system.has_extras);
+                let media_has_ss = media_has_ss(all_media_types, form.media_type.trim());
+                let media_is_cd = media_code_is_cd(all_media_types, form.media_type.trim());
+                let normal_track_count =
+                    validation::dat_rom_count(form.files_xml.as_deref().unwrap_or(""));
+                let extras = if system_has_extras && media_is_cd {
+                    // Leadin/Leadout tracks
+                    let cue_sessions = validation::cuesheet_session_numbers(
+                        form.cue.as_deref().unwrap_or(""),
+                    );
+                    validation::validate_cd_extras(&s, &cue_sessions).map(|()| {
+                        disc_service::parse_cd_extras(&s, normal_track_count)
+                    })
+                } else if media_has_ss {
+                    // XGD extras
+                    disc_service::parse_ss_extras(&s)
+                } else {
+                    Ok(Vec::new())
+                };
+                match extras {
+                    Ok(extras) => disc_service::format_extras_lines(&extras),
+                    Err(_) => s.lines().map(str::to_string).collect(),
+                }
             })
             .unwrap_or_default(),
         "regions": new_regions,
@@ -3971,21 +4066,10 @@ fn build_history_changes(
 
     {
         let key = "extras";
-        let media_code = form.media_type.trim();
-        let mut old_values = json_str_vec(db_obj.get(key).unwrap_or(&serde_json::Value::Null));
+        let old_values = json_str_vec(db_obj.get(key).unwrap_or(&serde_json::Value::Null));
         let new_values = json_str_vec(form_obj.get(key).unwrap_or(&serde_json::Value::Null));
-        if !(allow_removal && include_status) {
-            let replaced = |line: &String| {
-                disc_service::limited_extra_type(line, media_code).is_some_and(|file_type| {
-                    new_values.iter().any(|new| {
-                        disc_service::limited_extra_type(new, media_code).as_ref()
-                            == Some(&file_type)
-                    })
-                })
-            };
-            old_values.retain(|old| new_values.contains(old) || replaced(old));
-        }
-        if let Some(change) = set_operation_change(&old_values, &new_values, true) {
+        let cue_changed = db_obj.get("cuesheet") != form_obj.get("cuesheet");
+        if let Some(change) = set_operation_change(&old_values, &new_values, allow_removal && (include_status || cue_changed)) {
             changes.insert(key.to_string(), change);
         }
     }
@@ -4073,10 +4157,14 @@ fn build_add_submission_changes(
     all_systems: &[System],
     add_match: Option<&AddDiscMatch>,
 ) -> serde_json::Value {
+    let system_code = add_match
+        .map(|matched| matched.system_code.as_str())
+        .unwrap_or_else(|| form.system_code.trim());
     let media_code = add_match
         .map(|matched| matched.media_type.as_str())
         .unwrap_or_else(|| form.media_type.trim());
     let mut add_form = form.clone();
+    add_form.system_code = system_code.to_string();
     add_form.media_type = media_code.to_string();
     let bca_input = form.bca.as_deref().map(str::trim).filter(|bca| !bca.is_empty());
     let preserve_existing_bca = bca_input.is_none();
@@ -4096,9 +4184,14 @@ fn build_add_submission_changes(
     }
 
     let mut changes = build_new_disc_changes(&add_form, all_media_types, all_systems);
-    if add_match.is_some() && form.media_type.trim().is_empty() {
+    if add_match.is_some() {
         if let Some(obj) = changes.as_object_mut() {
-            obj.remove("media_type");
+            if form.system_code.trim().is_empty() {
+                obj.remove("system_code");
+            }
+            if form.media_type.trim().is_empty() {
+                obj.remove("media_type");
+            }
         }
     }
     if preserve_existing_bca {
@@ -4225,6 +4318,7 @@ mod operation_delta_tests {
             dmi: false,
             rom_extension: "iso".to_string(),
             has_dummy_layer: false,
+            has_ss: false,
         }]
     }
 
@@ -4237,6 +4331,7 @@ mod operation_delta_tests {
             dmi: false,
             rom_extension: "iso".to_string(),
             has_dummy_layer: false,
+            has_ss: false,
             dmi_length: 0x804,
             dmi_trailer: None,
         }
@@ -4248,6 +4343,7 @@ mod operation_delta_tests {
             disc_id,
             system_code: system_code.to_string(),
             media_type: media_type.to_string(),
+            cue: None,
         }
     }
 
@@ -4262,6 +4358,7 @@ mod operation_delta_tests {
             source,
             system_code: system_code.to_string(),
             media_type: media_type.to_string(),
+            cue: None,
         }
     }
 
@@ -4273,6 +4370,7 @@ mod operation_delta_tests {
             name: "Index".to_string(),
             short_name: "VGI".to_string(),
             media_types: vec!["DVD".to_string()],
+            has_extras: false,
             has_exe_date: true,
             has_sbi: true,
             has_pvd: true,
@@ -4555,6 +4653,7 @@ mod operation_delta_tests {
             dmi: false,
             rom_extension: "bin".to_string(),
             has_dummy_layer: false,
+            has_ss: false,
         });
         rows
     }
@@ -6099,6 +6198,7 @@ mod operation_delta_tests {
             dmi: false,
             rom_extension: "bin".to_string(),
             has_dummy_layer: false,
+            has_ss: false,
             dmi_length: 0x804,
             dmi_trailer: None,
         }
@@ -6238,6 +6338,7 @@ mod operation_delta_tests {
                 pic: false,
                 rom_extension: "iso".to_string(),
                 has_dummy_layer: false,
+                has_ss: false,
                 dmi_length: 0x804,
                 dmi_trailer: None,
                 dmi: true,

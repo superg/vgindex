@@ -23,7 +23,7 @@ use super::compact_query_url;
 use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
     build_check_options, build_flat_changes, build_lang_check_options, build_media_has_dummy_layer_json,
-    build_media_has_dmi_json, build_media_has_extras_json, build_media_has_pic_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
+    build_media_has_dmi_json, build_media_has_pic_json, build_media_has_ss_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
     build_media_rom_extensions_json, build_new_disc_changes, build_sparse_disc_submission_changes,
     build_sparse_edit_changes, build_system_options, build_systems_json, fetch_ref_data,
     max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
@@ -1089,9 +1089,13 @@ fn build_review_template(
 
         cue: json_opt_str("cuesheet"),
         files_xml: json_opt_str("dat"),
-        show_extras: crate::services::validation::media_extra_file_types(media_type_code)
-            .is_some(),
-        media_has_extras_json: build_media_has_extras_json(&ref_data.all_media_types),
+        show_extras: disc_edit::system_media_has_extras_for_selection(
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            system_code,
+            media_type_code,
+        ),
+        media_has_ss_json: build_media_has_ss_json(&ref_data.all_media_types),
         extras: json_str_vec("extras").join("\n"),
 
         status,
@@ -1657,8 +1661,12 @@ fn apply_review_diff_context(
                 &template.system_code,
                 &old_media_type,
             );
-            template.show_extras =
-                crate::services::validation::media_extra_file_types(&old_media_type).is_some();
+            template.show_extras = disc_edit::system_media_has_extras_for_selection(
+                &ref_data.all_systems,
+                &ref_data.all_media_types,
+                &template.system_code,
+                &old_media_type,
+            );
         }
 
         template.show_error_count = disc_edit::error_count_available_for_selection(
@@ -2978,6 +2986,7 @@ mod tests {
             name: name.to_string(),
             short_name: code.to_string(),
             media_types: vec!["DVD".to_string(), "BD".to_string()],
+            has_extras: false,
             has_exe_date: true,
             has_sbi: true,
             has_pvd: true,
@@ -3022,6 +3031,7 @@ mod tests {
                     dmi: false,
                     rom_extension: "iso".to_string(),
                     has_dummy_layer: false,
+                    has_ss: false,
                 },
                 disc_edit::EditMediaTypeRow {
                     code: "BD".to_string(),
@@ -3031,6 +3041,7 @@ mod tests {
                     dmi: false,
                     rom_extension: "iso".to_string(),
                     has_dummy_layer: false,
+                    has_ss: false,
                 },
             ],
             all_categories: vec![
