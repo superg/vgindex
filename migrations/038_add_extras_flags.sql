@@ -59,13 +59,8 @@ WHERE NOT EXISTS (
 UPDATE discs
 SET comments = NULLIF(
     regexp_replace(
-        regexp_replace(
-            comments,
-            E'^ *(<(xmp|code|tt)> *)?<rom +name="(leadin|leadout)\\.bin" +size="[0-9]+" +crc="[0-9A-Fa-f]{8}" +md5="[0-9A-Fa-f]{32}" +sha1="[0-9A-Fa-f]{40}" */> *(</\\2>)? *(\\n|$)',
-            '',
-            'gim'
-        ),
-        E'^[ ]*<(xmp|code|tt)>[ ]*[ \\n]*</\\1>[ ]*(\\n|$)',
+        comments,
+        E'^ *(<(xmp|code|tt)> *)?<rom +name="(leadin|leadout)\\.bin" +size="[0-9]+" +crc="[0-9A-Fa-f]{8}" +md5="[0-9A-Fa-f]{32}" +sha1="[0-9A-Fa-f]{40}" */> *(</\\2>)? *(\\n|$)',
         '',
         'gim'
     ),
