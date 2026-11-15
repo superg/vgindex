@@ -329,6 +329,8 @@
                     {% if !filter_disc_number.is_empty() %}<input type="hidden" name="disc_number" value="{{ filter_disc_number }}">{% endif %}
                     {% if !filter_disc_title.is_empty() %}<input type="hidden" name="disc_title" value="{{ filter_disc_title }}">{% endif %}
                     {% if disc_title_exact %}<input type="hidden" name="disc_title_exact" value="1">{% endif %}
+                    {% if !filter_disc_title_foreign.is_empty() %}<input type="hidden" name="disc_title_foreign" value="{{ filter_disc_title_foreign }}">{% endif %}
+                    {% if disc_title_foreign_exact %}<input type="hidden" name="disc_title_foreign_exact" value="1">{% endif %}
                     {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
                     {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
                     {% if !filter_edition.is_empty() %}
@@ -442,6 +444,8 @@
                     {% if !filter_disc_number.is_empty() %}<input type="hidden" name="disc_number" value="{{ filter_disc_number }}">{% endif %}
                     {% if !filter_disc_title.is_empty() %}<input type="hidden" name="disc_title" value="{{ filter_disc_title }}">{% endif %}
                     {% if disc_title_exact %}<input type="hidden" name="disc_title_exact" value="1">{% endif %}
+                    {% if !filter_disc_title_foreign.is_empty() %}<input type="hidden" name="disc_title_foreign" value="{{ filter_disc_title_foreign }}">{% endif %}
+                    {% if disc_title_foreign_exact %}<input type="hidden" name="disc_title_foreign_exact" value="1">{% endif %}
                     {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
                     {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
                     {% if !filter_edition.is_empty() %}
