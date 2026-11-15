@@ -5852,3 +5852,67 @@ mod tests {
         assert_eq!(result.as_array().unwrap().len(), 1);
     }
 }
+
+
+#[cfg(test)]
+mod extras_replacement_regression_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn rom(name: &str, crc: &str) -> String {
+        format!(r#"<rom name="{name}" size="2048" crc="{crc}" md5="00000000000000000000000000000000" sha1="0000000000000000000000000000000000000000" />"#)
+    }
+
+    #[test]
+    fn cd_replacement_normalizes_marker_and_session_but_preserves_other_tracks() {
+        let old = rom("Old (Track 00.01).bin", "11111111");
+        let other_session = rom("Track 0.2.bin", "22222222");
+        let leadout = rom("Track A.1.bin", "33333333");
+        let new = rom("New (Track 0.1).BIN", "44444444");
+        assert_eq!(
+            apply_extras_set_operation(&[old, other_session.clone(), leadout.clone()], &json!({"add": [new.clone()]})).unwrap(),
+            json!([other_session, leadout, new])
+        );
+    }
+
+    #[test]
+    fn dvd_replacement_only_replaces_limited_file_types() {
+        let pfi = rom("old.pfi", "11111111");
+        let dmi = rom("old.dmi", "22222222");
+        let ss = rom("old.ss", "33333333");
+        let new_pfi = rom("new.PFI", "44444444");
+        let new_dmi = rom("new.dmi", "55555555");
+        let new_ss = rom("new.ss", "66666666");
+        assert_eq!(
+            apply_extras_set_operation(&[pfi, dmi.clone(), ss.clone()], &json!({"add": [new_pfi.clone(), new_dmi.clone(), new_ss.clone()]})).unwrap(),
+            json!([dmi, ss, new_pfi, new_dmi, new_ss])
+        );
+    }
+
+    #[test]
+    fn explicit_removal_and_repeated_addition_preserve_set_semantics() {
+        let removed = rom("Track 0.bin", "11111111");
+        let retained = rom("Track A.bin", "22222222");
+        assert_eq!(
+            apply_extras_set_operation(&[removed.clone(), retained.clone()], &json!({"remove": [removed], "add": [retained.clone(), retained.clone()]})).unwrap(),
+            json!([retained])
+        );
+    }
+
+    #[test]
+    fn malformed_change_operations_are_rejected() {
+        for change in [json!(null), json!({}), json!({"set": []}), json!({"add": "bad"}), json!({"remove": [1]})] {
+            assert!(apply_extras_set_operation(&[], &change).is_err(), "{change}");
+        }
+    }
+
+    #[test]
+    fn snapshot_resolution_applies_cd_replacement() {
+        let old = rom("Track 00.bin", "11111111");
+        let new = rom("Track 0.bin", "22222222");
+        let snapshot = json!({"extras": [old]});
+        let changes = json!({"extras": {"add": [new.clone()]}});
+        let resolved = resolve_submission_snapshot(&snapshot, &changes).unwrap();
+        assert_eq!(resolved["extras"], json!([new]));
+    }
+}

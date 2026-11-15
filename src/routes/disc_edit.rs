@@ -4309,6 +4309,54 @@ mod operation_delta_tests {
         assert!(script.contains("button.disabled = true"));
     }
 
+
+    #[test]
+    fn extras_selection_requires_cd_capability_or_ss_media() {
+        for system_extras in [false, true] {
+            for ss in [false, true] {
+                let mut system = test_system();
+                system.has_extras = system_extras;
+                let mut rows = media_rows_with_cd();
+                rows[0].has_ss = ss;
+                assert_eq!(
+                    system_media_has_extras_for_selection(&[system.clone()], &rows, "SYS", "CD"),
+                    system_extras
+                );
+                assert_eq!(
+                    system_media_has_extras_for_selection(&[system.clone()], &rows, "SYS", "DVD"),
+                    ss
+                );
+                assert!(!system_media_has_extras_for_selection(&[system.clone()], &rows, "SYS", "missing"));
+                assert!(!system_media_has_extras_for_selection(&[system.clone()], &rows, "missing", "CD"));
+                assert_eq!(system_media_has_extras_for_selection(&[system], &rows, "missing", "DVD"), ss);
+            }
+        }
+    }
+
+    #[test]
+    fn extras_reference_json_uses_capabilities_for_arbitrary_media_codes() {
+        let mut rows = media_rows_with_cd();
+        rows[0].has_ss = true;
+        let flags: serde_json::Value = serde_json::from_str(&build_media_has_ss_json(&rows)).unwrap();
+        assert_eq!(flags, serde_json::json!({"DVD": true, "CD": false}));
+        let mut system = test_system();
+        system.has_extras = true;
+        let (_, flags) = build_systems_json(&[system]);
+        let flags: serde_json::Value = serde_json::from_str(&flags).unwrap();
+        assert_eq!(flags["SYS"]["has_extras"], true);
+    }
+
+    #[test]
+    fn matching_disc_preserves_cue_from_selected_match() {
+        let mut hash_match = add_match_target(1, "SYS", "CD");
+        hash_match.cue = Some("REM SESSION 01\nREM SESSION 02".into());
+        let mut dat_match = add_match_target(2, "OTHER", "DVD");
+        dat_match.cue = Some("different cue".into());
+        let matched = resolve_add_disc_match(Some(hash_match.clone()), Some(dat_match)).unwrap();
+        assert_eq!(matched.disc_id, 1);
+        assert_eq!(matched.cue, hash_match.cue);
+    }
+
     fn media_rows() -> Vec<EditMediaTypeRow> {
         vec![EditMediaTypeRow {
             code: "DVD".to_string(),

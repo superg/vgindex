@@ -1276,3 +1276,110 @@ FILE \"Track 03.bin\" BINARY\n\
         );
     }
 }
+
+
+#[cfg(test)]
+mod cd_extras_regression_tests {
+    use super::*;
+
+    fn rom(name: &str, size: &str) -> String {
+        format!(r#"<rom name="{name}" size="{size}" crc="ABCDEF01" md5="ABCDEF0123456789ABCDEF0123456789" sha1="ABCDEF0123456789ABCDEF0123456789ABCDEF01" />"#)
+    }
+
+    #[test]
+    fn accepts_empty_extras_and_single_session_marker_variants() {
+        assert!(validate_cd_extras(" \n\t", &[]).is_ok());
+        for name in ["Track 0.bin", "Game (Track 00).BIN", "Track A.bin", "Game (Track aa).bin"] {
+            for sessions in [&[][..], &[1][..]] {
+                assert!(validate_cd_extras(&rom(name, "0"), sessions).is_ok(), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn extracts_normalized_track_and_session_identity() {
+        for (name, expected) in [
+            ("Game (Track 00).BIN", "0"),
+            ("Game (Track aa.02).bin", "A.2"),
+            ("Track 0.01.bin", "0.1"),
+        ] {
+            assert_eq!(extract_cd_extra_track(name).as_deref(), Some(expected));
+        }
+        for name in ["Track 01.bin", "Track B.bin", "Track A.iso", "Game.bin", "Track A..2.bin"] {
+            assert_eq!(extract_cd_extra_track(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_marker_and_session_syntax() {
+        for track in ["", "1", "AAA", "a", "A.", "A.0", "0.-1", "A.1.2", "A.x", "A.123456789012345"] {
+            assert!(!is_cd_extra_type(track), "{track}");
+        }
+        for track in ["0", "00", "A", "AA", "A.1", "00.02", "A.12345678901234"] {
+            assert!(is_cd_extra_type(track), "{track}");
+        }
+    }
+
+    #[test]
+    fn multisession_extras_require_a_session_present_in_cue() {
+        for marker in ["0", "A"] {
+            for session in [1, 3] {
+                assert!(validate_cd_extras(&rom(&format!("Track {marker}.{session}.bin"), "2352"), &[1, 3]).is_ok());
+            }
+            assert!(validate_cd_extras(&rom(&format!("Track {marker}.bin"), "2352"), &[1, 3])
+                .unwrap_err().contains("session suffix is required"));
+            assert!(validate_cd_extras(&rom(&format!("Track {marker}.2.bin"), "2352"), &[1, 3])
+                .unwrap_err().contains("not present in the CUE"));
+        }
+        for sessions in [&[][..], &[1][..]] {
+            assert!(validate_cd_extras(&rom("Track A.1.bin", "2352"), sessions)
+                .unwrap_err().contains("only allowed"));
+        }
+    }
+
+    #[test]
+    fn duplicate_identity_ignores_padding_case_and_filename() {
+        for (first, second, sessions) in [
+            ("Track 0.bin", "Other (Track 00).BIN", vec![]),
+            ("Track A.01.bin", "Other (Track aa.1).bin", vec![1, 2]),
+        ] {
+            let text = format!("{}\n\n{}", rom(first, "1"), rom(second, "2"));
+            let error = validate_cd_extras(&text, &sessions).unwrap_err();
+            assert!(error.contains("line 3: duplicate track"), "{error}");
+        }
+        let text = format!("{}\n{}", rom("Track A.1.bin", "1"), rom("Track A.2.bin", "1"));
+        assert!(validate_cd_extras(&text, &[1, 2]).is_ok());
+    }
+
+    #[test]
+    fn rejects_invalid_rom_metadata_and_size_overflow() {
+        let valid = rom("Track A.bin", "2352");
+        for invalid in [
+            valid.replace("2352", "-1"),
+            valid.replace("2352", "1.5"),
+            valid.replace("2352", "9223372036854775808"),
+            valid.replace("ABCDEF01\"", "ZZZZZZZZ\""),
+            valid.replace("md5=", "missing="),
+            valid.replace("sha1=", "missing="),
+            valid.replace("Track A.bin", "Track 1.bin"),
+            "not a rom entry".to_string(),
+        ] {
+            assert!(validate_cd_extras(&invalid, &[]).is_err(), "{invalid}");
+        }
+        assert!(validate_cd_extras(&rom("Track A.bin", "9223372036854775807"), &[]).is_ok());
+    }
+
+    #[test]
+    fn cue_session_numbers_only_include_valid_session_directives() {
+        let cue = " REM SESSION 01\r\nREM SESSION 03\nREM SESSION 1\nREM SESSION XX\nREM SESSION 002\nREM SESSION 02 extra\nREM COMMENT SESSION 04\nTRACK 01 AUDIO";
+        assert_eq!(cuesheet_session_numbers(cue), vec![1, 3]);
+        assert!(cuesheet_session_numbers("").is_empty());
+    }
+
+    #[test]
+    fn dat_count_ignores_blank_lines_and_xml_wrappers() {
+        let text = format!("<game>\n  {}\n\n{}\n<romance />\n</game>", rom("Track 1.bin", "1"), rom("Track 2.bin", "2"));
+        assert_eq!(dat_rom_count(&text), 2);
+        assert_eq!(dat_rom_count(" \n<game />"), 0);
+    }
+}

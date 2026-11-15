@@ -898,6 +898,26 @@ fn dat_file_is_active(file: &File, cue_active: bool) -> bool {
 mod tests {
     use super::*;
 
+
+    #[test]
+    fn archive_capabilities_cover_cd_extras_ss_and_sbi_independently() {
+        for cd in [false, true] {
+            for ss in [false, true] {
+                for extras in [false, true] {
+                    for sbi in [false, true] {
+                        let mut sys = system(sbi);
+                        sys.has_extras = extras;
+                        assert_eq!(archive_type_supported_by_system(&sys, "extras", cd, ss).unwrap(), (extras && cd) || ss);
+                        assert_eq!(archive_type_supported_by_system(&sys, "cue", cd, ss).unwrap(), cd);
+                        assert_eq!(archive_type_supported_by_system(&sys, "sbi", cd, ss).unwrap(), sbi && cd);
+                        assert!(archive_type_supported_by_system(&sys, "dat", cd, ss).unwrap());
+                        assert!(archive_type_supported_by_system(&sys, "unknown", cd, ss).is_err());
+                    }
+                }
+            }
+        }
+    }
+
     fn system(has_sbi: bool) -> System {
         System {
             code: "SYS".to_string(),

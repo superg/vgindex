@@ -2772,3 +2772,50 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for DumperInfo {
         })
     }
 }
+
+
+#[cfg(test)]
+mod cd_extras_regression_tests {
+    use super::*;
+
+    fn rom(track: &str) -> String {
+        format!(r#"<rom name="Game (Track {track}).BIN" size="2352" crc="ABCDEF01" md5="ABCDEF0123456789ABCDEF0123456789" sha1="ABCDEF0123456789ABCDEF0123456789ABCDEF01" />"#)
+    }
+
+    #[test]
+    fn cd_track_padding_changes_at_ten_normal_tracks() {
+        let text = format!("{}\n{}", rom("aa"), rom("00"));
+        crate::services::validation::validate_cd_extras(&text, &[]).unwrap();
+        for (count, expected) in [(0, ["0", "A"]), (9, ["0", "A"]), (10, ["00", "AA"]), (99, ["00", "AA"])] {
+            let extras = parse_cd_extras(&text, count);
+            assert_eq!(extras.iter().map(|e| e.file_type.as_str()).collect::<Vec<_>>(), expected);
+            for extra in extras {
+                assert_eq!(extra.size, 2352);
+                assert_eq!(extra.crc32, "abcdef01");
+                assert_eq!(extra.md5, "abcdef0123456789abcdef0123456789");
+                assert_eq!(extra.sha1, "abcdef0123456789abcdef0123456789abcdef01");
+            }
+        }
+    }
+
+    #[test]
+    fn cd_extras_round_trip_preserves_sessions_hashes_and_archive_names() {
+        let text = format!("\n {}\n{}\n", rom("aa.02"), rom("00.01"));
+        crate::services::validation::validate_cd_extras(&text, &[1, 2]).unwrap();
+        let extras = parse_cd_extras(&text, 10);
+        let formatted = format_extras_lines(&extras).join("\n");
+        crate::services::validation::validate_cd_extras(&formatted, &[1, 2]).unwrap();
+        assert_eq!(parse_cd_extras(&formatted, 10), extras);
+        assert_eq!(extras.iter().map(|e| e.file_type.as_str()).collect::<Vec<_>>(), ["00.1", "AA.2"]);
+        let names: Vec<_> = name_extras(&extras, "Album", None).into_iter().map(|(name, _)| name).collect();
+        assert_eq!(names, ["Album (Track 00.1).bin", "Album (Track AA.2).bin"]);
+    }
+
+    #[test]
+    fn blank_cd_extras_produce_no_entries_or_filenames() {
+        let extras = parse_cd_extras(" \n\t", 10);
+        assert!(extras.is_empty());
+        assert!(format_extras_lines(&extras).is_empty());
+        assert!(name_extras(&extras, "Album", None).is_empty());
+    }
+}

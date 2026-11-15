@@ -1266,3 +1266,40 @@ protection: SafeDisc 00000001.TMP, C2: 589, gap range: 275-10274";
         );
     }
 }
+
+
+#[cfg(test)]
+mod extras_build_regression_tests {
+    use super::*;
+
+    #[test]
+    fn cd_extras_are_available_before_xgd_build_threshold() {
+        let extra = r#"<rom name="Track 0.bin" size="2352" crc="00000000" md5="00000000000000000000000000000000" sha1="0000000000000000000000000000000000000000" />"#;
+        let known = vec![("PSX".to_string(), vec!["cd".to_string()])];
+        for header in ["", "redumper (build: b737)\n", "redumper (build: b768)\n"] {
+            let log = format!("{header}*** INFO (time check: 0s)\nPSX [disc.bin]:\n*** HASH (time check: 0s)\ndat (extra):\n{extra}");
+            let parsed = parse_with_system_media(&log, &known);
+            assert_eq!(parsed.system_code.as_deref(), Some("PSX"));
+            assert_eq!(parsed.extras.as_deref(), Some(extra));
+            assert!(parsed.dat.is_none());
+        }
+    }
+
+    #[test]
+    fn xgd_extras_require_supported_build_even_with_mixed_case_media_code() {
+        let extra = r#"<rom name="extra.pfi" size="2048" crc="00000000" md5="00000000000000000000000000000000" sha1="0000000000000000000000000000000000000000" />"#;
+        let known = vec![("XBOX".to_string(), vec!["XgD".to_string(), "dvd5".to_string()])];
+        for (header, allowed) in [
+            ("", false),
+            ("redumper (build: b768)\n", false),
+            ("redumper (build: b769)\n", true),
+            ("redumper (build: b770)\n", true),
+            ("redumper (build: invalid)\n", false),
+        ] {
+            let log = format!("{header}*** INFO (time check: 0s)\nXBOX [disc.iso]:\n*** HASH (time check: 0s)\ndat (extra):\n{extra}");
+            let parsed = parse_with_system_media(&log, &known);
+            assert_eq!(parsed.system_code.as_deref(), Some("XBOX"));
+            assert_eq!(parsed.extras.as_deref(), allowed.then_some(extra), "{header}");
+        }
+    }
+}
