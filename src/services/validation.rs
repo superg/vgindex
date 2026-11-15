@@ -579,29 +579,25 @@ pub fn validate_cd_extras(text: &str, cue_sessions: &[u32]) -> Result<(), String
         let session = track
             .split_once('.')
             .map(|(_, session)| session);
-        let session = if cue_sessions.len() > 1 {
-            let Some(session) = session else {
+        if cue_sessions.len() > 1 {
+            let Some(session_suffix) = session else {
                 return Err(format!(
                     "line {row}: a session suffix is required because the CUE has multiple sessions"
                 ));
             };
-            let session = session
+            let session_number = session_suffix
                 .parse::<u32>()
                 .map_err(|_| format!("line {row}: invalid CUE session suffix"))?;
-            if !cue_sessions.contains(&session) {
+            if !cue_sessions.contains(&session_number) {
                 return Err(format!(
-                    "line {row}: session suffix .{session} is not present in the CUE"
+                    "line {row}: session suffix .{session_number} is not present in the CUE"
                 ));
             }
-            Some(session)
-        } else {
-            if session.is_some() {
-                return Err(format!(
-                    "line {row}: a session suffix is only allowed when the CUE has multiple sessions"
-                ));
-            }
-            None
-        };
+        } else if session.is_some() {
+            return Err(format!(
+                "line {row}: a session suffix is only allowed when the CUE has multiple sessions"
+            ));
+        }
 
         if !track_keys.insert(track.clone()) {
             return Err(format!("line {row}: duplicate track '{track}'"));

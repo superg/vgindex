@@ -2191,6 +2191,7 @@ struct AddDiscMatchTarget {
     disc_id: i32,
     system_code: String,
     media_type: String,
+    cue: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2199,6 +2200,7 @@ struct AddDiscMatch {
     source: AddDiscMatchSource,
     system_code: String,
     media_type: String,
+    cue: Option<String>,
 }
 
 impl AddDiscMatch {
@@ -2217,6 +2219,7 @@ fn resolve_add_disc_match(
             source: AddDiscMatchSource::UniversalHash,
             system_code: target.system_code,
             media_type: target.media_type,
+            cue: target.cue,
         });
     }
     dat_match.map(|target| AddDiscMatch {
@@ -2224,6 +2227,7 @@ fn resolve_add_disc_match(
         source: AddDiscMatchSource::Dat,
         system_code: target.system_code,
         media_type: target.media_type,
+        cue: target.cue,
     })
 }
 
@@ -2236,10 +2240,11 @@ async fn fetch_add_disc_match_target(
         id: i32,
         system_code: String,
         media_type_code: String,
+        cue: Option<String>,
     }
 
     let row = sqlx::query_as::<_, Row>(
-        "SELECT id, system_code, media_type_code FROM discs WHERE id = $1",
+        "SELECT id, system_code, media_type_code, cue FROM discs WHERE id = $1",
     )
     .bind(disc_id)
     .fetch_optional(pool)
@@ -2250,6 +2255,7 @@ async fn fetch_add_disc_match_target(
         disc_id: row.id,
         system_code: row.system_code,
         media_type: row.media_type_code,
+        cue: row.cue,
     })
 }
 
@@ -3041,8 +3047,30 @@ async fn add_submit(
     };
     let target_disc_id = add_match.as_ref().map(AddDiscMatch::target_disc_id);
     let is_verification = target_disc_id.is_some();
+    let matched_selection = add_match.as_ref().map(|matched| {
+        (
+            matched.system_code.as_str(),
+            matched.media_type.as_str(),
+        )
+    });
+    let mut validation_form = form.clone();
+    if let Some(matched) = &add_match {
+        validation_form.system_code = matched.system_code.clone();
+        validation_form.media_type = matched.media_type.clone();
+    }
+    let extras_need_existing_cue = validation_form
+        .extras
+        .as_deref()
+        .is_some_and(|extras| !extras.trim().is_empty())
+        && validation_form
+            .cue
+            .as_deref()
+            .map_or(true, |cue| cue.trim().is_empty());
+    if extras_need_existing_cue {
+        validation_form.cue = add_match.as_ref().and_then(|matched| matched.cue.clone());
+    }
     let mut errors = validate_add_submission_form(
-        &form,
+        &validation_form,
         &ref_data.all_media_types,
         &ref_data.all_systems,
         is_verification,
@@ -3050,18 +3078,14 @@ async fn add_submit(
     errors.extend(validate_add_submission_ring_offsets(
         &form,
         &ref_data.all_media_types,
-        add_match
-            .as_ref()
-            .map(|matched| matched.media_type.as_str()),
+        matched_selection.map(|(_, media_type)| media_type),
         user.role.can_moderate(),
     ));
     errors.extend(validate_add_submission_error_count(
         &form,
         &ref_data.all_systems,
         &ref_data.all_media_types,
-        add_match
-            .as_ref()
-            .map(|matched| (matched.system_code.as_str(), matched.media_type.as_str())),
+        matched_selection,
         user.role.can_moderate(),
     ));
     let can_submit_as = user.role.can_moderate() && draft_submission.is_none();
@@ -4311,6 +4335,7 @@ mod operation_delta_tests {
             disc_id,
             system_code: system_code.to_string(),
             media_type: media_type.to_string(),
+            cue: None,
         }
     }
 
@@ -4325,6 +4350,7 @@ mod operation_delta_tests {
             source,
             system_code: system_code.to_string(),
             media_type: media_type.to_string(),
+            cue: None,
         }
     }
 

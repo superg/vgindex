@@ -1278,7 +1278,7 @@ pub async fn update_disc(
     .bind(protection) // $24
     .bind(sbi) // $25
     .bind(&universal_hash) // $26
-    .bind(cue) // $27
+    .bind(&cue) // $27
     .bind(status) // $28
     .bind(disc_id) // $29
     .bind(disc_title_foreign) // $30
@@ -1557,6 +1557,9 @@ pub async fn update_disc(
             .unwrap_or_default();
         let extras = if capabilities.has_extras && capabilities.media_is_cd {
             // Leadin/Leadout tracks
+            let cue_sessions = crate::services::validation::cuesheet_session_numbers(cue.as_deref().unwrap_or(""));
+            crate::services::validation::validate_cd_extras(&extras_text, &cue_sessions)
+                .map_err(|error| AppError::BadRequest(format!("Extras: {error}")))?;
             Ok(parse_cd_extras(&extras_text, normal_track_count))
         } else if capabilities.has_ss {
             // XGD extras
