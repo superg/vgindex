@@ -415,17 +415,17 @@ mod tests {
     }
 
     #[test]
-    fn compact_get_submission_omits_controls_with_blank_dependencies() {
+    fn compact_get_submission_preserves_blank_exact_filters() {
         let base = include_str!("../../templates/base.html");
         let discs = include_str!("../../templates/discs.html");
 
         assert!(base.contains("[name][data-requires-nonblank]"));
         assert!(base.contains("form.elements.namedItem(dependencyName)"));
         assert!(base.contains("dependency.value.trim() === ''"));
-        for field in ["title", "title_foreign", "serial", "edition", "barcode"] {
-            assert!(discs.contains(&format!(
-                "name=\"{field}_exact\" value=\"1\" data-requires-nonblank=\"{field}\""
-            )));
+        assert!(discs.contains("name=\"title_exact\" value=\"1\" data-requires-nonblank=\"title\""));
+        for field in ["title_foreign", "disc_title", "disc_title_foreign", "serial", "edition", "barcode", "volume_label", "internal_serial"] {
+            assert!(discs.contains(&format!("name=\"{field}_exact\" value=\"1\"")));
         }
+        assert_eq!(discs.matches("data-requires-nonblank=").count(), 1);
     }
 }

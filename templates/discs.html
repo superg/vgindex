@@ -102,7 +102,7 @@
                 <div class="text-exact-controls">
                     <input type="text" id="title-foreign-filter" name="title_foreign" value="{{ filter_title_foreign }}" aria-labelledby="title-foreign-filter-label">
                     <label class="text-exact-toggle" for="title-foreign-exact">
-                        <input type="checkbox" id="title-foreign-exact" name="title_foreign_exact" value="1" data-requires-nonblank="title_foreign" {% if title_foreign_exact %}checked{% endif %}>
+                        <input type="checkbox" id="title-foreign-exact" name="title_foreign_exact" value="1" {% if title_foreign_exact %}checked{% endif %}>
                         <span>Exact</span>
                     </label>
                 </div>
@@ -116,7 +116,7 @@
                 <div class="text-exact-controls">
                     <input type="text" id="disc-title-filter" name="disc_title" value="{{ filter_disc_title }}" aria-labelledby="disc-title-filter-label">
                     <label class="text-exact-toggle" for="disc-title-exact">
-                        <input type="checkbox" id="disc-title-exact" name="disc_title_exact" value="1" data-requires-nonblank="disc_title" {% if disc_title_exact %}checked{% endif %}>
+                        <input type="checkbox" id="disc-title-exact" name="disc_title_exact" value="1" {% if disc_title_exact %}checked{% endif %}>
                         <span>Exact</span>
                     </label>
                 </div>
@@ -126,7 +126,7 @@
                 <div class="text-exact-controls">
                     <input type="text" id="disc-title-foreign-filter" name="disc_title_foreign" value="{{ filter_disc_title_foreign }}" aria-labelledby="disc-title-foreign-filter-label">
                     <label class="text-exact-toggle" for="disc-title-foreign-exact">
-                        <input type="checkbox" id="disc-title-foreign-exact" name="disc_title_foreign_exact" value="1" data-requires-nonblank="disc_title_foreign" {% if disc_title_foreign_exact %}checked{% endif %}>
+                        <input type="checkbox" id="disc-title-foreign-exact" name="disc_title_foreign_exact" value="1" {% if disc_title_foreign_exact %}checked{% endif %}>
                         <span>Exact</span>
                     </label>
                 </div>
@@ -136,7 +136,7 @@
                 <div class="text-exact-controls">
                     <input type="text" id="serial-filter" name="serial" value="{{ filter_serial }}" aria-labelledby="serial-filter-label">
                     <label class="text-exact-toggle" for="serial-exact">
-                        <input type="checkbox" id="serial-exact" name="serial_exact" value="1" data-requires-nonblank="serial" {% if serial_exact %}checked{% endif %}>
+                        <input type="checkbox" id="serial-exact" name="serial_exact" value="1" {% if serial_exact %}checked{% endif %}>
                         <span>Exact</span>
                     </label>
                 </div>
@@ -146,7 +146,7 @@
                 <div class="text-exact-controls">
                     <input type="text" id="edition-filter" name="edition" value="{{ filter_edition }}" aria-labelledby="edition-filter-label">
                     <label class="text-exact-toggle" for="edition-exact">
-                        <input type="checkbox" id="edition-exact" name="edition_exact" value="1" data-requires-nonblank="edition" {% if edition_exact %}checked{% endif %}>
+                        <input type="checkbox" id="edition-exact" name="edition_exact" value="1" {% if edition_exact %}checked{% endif %}>
                         <span>Exact</span>
                     </label>
                 </div>
@@ -156,7 +156,7 @@
                 <div class="text-exact-controls">
                     <input type="text" id="barcode-filter" name="barcode" value="{{ filter_barcode }}" aria-labelledby="barcode-filter-label">
                     <label class="text-exact-toggle" for="barcode-exact">
-                        <input type="checkbox" id="barcode-exact" name="barcode_exact" value="1" data-requires-nonblank="barcode" {% if barcode_exact %}checked{% endif %}>
+                        <input type="checkbox" id="barcode-exact" name="barcode_exact" value="1" {% if barcode_exact %}checked{% endif %}>
                         <span>Exact</span>
                     </label>
                 </div>
@@ -165,6 +165,26 @@
                 <span>Universal Hash</span>
                 <input type="text" name="universal_hash" value="{{ filter_universal_hash }}">
             </label>
+            <div class="advanced-search-row">
+                <span id="volume-label-filter-label">Volume Label</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="volume-label-filter" name="volume_label" value="{{ filter_volume_label }}" aria-labelledby="volume-label-filter-label">
+                    <label class="text-exact-toggle" for="volume-label-exact">
+                        <input type="checkbox" id="volume-label-exact" name="volume_label_exact" value="1" {% if volume_label_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
+                <span id="internal-serial-filter-label">Internal Serial</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="internal-serial-filter" name="internal_serial" value="{{ filter_internal_serial }}" aria-labelledby="internal-serial-filter-label">
+                    <label class="text-exact-toggle" for="internal-serial-exact">
+                        <input type="checkbox" id="internal-serial-exact" name="internal_serial_exact" value="1" {% if internal_serial_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
             <div class="advanced-search-row">
                 <span>Tracks</span>
                 <div class="count-range-controls">
@@ -336,6 +356,10 @@
                     {% if !filter_mould_sid.is_empty() %}<input type="hidden" name="mould_sid" value="{{ filter_mould_sid }}">{% endif %}
                     {% if !filter_additional_mould.is_empty() %}<input type="hidden" name="additional_mould" value="{{ filter_additional_mould }}">{% endif %}
                     {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}
+                    {% if !filter_volume_label.is_empty() %}<input type="hidden" name="volume_label" value="{{ filter_volume_label }}">{% endif %}
+                    {% if volume_label_exact %}<input type="hidden" name="volume_label_exact" value="1">{% endif %}
+                    {% if !filter_internal_serial.is_empty() %}<input type="hidden" name="internal_serial" value="{{ filter_internal_serial }}">{% endif %}
+                    {% if internal_serial_exact %}<input type="hidden" name="internal_serial_exact" value="1">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                     {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}
                 </form>
@@ -445,6 +469,10 @@
                     {% if !filter_mould_sid.is_empty() %}<input type="hidden" name="mould_sid" value="{{ filter_mould_sid }}">{% endif %}
                     {% if !filter_additional_mould.is_empty() %}<input type="hidden" name="additional_mould" value="{{ filter_additional_mould }}">{% endif %}
                     {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}
+                    {% if !filter_volume_label.is_empty() %}<input type="hidden" name="volume_label" value="{{ filter_volume_label }}">{% endif %}
+                    {% if volume_label_exact %}<input type="hidden" name="volume_label_exact" value="1">{% endif %}
+                    {% if !filter_internal_serial.is_empty() %}<input type="hidden" name="internal_serial" value="{{ filter_internal_serial }}">{% endif %}
+                    {% if internal_serial_exact %}<input type="hidden" name="internal_serial_exact" value="1">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                     {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}
                 </form>

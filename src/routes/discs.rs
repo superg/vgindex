@@ -381,6 +381,10 @@ pub struct DiscsQuery {
     pub mould_sid: Option<String>,
     pub additional_mould: Option<String>,
     pub offset: Option<String>,
+    pub volume_label: Option<String>,
+    pub volume_label_exact: Option<String>,
+    pub internal_serial: Option<String>,
+    pub internal_serial_exact: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
     #[serde(default, deserialize_with = "empty_string_as_none")]
@@ -595,8 +599,8 @@ fn array_text_bind_value(value: &str, exact: bool) -> String {
     }
 }
 
-fn exact_filter_enabled(active_value: Option<&String>, exact: Option<&str>) -> bool {
-    active_value.is_some() && exact == Some("1")
+fn exact_filter_enabled(exact: Option<&str>) -> bool {
+    exact == Some("1")
 }
 
 fn scalar_text_bind_value(value: &str, exact: bool) -> String {
@@ -629,48 +633,81 @@ fn add_universal_hash_clause(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TitleTextField {
+enum ScalarTextField {
     Title,
     ForeignTitle,
     DiscNumber,
     DiscTitle,
     ForeignDiscTitle,
+    VolumeLabel,
+    InternalSerial,
 }
 
-fn title_text_search_clause(field: TitleTextField, bind_idx: u32, exact: bool) -> String {
-    let (column, capability, fold) = match field {
-        TitleTextField::Title => ("title", None, "search_fold"),
-        TitleTextField::ForeignTitle => ("title_foreign", Some("has_title_foreign"), "search_fold"),
-        TitleTextField::DiscNumber => ("disc_number", Some("has_disc_number"), "LOWER"),
-        TitleTextField::DiscTitle => ("disc_title", Some("has_disc_title"), "search_fold"),
-        TitleTextField::ForeignDiscTitle => ("disc_title_foreign", Some("has_disc_title_foreign"), "search_fold"),
-    };
+impl ScalarTextField {
+    fn column(self) -> &'static str {
+        match self {
+            Self::Title => "title",
+            Self::ForeignTitle => "title_foreign",
+            Self::DiscNumber => "disc_number",
+            Self::DiscTitle => "disc_title",
+            Self::ForeignDiscTitle => "disc_title_foreign",
+            Self::VolumeLabel => "volume_label",
+            Self::InternalSerial => "internal_serial",
+        }
+    }
+
+    fn capability(self) -> Option<&'static str> {
+        match self {
+            Self::Title | Self::VolumeLabel | Self::InternalSerial => None,
+            Self::ForeignTitle => Some("has_title_foreign"),
+            Self::DiscNumber => Some("has_disc_number"),
+            Self::DiscTitle => Some("has_disc_title"),
+            Self::ForeignDiscTitle => Some("has_disc_title_foreign"),
+        }
+    }
+
+    fn uses_accent_folding(self) -> bool {
+        matches!(
+            self,
+            Self::Title | Self::ForeignTitle | Self::DiscTitle | Self::ForeignDiscTitle
+        )
+    }
+}
+
+fn scalar_text_search_clause(field: ScalarTextField, bind_idx: u32, exact: bool) -> String {
+    let column = field.column();
     let predicate = if exact {
         format!("d.{column} = ${bind_idx}")
-    } else if fold == "search_fold" {
+    } else if field.uses_accent_folding() {
         accent_aware_contains(&format!("d.{column}"), &format!("${bind_idx}"))
     } else {
         format!(
-            "{fold}(d.{column}) {}",
-            like_contains(&format!("{fold}(${bind_idx})"))
+            "LOWER(d.{column}) {}",
+            like_contains(&format!("LOWER(${bind_idx})"))
         )
     };
 
-    match capability {
+    match field.capability() {
         Some(capability) => format!("(s.{capability} AND {predicate})"),
         None => predicate,
     }
 }
 
-fn add_title_text_clauses(
+fn scalar_text_null_clause(field: ScalarTextField) -> String {
+    format!("d.{} IS NULL", field.column())
+}
+
+fn add_scalar_text_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
-    filters: [(TitleTextField, bool, bool); 5],
+    filters: [(ScalarTextField, bool, bool, bool); 7],
 ) {
-    for (field, active, exact) in filters {
+    for (field, active, exact, empty_exact) in filters {
         if active {
             *bind_idx += 1;
-            where_clauses.push(title_text_search_clause(field, *bind_idx, exact));
+            where_clauses.push(scalar_text_search_clause(field, *bind_idx, exact));
+        } else if empty_exact {
+            where_clauses.push(scalar_text_null_clause(field));
         }
     }
 }
@@ -716,15 +753,21 @@ fn array_text_search_clause(field: ArrayTextField, bind_idx: u32, exact: bool) -
     }
 }
 
+fn array_text_empty_clause(field: ArrayTextField) -> String {
+    format!("COALESCE(cardinality(d.{}), 0) = 0", field.column())
+}
+
 fn add_array_text_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
-    filters: [(ArrayTextField, bool, bool); 3],
+    filters: [(ArrayTextField, bool, bool, bool); 3],
 ) {
-    for (field, active, exact) in filters {
+    for (field, active, exact, empty_exact) in filters {
         if active {
             *bind_idx += 1;
             where_clauses.push(array_text_search_clause(field, *bind_idx, exact));
+        } else if empty_exact {
+            where_clauses.push(array_text_empty_clause(field));
         }
     }
 }
@@ -941,6 +984,10 @@ struct DiscsTemplate {
     filter_mould_sid: String,
     filter_additional_mould: String,
     filter_offset: String,
+    filter_volume_label: String,
+    volume_label_exact: bool,
+    filter_internal_serial: String,
+    internal_serial_exact: bool,
     advanced_open: bool,
     advanced_explicit: bool,
     filter_dumper: String,
@@ -1004,6 +1051,10 @@ impl DiscsTemplate {
             mould_sid: &self.filter_mould_sid,
             additional_mould: &self.filter_additional_mould,
             offset: &self.filter_offset,
+            volume_label: &self.filter_volume_label,
+            volume_label_exact: self.volume_label_exact,
+            internal_serial: &self.filter_internal_serial,
+            internal_serial_exact: self.internal_serial_exact,
             q: &self.filter_q,
             sort,
             order,
@@ -1070,6 +1121,10 @@ struct DiscsUrlOptions<'a> {
     mould_sid: &'a str,
     additional_mould: &'a str,
     offset: &'a str,
+    volume_label: &'a str,
+    volume_label_exact: bool,
+    internal_serial: &'a str,
+    internal_serial_exact: bool,
     q: &'a str,
     sort: &'a str,
     order: &'a str,
@@ -1107,20 +1162,22 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
         .then_some(options.order)
         .unwrap_or_default();
     let advanced = if options.advanced { "1" } else { "" };
-    let exact_param = |enabled: bool, value: &str| {
-        if enabled && !value.trim().is_empty() {
+    let exact_param = |enabled: bool| {
+        if enabled {
             "1"
         } else {
             ""
         }
     };
-    let title_exact = exact_param(options.title_exact, options.title);
-    let title_foreign_exact = exact_param(options.title_foreign_exact, options.title_foreign);
-    let disc_title_exact = exact_param(options.disc_title_exact, options.disc_title);
-    let disc_title_foreign_exact = exact_param(options.disc_title_foreign_exact, options.disc_title_foreign);
-    let serial_exact = exact_param(options.serial_exact, options.serial);
-    let edition_exact = exact_param(options.edition_exact, options.edition);
-    let barcode_exact = exact_param(options.barcode_exact, options.barcode);
+    let title_exact = exact_param(options.title_exact && !options.title.trim().is_empty());
+    let title_foreign_exact = exact_param(options.title_foreign_exact);
+    let disc_title_exact = exact_param(options.disc_title_exact);
+    let disc_title_foreign_exact = exact_param(options.disc_title_foreign_exact);
+    let serial_exact = exact_param(options.serial_exact);
+    let edition_exact = exact_param(options.edition_exact);
+    let barcode_exact = exact_param(options.barcode_exact);
+    let volume_label_exact = exact_param(options.volume_label_exact);
+    let internal_serial_exact = exact_param(options.internal_serial_exact);
 
     compact_query_url(
         "/discs",
@@ -1163,6 +1220,10 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("mould_sid", options.mould_sid),
             ("additional_mould", options.additional_mould),
             ("offset", options.offset),
+            ("volume_label", options.volume_label),
+            ("volume_label_exact", volume_label_exact),
+            ("internal_serial", options.internal_serial),
+            ("internal_serial_exact", internal_serial_exact),
             ("q", options.q),
             ("sort", sort),
             ("order", order),
@@ -1485,16 +1546,13 @@ async fn discs_page(
     let quick_search_terms = quick_search_terms(&filter_q);
     let hash_candidates = load_hash_candidates(&state.pool, &quick_search_terms).await?;
     let active_title = active_verbatim_filter(query.title.as_ref());
-    let title_exact = exact_filter_enabled(active_title.as_ref(), query.title_exact.as_deref());
+    let title_exact = active_title.is_some() && exact_filter_enabled(query.title_exact.as_deref());
     let title_bind = active_title
         .as_deref()
         .map(|value| scalar_text_bind_value(value, title_exact));
     let filter_title = title_bind.clone().unwrap_or_default();
     let active_title_foreign = active_verbatim_filter(query.title_foreign.as_ref());
-    let title_foreign_exact = exact_filter_enabled(
-        active_title_foreign.as_ref(),
-        query.title_foreign_exact.as_deref(),
-    );
+    let title_foreign_exact = exact_filter_enabled(query.title_foreign_exact.as_deref());
     let title_foreign_bind = active_title_foreign
         .as_deref()
         .map(|value| scalar_text_bind_value(value, title_foreign_exact));
@@ -1505,36 +1563,33 @@ async fn discs_page(
         .map(|value| scalar_text_bind_value(value, true));
     let filter_disc_number = disc_number_bind.clone().unwrap_or_default();
     let active_disc_title = active_verbatim_filter(query.disc_title.as_ref());
-    let disc_title_exact =
-        exact_filter_enabled(active_disc_title.as_ref(), query.disc_title_exact.as_deref());
+    let disc_title_exact = exact_filter_enabled(query.disc_title_exact.as_deref());
     let disc_title_bind = active_disc_title
         .as_deref()
         .map(|value| scalar_text_bind_value(value, disc_title_exact));
     let filter_disc_title = disc_title_bind.clone().unwrap_or_default();
     let active_disc_title_foreign = active_verbatim_filter(query.disc_title_foreign.as_ref());
     let disc_title_foreign_exact =
-        exact_filter_enabled(active_disc_title_foreign.as_ref(), query.disc_title_foreign_exact.as_deref());
+        exact_filter_enabled(query.disc_title_foreign_exact.as_deref());
     let disc_title_foreign_bind = active_disc_title_foreign
         .as_deref()
         .map(|value| scalar_text_bind_value(value, disc_title_foreign_exact));
     let filter_disc_title_foreign = disc_title_foreign_bind.clone().unwrap_or_default();
     let active_serial = active_verbatim_filter(query.serial.as_ref());
     let filter_serial = active_serial.clone().unwrap_or_default();
-    let serial_exact = exact_filter_enabled(active_serial.as_ref(), query.serial_exact.as_deref());
+    let serial_exact = exact_filter_enabled(query.serial_exact.as_deref());
     let serial_bind = active_serial
         .as_deref()
         .map(|value| array_text_bind_value(value, serial_exact));
     let active_edition = active_verbatim_filter(query.edition.as_ref());
     let filter_edition = active_edition.clone().unwrap_or_default();
-    let edition_exact =
-        exact_filter_enabled(active_edition.as_ref(), query.edition_exact.as_deref());
+    let edition_exact = exact_filter_enabled(query.edition_exact.as_deref());
     let edition_bind = active_edition
         .as_deref()
         .map(|value| array_text_bind_value(value, edition_exact));
     let active_barcode = active_verbatim_filter(query.barcode.as_ref());
     let filter_barcode = active_barcode.clone().unwrap_or_default();
-    let barcode_exact =
-        exact_filter_enabled(active_barcode.as_ref(), query.barcode_exact.as_deref());
+    let barcode_exact = exact_filter_enabled(query.barcode_exact.as_deref());
     let barcode_bind = active_barcode
         .as_deref()
         .map(|value| array_text_bind_value(value, barcode_exact));
@@ -1610,6 +1665,18 @@ async fn discs_page(
     let filter_offset = filter_offset_value
         .map(|value| value.to_string())
         .unwrap_or_default();
+    let active_volume_label = active_advanced_filter(query.volume_label.as_ref());
+    let volume_label_exact = exact_filter_enabled(query.volume_label_exact.as_deref());
+    let volume_label_bind = active_volume_label
+        .as_deref()
+        .map(|value| scalar_text_bind_value(value, volume_label_exact));
+    let filter_volume_label = volume_label_bind.clone().unwrap_or_default();
+    let active_internal_serial = active_advanced_filter(query.internal_serial.as_ref());
+    let internal_serial_exact = exact_filter_enabled(query.internal_serial_exact.as_deref());
+    let internal_serial_bind = active_internal_serial
+        .as_deref()
+        .map(|value| scalar_text_bind_value(value, internal_serial_exact));
+    let filter_internal_serial = internal_serial_bind.clone().unwrap_or_default();
     let active_protection = active_advanced_filter(query.protection.as_ref());
     let active_comments = active_advanced_filter(query.comments.as_ref());
     let active_contents = active_advanced_filter(query.contents.as_ref());
@@ -1758,26 +1825,51 @@ async fn discs_page(
             hash_candidate_bind_idx,
         ));
     }
-    add_title_text_clauses(
+    add_scalar_text_clauses(
         &mut where_clauses,
         &mut bind_idx,
         [
-            (TitleTextField::Title, active_title.is_some(), title_exact),
             (
-                TitleTextField::ForeignTitle,
+                ScalarTextField::Title,
+                active_title.is_some(),
+                title_exact,
+                title_exact && active_title.is_none(),
+            ),
+            (
+                ScalarTextField::ForeignTitle,
                 active_title_foreign.is_some(),
                 title_foreign_exact,
+                title_foreign_exact && active_title_foreign.is_none(),
             ),
-            (TitleTextField::DiscNumber, active_disc_number.is_some(), true),
             (
-                TitleTextField::DiscTitle,
+                ScalarTextField::DiscNumber,
+                active_disc_number.is_some(),
+                true,
+                false,
+            ),
+            (
+                ScalarTextField::DiscTitle,
                 active_disc_title.is_some(),
                 disc_title_exact,
+                disc_title_exact && active_disc_title.is_none(),
             ),
             (
-                TitleTextField::ForeignDiscTitle,
+                ScalarTextField::ForeignDiscTitle,
                 active_disc_title_foreign.is_some(),
                 disc_title_foreign_exact,
+                disc_title_foreign_exact && active_disc_title_foreign.is_none(),
+            ),
+            (
+                ScalarTextField::VolumeLabel,
+                active_volume_label.is_some(),
+                volume_label_exact,
+                volume_label_exact && active_volume_label.is_none(),
+            ),
+            (
+                ScalarTextField::InternalSerial,
+                active_internal_serial.is_some(),
+                internal_serial_exact,
+                internal_serial_exact && active_internal_serial.is_none(),
             ),
         ],
     );
@@ -1789,16 +1881,19 @@ async fn discs_page(
                 ArrayTextField::Serial,
                 active_serial.is_some(),
                 serial_exact,
+                serial_exact && active_serial.is_none(),
             ),
             (
                 ArrayTextField::Edition,
                 active_edition.is_some(),
                 edition_exact,
+                edition_exact && active_edition.is_none(),
             ),
             (
                 ArrayTextField::Barcode,
                 active_barcode.is_some(),
                 barcode_exact,
+                barcode_exact && active_barcode.is_none(),
             ),
         ],
     );
@@ -1970,6 +2065,26 @@ async fn discs_page(
         .as_deref()
         .map(str::to_lowercase)
         .unwrap_or_default();
+    let count_key_volume_label = volume_label_bind
+        .as_deref()
+        .map(|value| {
+            if volume_label_exact {
+                value.to_string()
+            } else {
+                value.to_lowercase()
+            }
+        })
+        .unwrap_or_default();
+    let count_key_internal_serial = internal_serial_bind
+        .as_deref()
+        .map(|value| {
+            if internal_serial_exact {
+                value.to_string()
+            } else {
+                value.to_lowercase()
+            }
+        })
+        .unwrap_or_default();
     let count_key_protection = active_protection
         .as_deref()
         .map(str::to_lowercase)
@@ -2043,6 +2158,10 @@ async fn discs_page(
             mould_sid: &count_key_mould_sid,
             additional_mould: &count_key_additional_mould,
             offset: &filter_offset,
+            volume_label: &count_key_volume_label,
+            volume_label_exact,
+            internal_serial: &count_key_internal_serial,
+            internal_serial_exact,
             q: &count_key_q,
             sort: &sort_column,
             order: &sort_order_str,
@@ -2168,6 +2287,12 @@ async fn discs_page(
     if let Some(disc_title_foreign) = &disc_title_foreign_bind {
         bind_queries!(disc_title_foreign.clone());
     }
+    if let Some(volume_label) = &volume_label_bind {
+        bind_queries!(volume_label.clone());
+    }
+    if let Some(internal_serial) = &internal_serial_bind {
+        bind_queries!(internal_serial.clone());
+    }
     if let Some(serial) = &serial_bind {
         bind_queries!(serial.clone());
     }
@@ -2279,6 +2404,10 @@ async fn discs_page(
             mould_sid: &filter_mould_sid,
             additional_mould: &filter_additional_mould,
             offset: &filter_offset,
+            volume_label: &filter_volume_label,
+            volume_label_exact,
+            internal_serial: &filter_internal_serial,
+            internal_serial_exact,
             q: &filter_q,
             sort: &sort_column,
             order: &sort_order_str,
@@ -2412,6 +2541,10 @@ async fn discs_page(
             filter_mould_sid,
             filter_additional_mould,
             filter_offset,
+            filter_volume_label,
+            volume_label_exact,
+            filter_internal_serial,
+            internal_serial_exact,
             advanced_open,
             advanced_explicit,
             filter_dumper,
@@ -2885,7 +3018,7 @@ mod tests {
             assert!(template.contains(&format!("id=\"{prefix}-exact\"")));
             assert!(template.contains(&format!("initExactRange('{prefix}')")));
         }
-        assert_eq!(template.matches("<span>Exact</span>").count(), 9);
+        assert_eq!(template.matches("<span>Exact</span>").count(), 11);
         assert!(template.contains("{% if tracks_exact %}checked{% endif %}"));
         assert!(template.contains("{% if errors_exact %}checked{% endif %}"));
         assert!(template.contains("max.value = min.value"));
@@ -2895,22 +3028,29 @@ mod tests {
     }
 
     #[test]
-    fn array_text_filters_render_with_dependent_exact_controls() {
+    fn text_exact_controls_can_be_submitted_without_text() {
         let template = include_str!("../../templates/discs.html");
 
         for (field, id) in [
-            ("title", "title"),
             ("title_foreign", "title-foreign"),
+            ("disc_title", "disc-title"),
+            ("disc_title_foreign", "disc-title-foreign"),
             ("serial", "serial"),
             ("edition", "edition"),
             ("barcode", "barcode"),
+            ("volume_label", "volume-label"),
+            ("internal_serial", "internal-serial"),
         ] {
             assert!(template.contains(&format!("id=\"{id}-filter\" name=\"{field}\"")));
             assert!(template.contains(&format!(
-                "id=\"{id}-exact\" name=\"{field}_exact\" value=\"1\" data-requires-nonblank=\"{field}\""
+                "id=\"{id}-exact\" name=\"{field}_exact\" value=\"1\""
             )));
             assert!(template.contains(&format!("{{% if {field}_exact %}}checked{{% endif %}}")));
         }
+        assert!(template.contains(
+            "name=\"title_exact\" value=\"1\" data-requires-nonblank=\"title\""
+        ));
+        assert_eq!(template.matches("data-requires-nonblank=").count(), 1);
     }
 
     #[test]
@@ -3111,13 +3251,17 @@ mod tests {
                 mould_sid: "IFPI 1234",
                 additional_mould: "A2",
                 offset: "123",
+                volume_label: "GAME_DISC",
+                volume_label_exact: true,
+                internal_serial: "SLUS-12345",
+                internal_serial_exact: true,
                 q: "Game Name",
                 sort: "status",
                 order: "desc",
                 page: 2,
                 advanced: true,
             }),
-            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&disc_number=2&disc_title=Bonus%20Disc&disc_title_exact=1&disc_title_foreign=Foreign%20Disc%20Title&disc_title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset=123&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
+            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&disc_number=2&disc_title=Bonus%20Disc&disc_title_exact=1&disc_title_foreign=Foreign%20Disc%20Title&disc_title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset=123&volume_label=GAME_DISC&volume_label_exact=1&internal_serial=SLUS-12345&internal_serial_exact=1&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
         );
 
         assert_eq!(
@@ -3144,7 +3288,7 @@ mod tests {
                 page: 1,
                 ..Default::default()
             }),
-            "/discs"
+            "/discs?title_foreign_exact=1&serial_exact=1&edition_exact=1&barcode_exact=1"
         );
     }
 
@@ -3335,14 +3479,11 @@ mod tests {
     }
 
     #[test]
-    fn exact_flags_require_active_text_and_literal_one() {
-        let active = Some("Value".to_string());
-
-        assert!(exact_filter_enabled(active.as_ref(), Some("1")));
-        assert!(!exact_filter_enabled(active.as_ref(), Some("true")));
-        assert!(!exact_filter_enabled(active.as_ref(), Some("0")));
-        assert!(!exact_filter_enabled(active.as_ref(), None));
-        assert!(!exact_filter_enabled(None, Some("1")));
+    fn exact_flags_require_only_literal_one_and_allow_blank_text() {
+        assert!(exact_filter_enabled(Some("1")));
+        assert!(!exact_filter_enabled(Some("true")));
+        assert!(!exact_filter_enabled(Some("0")));
+        assert!(!exact_filter_enabled(None));
     }
 
     #[test]
@@ -3373,62 +3514,84 @@ mod tests {
     }
 
     #[test]
-    fn title_text_clauses_use_base_columns_and_gate_foreign_titles() {
+    fn scalar_text_clauses_use_field_specific_search_and_null_rules() {
         assert_eq!(
-            title_text_search_clause(TitleTextField::Title, 5, false),
+            scalar_text_search_clause(ScalarTextField::Title, 5, false),
             accent_aware_contains("d.title", "$5")
         );
         assert_eq!(
-            title_text_search_clause(TitleTextField::Title, 5, true),
+            scalar_text_search_clause(ScalarTextField::Title, 5, true),
             "d.title = $5"
         );
         assert_eq!(
-            title_text_search_clause(TitleTextField::ForeignTitle, 6, false),
+            scalar_text_search_clause(ScalarTextField::ForeignTitle, 6, false),
             format!(
                 "(s.has_title_foreign AND {})",
                 accent_aware_contains("d.title_foreign", "$6")
             )
         );
         assert_eq!(
-            title_text_search_clause(TitleTextField::ForeignTitle, 6, true),
+            scalar_text_search_clause(ScalarTextField::ForeignTitle, 6, true),
             "(s.has_title_foreign AND d.title_foreign = $6)"
         );
+        for (field, column) in [
+            (ScalarTextField::VolumeLabel, "volume_label"),
+            (ScalarTextField::InternalSerial, "internal_serial"),
+        ] {
+            assert_eq!(
+                scalar_text_search_clause(field, 7, false),
+                format!(
+                    "LOWER(d.{column}) {}",
+                    like_contains("LOWER($7)")
+                )
+            );
+            assert_eq!(
+                scalar_text_null_clause(field),
+                format!("d.{column} IS NULL")
+            );
+        }
     }
 
     #[test]
-    fn title_filters_precede_array_text_filters_in_binding_order() {
+    fn scalar_text_filters_precede_array_text_filters_in_binding_order() {
         let mut clauses = Vec::new();
         let mut bind_idx = 4;
 
-        add_title_text_clauses(
+        add_scalar_text_clauses(
             &mut clauses,
             &mut bind_idx,
             [
-                (TitleTextField::Title, true, false),
-                (TitleTextField::ForeignTitle, true, true),
-                (TitleTextField::DiscNumber, false, false),
-                (TitleTextField::DiscTitle, false, false),
-                (TitleTextField::ForeignDiscTitle, false, false),
+                (ScalarTextField::Title, true, false, false),
+                (ScalarTextField::ForeignTitle, true, true, false),
+                (ScalarTextField::DiscNumber, false, false, false),
+                (ScalarTextField::DiscTitle, false, false, false),
+                (ScalarTextField::ForeignDiscTitle, false, false, false),
+                (ScalarTextField::VolumeLabel, true, false, false),
+                (ScalarTextField::InternalSerial, true, false, false),
             ],
         );
         add_array_text_clauses(
             &mut clauses,
             &mut bind_idx,
             [
-                (ArrayTextField::Serial, true, false),
-                (ArrayTextField::Edition, false, false),
-                (ArrayTextField::Barcode, false, false),
+                (ArrayTextField::Serial, true, false, false),
+                (ArrayTextField::Edition, false, false, false),
+                (ArrayTextField::Barcode, false, false, false),
             ],
         );
 
-        assert_eq!(bind_idx, 7);
+        assert_eq!(bind_idx, 9);
         assert_eq!(
             clauses[0],
             accent_aware_contains("d.title", "$5")
         );
         assert_eq!(clauses[1], "(s.has_title_foreign AND d.title_foreign = $6)");
-        assert!(clauses[2].contains("unnest(d.serial)"));
+        assert!(clauses[2].contains("LOWER(d.volume_label)"));
         assert!(clauses[2].contains("$7"));
+        assert!(clauses[3].contains("LOWER(d.internal_serial)"));
+        assert!(clauses[3].contains("$8"));
+        assert!(clauses[4].contains("unnest(d.serial)"));
+        assert!(clauses[4].contains("$9"));
     }
 
     #[test]
@@ -3440,9 +3603,9 @@ mod tests {
             &mut clauses,
             &mut bind_idx,
             [
-                (ArrayTextField::Serial, true, false),
-                (ArrayTextField::Edition, true, true),
-                (ArrayTextField::Barcode, true, false),
+                (ArrayTextField::Serial, true, false, false),
+                (ArrayTextField::Edition, true, true, false),
+                (ArrayTextField::Barcode, true, false, false),
             ],
         );
 
