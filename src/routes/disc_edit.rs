@@ -4158,10 +4158,14 @@ fn build_add_submission_changes(
     all_systems: &[System],
     add_match: Option<&AddDiscMatch>,
 ) -> serde_json::Value {
+    let system_code = add_match
+        .map(|matched| matched.system_code.as_str())
+        .unwrap_or_else(|| form.system_code.trim());
     let media_code = add_match
         .map(|matched| matched.media_type.as_str())
         .unwrap_or_else(|| form.media_type.trim());
     let mut add_form = form.clone();
+    add_form.system_code = system_code.to_string();
     add_form.media_type = media_code.to_string();
     let bca_input = form.bca.as_deref().map(str::trim).filter(|bca| !bca.is_empty());
     let preserve_existing_bca = bca_input.is_none();
@@ -4181,9 +4185,14 @@ fn build_add_submission_changes(
     }
 
     let mut changes = build_new_disc_changes(&add_form, all_media_types, all_systems);
-    if add_match.is_some() && form.media_type.trim().is_empty() {
+    if add_match.is_some() {
         if let Some(obj) = changes.as_object_mut() {
-            obj.remove("media_type");
+            if form.system_code.trim().is_empty() {
+                obj.remove("system_code");
+            }
+            if form.media_type.trim().is_empty() {
+                obj.remove("media_type");
+            }
         }
     }
     if preserve_existing_bca {
