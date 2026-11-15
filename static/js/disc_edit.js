@@ -671,8 +671,9 @@ function applyMediaFieldVisibility() {
     if (!mediaSel || typeof MEDIA_HAS_PIC === 'undefined' || typeof MEDIA_IS_CD === 'undefined') return;
     var code = mediaSel.value;
     var extrasField = document.getElementById('extras-field');
-    if (extrasField && typeof MEDIA_HAS_EXTRAS !== 'undefined') {
-        var showExtras = !!MEDIA_HAS_EXTRAS[code];
+    if (extrasField && typeof MEDIA_HAS_SS !== 'undefined') {
+        var showExtras = !!MEDIA_HAS_SS[code] ||
+            (systemHasFlag('has_extras') && !!MEDIA_IS_CD[code]);
         var wasHidden = extrasField.style.display === 'none';
         extrasField.style.display = showExtras ? '' : 'none';
         extrasField.querySelectorAll('input, select, textarea').forEach(function (ctrl) {

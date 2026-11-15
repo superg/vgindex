@@ -826,6 +826,40 @@ fn apply_set_operation(
     Ok(serde_json::json!(out))
 }
 
+fn apply_extras_set_operation(
+    old_values: &[String],
+    change_node: &serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    let replacement_identity = |line: &str| -> Option<String> {
+        if let Some(name) = crate::services::validation::dat_extract_attr(line, "name") {
+            if name
+                .rsplit_once('.')
+                .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
+            {
+                let track = crate::services::validation::extract_cd_extra_track(&name)?;
+                return Some(format!("cd:{track}"));
+            }
+        }
+
+        let extra = disc_service::parse_ss_extras(line).ok()?.into_iter().next()?;
+        crate::services::validation::dvd_extra_file_types()
+            .iter()
+            .any(|t| t.extension == extra.file_type && t.max_count.is_some())
+            .then(|| format!("dvd:{}", extra.file_type))
+    };
+
+    let mut updated = json_str_vec(&apply_set_operation(old_values, change_node)?);
+    for added_line in json_str_vec(&change_node["add"]) {
+        let Some(identity) = replacement_identity(&added_line) else {
+            continue;
+        };
+        updated.retain(|existing| {
+            existing == &added_line || replacement_identity(existing).as_ref() != Some(&identity)
+        });
+    }
+    Ok(serde_json::json!(updated))
+}
+
 fn apply_ring_scalar_field(
     entry: &mut serde_json::Value,
     key: &str,
@@ -1267,14 +1301,6 @@ fn resolve_submission_snapshot_with_mode(
         return Ok(resolved);
     };
 
-    let media_code = match change_obj.get("media_type") {
-        Some(node) => apply_scalar_operation("media_type", node)?,
-        None => db_snapshot["media_type"].clone(),
-    }
-    .as_str()
-    .unwrap_or_default()
-    .to_string();
-
     for (key, value) in change_obj {
         match key.as_str() {
             "regions" | "languages" | "serial" | "edition" | "barcode" | "bca_mastering" => {
@@ -1284,18 +1310,8 @@ fn resolve_submission_snapshot_with_mode(
             }
             "extras" => {
                 let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
-                let mut updated = json_str_vec(&apply_set_operation(&old, value)?);
-                let added = json_str_vec(&value["add"]);
-                for line in &added {
-                    if let Some(file_type) = disc_service::limited_extra_type(line, &media_code) {
-                        updated.retain(|existing| {
-                            existing == line
-                                || disc_service::limited_extra_type(existing, &media_code).as_ref()
-                                    != Some(&file_type)
-                        });
-                    }
-                }
-                resolved_obj.insert(key.clone(), serde_json::json!(updated));
+                let updated = apply_extras_set_operation(&old, value)?;
+                resolved_obj.insert(key.clone(), updated);
             }
             "ring_codes" => {
                 let old = resolved_obj

@@ -1298,6 +1298,7 @@ struct ValidatedSystemRow {
     short_name: String,
     media_types: Vec<String>,
     flags: HashSet<String>,
+    has_extras: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -1353,14 +1354,14 @@ const INSERT_SYSTEM_SQL: &str = "
          has_error_count, has_universal_hash, has_protection,
          has_sector_ranges, has_sbi, has_pvd, has_header, has_bca, has_dmi,
          has_sample_start, has_offset_extra, has_internal_serial, has_volume_label,
-         archives_dirty)
+         has_extras, archives_dirty)
     VALUES
         ($1, $2, $3, $4, $5, $6,
          $7, $8, $9, $10,
          $11, $12, $13, $14, $15, $16,
          $17, $18, $19,
          $20, $21, $22, $23, $24, $25,
-         $26, $27, $28, $29, TRUE)";
+         $26, $27, $28, $29, $30, TRUE)";
 
 const UPDATE_SYSTEM_SQL: &str = "
     UPDATE systems
@@ -2370,6 +2371,7 @@ fn normalize_system_payload_row(row: &SystemPayloadRow) -> ValidatedSystemRow {
         short_name: row.short_name.trim().to_string(),
         media_types,
         flags,
+        has_extras: false,
     }
 }
 
@@ -2695,7 +2697,16 @@ async fn save_validated_systems(
             }
             SystemSaveAction::Rename => {
                 let old_code = row.original_code.as_deref().unwrap_or_default();
-                insert_system(&mut tx, row).await?;
+
+                // Don't allow configuring extras via maintenance window yet
+                // as we don't yet fully support them
+                let mut replacement = row.clone();
+                replacement.has_extras = existing_by_code
+                    .get(old_code)
+                    .expect("renamed system exists in existing_by_code")
+                    .has_extras;
+
+                insert_system(&mut tx, &replacement).await?;
                 sqlx::query(RENAME_DISCS_SYSTEM_SQL)
                     .bind(&row.code)
                     .bind(old_code)
@@ -2751,6 +2762,7 @@ async fn insert_system(
     row: &ValidatedSystemRow,
 ) -> Result<(), sqlx::Error> {
     bind_system_fields(sqlx::query(INSERT_SYSTEM_SQL), row)
+        .bind(row.has_extras)
         .execute(&mut **tx)
         .await?;
     Ok(())
@@ -3091,6 +3103,7 @@ mod tests {
             name: name.to_string(),
             short_name: code.to_string(),
             media_types: vec!["cd".to_string()],
+            has_extras: false,
             has_exe_date: false,
             has_sbi: false,
             has_pvd: false,

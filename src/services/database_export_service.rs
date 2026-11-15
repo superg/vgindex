@@ -30,7 +30,8 @@ CREATE TABLE media_types (
     pic INTEGER NOT NULL,
     dmi INTEGER NOT NULL,
     rom_extension TEXT NOT NULL,
-    has_dummy_layer INTEGER NOT NULL
+    has_dummy_layer INTEGER NOT NULL,
+    has_ss INTEGER NOT NULL
 );
 
 CREATE TABLE categories (
@@ -59,6 +60,7 @@ CREATE TABLE systems (
     name TEXT NOT NULL,
     short_name TEXT NOT NULL,
     media_types TEXT NOT NULL CHECK (json_valid(media_types)),
+    has_extras INTEGER NOT NULL,
     has_title_foreign INTEGER NOT NULL,
     has_disc_number INTEGER NOT NULL,
     has_disc_title INTEGER NOT NULL,
@@ -210,6 +212,7 @@ struct MediaTypeRow {
     dmi: bool,
     rom_extension: String,
     has_dummy_layer: bool,
+    has_ss: bool,
 }
 
 #[derive(sqlx::FromRow)]
@@ -241,6 +244,7 @@ struct SystemRow {
     name: String,
     short_name: String,
     media_types: String,
+    has_extras: bool,
     has_title_foreign: bool,
     has_disc_number: bool,
     has_disc_title: bool,
@@ -647,12 +651,12 @@ async fn export_media_types(
 ) -> AppResult<u64> {
     let mut count = 0;
     let mut rows = sqlx::query_as::<_, MediaTypeRow>(
-        "SELECT code, name, layer_count, pic, dmi, rom_extension, has_dummy_layer
+        "SELECT code, name, layer_count, pic, dmi, rom_extension, has_dummy_layer, has_ss
          FROM media_types ORDER BY code",
     )
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
-        sqlx::query("INSERT INTO media_types VALUES (?, ?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO media_types VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(row.code)
             .bind(row.name)
             .bind(row.layer_count)
@@ -660,6 +664,7 @@ async fn export_media_types(
             .bind(row.dmi)
             .bind(row.rom_extension)
             .bind(row.has_dummy_layer)
+            .bind(row.has_ss)
             .execute(&mut **sqlite)
             .await?;
         count += 1;
@@ -730,7 +735,7 @@ async fn export_systems(
     let mut count = 0;
     let mut rows = sqlx::query_as::<_, SystemRow>(
         "SELECT code, type AS system_type, manufacturer, name, short_name,
-                to_json(media_types)::text AS media_types,
+                to_json(media_types)::text AS media_types, has_extras,
                 has_title_foreign, has_disc_number, has_disc_title, has_disc_title_foreign,
                 has_serial, has_edition, has_barcode, has_version, has_exe_date, has_edc,
                 has_error_count, has_universal_hash, has_protection,
@@ -742,7 +747,7 @@ async fn export_systems(
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query(
-            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO systems VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.code)
         .bind(row.system_type)
@@ -750,6 +755,7 @@ async fn export_systems(
         .bind(row.name)
         .bind(row.short_name)
         .bind(row.media_types)
+        .bind(row.has_extras)
         .bind(row.has_title_foreign)
         .bind(row.has_disc_number)
         .bind(row.has_disc_title)
