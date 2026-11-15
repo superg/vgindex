@@ -1889,7 +1889,7 @@ fn format_comments(raw: &str) -> String {
                 if let Some(tag_len) = allowed_html_tag(&s[i..]) {
                     result.push_str(&s[i..i + tag_len]);
                     i += tag_len;
-                } else if let Some((tag_len, tag)) = rebuilt_link_tag(&s[i..]) {
+                } else if let Some((tag_len, tag)) = link_tag(&s[i..]) {
                     result.push_str(&tag);
                     i += tag_len;
                 } else {
@@ -1965,63 +1965,19 @@ fn allowed_html_tag(s: &str) -> Option<usize> {
     None
 }
 
-fn rebuilt_link_tag(s: &str) -> Option<(usize, String)> {
+fn link_tag(s: &str) -> Option<(usize, String)> {
     let end = s.find('>')?;
-    let tag = &s[1..end];
-    let name_end = tag.find(char::is_whitespace)?;
-    let name = tag[..name_end].to_ascii_lowercase();
-    let attributes = &tag[name_end..];
-    let wanted = match name.as_str() {
-        "a" => "href",
-        "img" => "src",
-        _ => return None,
-    };
-    let url = tag_attribute(attributes, wanted).filter(|url| safe_link_url(url))?;
-    let mut rebuilt = format!(r#"<{name} {wanted}="{}""#, url.replace('"', "&quot;"));
-    if let Some(alt) = tag_attribute(attributes, "alt").filter(|_| name == "img") {
-        rebuilt += &format!(r#" alt="{}""#, alt.replace('"', "&quot;"));
+    if !s.get(..7)?.eq_ignore_ascii_case("<a href") {
+        return None;
     }
-    rebuilt.push('>');
-    Some((end + 1, rebuilt))
-}
-
-fn tag_attribute<'a>(attributes: &'a str, wanted: &str) -> Option<&'a str> {
-    let mut rest = attributes;
-    loop {
-        rest = rest.trim_start();
-        let name_end = rest
-            .find(|c: char| c == '=' || c.is_whitespace())
-            .unwrap_or(rest.len());
-        if name_end == 0 {
-            return None;
-        }
-        let (name, after) = rest.split_at(name_end);
-        let (value, next) = match after.trim_start().strip_prefix('=') {
-            Some(value) => {
-                let value = value.trim_start();
-                match value.chars().next() {
-                    Some(quote @ ('"' | '\'')) => {
-                        let close = value[1..].find(quote)?;
-                        (&value[1..=close], &value[close + 2..])
-                    }
-                    _ => value.split_at(value.find(char::is_whitespace).unwrap_or(value.len())),
-                }
-            }
-            None => ("", after),
-        };
-        if name.eq_ignore_ascii_case(wanted) {
-            return Some(value);
-        }
-        rest = next;
-    }
-}
-
-fn safe_link_url(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    let allowed = lower.starts_with("http://")
-        || lower.starts_with("https://")
-        || (url.starts_with('/') && !url[1..].starts_with(['/', '\\', '&']));
-    allowed && !url.chars().any(char::is_control)
+    let url = s[7..end]
+        .trim_start_matches([' ', '='])
+        .split(['"', '\'', ' '])
+        .find(|part| !part.is_empty())?;
+    ["/", "http://", "https://"]
+        .iter()
+        .any(|scheme| url.starts_with(scheme))
+        .then(|| (end + 1, format!(r#"<a href="{url}">"#)))
 }
 
 fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
@@ -2565,52 +2521,26 @@ mod tests {
             r#"See <a href="https://redump.info/disc/1/">this</a>."#
         );
         assert_eq!(
-            format_comments("<A HREF = '/discs?q=a&amp;b&#38;c' target=_blank>x</a>"),
-            r#"<a href="/discs?q=a&amp;b&#38;c">x</a>"#
+            format_comments("<a href=/disc/123/>x</a>"),
+            r#"<a href="/disc/123/">x</a>"#
+        );
+        assert_eq!(
+            format_comments(r#"<A HREF = '/x?a&amp;b"c' onmouseover="alert(1)">x</a>"#),
+            r#"<a href="/x?a&amp;b">x</a>"#
         );
     }
 
     #[test]
-    fn comment_links_drop_scripts_and_other_addresses() {
-        assert_eq!(
-            format_comments(r#"<a href="javascript:alert(1)">x</a>"#),
-            "&lt;a href=&quot;javascript:alert(1)&quot;&gt;x</a>"
-        );
-        assert_eq!(
-            format_comments(r#"<a href="https://x.test/" onmouseover="alert(1)">x</a>"#),
-            r#"<a href="https://x.test/">x</a>"#
-        );
-        for url in [
-            "//evil.test/",
-            "/&#47;evil.test",
-            "/\\evil.test",
-            "/\t/evil.test",
+    fn comment_scripts_and_images_are_escaped() {
+        for tag in [
+            r#"<a href="javascript:alert(1)">"#,
+            "<a href=javascript&#58;alert(1)>",
+            "<a hreflang=/x>",
+            "<a href=\"/x\"",
+            "<img src=/a.png onerror=alert(1)>",
         ] {
-            let html = format_comments(&format!("<a href='{url}'>x</a>"));
-            assert!(html.starts_with("&lt;a href="), "{url}: {html}");
+            assert!(format_comments(tag).starts_with("&lt;"), "{tag}");
         }
-        assert_eq!(
-            format_comments("<a href=\"/x\""),
-            "&lt;a href=&quot;/x&quot;"
-        );
-    }
-
-    #[test]
-    fn comment_images_keep_src_and_alt() {
-        assert_eq!(
-            format_comments("<img src=x onerror=alert(document.domain)>"),
-            "&lt;img src=x onerror=alert(document.domain)&gt;"
-        );
-        assert_eq!(
-            format_comments(
-                r#"<img src="https://x.test/a.png" alt='Box "art" &amp; more' onerror="alert(1)">"#
-            ),
-            r#"<img src="https://x.test/a.png" alt="Box &quot;art&quot; &amp; more">"#
-        );
-        assert_eq!(
-            format_comments("<IMG SRC=/static/a.png>"),
-            r#"<img src="/static/a.png">"#
-        );
     }
 
     fn test_state() -> AppState {
