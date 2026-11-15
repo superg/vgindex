@@ -4068,9 +4068,8 @@ fn build_history_changes(
         let key = "extras";
         let old_values = json_str_vec(db_obj.get(key).unwrap_or(&serde_json::Value::Null));
         let new_values = json_str_vec(form_obj.get(key).unwrap_or(&serde_json::Value::Null));
-        if let Some(change) =
-            set_operation_change(&old_values, &new_values, allow_removal && include_status)
-        {
+        let cue_changed = db_obj.get("cuesheet") != form_obj.get("cuesheet");
+        if let Some(change) = set_operation_change(&old_values, &new_values, allow_removal && (include_status || cue_changed)) {
             changes.insert(key.to_string(), change);
         }
     }
