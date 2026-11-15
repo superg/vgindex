@@ -576,17 +576,9 @@ pub fn validate_cd_extras(text: &str, cue_sessions: &[u32]) -> Result<(), String
                 "line {row}: '{name}' must be a lead-in or lead-out track name ending in .bin"
             ));
         };
-        let (marker, session) = track
+        let session = track
             .split_once('.')
-            .map_or((track.as_str(), None), |(marker, session)| {
-                (marker, Some(session))
-            });
-        let duplicate_marker = match marker {
-            "0" | "00" => "0",
-            "A" | "AA" => "A",
-            _ => return Err(format!("line {row}: invalid lead-in/lead-out track label")),
-        };
-
+            .map(|(_, session)| session);
         let session = if cue_sessions.len() > 1 {
             let Some(session) = session else {
                 return Err(format!(
@@ -611,12 +603,8 @@ pub fn validate_cd_extras(text: &str, cue_sessions: &[u32]) -> Result<(), String
             None
         };
 
-        let track_key = match session {
-            Some(session) => format!("{duplicate_marker}.{session}"),
-            None => duplicate_marker.to_string(),
-        };
-        if !track_keys.insert(track_key.clone()) {
-            return Err(format!("line {row}: duplicate track '{track_key}'"));
+        if !track_keys.insert(track.clone()) {
+            return Err(format!("line {row}: duplicate track '{track}'"));
         }
 
         let size = dat_extract_attr(line, "size")
@@ -638,7 +626,28 @@ pub(crate) fn extract_cd_extra_track(name: &str) -> Option<String> {
         .take_while(|character| character.is_ascii_alphanumeric() || *character == '.')
         .collect::<String>()
         .to_ascii_uppercase();
-    is_cd_extra_type(&track).then_some(track)
+    if !is_cd_extra_type(&track) {
+        return None;
+    }
+    let (marker, session) = track
+        .split_once('.')
+        .map_or((track.as_str(), None), |(marker, session)| {
+            (marker, Some(session))
+        });
+    let marker = match marker {
+        "0" | "00" => "0",
+        "A" | "AA" => "A",
+        _ => return None,
+    };
+    Some(match session {
+        Some(session) => format!(
+            "{marker}.{}",
+            session
+                .parse::<u32>()
+                .map_or_else(|_| session.to_string(), |n| n.to_string())
+        ),
+        None => marker.to_string(),
+    })
 }
 
 pub(crate) fn is_cd_extra_type(track: &str) -> bool {

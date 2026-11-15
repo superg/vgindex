@@ -312,10 +312,10 @@ fn canonical_cd_extra_type(track: &str, normal_track_count: usize) -> String {
         .split_once('.')
         .map_or((track, None), |(marker, session)| (marker, Some(session)));
     let marker = match (marker, normal_track_count >= 10) {
-        ("0" | "00", false) => "0",
-        ("0" | "00", true) => "00",
-        ("A" | "AA", false) => "A",
-        ("A" | "AA", true) => "AA",
+        ("0", false) => "0",
+        ("0", true) => "00",
+        ("A", false) => "A",
+        ("A", true) => "AA",
         _ => unreachable!("CD extra track was validated"),
     };
 
@@ -328,17 +328,6 @@ fn canonical_cd_extra_type(track: &str, normal_track_count: usize) -> String {
         ),
         None => marker.to_string(),
     }
-}
-
-pub(crate) fn limited_extra_type(line: &str) -> Option<String> {
-    let extra = parse_ss_extras(line)
-        .ok()?
-        .into_iter()
-        .next()?;
-    crate::services::validation::dvd_extra_file_types()
-        .iter()
-        .any(|t| t.extension == extra.file_type && t.max_count.is_some())
-        .then_some(extra.file_type)
 }
 
 pub(crate) fn add_dmi_extra(extras: &mut Vec<DiscExtra>, dmi: &[u8]) -> DiscExtra {
@@ -1567,8 +1556,10 @@ pub async fn update_disc(
             .map(crate::services::validation::dat_rom_count)
             .unwrap_or_default();
         let extras = if capabilities.has_extras && capabilities.media_is_cd {
+            // Leadin/Leadout tracks
             Ok(parse_cd_extras(&extras_text, normal_track_count))
         } else if capabilities.has_ss {
+            // XGD extras
             parse_ss_extras(&extras_text)
         } else {
             Ok(Vec::new())

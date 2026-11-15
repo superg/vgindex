@@ -4042,20 +4042,11 @@ fn build_history_changes(
 
     {
         let key = "extras";
-        let mut old_values = json_str_vec(db_obj.get(key).unwrap_or(&serde_json::Value::Null));
+        let old_values = json_str_vec(db_obj.get(key).unwrap_or(&serde_json::Value::Null));
         let new_values = json_str_vec(form_obj.get(key).unwrap_or(&serde_json::Value::Null));
-        if !(allow_removal && include_status) {
-            let replaced = |line: &String| {
-                disc_service::limited_extra_type(line).is_some_and(|file_type| {
-                    new_values.iter().any(|new| {
-                        disc_service::limited_extra_type(new).as_ref()
-                            == Some(&file_type)
-                    })
-                })
-            };
-            old_values.retain(|old| new_values.contains(old) || replaced(old));
-        }
-        if let Some(change) = set_operation_change(&old_values, &new_values, true) {
+        if let Some(change) =
+            set_operation_change(&old_values, &new_values, allow_removal && include_status)
+        {
             changes.insert(key.to_string(), change);
         }
     }

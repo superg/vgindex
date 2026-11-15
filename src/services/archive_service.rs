@@ -232,7 +232,7 @@ pub async fn regenerate_system_archives(
 
     let ts = timestamp_now();
     let has_bin_media = system_has_bin_media(pool, &sys.media_types).await;
-    let has_ss_media = system_has_ss_media(pool, &sys.media_types).await;
+    let has_ss_media = system_has_ss_media(pool, &sys.media_types).await?;
     let datfile = generate_datfile_archive(pool, metadata, &sys, &ts, false).await?;
     store_archive(&sys.code, "dat", &datfile)
         .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -344,7 +344,7 @@ async fn archive_type_is_available(
         false
     };
     let has_ss_media = if archive_type == "extras" {
-        system_has_ss_media(pool, &sys.media_types).await
+        system_has_ss_media(pool, &sys.media_types).await?
     } else {
         false
     };
@@ -365,9 +365,9 @@ async fn system_has_bin_media(pool: &PgPool, media_type_codes: &[String]) -> boo
     extensions.iter().any(|ext| is_cd_rom_extension(ext))
 }
 
-async fn system_has_ss_media(pool: &PgPool, media_type_codes: &[String]) -> bool {
+async fn system_has_ss_media(pool: &PgPool, media_type_codes: &[String]) -> AppResult<bool> {
     if media_type_codes.is_empty() {
-        return false;
+        return Ok(false);
     }
     sqlx::query_scalar(
         "SELECT EXISTS (
@@ -378,7 +378,7 @@ async fn system_has_ss_media(pool: &PgPool, media_type_codes: &[String]) -> bool
     .bind(media_type_codes)
     .fetch_one(pool)
     .await
-    .unwrap_or(false)
+    .map_err(AppError::from)
 }
 
 pub fn timestamp_now() -> String {
