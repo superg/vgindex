@@ -105,7 +105,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
 {% endif %}
 {% endif %}
 
-<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review{% else if is_add_mode %}/disc/submit{% else %}/disc/{{ disc_id }}/edit{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}{% if add_requires_system_media %} disc-add-minimal{% endif %}" novalidate>
+<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review{% else if is_add_mode %}/disc/submit{% else %}/disc/{{ disc_id }}/edit{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}{% if draft_submission_id > 0 %} disc-add-draft{% endif %}{% if add_requires_system_media %} disc-add-minimal{% endif %}" novalidate>
     {% match current_user %}
     {% when Some with (user) %}
     <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">

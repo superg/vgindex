@@ -3459,6 +3459,11 @@ textarea.full-width-textarea {
 .disc-edit textarea.dump-log-scrollable {
     overflow-y: auto;
 }
+.disc-edit.disc-add-draft textarea[name="dump_log"] {
+    max-height: 24rem;
+    overflow-y: auto;
+    resize: vertical;
+}
 .dump-log-fill-controls {
     display: flex;
     align-items: center;
