@@ -362,6 +362,9 @@ pub struct DiscsQuery {
     pub disc_title_foreign_exact: Option<String>,
     pub serial: Option<String>,
     pub serial_exact: Option<String>,
+    pub filename_suffix: Option<String>,
+    pub filename_suffix_exact: Option<String>,
+    pub exe_date: Option<String>,
     pub edition: Option<String>,
     pub edition_exact: Option<String>,
     pub barcode: Option<String>,
@@ -639,6 +642,7 @@ enum ScalarTextField {
     DiscNumber,
     DiscTitle,
     ForeignDiscTitle,
+    FilenameSuffix,
     VolumeLabel,
     InternalSerial,
 }
@@ -651,6 +655,7 @@ impl ScalarTextField {
             Self::DiscNumber => "disc_number",
             Self::DiscTitle => "disc_title",
             Self::ForeignDiscTitle => "disc_title_foreign",
+            Self::FilenameSuffix => "filename_suffix",
             Self::VolumeLabel => "volume_label",
             Self::InternalSerial => "internal_serial",
         }
@@ -658,7 +663,7 @@ impl ScalarTextField {
 
     fn capability(self) -> Option<&'static str> {
         match self {
-            Self::Title | Self::VolumeLabel | Self::InternalSerial => None,
+            Self::Title | Self::FilenameSuffix | Self::VolumeLabel | Self::InternalSerial => None,
             Self::ForeignTitle => Some("has_title_foreign"),
             Self::DiscNumber => Some("has_disc_number"),
             Self::DiscTitle => Some("has_disc_title"),
@@ -700,7 +705,7 @@ fn scalar_text_null_clause(field: ScalarTextField) -> String {
 fn add_scalar_text_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
-    filters: [(ScalarTextField, bool, bool, bool); 7],
+    filters: [(ScalarTextField, bool, bool, bool); 8],
 ) {
     for (field, active, exact, empty_exact) in filters {
         if active {
@@ -811,6 +816,40 @@ fn ring_text_search_clause(field: RingTextField, bind_idx: u32) -> String {
 
 fn normalize_offset_filter(value: Option<&str>) -> Option<i32> {
     crate::services::validation::validate_signed_int(value?).ok()
+}
+
+fn normalize_exe_date_filter(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    match value.len() {
+        4 if value.bytes().all(|byte| byte.is_ascii_digit()) => {
+            Some(value.to_string())
+        }
+        7 if value.as_bytes().get(4) == Some(&b'-')
+            && value[..4].bytes().all(|byte| byte.is_ascii_digit())
+            && value[5..].bytes().all(|byte| byte.is_ascii_digit())
+            && value[5..]
+                .parse::<u8>()
+                .map_or(false, |month| (1..=12).contains(&month)) =>
+        {
+            Some(value.to_string())
+        }
+        10 if value.as_bytes()[4] == b'-'
+            && value.as_bytes()[7] == b'-'
+            && value.as_bytes()[..4]
+                .iter()
+                .all(|byte| byte.is_ascii_digit())
+            && value.as_bytes()[5..7]
+                .iter()
+                .all(|byte| byte.is_ascii_digit())
+            && value.as_bytes()[8..]
+                .iter()
+                .all(|byte| byte.is_ascii_digit())
+            && chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok() =>
+        {
+            Some(value.to_string())
+        }
+        _ => None,
+    }
 }
 
 fn offset_search_clause(bind_idx: u32) -> String {
@@ -963,6 +1002,9 @@ struct DiscsTemplate {
     disc_title_foreign_exact: bool,
     filter_serial: String,
     serial_exact: bool,
+    filter_filename_suffix: String,
+    filename_suffix_exact: bool,
+    filter_exe_date: String,
     filter_edition: String,
     edition_exact: bool,
     filter_barcode: String,
@@ -1032,6 +1074,9 @@ impl DiscsTemplate {
             disc_title_foreign_exact: self.disc_title_foreign_exact,
             serial: &self.filter_serial,
             serial_exact: self.serial_exact,
+            filename_suffix: &self.filter_filename_suffix,
+            filename_suffix_exact: self.filename_suffix_exact,
+            exe_date: &self.filter_exe_date,
             edition: &self.filter_edition,
             edition_exact: self.edition_exact,
             barcode: &self.filter_barcode,
@@ -1102,6 +1147,9 @@ struct DiscsUrlOptions<'a> {
     disc_title_foreign_exact: bool,
     serial: &'a str,
     serial_exact: bool,
+    filename_suffix: &'a str,
+    filename_suffix_exact: bool,
+    exe_date: &'a str,
     edition: &'a str,
     edition_exact: bool,
     barcode: &'a str,
@@ -1174,6 +1222,7 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
     let disc_title_exact = exact_param(options.disc_title_exact);
     let disc_title_foreign_exact = exact_param(options.disc_title_foreign_exact);
     let serial_exact = exact_param(options.serial_exact);
+    let filename_suffix_exact = exact_param(options.filename_suffix_exact);
     let edition_exact = exact_param(options.edition_exact);
     let barcode_exact = exact_param(options.barcode_exact);
     let volume_label_exact = exact_param(options.volume_label_exact);
@@ -1201,11 +1250,14 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("disc_title_foreign_exact", disc_title_foreign_exact),
             ("serial", options.serial),
             ("serial_exact", serial_exact),
+            ("filename_suffix", options.filename_suffix),
+            ("filename_suffix_exact", filename_suffix_exact),
             ("edition", options.edition),
             ("edition_exact", edition_exact),
             ("barcode", options.barcode),
             ("barcode_exact", barcode_exact),
             ("universal_hash", options.universal_hash),
+            ("exe_date", options.exe_date),
             ("tracks_min", options.tracks_min),
             ("tracks_max", options.tracks_max),
             ("errors_min", options.errors_min),
@@ -1581,6 +1633,13 @@ async fn discs_page(
     let serial_bind = active_serial
         .as_deref()
         .map(|value| array_text_bind_value(value, serial_exact));
+    let filename_suffix_exact =
+        exact_filter_enabled(query.filename_suffix_exact.as_deref());
+    let active_filename_suffix = active_advanced_filter(query.filename_suffix.as_ref());
+    let filename_suffix_bind = active_filename_suffix
+        .as_deref()
+        .map(|value| scalar_text_bind_value(value, filename_suffix_exact));
+    let filter_filename_suffix = filename_suffix_bind.clone().unwrap_or_default();
     let active_edition = active_verbatim_filter(query.edition.as_ref());
     let filter_edition = active_edition.clone().unwrap_or_default();
     let edition_exact = exact_filter_enabled(query.edition_exact.as_deref());
@@ -1597,6 +1656,8 @@ async fn discs_page(
     let filter_universal_hash = active_universal_hash.clone().unwrap_or_default();
     let universal_hash_bind =
         queue_service::universal_hash_bytes_for_matching(active_universal_hash.as_deref());
+    let active_exe_date = normalize_exe_date_filter(query.exe_date.as_deref());
+    let filter_exe_date = active_exe_date.clone().unwrap_or_default();
     let filter_tracks_min_value = normalize_non_negative_bound(query.tracks_min.as_deref());
     let filter_tracks_max_value = normalize_non_negative_bound(query.tracks_max.as_deref());
     let filter_tracks_min = filter_tracks_min_value
@@ -1871,6 +1932,12 @@ async fn discs_page(
                 internal_serial_exact,
                 internal_serial_exact && active_internal_serial.is_none(),
             ),
+            (
+                ScalarTextField::FilenameSuffix,
+                active_filename_suffix.is_some(),
+                filename_suffix_exact,
+                filename_suffix_exact && active_filename_suffix.is_none(),
+            ),
         ],
     );
     add_array_text_clauses(
@@ -1903,6 +1970,10 @@ async fn discs_page(
         active_universal_hash.is_some(),
         universal_hash_bind.as_deref(),
     );
+    if active_exe_date.is_some() {
+        bind_idx += 1;
+        where_clauses.push(format!("d.exe_date LIKE ${bind_idx} || '%'"));
+    }
     add_track_count_clauses(
         &mut where_clauses,
         &mut bind_idx,
@@ -2059,6 +2130,16 @@ async fn discs_page(
         })
         .unwrap_or_default();
     let count_key_serial = serial_bind.clone().unwrap_or_default();
+    let count_key_filename_suffix = filename_suffix_bind
+        .as_deref()
+        .map(|value| {
+            if filename_suffix_exact {
+                value.to_string()
+            } else {
+                value.to_lowercase()
+            }
+        })
+        .unwrap_or_default();
     let count_key_edition = edition_bind.clone().unwrap_or_default();
     let count_key_barcode = barcode_bind.clone().unwrap_or_default();
     let count_key_universal_hash = active_universal_hash
@@ -2139,11 +2220,14 @@ async fn discs_page(
             disc_title_foreign_exact,
             serial: &count_key_serial,
             serial_exact,
+            filename_suffix: &count_key_filename_suffix,
+            filename_suffix_exact,
             edition: &count_key_edition,
             edition_exact,
             barcode: &count_key_barcode,
             barcode_exact,
             universal_hash: &count_key_universal_hash,
+            exe_date: &filter_exe_date,
             tracks_min: &filter_tracks_min,
             tracks_max: &filter_tracks_max,
             errors_min: &filter_errors_min,
@@ -2293,6 +2377,9 @@ async fn discs_page(
     if let Some(internal_serial) = &internal_serial_bind {
         bind_queries!(internal_serial.clone());
     }
+    if let Some(filename_suffix) = &filename_suffix_bind {
+        bind_queries!(filename_suffix.clone());
+    }
     if let Some(serial) = &serial_bind {
         bind_queries!(serial.clone());
     }
@@ -2304,6 +2391,9 @@ async fn discs_page(
     }
     if let Some(universal_hash) = &universal_hash_bind {
         bind_queries!(universal_hash.clone());
+    }
+    if let Some(exe_date) = &active_exe_date {
+        bind_queries!(exe_date.clone());
     }
     if let Some(tracks_min) = filter_tracks_min_value {
         bind_queries!(tracks_min);
@@ -2385,11 +2475,14 @@ async fn discs_page(
             disc_title_foreign_exact,
             serial: &filter_serial,
             serial_exact,
+            filename_suffix: &filter_filename_suffix,
+            filename_suffix_exact,
             edition: &filter_edition,
             edition_exact,
             barcode: &filter_barcode,
             barcode_exact,
             universal_hash: &filter_universal_hash,
+            exe_date: &filter_exe_date,
             tracks_min: &filter_tracks_min,
             tracks_max: &filter_tracks_max,
             errors_min: &filter_errors_min,
@@ -2520,6 +2613,9 @@ async fn discs_page(
             disc_title_foreign_exact,
             filter_serial,
             serial_exact,
+            filter_filename_suffix,
+            filename_suffix_exact,
+            filter_exe_date,
             filter_edition,
             edition_exact,
             filter_barcode,
@@ -3018,7 +3114,7 @@ mod tests {
             assert!(template.contains(&format!("id=\"{prefix}-exact\"")));
             assert!(template.contains(&format!("initExactRange('{prefix}')")));
         }
-        assert_eq!(template.matches("<span>Exact</span>").count(), 11);
+        assert_eq!(template.matches("<span>Exact</span>").count(), 12);
         assert!(template.contains("{% if tracks_exact %}checked{% endif %}"));
         assert!(template.contains("{% if errors_exact %}checked{% endif %}"));
         assert!(template.contains("max.value = min.value"));
@@ -3232,6 +3328,9 @@ mod tests {
                 disc_title_foreign_exact: true,
                 serial: "SLUS 12345",
                 serial_exact: true,
+                filename_suffix: "",
+                filename_suffix_exact: false,
+                exe_date: "",
                 edition: "Limited Edition",
                 edition_exact: true,
                 barcode: "0 12345 67890",
@@ -3568,6 +3667,7 @@ mod tests {
                 (ScalarTextField::ForeignDiscTitle, false, false, false),
                 (ScalarTextField::VolumeLabel, true, false, false),
                 (ScalarTextField::InternalSerial, true, false, false),
+                (ScalarTextField::FilenameSuffix, false, false, false),
             ],
         );
         add_array_text_clauses(
