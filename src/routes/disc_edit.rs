@@ -1390,7 +1390,7 @@ struct FormValidationOptions {
     require_edc: bool,
     require_cuesheet: bool,
     require_layerbreak: bool,
-    validate_bca_mastering_data: bool,
+    require_full_bca_payload: bool,
     single_extra_per_type: bool,
 }
 
@@ -1405,7 +1405,7 @@ impl FormValidationOptions {
             require_edc: true,
             require_cuesheet: true,
             require_layerbreak: true,
-            validate_bca_mastering_data: true,
+            require_full_bca_payload: true,
             single_extra_per_type: false,
         }
     }
@@ -1417,17 +1417,17 @@ impl FormValidationOptions {
         }
     }
 
-    const fn add_submission(is_verification: bool) -> Self {
+    const fn add_submission(is_verification: bool, is_draft: bool) -> Self {
         Self {
-            require_system: !is_verification,
-            require_media: !is_verification,
-            require_category: !is_verification,
-            require_title: !is_verification,
-            require_regions: !is_verification,
-            require_edc: !is_verification,
-            require_cuesheet: !is_verification,
-            require_layerbreak: !is_verification,
-            validate_bca_mastering_data: false,
+            require_system: !is_draft && !is_verification,
+            require_media: !is_draft && !is_verification,
+            require_category: !is_draft && !is_verification,
+            require_title: !is_draft && !is_verification,
+            require_regions: !is_draft && !is_verification,
+            require_edc: !is_draft && !is_verification,
+            require_cuesheet: !is_draft && !is_verification,
+            require_layerbreak: !is_draft && !is_verification,
+            require_full_bca_payload: false,
             single_extra_per_type: true,
         }
     }
@@ -1474,6 +1474,8 @@ fn validate_form_with_options(
         if !system.media_types.iter().any(|code| code == media_code) {
             errors.push("Media: must be valid for the selected system".into());
         }
+    } else {
+        errors.push("System: must be valid".into());
     }
 
     if options.require_category && category.is_empty() {
@@ -1629,7 +1631,7 @@ fn validate_form_with_options(
                                 bytes.len()
                             ));
                         }
-                        if options.validate_bca_mastering_data {
+                        if options.require_full_bca_payload {
                             if bytes.len() != 192 {
                                 errors.push(format!(
                                     "BCA: must be exactly 192 bytes, got {} bytes",
@@ -1644,9 +1646,7 @@ fn validate_form_with_options(
     }
 
     let media_code = form.media_type.trim();
-    if validation::media_allows_bca_mastering(media_code)
-        && options.validate_bca_mastering_data
-    {
+    if validation::media_allows_bca_mastering(media_code) {
         for (idx, line) in form.bca_mastering.iter().enumerate() {
             let compact = validation::normalize_bca_mastering_input(line);
             if compact.is_empty() {
@@ -1696,7 +1696,8 @@ fn validate_form_with_options(
         .iter()
         .find(|s| s.code == form.system_code)
         .map_or(false, |s| s.has_edc);
-    if options.require_edc && system_has_edc && form_edc_selection(form).is_none() {
+    if form.edc.iter().any(|value| !value.trim().is_empty() && !matches!(value.trim(), "true" | "false"))
+        || options.require_edc && system_has_edc && form_edc_selection(form).is_none() {
         errors.push("EDC: select Yes or No".into());
     }
 
@@ -1760,12 +1761,13 @@ fn validate_add_submission_form(
     all_media_types: &[EditMediaTypeRow],
     all_systems: &[System],
     is_verification: bool,
+    is_draft: bool,
 ) -> Vec<String> {
     validate_form_with_options(
         form,
         all_media_types,
         all_systems,
-        FormValidationOptions::add_submission(is_verification),
+        FormValidationOptions::add_submission(is_verification, is_draft),
     )
 }
 
@@ -3073,9 +3075,11 @@ async fn add_submit(
         )
     });
     let mut validation_form = form.clone();
-    if let Some(matched) = &add_match {
-        validation_form.system_code = matched.system_code.clone();
-        validation_form.media_type = matched.media_type.clone();
+    if !save_as_draft {
+        if let Some(matched) = &add_match {
+            validation_form.system_code = matched.system_code.clone();
+            validation_form.media_type = matched.media_type.clone();
+        }
     }
     let extras_need_existing_cue = validation_form
         .extras
@@ -3093,20 +3097,23 @@ async fn add_submit(
         &ref_data.all_media_types,
         &ref_data.all_systems,
         is_verification,
+        save_as_draft,
     );
-    errors.extend(validate_add_submission_ring_offsets(
-        &form,
-        &ref_data.all_media_types,
-        matched_selection.map(|(_, media_type)| media_type),
-        user.role.can_moderate(),
-    ));
-    errors.extend(validate_add_submission_error_count(
-        &form,
-        &ref_data.all_systems,
-        &ref_data.all_media_types,
-        matched_selection,
-        user.role.can_moderate(),
-    ));
+    if !save_as_draft {
+        errors.extend(validate_add_submission_ring_offsets(
+            &form,
+            &ref_data.all_media_types,
+            matched_selection.map(|(_, media_type)| media_type),
+            user.role.can_moderate(),
+        ));
+        errors.extend(validate_add_submission_error_count(
+            &form,
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            matched_selection,
+            user.role.can_moderate(),
+        ));
+    }
     let can_submit_as = user.role.can_moderate() && draft_submission.is_none();
     errors.extend(validate_submit_as_for_add(&form, can_submit_as));
     errors.extend(validate_add_submission_logs(
@@ -4922,7 +4929,7 @@ mod operation_delta_tests {
         form.regions = vec![];
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), false);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), false, false);
 
         assert!(errors.contains(&"System: must be selected".to_string()));
         assert!(errors.contains(&"Media: must be selected".to_string()));
@@ -4941,7 +4948,7 @@ mod operation_delta_tests {
         form.regions = Vec::new();
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
 
         assert!(!errors.contains(&"System: must be selected".to_string()));
         assert!(!errors.contains(&"Media: must be selected".to_string()));
@@ -4956,7 +4963,7 @@ mod operation_delta_tests {
         form.edc = vec![];
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
 
         assert!(!errors.contains(&"EDC: select Yes or No".to_string()));
     }
@@ -4970,10 +4977,10 @@ mod operation_delta_tests {
         let systems = systems_with_sbi_media(true, &["DVD", "CD"]);
         let required_error = "Cuesheet: required for this media type".to_string();
 
-        let verification_errors = validate_add_submission_form(&form, &media, &systems, true);
+        let verification_errors = validate_add_submission_form(&form, &media, &systems, true, false);
         assert!(!verification_errors.contains(&required_error));
 
-        let new_disc_errors = validate_add_submission_form(&form, &media, &systems, false);
+        let new_disc_errors = validate_add_submission_form(&form, &media, &systems, false, false);
         assert!(new_disc_errors.contains(&required_error));
 
         let edit_errors = validate_form(&form, &media, &systems);
@@ -5153,7 +5160,7 @@ mod operation_delta_tests {
         form.serial = vec!["ABC-001, DEF-002".to_string()];
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
 
         assert!(errors.contains(
             &"Disc Serials: commas are not allowed; enter each value separately".to_string()
@@ -5172,18 +5179,18 @@ mod operation_delta_tests {
         form.media_type = "DVD".to_string();
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
         assert!(errors.contains(&"Media: select a system first".to_string()));
 
         form.system_code = "SYS".to_string();
         form.media_type = String::new();
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
         assert!(errors.contains(&"Media: must be selected".to_string()));
 
         form.media_type = "BAD".to_string();
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
         assert!(errors.contains(&"Media: must be valid for the selected system".to_string()));
     }
 

@@ -711,7 +711,7 @@ pub fn validate_ring_code_offsets(json_str: &str) -> Vec<String> {
     let mut errors = Vec::new();
     let entries: Vec<serde_json::Value> = match serde_json::from_str(json_str) {
         Ok(v) => v,
-        Err(_) => return errors,
+        Err(_) => return vec!["Ring Codes: invalid data".to_string()],
     };
     for (i, entry) in entries.iter().enumerate() {
         let entry_num = i + 1;
