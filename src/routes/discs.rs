@@ -820,31 +820,20 @@ fn normalize_offset_filter(value: Option<&str>) -> Option<i32> {
 
 fn normalize_exe_date_filter(value: Option<&str>) -> Option<String> {
     let value = value?.trim();
+    let bytes = value.as_bytes();
     match value.len() {
-        4 if value.bytes().all(|byte| byte.is_ascii_digit()) => {
-            Some(value.to_string())
-        }
-        7 if value.as_bytes().get(4) == Some(&b'-')
-            && value[..4].bytes().all(|byte| byte.is_ascii_digit())
-            && value[5..].bytes().all(|byte| byte.is_ascii_digit())
-            && value[5..]
-                .parse::<u8>()
-                .map_or(false, |month| (1..=12).contains(&month)) =>
+        4 if bytes.iter().all(|byte| byte.is_ascii_digit()) => Some(value.to_string()),
+        7 if bytes[4] == b'-'
+            && bytes[..4].iter().all(|byte| byte.is_ascii_digit())
+            && bytes[5..].iter().all(|byte| byte.is_ascii_digit()) =>
         {
             Some(value.to_string())
         }
-        10 if value.as_bytes()[4] == b'-'
-            && value.as_bytes()[7] == b'-'
-            && value.as_bytes()[..4]
-                .iter()
-                .all(|byte| byte.is_ascii_digit())
-            && value.as_bytes()[5..7]
-                .iter()
-                .all(|byte| byte.is_ascii_digit())
-            && value.as_bytes()[8..]
-                .iter()
-                .all(|byte| byte.is_ascii_digit())
-            && chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok() =>
+        10 if bytes[4] == b'-'
+            && bytes[7] == b'-'
+            && bytes[..4].iter().all(|byte| byte.is_ascii_digit())
+            && bytes[5..7].iter().all(|byte| byte.is_ascii_digit())
+            && bytes[8..].iter().all(|byte| byte.is_ascii_digit()) =>
         {
             Some(value.to_string())
         }
