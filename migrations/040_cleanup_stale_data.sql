@@ -7,15 +7,23 @@ UPDATE discs AS d
 SET comments = regexp_replace(
     d.comments,
     '(^|(?<=\n))<b>Universal Hash \(SHA-1\):?</b>:? '
+        || '(<code>('
         || encode(d.universal_hash, 'hex')
+        || ')</code>|('
+        || encode(d.universal_hash, 'hex')
+        || '))'
         || '(\r?\n|$)',
     '',
-    'g'
+    'gi'
 )
 WHERE d.system_code = 'AUDIO-CD'
   AND d.universal_hash IS NOT NULL
-  AND d.comments ~ (
+  AND d.comments ~* (
       '(^|(?<=\n))<b>Universal Hash \(SHA-1\):?</b>:? '
+          || '(<code>('
           || encode(d.universal_hash, 'hex')
+          || ')</code>|('
+          || encode(d.universal_hash, 'hex')
+          || '))'
           || '(\r?\n|$)'
   );
