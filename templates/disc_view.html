@@ -676,7 +676,9 @@
             }
             wrapper.style.width = '';
             var containerWidth = wrapper.clientWidth;
-            var tableWidth = table.scrollWidth;
+            var tableWidth = table.classList.contains('tracks-table')
+                ? table.getBoundingClientRect().width
+                : table.scrollWidth;
             // Tolerance avoids a false scrollbar from sub-pixel rounding of
             // fixed-layout table widths.
             refreshDetailSectionFit(wrapper, tableWidth > containerWidth + 2 && containerWidth > 0);
