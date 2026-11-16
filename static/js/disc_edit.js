@@ -1237,7 +1237,76 @@ function initTransliterate() {
     });
 }
 
-var DUMP_LOG_FILL_STATUS_KEY = 'vgindex.dumpLogFillStatus';
+var DUMP_LOG_SESSION_KEY = 'vgindex.dumpLogSession';
+var pendingDumpLogFillMessage = '';
+
+function getDumpLogFormIdentity(form) {
+    var submissionToken = form.querySelector('[name="submission_token"]');
+    return (submissionToken ? submissionToken.value : '') + '|' + form.action;
+}
+
+function saveDumpLogSession(form) {
+    var textarea = form.querySelector('textarea[name="dump_log"]');
+    var clearButton = form.querySelector('#dump-log-clear-btn');
+    if (!textarea || !clearButton || clearButton.hidden) {
+        clearDumpLogSession();
+        return;
+    }
+
+    var saved = {
+        state: textarea.classList.contains('dump-log-scrollable') ? 'uploaded' : 'filled',
+        identity: getDumpLogFormIdentity(form),
+        message: pendingDumpLogFillMessage
+    };
+    try {
+        window.sessionStorage.setItem(DUMP_LOG_SESSION_KEY, JSON.stringify(saved));
+    } catch (_error) {
+        if (pendingDumpLogFillMessage) setDumpLogFillStatus(pendingDumpLogFillMessage);
+    }
+    pendingDumpLogFillMessage = '';
+}
+
+function clearDumpLogSession() {
+    pendingDumpLogFillMessage = '';
+    try {
+        window.sessionStorage.removeItem(DUMP_LOG_SESSION_KEY);
+    } catch (_error) {
+        // Storage can be unavailable in privacy-restricted browser contexts.
+    }
+}
+
+function setDumpLogControls(mode) {
+    var uploadButton = document.getElementById('dump-log-upload-btn');
+    var fillButton = document.getElementById('dump-log-fill-btn');
+    var clearButton = document.getElementById('dump-log-clear-btn');
+    var busy = mode === 'busy';
+    var loaded = mode === 'loaded';
+    if (uploadButton) {
+        uploadButton.hidden = loaded;
+        uploadButton.disabled = busy;
+    }
+    if (fillButton) {
+        fillButton.hidden = loaded;
+        fillButton.disabled = busy;
+    }
+    if (clearButton) clearButton.hidden = !loaded;
+}
+
+function setDumpLogTextareaState(textarea, uploaded) {
+    if (!textarea) return;
+    textarea.readOnly = uploaded;
+    textarea.classList.toggle('dump-log-scrollable', uploaded);
+    textarea.style.height = '';
+}
+
+function resetDumpLogInput(textarea) {
+    textarea.value = '';
+    setDumpLogTextareaState(textarea, false);
+    autoExpand(textarea);
+
+    var fileInput = document.getElementById('dump-log-file-input');
+    if (fileInput) fileInput.value = '';
+}
 
 function setDumpLogFillStatus(message) {
     var status = document.getElementById('dump-log-fill-status');
@@ -1258,30 +1327,44 @@ function setDumpLogFillStatus(message) {
 }
 
 function preserveDumpLogFillStatus(message) {
-    try {
-        window.sessionStorage.setItem(DUMP_LOG_FILL_STATUS_KEY, message);
-    } catch (_error) {
-        setDumpLogFillStatus(message);
-    }
+    pendingDumpLogFillMessage = message;
 }
 
 function restoreDumpLogFillStatus() {
+    var saved = null;
     try {
-        var message = window.sessionStorage.getItem(DUMP_LOG_FILL_STATUS_KEY);
-        if (!message) return;
-        window.sessionStorage.removeItem(DUMP_LOG_FILL_STATUS_KEY);
-        setDumpLogFillStatus(message);
-        
-        var validationErrors = document.querySelector('.validation-errors');
-        if (validationErrors) {
-            validationErrors.classList.add('dump-log-fill');
-            var strong = validationErrors.querySelector('strong:first-child');
-            if (strong) {
-                strong.textContent = 'Please fill in these required fields:';
-            }
-        }
+        var stored = window.sessionStorage.getItem(DUMP_LOG_SESSION_KEY);
+        window.sessionStorage.removeItem(DUMP_LOG_SESSION_KEY);
+        saved = stored ? JSON.parse(stored) : null;
     } catch (_error) {
         // Storage can be unavailable in privacy-restricted browser contexts.
+    }
+
+    var form = document.getElementById('disc-edit-form');
+    var textarea = form ? form.querySelector('textarea[name="dump_log"]') : null;
+    var matchesForm = saved
+        && form
+        && textarea
+        && saved.identity === getDumpLogFormIdentity(form);
+    if (!matchesForm) return;
+
+    if (saved.state === 'uploaded') {
+        setDumpLogTextareaState(textarea, true);
+    }
+    if (saved.state === 'uploaded' || saved.state === 'filled') {
+        setDumpLogControls('loaded');
+    }
+    if (!saved.message) return;
+
+    setDumpLogFillStatus(saved.message);
+
+    var validationErrors = document.querySelector('.validation-errors');
+    if (validationErrors) {
+        validationErrors.classList.add('dump-log-fill');
+        var strong = validationErrors.querySelector('strong:first-child');
+        if (strong) {
+            strong.textContent = 'Please fill in these required fields:';
+        }
     }
 }
 
@@ -1405,7 +1488,7 @@ function initDumpLogDragDrop() {
         var reader = new FileReader();
         reader.onload = function (ev) {
             textarea.value = ev.target.result;
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            setDumpLogTextareaState(textarea, true);
             fillButton.click();
         };
         reader.onerror = function () {
@@ -1437,8 +1520,25 @@ function initDumpLogDragDrop() {
 
 function initDumpLogFill() {
     var button = document.getElementById('dump-log-fill-btn');
+    var clearButton = document.getElementById('dump-log-clear-btn');
     var textarea = document.querySelector('textarea[name="dump_log"]');
     if (!button || !textarea) return;
+
+    textarea.addEventListener('input', function () {
+        if (!clearButton || clearButton.hidden || textarea.readOnly) return;
+        setDumpLogControls('ready');
+        clearDumpLogSession();
+    });
+
+    if (clearButton) {
+        clearButton.addEventListener('click', function () {
+            resetDumpLogInput(textarea);
+            setDumpLogFillStatus('');
+            setDumpLogControls('ready');
+            clearDumpLogSession();
+            textarea.focus();
+        });
+    }
 
     button.addEventListener('click', function () {
         if (!textarea.value.trim()) {
@@ -1446,10 +1546,10 @@ function initDumpLogFill() {
             textarea.focus();
             return;
         }
+        setDumpLogControls('busy');
 
         var csrfMeta = document.querySelector('meta[name="csrf-token"]');
         var csrfToken = csrfMeta ? csrfMeta.getAttribute('content') : '';
-        button.disabled = true;
         setDumpLogFillStatus('Reading log…');
 
         fetch('/api/parse-redumper-log', {
@@ -1468,6 +1568,7 @@ function initDumpLogFill() {
                         && typeof data.message === 'string') {
                         error.dumpLogFillMessage = data.message;
                     }
+                    error.invalidDumpLog = true;
                     throw error;
                 });
             }
@@ -1478,10 +1579,16 @@ function initDumpLogFill() {
         }).then(function (data) {
             var applied = applyParsedRedumperLog(data);
             if (applied === 0) {
+                if (textarea.classList.contains('dump-log-scrollable')) {
+                    setDumpLogControls('loaded');
+                } else {
+                    setDumpLogControls('ready');
+                }
                 setDumpLogFillStatus('No supported values were found.');
                 return;
             }
 
+            setDumpLogControls('loaded');
             var message = 'Filled ' + applied + (applied === 1 ? ' field.' : ' fields.');
             var form = document.getElementById('disc-edit-form');
             var validateButton = form
@@ -1498,24 +1605,28 @@ function initDumpLogFill() {
             preserveDumpLogFillStatus(message);
             form.requestSubmit(validateButton);
         }).catch(function (error) {
+            if (error && error.invalidDumpLog && textarea.classList.contains('dump-log-scrollable')) {
+                resetDumpLogInput(textarea);
+            } else {
+                setDumpLogTextareaState(textarea, false);
+            }
+            setDumpLogControls('ready');
             setDumpLogFillStatus(error && error.dumpLogFillMessage
                 ? error.dumpLogFillMessage
                 : 'Could not read the log. Please try again.');
-        }).finally(function () {
-            button.disabled = false;
         });
     });
 }
 
 // Init
 document.addEventListener('DOMContentLoaded', function () {
-    restoreDumpLogFillStatus();
     filterMediaTypes();
     refreshSelectionDependentUi();
     initRingEditor();
     renderLayerbreaks();
     enforceAddMinimalMode();
     initAutoExpand();
+    restoreDumpLogFillStatus();
     initEditionSelectors();
     initSubmitAsSelector();
     initFlagListToggle();
@@ -1558,6 +1669,11 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('ring-codes-json').value = JSON.stringify(data);
 
             var submitter = event.submitter;
+            if (submitter
+                && submitter.name === 'action'
+                && (submitter.value === 'validate' || submitter.value === 'save')) {
+                saveDumpLogSession(form);
+            }
             if (submitter && submitter.name) {
                 var preservedAction = document.createElement('input');
                 preservedAction.type = 'hidden';

@@ -105,7 +105,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
 {% endif %}
 {% endif %}
 
-<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review{% else if is_add_mode %}/disc/submit{% else %}/disc/{{ disc_id }}/edit{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}{% if add_requires_system_media %} disc-add-minimal{% endif %}" novalidate>
+<form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review{% else if is_add_mode %}/disc/submit{% else %}/disc/{{ disc_id }}/edit{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}{% if draft_submission_id > 0 %} disc-add-draft{% endif %}{% if add_requires_system_media %} disc-add-minimal{% endif %}" novalidate>
     {% match current_user %}
     {% when Some with (user) %}
     <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
@@ -128,6 +128,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         <button type="button" id="dump-log-upload-btn">Upload Log</button>
         <input type="file" id="dump-log-file-input" accept=".log" hidden>
         <button type="button" id="dump-log-fill-btn">Fill from Dump Log</button>
+        <button type="button" id="dump-log-clear-btn" hidden>Clear</button>
     </div>
     {% endif %}
     {% if is_review_mode && disc_id > 0 && !review_base_hash.is_empty() %}

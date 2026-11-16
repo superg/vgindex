@@ -3457,7 +3457,12 @@ textarea.full-width-textarea {
     font-family: var(--pico-font-family-monospace);
 }
 .disc-edit textarea.dump-log-scrollable {
-    overflow-y: scroll;
+    overflow-y: auto;
+}
+.disc-edit.disc-add-draft textarea[name="dump_log"] {
+    max-height: 24rem;
+    overflow-y: auto;
+    resize: vertical;
 }
 .dump-log-fill-controls {
     display: flex;
@@ -4124,6 +4129,9 @@ textarea.full-width-textarea {
     padding: 0.35rem 1rem;
     font-size: 0.8rem;
     text-align: center;
+}
+.disc-edit .dump-log-fill-controls button[hidden] {
+    display: none;
 }
 .disc-edit .disc-form-section:last-of-type > button[type="submit"] {
     display: block;
