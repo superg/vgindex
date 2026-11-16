@@ -1524,6 +1524,12 @@ function initDumpLogFill() {
     var textarea = document.querySelector('textarea[name="dump_log"]');
     if (!button || !textarea) return;
 
+    textarea.addEventListener('input', function () {
+        if (!clearButton || clearButton.hidden || textarea.readOnly) return;
+        setDumpLogControls('ready');
+        clearDumpLogSession();
+    });
+
     if (clearButton) {
         clearButton.addEventListener('click', function () {
             resetDumpLogInput(textarea);
