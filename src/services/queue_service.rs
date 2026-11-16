@@ -137,6 +137,65 @@ pub async fn create_submission(
     submission_token: Option<&str>,
     submission_fingerprint: Option<&str>,
 ) -> AppResult<SubmissionCreation> {
+    create_submission_with_status(
+        pool,
+        sub_type,
+        submitter_id,
+        target_disc_id,
+        changes,
+        submission_comment,
+        dump_log,
+        extra_upload_url,
+        submission_token,
+        submission_fingerprint,
+        SubmissionStatus::Pending,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_draft_submission(
+    pool: &PgPool,
+    sub_type: SubmissionType,
+    submitter_id: i32,
+    target_disc_id: Option<i32>,
+    changes: serde_json::Value,
+    submission_comment: Option<&str>,
+    dump_log: Option<&str>,
+    extra_upload_url: Option<&str>,
+    submission_token: Option<&str>,
+    submission_fingerprint: Option<&str>,
+) -> AppResult<SubmissionCreation> {
+    create_submission_with_status(
+        pool,
+        sub_type,
+        submitter_id,
+        target_disc_id,
+        changes,
+        submission_comment,
+        dump_log,
+        extra_upload_url,
+        submission_token,
+        submission_fingerprint,
+        SubmissionStatus::Draft,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn create_submission_with_status(
+    pool: &PgPool,
+    sub_type: SubmissionType,
+    submitter_id: i32,
+    target_disc_id: Option<i32>,
+    changes: serde_json::Value,
+    submission_comment: Option<&str>,
+    dump_log: Option<&str>,
+    extra_upload_url: Option<&str>,
+    submission_token: Option<&str>,
+    submission_fingerprint: Option<&str>,
+    status: SubmissionStatus,
+) -> AppResult<SubmissionCreation> {
     let mut tx = pool.begin().await?;
     let creation = match create_submission_on(
         &mut tx,
@@ -149,6 +208,7 @@ pub async fn create_submission(
         extra_upload_url,
         submission_token,
         submission_fingerprint,
+        status,
     )
     .await
     {
@@ -214,6 +274,58 @@ pub async fn submit_draft_submission(
     .await?)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn save_draft_submission(
+    pool: &PgPool,
+    submission_id: i32,
+    submitter_id: i32,
+    target_disc_id: Option<i32>,
+    changes: serde_json::Value,
+    submission_comment: Option<&str>,
+    dump_log: Option<&str>,
+    extra_upload_url: Option<&str>,
+    submission_token: Option<&str>,
+    submission_fingerprint: Option<&str>,
+) -> AppResult<Option<DiscSubmission>> {
+    let submission_token = normalize_submission_token(submission_token)?;
+    let submission_fingerprint = if submission_token.is_some() {
+        Some(
+            normalize_submission_token(submission_fingerprint)?.ok_or_else(|| {
+                AppError::BadRequest(
+                    "Submission fingerprint is missing. Reload the form and try again.".into(),
+                )
+            })?,
+        )
+    } else {
+        None
+    };
+    let submission_comment = submission_comment
+        .map(normalize_newlines)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    Ok(sqlx::query_as(
+        "UPDATE disc_submissions
+         SET submission_comment = $1, target_disc_id = $2, changes = $3,
+             dump_log = $4, extra_upload_url = $5,
+             submission_token = $6, submission_fingerprint = $7
+         WHERE id = $8 AND submitter_id = $9
+           AND submission_type = 'Disc' AND status = 'Draft'
+         RETURNING *",
+    )
+    .bind(submission_comment.as_deref())
+    .bind(target_disc_id)
+    .bind(changes)
+    .bind(dump_log)
+    .bind(extra_upload_url)
+    .bind(submission_token.as_deref())
+    .bind(submission_fingerprint.as_deref())
+    .bind(submission_id)
+    .bind(submitter_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
 async fn create_submission_on(
     conn: &mut PgConnection,
     sub_type: SubmissionType,
@@ -225,6 +337,7 @@ async fn create_submission_on(
     extra_upload_url: Option<&str>,
     submission_token: Option<&str>,
     submission_fingerprint: Option<&str>,
+    status: SubmissionStatus,
 ) -> AppResult<SubmissionCreation> {
     let normalized_submission_comment: Option<String> = submission_comment
         .map(normalize_newlines)
@@ -242,8 +355,8 @@ async fn create_submission_on(
         String::new()
     };
     let inserted: Option<DiscSubmission> = sqlx::query_as(
-        "INSERT INTO disc_submissions (submission_type, submitter_id, submission_comment, target_disc_id, changes, dump_log, extra_upload_url, submission_token, submission_fingerprint)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        "INSERT INTO disc_submissions (submission_type, submitter_id, submission_comment, target_disc_id, changes, dump_log, extra_upload_url, submission_token, submission_fingerprint, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (submission_token) WHERE submission_token IS NOT NULL DO NOTHING
          RETURNING *"
     )
@@ -256,6 +369,7 @@ async fn create_submission_on(
     .bind(extra_upload_url)
     .bind(submission_token.as_deref())
     .bind(submission_token.as_ref().map(|_| &submission_fingerprint))
+    .bind(status)
     .fetch_optional(&mut *conn)
     .await?;
 
@@ -328,6 +442,7 @@ pub async fn create_and_approve_submission(
         extra_upload_url,
         submission_token,
         submission_fingerprint,
+        SubmissionStatus::Pending,
     )
     .await
     {
@@ -1303,6 +1418,7 @@ fn resolve_submission_snapshot_with_mode(
 
     for (key, value) in change_obj {
         match key.as_str() {
+            "draft_form" => {}
             "regions" | "languages" | "serial" | "edition" | "barcode" | "bca_mastering" => {
                 let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
                 let updated = apply_set_operation(&old, value)?;

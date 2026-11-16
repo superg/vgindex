@@ -543,6 +543,19 @@ fn apply_retargeted_notice(
 }
 
 fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
+    if let Some(draft_form) = sub.changes.get("draft_form") {
+        let mut form: DiscEditForm =
+            serde_json::from_value(draft_form.clone()).map_err(|error| {
+                AppError::Internal(format!("failed to load saved draft form: {error}"))
+            })?;
+        form.submission_token = sub
+            .submission_token
+            .clone()
+            .unwrap_or_else(disc_edit::generate_submission_token);
+        form.draft_submission_id = Some(sub.id.to_string());
+        return Ok(form);
+    }
+
     let snapshot =
         queue_service::resolve_submission_snapshot(&serde_json::json!({}), &sub.changes)?;
     let string = |key: &str| {
@@ -664,15 +677,22 @@ fn apply_draft_verification_target_fields(
         return;
     }
 
-    form.system_code = target_snapshot["system_code"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
-    form.media_type = target_snapshot["media_type"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
-    form.files_xml = target_snapshot["dat"].as_str().map(str::to_string);
+    if form.system_code.trim().is_empty() {
+        form.system_code = target_snapshot["system_code"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+    }
+    if form.media_type.trim().is_empty() {
+        form.media_type = target_snapshot["media_type"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+    }
+    if form.files_xml.as_deref().map_or(true, |dat| dat.trim().is_empty())
+    {
+        form.files_xml = target_snapshot["dat"].as_str().map(str::to_string);
+    }
 }
 
 async fn submission_detail(
@@ -1094,6 +1114,7 @@ fn build_review_template(
         extra_upload_url: String::new(),
         show_submit_as: false,
         submit_as_username: String::new(),
+        show_save_as_draft: false,
 
         submit_button_text: String::new(),
         validation_errors: vec![],
@@ -1737,7 +1758,12 @@ struct ChangeRow {
 
 fn change_rows(changes: Option<&serde_json::Value>) -> Vec<ChangeRow> {
     let mut rows = Vec::new();
-    for (field, node) in changes.and_then(|c| c.as_object()).into_iter().flatten() {
+    for (field, node) in changes
+        .and_then(|c| c.as_object())
+        .into_iter()
+        .flatten()
+        .filter(|(field, _)| field.as_str() != "draft_form")
+    {
         push_change_rows(&mut rows, field.clone(), field, node);
     }
     rows

@@ -68,6 +68,13 @@ fn user_queue_url(username: &str) -> String {
     format!("/queue?submitter={}", urlencoding::encode(username))
 }
 
+fn user_drafts_url(username: &str) -> String {
+    format!(
+        "/queue?status=Draft&submitter={}",
+        urlencoding::encode(username)
+    )
+}
+
 pub(crate) fn generate_submission_token() -> String {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -205,6 +212,7 @@ pub(crate) struct DiscEditTemplate {
     pub extra_upload_url: String,
     pub show_submit_as: bool,
     pub submit_as_username: String,
+    pub show_save_as_draft: bool,
 
     pub submit_button_text: String,
     pub validation_errors: Vec<String>,
@@ -486,6 +494,9 @@ fn validate_add_submission_logs(form: &DiscEditForm, logs_optional: bool) -> Vec
     if let Some(logs_url) = logs_url {
         if !is_valid_http_url(logs_url) {
             errors.push("Logs Archive URL: must be a valid URL".to_string());
+        }
+        if logs_url.chars().count() > 512 {
+            errors.push("Logs Archive URL: must be 512 characters or fewer".to_string());
         }
     }
     errors
@@ -1213,6 +1224,7 @@ async fn edit_page(
             extra_upload_url: String::new(),
             show_submit_as: false,
             submit_as_username: String::new(),
+            show_save_as_draft: false,
 
             submit_button_text: if user.role.can_edit_directly() {
                 "Save".into()
@@ -1378,7 +1390,7 @@ struct FormValidationOptions {
     require_edc: bool,
     require_cuesheet: bool,
     require_layerbreak: bool,
-    validate_bca_mastering_data: bool,
+    require_full_bca_payload: bool,
     single_extra_per_type: bool,
 }
 
@@ -1393,7 +1405,7 @@ impl FormValidationOptions {
             require_edc: true,
             require_cuesheet: true,
             require_layerbreak: true,
-            validate_bca_mastering_data: true,
+            require_full_bca_payload: true,
             single_extra_per_type: false,
         }
     }
@@ -1405,17 +1417,17 @@ impl FormValidationOptions {
         }
     }
 
-    const fn add_submission(is_verification: bool) -> Self {
+    const fn add_submission(is_verification: bool, is_draft: bool) -> Self {
         Self {
-            require_system: !is_verification,
-            require_media: !is_verification,
-            require_category: !is_verification,
-            require_title: !is_verification,
-            require_regions: !is_verification,
-            require_edc: !is_verification,
-            require_cuesheet: !is_verification,
-            require_layerbreak: !is_verification,
-            validate_bca_mastering_data: false,
+            require_system: !is_draft && !is_verification,
+            require_media: !is_draft && !is_verification,
+            require_category: !is_draft && !is_verification,
+            require_title: !is_draft && !is_verification,
+            require_regions: !is_draft && !is_verification,
+            require_edc: !is_draft && !is_verification,
+            require_cuesheet: !is_draft && !is_verification,
+            require_layerbreak: !is_draft && !is_verification,
+            require_full_bca_payload: false,
             single_extra_per_type: true,
         }
     }
@@ -1462,6 +1474,8 @@ fn validate_form_with_options(
         if !system.media_types.iter().any(|code| code == media_code) {
             errors.push("Media: must be valid for the selected system".into());
         }
+    } else {
+        errors.push("System: must be valid".into());
     }
 
     if options.require_category && category.is_empty() {
@@ -1617,7 +1631,7 @@ fn validate_form_with_options(
                                 bytes.len()
                             ));
                         }
-                        if options.validate_bca_mastering_data {
+                        if options.require_full_bca_payload {
                             if bytes.len() != 192 {
                                 errors.push(format!(
                                     "BCA: must be exactly 192 bytes, got {} bytes",
@@ -1632,9 +1646,7 @@ fn validate_form_with_options(
     }
 
     let media_code = form.media_type.trim();
-    if validation::media_allows_bca_mastering(media_code)
-        && options.validate_bca_mastering_data
-    {
+    if validation::media_allows_bca_mastering(media_code) {
         for (idx, line) in form.bca_mastering.iter().enumerate() {
             let compact = validation::normalize_bca_mastering_input(line);
             if compact.is_empty() {
@@ -1684,7 +1696,8 @@ fn validate_form_with_options(
         .iter()
         .find(|s| s.code == form.system_code)
         .map_or(false, |s| s.has_edc);
-    if options.require_edc && system_has_edc && form_edc_selection(form).is_none() {
+    if form.edc.iter().any(|value| !value.trim().is_empty() && !matches!(value.trim(), "true" | "false"))
+        || options.require_edc && system_has_edc && form_edc_selection(form).is_none() {
         errors.push("EDC: select Yes or No".into());
     }
 
@@ -1748,12 +1761,13 @@ fn validate_add_submission_form(
     all_media_types: &[EditMediaTypeRow],
     all_systems: &[System],
     is_verification: bool,
+    is_draft: bool,
 ) -> Vec<String> {
     validate_form_with_options(
         form,
         all_media_types,
         all_systems,
-        FormValidationOptions::add_submission(is_verification),
+        FormValidationOptions::add_submission(is_verification, is_draft),
     )
 }
 
@@ -2071,6 +2085,7 @@ async fn render_form_with_context(
         extra_upload_url: form.extra_upload_url.clone().unwrap_or_default(),
         show_submit_as: is_add_mode && can_moderate && draft_context.is_none(),
         submit_as_username: submit_as_username_for_form(&current_user.username, form, can_moderate),
+        show_save_as_draft: is_add_mode && !can_edit_directly,
 
         submit_button_text: if is_add_mode {
             "Submit".into()
@@ -2908,6 +2923,7 @@ async fn add_page(
             } else {
                 String::new()
             },
+            show_save_as_draft: !user.role.can_edit_directly(),
 
             submit_button_text: "Submit".into(),
             validation_errors: vec![],
@@ -2999,6 +3015,11 @@ async fn add_submit(
 ) -> AppResult<Response> {
     csrf::verify_token(&user, &post.csrf_token)?;
 
+    let save_as_draft = post.action == "draft";
+    if save_as_draft && user.role.can_edit_directly() {
+        return Err(AppError::Forbidden);
+    }
+
     let mut form = post.disc;
     let draft_submission_id = form
         .draft_submission_id
@@ -3054,9 +3075,11 @@ async fn add_submit(
         )
     });
     let mut validation_form = form.clone();
-    if let Some(matched) = &add_match {
-        validation_form.system_code = matched.system_code.clone();
-        validation_form.media_type = matched.media_type.clone();
+    if !save_as_draft {
+        if let Some(matched) = &add_match {
+            validation_form.system_code = matched.system_code.clone();
+            validation_form.media_type = matched.media_type.clone();
+        }
     }
     let extras_need_existing_cue = validation_form
         .extras
@@ -3074,25 +3097,28 @@ async fn add_submit(
         &ref_data.all_media_types,
         &ref_data.all_systems,
         is_verification,
+        save_as_draft,
     );
-    errors.extend(validate_add_submission_ring_offsets(
-        &form,
-        &ref_data.all_media_types,
-        matched_selection.map(|(_, media_type)| media_type),
-        user.role.can_moderate(),
-    ));
-    errors.extend(validate_add_submission_error_count(
-        &form,
-        &ref_data.all_systems,
-        &ref_data.all_media_types,
-        matched_selection,
-        user.role.can_moderate(),
-    ));
+    if !save_as_draft {
+        errors.extend(validate_add_submission_ring_offsets(
+            &form,
+            &ref_data.all_media_types,
+            matched_selection.map(|(_, media_type)| media_type),
+            user.role.can_moderate(),
+        ));
+        errors.extend(validate_add_submission_error_count(
+            &form,
+            &ref_data.all_systems,
+            &ref_data.all_media_types,
+            matched_selection,
+            user.role.can_moderate(),
+        ));
+    }
     let can_submit_as = user.role.can_moderate() && draft_submission.is_none();
     errors.extend(validate_submit_as_for_add(&form, can_submit_as));
     errors.extend(validate_add_submission_logs(
         &form,
-        user.role.can_moderate(),
+        user.role.can_moderate() || save_as_draft,
     ));
 
     let dump_log_text = trimmed_nonempty(form.dump_log.as_deref());
@@ -3123,7 +3149,7 @@ async fn add_submit(
         .await;
     }
 
-    let changes = build_add_submission_changes(
+    let mut changes = build_add_submission_changes(
         &form,
         &ref_data.all_media_types,
         &ref_data.all_systems,
@@ -3173,6 +3199,52 @@ async fn add_submit(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
     let request_fingerprint = submission_fingerprint(&form);
+
+    if save_as_draft {
+        attach_draft_form_snapshot(&mut changes, &form)?;
+        if let Some(draft_submission) = draft_submission.as_ref() {
+            let saved = queue_service::save_draft_submission(
+                &state.pool,
+                draft_submission.id,
+                user.id,
+                target_disc_id,
+                changes,
+                submission_comment.as_deref(),
+                dump_log_text,
+                extra_upload_url_text,
+                Some(&form.submission_token),
+                Some(&request_fingerprint),
+            )
+            .await?;
+            return if saved.is_some() {
+                Ok(Redirect::to(&user_drafts_url(&user.username)).into_response())
+            } else {
+                Ok(Redirect::to("/queue").into_response())
+            };
+        }
+
+        let creation = queue_service::create_draft_submission(
+            &state.pool,
+            SubmissionType::Disc,
+            user.id,
+            target_disc_id,
+            changes,
+            submission_comment.as_deref(),
+            dump_log_text,
+            extra_upload_url_text,
+            Some(&form.submission_token),
+            Some(&request_fingerprint),
+        )
+        .await?;
+        if creation.created {
+            state.draft_count_cache.increment(user.id).await;
+        }
+        return if creation.submission.status == SubmissionStatus::Draft {
+            Ok(Redirect::to(&user_drafts_url(&user.username)).into_response())
+        } else {
+            Ok(processed_submission_redirect(&creation.submission))
+        };
+    }
 
     if let Some(draft_submission) = draft_submission.as_ref() {
         let submitted = queue_service::submit_draft_submission(
@@ -4217,6 +4289,24 @@ fn build_add_submission_changes(
     changes
 }
 
+fn attach_draft_form_snapshot(
+    changes: &mut serde_json::Value,
+    form: &DiscEditForm,
+) -> AppResult<()> {
+    let mut draft_form = form.clone();
+    draft_form.submission_token.clear();
+    draft_form.draft_submission_id = None;
+    let draft_form = serde_json::to_value(draft_form)
+        .map_err(|error| AppError::Internal(format!("failed to serialize draft form: {error}")))?;
+    let Some(changes) = changes.as_object_mut() else {
+        return Err(AppError::Internal(
+            "draft changes are not a JSON object".into(),
+        ));
+    };
+    changes.insert("draft_form".to_string(), draft_form);
+    Ok(())
+}
+
 #[cfg(test)]
 mod operation_delta_tests {
     use super::*;
@@ -4839,7 +4929,7 @@ mod operation_delta_tests {
         form.regions = vec![];
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), false);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), false, false);
 
         assert!(errors.contains(&"System: must be selected".to_string()));
         assert!(errors.contains(&"Media: must be selected".to_string()));
@@ -4858,7 +4948,7 @@ mod operation_delta_tests {
         form.regions = Vec::new();
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
 
         assert!(!errors.contains(&"System: must be selected".to_string()));
         assert!(!errors.contains(&"Media: must be selected".to_string()));
@@ -4873,7 +4963,7 @@ mod operation_delta_tests {
         form.edc = vec![];
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
 
         assert!(!errors.contains(&"EDC: select Yes or No".to_string()));
     }
@@ -4887,10 +4977,10 @@ mod operation_delta_tests {
         let systems = systems_with_sbi_media(true, &["DVD", "CD"]);
         let required_error = "Cuesheet: required for this media type".to_string();
 
-        let verification_errors = validate_add_submission_form(&form, &media, &systems, true);
+        let verification_errors = validate_add_submission_form(&form, &media, &systems, true, false);
         assert!(!verification_errors.contains(&required_error));
 
-        let new_disc_errors = validate_add_submission_form(&form, &media, &systems, false);
+        let new_disc_errors = validate_add_submission_form(&form, &media, &systems, false, false);
         assert!(new_disc_errors.contains(&required_error));
 
         let edit_errors = validate_form(&form, &media, &systems);
@@ -5070,7 +5160,7 @@ mod operation_delta_tests {
         form.serial = vec!["ABC-001, DEF-002".to_string()];
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
 
         assert!(errors.contains(
             &"Disc Serials: commas are not allowed; enter each value separately".to_string()
@@ -5089,18 +5179,18 @@ mod operation_delta_tests {
         form.media_type = "DVD".to_string();
 
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
         assert!(errors.contains(&"Media: select a system first".to_string()));
 
         form.system_code = "SYS".to_string();
         form.media_type = String::new();
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
         assert!(errors.contains(&"Media: must be selected".to_string()));
 
         form.media_type = "BAD".to_string();
         let errors =
-            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true);
+            validate_add_submission_form(&form, &media_rows(), &systems_with_edc(true), true, false);
         assert!(errors.contains(&"Media: must be valid for the selected system".to_string()));
     }
 
