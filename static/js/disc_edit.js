@@ -1316,6 +1316,8 @@ function applyParsedRedumperLog(data) {
         'version',
         'exe_date',
         'error_count',
+        'internal_serial',
+        'volume_label',
         'universal_hash',
         'sector_ranges',
         'sbi',

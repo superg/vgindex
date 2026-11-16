@@ -15,6 +15,8 @@ pub struct ParsedRedumperLog {
     pub exe_date: Option<String>,
     pub edc: Option<bool>,
     pub error_count: Option<i64>,
+    pub internal_serial: Option<String>,
+    pub volume_label: Option<String>,
     pub universal_hash: Option<String>,
     pub sample_start: Option<String>,
     pub offset_value: Option<String>,
@@ -109,6 +111,8 @@ fn parse_internal(
             }
         });
         result.error_count = error_count(info);
+        result.volume_label = scalar_value(info, "joliet volume identifier:")
+            .or_else(|| scalar_value(info, "volume identifier:"));
         result.sector_ranges = indented_valid_lines_after(
             info,
             "security sector ranges:",
@@ -203,6 +207,32 @@ fn parse_internal(
         let profile = latest_profile(&lines)?;
         media_type_for_profile(profile, dump_layer_count, media_types)
     });
+    if matches!(
+        result.system_code.as_deref(),
+        Some("PSX" | "PS2" | "PS3" | "PS4" | "PS5" | "WII" | "GC" | "MCD" | "SS" | "DC")
+    ) {
+        result.internal_serial = info
+            .as_deref()
+            .and_then(|info| scalar_value(info, "serial:"));
+    }
+    let ignored_volume_label = result.volume_label.as_deref().is_some_and(|label| {
+        result
+            .media_type
+            .as_deref()
+            .is_some_and(|media_type| media_type.eq_ignore_ascii_case("xgd"))
+            || match result.system_code.as_deref() {
+                Some("XBOX" | "XBOX360" | "XBOXONE" | "XBOXSX") => ["CD_ROM", "DVD_ROM"]
+                    .iter()
+                    .any(|ignored| label == *ignored),
+                Some("PS3") => label == "PS3VOLUME",
+                Some("PS4") => label == "PS4VOLUME",
+                Some("PS5") => label == "PS5VOLUME",
+                _ => false,
+            }
+    });
+    if ignored_volume_label {
+        result.volume_label = None;
+    }
     if matches!(result.system_code.as_deref(), Some("GC" | "WII")) {
         result.version = result.version.map(|version| {
             if version == "0" {

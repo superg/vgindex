@@ -132,6 +132,16 @@
                 </div>
             </div>
             <div class="advanced-search-row">
+                <span id="filename-suffix-filter-label">Filename Suffix</span>
+                <div class="text-exact-controls">
+                    <input type="text" id="filename-suffix-filter" name="filename_suffix" value="{{ filter_filename_suffix }}" aria-labelledby="filename-suffix-filter-label">
+                    <label class="text-exact-toggle" for="filename-suffix-exact">
+                        <input type="checkbox" id="filename-suffix-exact" name="filename_suffix_exact" value="1" {% if filename_suffix_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
                 <span id="serial-filter-label">Disc Serial</span>
                 <div class="text-exact-controls">
                     <input type="text" id="serial-filter" name="serial" value="{{ filter_serial }}" aria-labelledby="serial-filter-label">
@@ -161,10 +171,6 @@
                     </label>
                 </div>
             </div>
-            <label class="advanced-search-row">
-                <span>Universal Hash</span>
-                <input type="text" name="universal_hash" value="{{ filter_universal_hash }}">
-            </label>
             <div class="advanced-search-row">
                 <span id="volume-label-filter-label">Volume Label</span>
                 <div class="text-exact-controls">
@@ -185,6 +191,14 @@
                     </label>
                 </div>
             </div>
+            <label class="advanced-search-row">
+                <span>Universal Hash</span>
+                <input type="text" name="universal_hash" value="{{ filter_universal_hash }}">
+            </label>
+            <label class="advanced-search-row">
+                <span>EXE Date</span>
+                <input type="text" name="exe_date" value="{{ filter_exe_date }}" placeholder="YYYY-MM-DD" maxlength="10" pattern="[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?" title="YYYY, YYYY-MM, or YYYY-MM-DD">
+            </label>
             <div class="advanced-search-row">
                 <span>Tracks</span>
                 <div class="count-range-controls">
@@ -333,6 +347,8 @@
                     {% if disc_title_foreign_exact %}<input type="hidden" name="disc_title_foreign_exact" value="1">{% endif %}
                     {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
                     {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
+                    {% if !filter_filename_suffix.is_empty() %}<input type="hidden" name="filename_suffix" value="{{ filter_filename_suffix }}">{% endif %}
+                    {% if filename_suffix_exact %}<input type="hidden" name="filename_suffix_exact" value="1">{% endif %}
                     {% if !filter_edition.is_empty() %}
                     <input type="hidden" name="edition" value="{{ filter_edition }}">
                     {% endif %}
@@ -340,6 +356,7 @@
                     {% if !filter_barcode.is_empty() %}<input type="hidden" name="barcode" value="{{ filter_barcode }}">{% endif %}
                     {% if barcode_exact %}<input type="hidden" name="barcode_exact" value="1">{% endif %}
                     {% if !filter_universal_hash.is_empty() %}<input type="hidden" name="universal_hash" value="{{ filter_universal_hash }}">{% endif %}
+                    {% if !filter_exe_date.is_empty() %}<input type="hidden" name="exe_date" value="{{ filter_exe_date }}">{% endif %}
                     {% if !filter_tracks_min.is_empty() %}<input type="hidden" name="tracks_min" value="{{ filter_tracks_min }}">{% endif %}
                     {% if !filter_tracks_max.is_empty() %}<input type="hidden" name="tracks_max" value="{{ filter_tracks_max }}">{% endif %}
                     {% if !filter_errors_min.is_empty() %}<input type="hidden" name="errors_min" value="{{ filter_errors_min }}">{% endif %}
@@ -448,25 +465,22 @@
                     {% if disc_title_foreign_exact %}<input type="hidden" name="disc_title_foreign_exact" value="1">{% endif %}
                     {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
                     {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
-                    {% if !filter_edition.is_empty() %}
-                    <input type="hidden" name="edition" value="{{ filter_edition }}">
-                    {% endif %}
+                    {% if !filter_filename_suffix.is_empty() %}<input type="hidden" name="filename_suffix" value="{{ filter_filename_suffix }}">{% endif %}
+                    {% if filename_suffix_exact %}<input type="hidden" name="filename_suffix_exact" value="1">{% endif %}
+                    {% if !filter_edition.is_empty() %}<input type="hidden" name="edition" value="{{ filter_edition }}">{% endif %}
                     {% if edition_exact %}<input type="hidden" name="edition_exact" value="1">{% endif %}
                     {% if !filter_barcode.is_empty() %}<input type="hidden" name="barcode" value="{{ filter_barcode }}">{% endif %}
                     {% if barcode_exact %}<input type="hidden" name="barcode_exact" value="1">{% endif %}
                     {% if !filter_universal_hash.is_empty() %}<input type="hidden" name="universal_hash" value="{{ filter_universal_hash }}">{% endif %}
+                    {% if !filter_exe_date.is_empty() %}<input type="hidden" name="exe_date" value="{{ filter_exe_date }}">{% endif %}
                     {% if !filter_tracks_min.is_empty() %}<input type="hidden" name="tracks_min" value="{{ filter_tracks_min }}">{% endif %}
                     {% if !filter_tracks_max.is_empty() %}<input type="hidden" name="tracks_max" value="{{ filter_tracks_max }}">{% endif %}
                     {% if !filter_errors_min.is_empty() %}<input type="hidden" name="errors_min" value="{{ filter_errors_min }}">{% endif %}
                     {% if !filter_errors_max.is_empty() %}<input type="hidden" name="errors_max" value="{{ filter_errors_max }}">{% endif %}
                     {% if !filter_edc.is_empty() %}<input type="hidden" name="edc" value="{{ filter_edc }}">{% endif %}
                     {% if !filter_protection.is_empty() %}<input type="hidden" name="protection" value="{{ filter_protection }}">{% endif %}
-                    {% if !filter_comments.is_empty() %}
-                    <input type="hidden" name="comments" value="{{ filter_comments }}">
-                    {% endif %}
-                    {% if !filter_contents.is_empty() %}
-                    <input type="hidden" name="contents" value="{{ filter_contents }}">
-                    {% endif %}
+                    {% if !filter_comments.is_empty() %}<input type="hidden" name="comments" value="{{ filter_comments }}">{% endif %}
+                    {% if !filter_contents.is_empty() %}<input type="hidden" name="contents" value="{{ filter_contents }}">{% endif %}
                     {% if !filter_mastering_code.is_empty() %}<input type="hidden" name="mastering_code" value="{{ filter_mastering_code }}">{% endif %}
                     {% if !filter_mastering_sid.is_empty() %}<input type="hidden" name="mastering_sid" value="{{ filter_mastering_sid }}">{% endif %}
                     {% if !filter_toolstamp.is_empty() %}<input type="hidden" name="toolstamp" value="{{ filter_toolstamp }}">{% endif %}
