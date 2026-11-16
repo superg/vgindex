@@ -4381,7 +4381,8 @@ body:has(.submission-info) main.container > section h3 {
     background-color: #c62828;
     border-color: #c62828;
 }
-.review-actions .btn-draft {
+.review-actions .btn-draft,
+.disc-edit .form-actions .btn-draft {
     background-color: #d65a00;
     border-color: #d65a00;
 }

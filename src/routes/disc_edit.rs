@@ -68,6 +68,13 @@ fn user_queue_url(username: &str) -> String {
     format!("/queue?submitter={}", urlencoding::encode(username))
 }
 
+fn user_drafts_url(username: &str) -> String {
+    format!(
+        "/queue?status=Draft&submitter={}",
+        urlencoding::encode(username)
+    )
+}
+
 pub(crate) fn generate_submission_token() -> String {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -205,6 +212,7 @@ pub(crate) struct DiscEditTemplate {
     pub extra_upload_url: String,
     pub show_submit_as: bool,
     pub submit_as_username: String,
+    pub show_save_as_draft: bool,
 
     pub submit_button_text: String,
     pub validation_errors: Vec<String>,
@@ -486,6 +494,9 @@ fn validate_add_submission_logs(form: &DiscEditForm, logs_optional: bool) -> Vec
     if let Some(logs_url) = logs_url {
         if !is_valid_http_url(logs_url) {
             errors.push("Logs Archive URL: must be a valid URL".to_string());
+        }
+        if logs_url.chars().count() > 512 {
+            errors.push("Logs Archive URL: must be 512 characters or fewer".to_string());
         }
     }
     errors
@@ -1213,6 +1224,7 @@ async fn edit_page(
             extra_upload_url: String::new(),
             show_submit_as: false,
             submit_as_username: String::new(),
+            show_save_as_draft: false,
 
             submit_button_text: if user.role.can_edit_directly() {
                 "Save".into()
@@ -2071,6 +2083,7 @@ async fn render_form_with_context(
         extra_upload_url: form.extra_upload_url.clone().unwrap_or_default(),
         show_submit_as: is_add_mode && can_moderate && draft_context.is_none(),
         submit_as_username: submit_as_username_for_form(&current_user.username, form, can_moderate),
+        show_save_as_draft: is_add_mode && !can_edit_directly,
 
         submit_button_text: if is_add_mode {
             "Submit".into()
@@ -2908,6 +2921,7 @@ async fn add_page(
             } else {
                 String::new()
             },
+            show_save_as_draft: !user.role.can_edit_directly(),
 
             submit_button_text: "Submit".into(),
             validation_errors: vec![],
@@ -2998,6 +3012,11 @@ async fn add_submit(
     Form(post): Form<DiscEditPostForm>,
 ) -> AppResult<Response> {
     csrf::verify_token(&user, &post.csrf_token)?;
+
+    let save_as_draft = post.action == "draft";
+    if save_as_draft && user.role.can_edit_directly() {
+        return Err(AppError::Forbidden);
+    }
 
     let mut form = post.disc;
     let draft_submission_id = form
@@ -3092,7 +3111,7 @@ async fn add_submit(
     errors.extend(validate_submit_as_for_add(&form, can_submit_as));
     errors.extend(validate_add_submission_logs(
         &form,
-        user.role.can_moderate(),
+        user.role.can_moderate() || save_as_draft,
     ));
 
     let dump_log_text = trimmed_nonempty(form.dump_log.as_deref());
@@ -3123,7 +3142,7 @@ async fn add_submit(
         .await;
     }
 
-    let changes = build_add_submission_changes(
+    let mut changes = build_add_submission_changes(
         &form,
         &ref_data.all_media_types,
         &ref_data.all_systems,
@@ -3173,6 +3192,52 @@ async fn add_submit(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
     let request_fingerprint = submission_fingerprint(&form);
+
+    if save_as_draft {
+        attach_draft_form_snapshot(&mut changes, &form)?;
+        if let Some(draft_submission) = draft_submission.as_ref() {
+            let saved = queue_service::save_draft_submission(
+                &state.pool,
+                draft_submission.id,
+                user.id,
+                target_disc_id,
+                changes,
+                submission_comment.as_deref(),
+                dump_log_text,
+                extra_upload_url_text,
+                Some(&form.submission_token),
+                Some(&request_fingerprint),
+            )
+            .await?;
+            return if saved.is_some() {
+                Ok(Redirect::to(&user_drafts_url(&user.username)).into_response())
+            } else {
+                Ok(Redirect::to("/queue").into_response())
+            };
+        }
+
+        let creation = queue_service::create_draft_submission(
+            &state.pool,
+            SubmissionType::Disc,
+            user.id,
+            target_disc_id,
+            changes,
+            submission_comment.as_deref(),
+            dump_log_text,
+            extra_upload_url_text,
+            Some(&form.submission_token),
+            Some(&request_fingerprint),
+        )
+        .await?;
+        if creation.created {
+            state.draft_count_cache.increment(user.id).await;
+        }
+        return if creation.submission.status == SubmissionStatus::Draft {
+            Ok(Redirect::to(&user_drafts_url(&user.username)).into_response())
+        } else {
+            Ok(processed_submission_redirect(&creation.submission))
+        };
+    }
 
     if let Some(draft_submission) = draft_submission.as_ref() {
         let submitted = queue_service::submit_draft_submission(
@@ -4215,6 +4280,24 @@ fn build_add_submission_changes(
         }
     }
     changes
+}
+
+fn attach_draft_form_snapshot(
+    changes: &mut serde_json::Value,
+    form: &DiscEditForm,
+) -> AppResult<()> {
+    let mut draft_form = form.clone();
+    draft_form.submission_token.clear();
+    draft_form.draft_submission_id = None;
+    let draft_form = serde_json::to_value(draft_form)
+        .map_err(|error| AppError::Internal(format!("failed to serialize draft form: {error}")))?;
+    let Some(changes) = changes.as_object_mut() else {
+        return Err(AppError::Internal(
+            "draft changes are not a JSON object".into(),
+        ));
+    };
+    changes.insert("draft_form".to_string(), draft_form);
+    Ok(())
 }
 
 #[cfg(test)]

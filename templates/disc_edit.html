@@ -756,6 +756,9 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     <div class="form-actions">
         <button type="submit" name="action" value="validate" class="secondary">Validate</button>
         <button type="submit" name="action" value="save">{{ submit_button_text }}</button>
+        {% if show_save_as_draft %}
+        <button type="submit" name="action" value="draft" class="btn-draft">Save as Draft</button>
+        {% endif %}
     </div>
     {% else %}
     <button type="submit" name="action" value="save">{{ submit_button_text }}</button>
