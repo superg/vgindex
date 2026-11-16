@@ -3457,7 +3457,7 @@ textarea.full-width-textarea {
     font-family: var(--pico-font-family-monospace);
 }
 .disc-edit textarea.dump-log-scrollable {
-    overflow-y: scroll;
+    overflow-y: auto;
 }
 .dump-log-fill-controls {
     display: flex;

@@ -1238,6 +1238,14 @@ function initTransliterate() {
 }
 
 var DUMP_LOG_FILL_STATUS_KEY = 'vgindex.dumpLogFillStatus';
+var DUMP_LOG_UPLOADED_KEY = 'vgindex.dumpLogUploaded';
+
+function setDumpLogUploadedState(textarea) {
+    if (!textarea) return;
+    textarea.readOnly = true;
+    textarea.classList.add('dump-log-scrollable');
+    textarea.style.height = '';
+}
 
 function setDumpLogFillStatus(message) {
     var status = document.getElementById('dump-log-fill-status');
@@ -1266,22 +1274,30 @@ function preserveDumpLogFillStatus(message) {
 }
 
 function restoreDumpLogFillStatus() {
+    var message = null;
+    var uploaded = false;
     try {
-        var message = window.sessionStorage.getItem(DUMP_LOG_FILL_STATUS_KEY);
-        if (!message) return;
+        message = window.sessionStorage.getItem(DUMP_LOG_FILL_STATUS_KEY);
+        uploaded = window.sessionStorage.getItem(DUMP_LOG_UPLOADED_KEY) === 'true';
         window.sessionStorage.removeItem(DUMP_LOG_FILL_STATUS_KEY);
-        setDumpLogFillStatus(message);
-        
-        var validationErrors = document.querySelector('.validation-errors');
-        if (validationErrors) {
-            validationErrors.classList.add('dump-log-fill');
-            var strong = validationErrors.querySelector('strong:first-child');
-            if (strong) {
-                strong.textContent = 'Please fill in these required fields:';
-            }
-        }
+        window.sessionStorage.removeItem(DUMP_LOG_UPLOADED_KEY);
     } catch (_error) {
         // Storage can be unavailable in privacy-restricted browser contexts.
+    }
+    if (uploaded) {
+        setDumpLogUploadedState(document.querySelector('textarea[name="dump_log"]'));
+    }
+    if (!message) return;
+
+    setDumpLogFillStatus(message);
+
+    var validationErrors = document.querySelector('.validation-errors');
+    if (validationErrors) {
+        validationErrors.classList.add('dump-log-fill');
+        var strong = validationErrors.querySelector('strong:first-child');
+        if (strong) {
+            strong.textContent = 'Please fill in these required fields:';
+        }
     }
 }
 
@@ -1405,7 +1421,7 @@ function initDumpLogDragDrop() {
         var reader = new FileReader();
         reader.onload = function (ev) {
             textarea.value = ev.target.result;
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            setDumpLogUploadedState(textarea);
             fillButton.click();
         };
         reader.onerror = function () {
@@ -1509,13 +1525,13 @@ function initDumpLogFill() {
 
 // Init
 document.addEventListener('DOMContentLoaded', function () {
-    restoreDumpLogFillStatus();
     filterMediaTypes();
     refreshSelectionDependentUi();
     initRingEditor();
     renderLayerbreaks();
     enforceAddMinimalMode();
     initAutoExpand();
+    restoreDumpLogFillStatus();
     initEditionSelectors();
     initSubmitAsSelector();
     initFlagListToggle();
@@ -1558,6 +1574,18 @@ document.addEventListener('DOMContentLoaded', function () {
             document.getElementById('ring-codes-json').value = JSON.stringify(data);
 
             var submitter = event.submitter;
+            var dumpLogTextarea = form.querySelector('textarea[name="dump_log"]');
+            if (submitter
+                && submitter.name === 'action'
+                && submitter.value === 'validate'
+                && dumpLogTextarea
+                && dumpLogTextarea.classList.contains('dump-log-scrollable')) {
+                try {
+                    window.sessionStorage.setItem(DUMP_LOG_UPLOADED_KEY, 'true');
+                } catch (_error) {
+                    // Storage can be unavailable in privacy-restricted browser contexts.
+                }
+            }
             if (submitter && submitter.name) {
                 var preservedAction = document.createElement('input');
                 preservedAction.type = 'hidden';
