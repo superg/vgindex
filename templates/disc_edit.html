@@ -128,6 +128,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         <button type="button" id="dump-log-upload-btn">Upload Log</button>
         <input type="file" id="dump-log-file-input" accept=".log" hidden>
         <button type="button" id="dump-log-fill-btn">Fill from Dump Log</button>
+        <button type="button" id="dump-log-clear-btn" hidden>Clear</button>
     </div>
     {% endif %}
     {% if is_review_mode && disc_id > 0 && !review_base_hash.is_empty() %}

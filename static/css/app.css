@@ -4125,6 +4125,9 @@ textarea.full-width-textarea {
     font-size: 0.8rem;
     text-align: center;
 }
+.disc-edit .dump-log-fill-controls button[hidden] {
+    display: none;
+}
 .disc-edit .disc-form-section:last-of-type > button[type="submit"] {
     display: block;
     width: min(100%, calc((32rem - 1rem) / 2));

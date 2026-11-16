@@ -3115,13 +3115,19 @@ async fn add_submit(
         ));
     }
     let can_submit_as = user.role.can_moderate() && draft_submission.is_none();
+    let dump_log_text = trimmed_nonempty(form.dump_log.as_deref());
     errors.extend(validate_submit_as_for_add(&form, can_submit_as));
     errors.extend(validate_add_submission_logs(
         &form,
         user.role.can_moderate() || save_as_draft,
     ));
+    if user.role.can_moderate()
+        && !save_as_draft
+        && dump_log_text.is_none()
+    {
+        errors.push("Dump Log: cannot be empty".to_string());
+    }
 
-    let dump_log_text = trimmed_nonempty(form.dump_log.as_deref());
     let extra_upload_url_text = trimmed_nonempty(form.extra_upload_url.as_deref());
 
     let validation_result = if post.action == "validate" || !errors.is_empty() {
