@@ -1740,6 +1740,19 @@ nav[aria-label="Pagination"] ul {
     text-align: left !important;
     background: rgba(0, 0, 0, 0.06) !important;
 }
+
+/* Fix safari colspan bug*/
+.disc-view .tracks-table tbody tr.tracks-session-row > td {
+    position: relative;
+    height: 1.2em;
+}
+.disc-view .tracks-table tbody tr.tracks-session-row > td > strong {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
 [data-theme="dark"] .disc-view .tracks-table.striped tbody tr.tracks-session-row td {
     background: #181C24 !important;
 }
