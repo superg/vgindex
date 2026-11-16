@@ -1889,9 +1889,6 @@ fn format_comments(raw: &str) -> String {
                 if let Some(tag_len) = allowed_html_tag(&s[i..]) {
                     result.push_str(&s[i..i + tag_len]);
                     i += tag_len;
-                } else if let Some((tag_len, tag)) = link_tag(&s[i..]) {
-                    result.push_str(&tag);
-                    i += tag_len;
                 } else {
                     result.push_str("&lt;");
                     i += 1;
@@ -1962,24 +1959,23 @@ fn allowed_html_tag(s: &str) -> Option<usize> {
         }
     }
 
-    None
-}
-
-fn link_tag(s: &str) -> Option<(usize, String)> {
-    if !s.get(..7)?.eq_ignore_ascii_case("<a href") {
-        return None;
+    if s.starts_with("<a href=") {
+        let end = s.find('>')?;
+        let url = &s[8..end];
+        let url = url
+            .strip_prefix('"')
+            .and_then(|u| u.strip_suffix('"'))
+            .unwrap_or(url);
+        let site = url
+            .strip_prefix('/')
+            .is_some_and(|path| path.starts_with(|c: char| c.is_ascii_alphanumeric()));
+        let web = url.starts_with("http://") || url.starts_with("https://");
+        if (site || web) && !url.contains(|c: char| c == '"' || c.is_whitespace()) {
+            return Some(end + 1);
+        }
     }
-    let end = s.find('>')?;
-    let value = s[7..end].trim_start_matches([' ', '=']);
-    let url = match value.chars().next()? {
-        quote @ ('"' | '\'') => value[1..].split(quote).next()?,
-        _ => value.split(' ').next()?,
-    };
-    let href = url.replace('"', "&quot;");
-    ["/", "http://", "https://"]
-        .iter()
-        .any(|scheme| url.starts_with(scheme))
-        .then(|| (end + 1, format!(r#"<a href="{href}">"#)))
+
+    None
 }
 
 fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
@@ -2517,36 +2513,22 @@ mod tests {
     }
 
     #[test]
-    fn comment_links_keep_web_and_site_addresses() {
-        assert_eq!(
-            format_comments(r#"See <a href="https://redump.info/disc/1/">this</a>."#),
-            r#"See <a href="https://redump.info/disc/1/">this</a>."#
-        );
-        assert_eq!(
-            format_comments("<a href=/disc/123/>x</a>"),
-            r#"<a href="/disc/123/">x</a>"#
-        );
-        assert_eq!(
-            format_comments(r#"<A HREF = '/x?a&amp;b"c' onmouseover="alert(1)">x</a>"#),
-            r#"<a href="/x?a&amp;b&quot;c">x</a>"#
-        );
-        assert_eq!(
-            format_comments(r#"<a href="/discs?q=Assassin's">x</a>"#),
-            r#"<a href="/discs?q=Assassin's">x</a>"#
-        );
-        assert_eq!(
-            format_comments(r#"<a href=/x"onmouseover=alert(1)>x</a>"#),
-            r#"<a href="/x&quot;onmouseover=alert(1)">x</a>"#
-        );
-    }
-
-    #[test]
-    fn comment_scripts_and_images_are_escaped() {
+    fn comment_links_need_a_web_or_site_address() {
+        for link in [
+            "<a href=/disc/1/>x</a>",
+            r#"<a href="/disc/1/">x</a>"#,
+            r#"<a href="https://redump.info/">x</a>"#,
+        ] {
+            assert_eq!(format_comments(link), link);
+        }
         for tag in [
             r#"<a href="javascript:alert(1)">"#,
-            "<a href=javascript&#58;alert(1)>",
-            "<a hreflang=/x>",
-            "<a href=\"/x\"",
+            "<a href=//evil.example/>",
+            r"<a href=/\evil.example/>",
+            r#"<a href="/&#47;evil.example/">"#,
+            "<a href=\"/\t/evil.example/\">",
+            r#"<a href="/x" onclick="alert(1)">"#,
+            r#"<a href=""/onclick=alert(1)">"#,
             "<img src=/a.png onerror=alert(1)>",
         ] {
             assert!(format_comments(tag).starts_with("&lt;"), "{tag}");
