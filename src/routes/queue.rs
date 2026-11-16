@@ -211,31 +211,18 @@ fn queue_type_icon_class(entry: &SubmissionListRow) -> &'static str {
 }
 
 fn format_submission_list_title(
-    submitted_title: &str,
-    target_title: Option<&str>,
-    target_disc_number: Option<&str>,
-    target_disc_title: Option<&str>,
-    target_filename_suffix: Option<&str>,
-    target_has_disc_number: bool,
-    target_has_disc_title: bool,
+    title: &str,
+    disc_number: Option<&str>,
+    disc_title: Option<&str>,
+    filename_suffix: Option<&str>,
+    has_disc_number: bool,
+    has_disc_title: bool,
 ) -> String {
-    let Some(target_title) = target_title else {
-        return submitted_title.to_string();
-    };
-
     format_display_title(
-        target_title,
-        if target_has_disc_number {
-            target_disc_number
-        } else {
-            None
-        },
-        if target_has_disc_title {
-            target_disc_title
-        } else {
-            None
-        },
-        target_filename_suffix,
+        title,
+        if has_disc_number { disc_number } else { None },
+        if has_disc_title { disc_title } else { None },
+        filename_suffix,
     )
 }
 
@@ -3581,15 +3568,14 @@ mod tests {
     fn targeted_queue_titles_match_disc_list_formatting() {
         assert_eq!(
             format_submission_list_title(
-                "Proposed Title",
-                Some("Current Title"),
+                "Submitted Title",
                 Some("2"),
                 Some("Bonus Disc"),
                 Some("Rev A"),
                 true,
                 true,
             ),
-            "Current Title (Disc 2) (Bonus Disc) (Rev A)"
+            "Submitted Title (Disc 2) (Bonus Disc) (Rev A)"
         );
     }
 
@@ -3597,26 +3583,17 @@ mod tests {
     fn targeted_queue_titles_respect_capabilities_and_keep_suffixes() {
         assert_eq!(
             format_submission_list_title(
-                "Proposed Title",
-                Some("Current Title"),
+                "Submitted Title",
                 Some("2"),
                 Some("Bonus Disc"),
                 Some("Rev A"),
                 false,
                 false,
             ),
-            "Current Title (Rev A)"
+            "Submitted Title (Rev A)"
         );
         assert_eq!(
-            format_submission_list_title(
-                "Submitted Title",
-                None,
-                Some("2"),
-                Some("Bonus Disc"),
-                Some("Rev A"),
-                true,
-                true,
-            ),
+            format_submission_list_title("Submitted Title", None, None, None, true, true),
             "Submitted Title"
         );
     }
@@ -3814,7 +3791,7 @@ mod tests {
 
         let html = template.render().unwrap();
 
-        let original_pos = html.find("Submitted Changes").unwrap();
+        let original_pos = html.find("Submitted Metadata").unwrap();
         let final_pos = html.find("Approved Changes").unwrap();
         assert!(original_pos < final_pos);
         assert!(html.contains("Old title") && html.contains("New title"));
@@ -4347,7 +4324,6 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
             &system_code,
         );
         let submitted_title: String = row.try_get("submitted_title")?;
-        let target_title: Option<String> = row.try_get("target_title")?;
         let target_disc_number: Option<String> = row.try_get("target_disc_number")?;
         let target_disc_title: Option<String> = row.try_get("target_disc_title")?;
         let target_filename_suffix: Option<String> = row.try_get("target_filename_suffix")?;
@@ -4355,7 +4331,6 @@ impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for SubmissionListRow {
         let target_has_disc_title: bool = row.try_get("target_has_disc_title")?;
         let title = format_submission_list_title(
             &submitted_title,
-            target_title.as_deref(),
             target_disc_number.as_deref(),
             target_disc_title.as_deref(),
             target_filename_suffix.as_deref(),
