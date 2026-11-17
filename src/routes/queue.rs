@@ -553,6 +553,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
             .clone()
             .unwrap_or_else(disc_edit::generate_submission_token);
         form.draft_submission_id = Some(sub.id.to_string());
+        form.submission_comment = None;
         return Ok(form);
     }
 
@@ -661,7 +662,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
         files_xml: string("dat"),
         extras: Some(strings("extras").join("\n")),
         status: string("status").unwrap_or_else(|| "Unverified".to_string()),
-        submission_comment: sub.submission_comment.clone(),
+        submission_comment: None,
         submit_as: None,
         dump_log: sub.dump_log.clone(),
         extra_upload_url: sub.extra_upload_url.clone(),
@@ -1136,13 +1137,14 @@ fn build_review_template(
         submitter_id: sub.submitter_id,
         submitter_name: submitter_name.to_string(),
         submission_comment: sub.submission_comment.clone().unwrap_or_default(),
+        submission_comment_input: String::new(),
         dump_log_display: sub.dump_log.clone().unwrap_or_default(),
         extra_upload_url_display: sub.extra_upload_url.clone().unwrap_or_default(),
         submission_status: sub.status.to_string(),
         reviewer_id: sub.reviewer_id.unwrap_or(0),
         reviewer_name: reviewer_name.to_string(),
         review_comment_display: sub.review_comment.clone().unwrap_or_default(),
-        review_comment_input: sub.review_comment.clone().unwrap_or_default(),
+        review_comment_input: String::new(),
         created_at_display: sub.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
         reviewed_at_display: sub
             .reviewed_at
@@ -3349,7 +3351,7 @@ mod tests {
         assert!(form.system_code.is_empty());
         assert!(form.media_type.is_empty());
         assert!(form.files_xml.is_none());
-        assert_eq!(form.submission_comment.as_deref(), Some("original comment"));
+        assert_eq!(form.submission_comment, None);
         assert_eq!(form.dump_log.as_deref(), Some("original log"));
         assert_eq!(
             form.extra_upload_url.as_deref(),
@@ -3842,7 +3844,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_submission_loads_previous_review_comment_into_input() {
+    fn pending_submission_shows_previous_review_comment_above_empty_input() {
         let mut submission = test_submission();
         submission.review_comment = Some("Please provide a complete DAT".to_string());
         submission.reviewer_id = Some(8);
@@ -3851,11 +3853,9 @@ mod tests {
         let template = build_template_for_submission(&submitted_snapshot(), &submission);
         let html = template.render().unwrap();
 
-        assert_eq!(
-            template.review_comment_input,
-            "Please provide a complete DAT"
-        );
-        assert!(html.contains(r#">Please provide a complete DAT</textarea>"#));
+        assert!(template.review_comment_input.is_empty());
+        assert!(html.contains(r#"<p class="pre-wrap section-text">Please provide a complete DAT</p>"#));
+        assert!(html.contains(r#"placeholder="Optional comment about this review"></textarea>"#));
     }
 
     #[test]
