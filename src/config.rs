@@ -197,6 +197,6 @@ mod tests {
             }
         }
 
-        assert_eq!(asset_urls, 5);
+        assert_eq!(asset_urls, 6);
     }
 }

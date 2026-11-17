@@ -457,19 +457,27 @@ function renderRingEntries() {
                 cells += '<td class="entry-num"' + (ml > 1 ? ' rowspan="' + ml + '"' : '') + '>' + (ei + 1) + '</td>';
             }
             if (ml > 1) cells += '<td>' + ringLayerLabelHtml(li, ml) + '</td>';
-            cells += '<td><input type="text" class="' + ringInputClass('ring-mc', layerHighlight && layerHighlight.mastering_code) + '" value="' + esc(ringDisplayValue(l.mastering_code)) + '"></td>';
-            cells += '<td><input type="text" class="' + ringInputClass('ring-ms', layerHighlight && layerHighlight.mastering_sid) + '" value="' + esc(ringDisplayValue(l.mastering_sid)) + '"></td>';
-            cells += '<td><input type="text" class="' + ringInputClass('ring-tools', layerHighlight && layerHighlight.toolstamps) + '" value="' + esc(ringDisplayValue(l.toolstamps)) + '"></td>';
+            var layerSeedPrefix = li === ml - 1 ? 'label_side_' : 'layer_' + li + '_';
+            cells += '<td><input type="text" data-json-seed-key="' + layerSeedPrefix + 'mastering_code" class="' + ringInputClass('ring-mc', layerHighlight && layerHighlight.mastering_code) + '" value="' + esc(ringDisplayValue(l.mastering_code)) + '"></td>';
+            cells += '<td><input type="text" data-json-seed-key="' + layerSeedPrefix + 'mastering_sid" class="' + ringInputClass('ring-ms', layerHighlight && layerHighlight.mastering_sid) + '" value="' + esc(ringDisplayValue(l.mastering_sid)) + '"></td>';
+            cells += '<td><input type="text" data-json-seed-key="' + layerSeedPrefix + 'toolstamps" class="' + ringInputClass('ring-tools', layerHighlight && layerHighlight.toolstamps) + '" value="' + esc(ringDisplayValue(l.toolstamps)) + '"></td>';
             var mouldSidValue = l.mould_sids || '';
             var isMouldLayer = li === 0 || li === ml - 1;
+            var mouldSeedPrefix = li === ml - 1 ? 'label_side_' : (li === 0 ? 'layer_0_' : '');
+            var mouldSeedAttr = mouldSeedPrefix
+                ? ' data-json-seed-key="' + mouldSeedPrefix + 'mould_sids"'
+                : '';
             if (isMouldLayer || mouldSidValue.trim() !== '') {
-                cells += '<td><input type="text" class="' + ringInputClass('ring-moulds', layerHighlight && layerHighlight.mould_sids) + '" value="' + esc(ringDisplayValue(mouldSidValue)) + '"></td>';
+                cells += '<td><input type="text"' + mouldSeedAttr + ' class="' + ringInputClass('ring-moulds', layerHighlight && layerHighlight.mould_sids) + '" value="' + esc(ringDisplayValue(mouldSidValue)) + '"></td>';
             } else {
                 cells += '<td></td>';
             }
             var additionalMouldsValue = l.additional_moulds || '';
+            var additionalMouldsSeedAttr = mouldSeedPrefix
+                ? ' data-json-seed-key="' + mouldSeedPrefix + 'additional_moulds"'
+                : '';
             if (isMouldLayer || additionalMouldsValue.trim() !== '') {
-                cells += '<td><input type="text" class="' + ringInputClass('ring-addmoulds', layerHighlight && layerHighlight.additional_moulds) + '" value="' + esc(ringDisplayValue(additionalMouldsValue)) + '"></td>';
+                cells += '<td><input type="text"' + additionalMouldsSeedAttr + ' class="' + ringInputClass('ring-addmoulds', layerHighlight && layerHighlight.additional_moulds) + '" value="' + esc(ringDisplayValue(additionalMouldsValue)) + '"></td>';
             } else {
                 cells += '<td></td>';
             }
@@ -479,7 +487,7 @@ function renderRingEntries() {
                 if (showOffset) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset', entryHighlight && entryHighlight.offset_value) + '" value="' + esc(entry.offset_value || '') + '"></td>';
                 if (showOffsetExtra) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset-extra', entryHighlight && entryHighlight.offset_extra_value) + '" value="' + esc(entry.offset_extra_value || '') + '"></td>';
                 if (showSampleStart) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-sample-start', entryHighlight && entryHighlight.sample_start) + '" value="' + esc(entry.sample_start || '') + '"></td>';
-                cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-comment', entryHighlight && entryHighlight.comment) + '" value="' + esc(entry.comment || '') + '"></td>';
+                cells += '<td' + rs + '><input type="text" data-json-seed-key="ring_comment" class="' + ringInputClass('ring-comment', entryHighlight && entryHighlight.comment) + '" value="' + esc(entry.comment || '') + '"></td>';
                 if (showRemoveButton) cells += '<td' + rs + '><button type="button" class="outline secondary remove-entry" onclick="removeRingEntry(' + ei + ')">&times;</button></td>';
             }
 
@@ -748,6 +756,7 @@ function applyCueRules() {
 function refreshMediaDependentUi() {
     applyMediaFieldVisibility();
     applyCueRules();
+    saveRingFromDom();
     renderRingEntries();
     fitRingColumns();
     renderLayerbreaks();
@@ -1301,6 +1310,7 @@ function setDumpLogTextareaState(textarea, uploaded) {
 
 function resetDumpLogInput(textarea) {
     textarea.value = '';
+    textarea.dumpLogZipArchive = null;
     setDumpLogTextareaState(textarea, false);
     autoExpand(textarea);
 
@@ -1468,6 +1478,226 @@ function enableAddMinimalFieldsForSubmit(form) {
     });
 }
 
+var MAX_DUMP_LOG_ZIP_SIZE = 10 * 1024 * 1024;
+var MAX_DUMP_LOG_FILE_SIZE = 3 * 1024 * 1024;
+
+function hasFileExtension(file, extension) {
+    return file.name.toLowerCase().endsWith(extension);
+}
+
+function findZipFiles(bytes, matchesFile) {
+    var matches = [];
+    fflate.unzipSync(bytes, {
+        filter: function (file) {
+            if (matchesFile(file)) matches.push(file);
+            return false;
+        }
+    });
+    return matches;
+}
+
+function extractZipFiles(bytes, files) {
+    var names = Object.create(null);
+    files.forEach(function (file) {
+        names[file.name] = true;
+    });
+    return fflate.unzipSync(bytes, {
+        filter: function (file) {
+            return !!names[file.name];
+        }
+    });
+}
+
+function applyDumpLogJsonField(name, value, replace) {
+    var form = document.getElementById('disc-edit-form');
+    var controls = form ? Array.prototype.filter.call(
+        form.querySelectorAll('[name], [data-json-seed-key]'),
+        function (control) {
+            return control.name === name || control.getAttribute('data-json-seed-key') === name;
+        }
+    ) : [];
+    if (!controls.length || controls[0].hasAttribute('data-no-json-seed')) return 0;
+
+    if (Array.isArray(value)) {
+        if (controls[0].type === 'checkbox') {
+            if (!value.length || controls.some(function (item) { return item.checked; })) return 0;
+            return value.reduce(function (applied, item) {
+                return applied + applyDumpLogJsonScalar(item, true, controls);
+            }, 0);
+        }
+        if (value.length !== 1) return 0;
+        value = value[0];
+    }
+
+    return applyDumpLogJsonScalar(value, replace, controls);
+}
+
+function applyDumpLogJsonScalar(value, replace, controls) {
+    if (value === null || value === undefined || typeof value === 'object'
+        || String(value).trim() === '') return 0;
+
+    var isChoice = controls[0].type === 'radio' || controls[0].type === 'checkbox';
+    if (!replace && controls.some(function (item) {
+        return isChoice ? item.checked : (item.value || '').trim() !== '';
+    })) {
+        return 0;
+    }
+
+    var text = String(value);
+    var control = isChoice
+        ? controls.find(function (item) { return item.value === text; })
+        : controls[0];
+    if (!control || control.checked) return 0;
+    if (isChoice) {
+        control.checked = true;
+    } else {
+        if (control.tagName === 'SELECT'
+            && !Array.prototype.some.call(control.options, function (option) {
+                return option.value === text && !option.hidden && !option.disabled;
+            })) {
+            return 0;
+        }
+        control.value = text;
+    }
+    control.dispatchEvent(new Event('input', { bubbles: true }));
+    control.dispatchEvent(new Event('change', { bubbles: true }));
+    fitInlineGroupForInput(control);
+    return 1;
+}
+
+function collectDumpLogJsonFields(data, valuesByName) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    Object.keys(data).forEach(function (name) {
+        var value = data[name];
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            collectDumpLogJsonFields(value, valuesByName);
+        } else if (Array.isArray(value) && value.length === 1
+            && value[0] && typeof value[0] === 'object') {
+            collectDumpLogJsonFields(value[0], valuesByName);
+        } else {
+            if (!valuesByName[name]) valuesByName[name] = [];
+            valuesByName[name].push(value);
+        }
+    });
+}
+
+function parseDumpLogZipJson(bytes) {
+    try {
+        var files = findZipFiles(bytes, function (file) {
+            return hasFileExtension(file, '.json');
+        });
+        if (files.length !== 1 || files[0].originalSize > MAX_DUMP_LOG_FILE_SIZE) return null;
+        var extracted = extractZipFiles(bytes, files);
+        return JSON.parse(fflate.strFromU8(extracted[files[0].name]));
+    } catch (_error) {
+        return null;
+    }
+}
+
+function applyDumpLogJsonText(valuesByName) {
+    var textarea = document.querySelector('textarea[name="dump_log"]');
+    if (!textarea) return 0;
+    var values = valuesByName.dump_log || [];
+    var value = values.length ? values[0] : null;
+    if (value === null || value === undefined) {
+        values = valuesByName.dumping_program || [];
+        value = values.length ? values[0] : null;
+    }
+    if (Array.isArray(value)) {
+        if (value.length !== 1) return 0;
+        value = value[0];
+    }
+    if (value === null || value === undefined || typeof value === 'object'
+        || String(value).trim() === '') return 0;
+
+    textarea.dumpLogZipArchive = null;
+    textarea.value = String(value);
+    setDumpLogTextareaState(textarea, false);
+    setDumpLogControls('ready');
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    return 1;
+}
+
+function applyDumpLogZipJson(data, pasteDumpLog) {
+    try {
+        var valuesByName = Object.create(null);
+        collectDumpLogJsonFields(data, valuesByName);
+        var applied = 0;
+        ['system_code', 'media_type'].forEach(function (name) {
+            (valuesByName[name] || []).forEach(function (value) {
+                applied += applyDumpLogJsonField(name, value, true);
+            });
+        });
+        if (pasteDumpLog) {
+            applied += applyDumpLogJsonText(valuesByName);
+        }
+        var form = document.getElementById('disc-edit-form');
+        var visited = Object.create(null);
+        if (form) form.querySelectorAll('[name], [data-json-seed-key]').forEach(function (control) {
+            var name = control.getAttribute('data-json-seed-key') || control.name;
+            if (!name || name === 'system_code' || name === 'media_type'
+                || name === 'dump_log' || name === 'dumping_program' || visited[name]) return;
+            visited[name] = true;
+            (valuesByName[name] || []).forEach(function (value) {
+                applied += applyDumpLogJsonField(name, value);
+            });
+        });
+        return applied;
+    } catch (_error) {
+        return 0;
+    }
+}
+
+function applyDumpLogZipFields(bytes) {
+    var fields = [
+        { name: 'dmi', extension: '.manufacturer', size: 2052 },
+        { name: 'pic', extension: '.physical', size: 2052 },
+        { name: 'bca', extension: '.bca', minSize: 16, maxSize: 192 }
+    ];
+    try {
+        var entries = findZipFiles(bytes, function (file) {
+            return fields.some(function (field) {
+                return hasFileExtension(file, field.extension);
+            });
+        });
+        var selected = [];
+        fields.forEach(function (field) {
+            var control = document.querySelector('[name="' + field.name + '"]');
+            var matches = entries.filter(function (file) {
+                return hasFileExtension(file, field.extension);
+            });
+            if (!control || control.disabled || matches.length !== 1) return;
+            var file = matches[0];
+            if ((field.size !== undefined && file.originalSize !== field.size)
+                || (field.minSize !== undefined && file.originalSize < field.minSize)
+                || (field.maxSize !== undefined && file.originalSize > field.maxSize)) {
+                return;
+            }
+            selected.push({ name: field.name, file: file });
+        });
+
+        var applied = 0;
+        selected.forEach(function (item) {
+            try {
+                var control = document.querySelector('[name="' + item.name + '"]');
+                if (!control || control.disabled) return;
+                var extracted = extractZipFiles(bytes, [item.file]);
+                var data = extracted[item.file.name];
+                if (!data) return;
+                var hex = Array.prototype.map.call(data, function (byte) {
+                    return byte.toString(16).padStart(2, '0').toUpperCase();
+                }).join(' ');
+                applied += applyParsedField(item.name, hex);
+            } catch (_error) {
+                // A malformed optional sidecar should not block the other fields.
+            }
+        });
+        return applied;
+    } catch (_error) {
+        return 0;
+    }
+}
+
 function initDumpLogDragDrop() {
     var textarea = document.querySelector('textarea[name="dump_log"]');
     var fillButton = document.getElementById('dump-log-fill-btn');
@@ -1475,24 +1705,97 @@ function initDumpLogDragDrop() {
     var fileInput = document.getElementById('dump-log-file-input');
     if (!textarea || !fillButton) return;
 
+    var latestUploadId = 0;
+
+    function rejectUploadWhileParsing() {
+        if (!fillButton.disabled) return false;
+        setDumpLogFillStatus('Wait for the current log to finish parsing before uploading another.');
+        return true;
+    }
+
+    function useUploadedLog(text, zipArchive, uploadId) {
+        if (uploadId !== latestUploadId || rejectUploadWhileParsing()) return;
+        textarea.value = text;
+        textarea.dumpLogZipArchive = zipArchive;
+        setDumpLogTextareaState(textarea, true);
+        fillButton.click();
+    }
+
     function loadDumpLogFile(file) {
-        if (!file) return;
-        if (!file.name.toLowerCase().endsWith('.log')) {
-            setDumpLogFillStatus('Only redumper .log files are supported.');
+        // Validate before parsing ZIP
+        if (!file || rejectUploadWhileParsing()) return;
+        var uploadId = ++latestUploadId;
+        var extension = file.name.toLowerCase().split('.').pop();
+        if (extension !== 'log' && extension !== 'zip') {
+            setDumpLogFillStatus('Only redumper .log and .zip files are supported.');
             return;
         }
-        if (file.size > 3 * 1024 * 1024) {
+        if (extension === 'zip' && file.size >= MAX_DUMP_LOG_ZIP_SIZE) {
+            setDumpLogFillStatus('ZIP is too large to safely extract in browser!');
+            return;
+        }
+        if (extension === 'log' && file.size > MAX_DUMP_LOG_FILE_SIZE) {
             setDumpLogFillStatus('Log file is too large.');
             return;
         }
+
+        if (extension === 'zip') {
+            file.arrayBuffer().then(function (buffer) {
+                if (uploadId !== latestUploadId || rejectUploadWhileParsing()) return;
+                var bytes = new Uint8Array(buffer);
+                var logs = findZipFiles(bytes, function (file) {
+                    return hasFileExtension(file, '.log');
+                });
+                if (logs.length > 1) {
+                    setDumpLogFillStatus('ZIP files may contain at most one .log file.');
+                    return;
+                }
+                if (logs.length === 0) {
+                    var seed = parseDumpLogZipJson(bytes);
+                    if (!seed || typeof seed !== 'object' || Array.isArray(seed)) {
+                        setDumpLogFillStatus('Log ZIP without a Redumper .log must contain a seed .json file.');
+                        return;
+                    }
+                    textarea.dumpLogZipArchive = null;
+                    setDumpLogTextareaState(textarea, false);
+                    setDumpLogControls('ready');
+                    var seeded = applyDumpLogZipJson(seed, true);
+                    seeded += applyDumpLogZipFields(bytes);
+                    setDumpLogFillStatus(seeded
+                        ? 'Filled ' + seeded + ' field(s) from the ZIP. Redumper Log parsing was not run.'
+                        : 'No supported values were found in the seed JSON.');
+                    return;
+                }
+                if (logs[0].originalSize > MAX_DUMP_LOG_FILE_SIZE) {
+                    setDumpLogFillStatus('The log file inside the ZIP is too large.');
+                    return;
+                }
+                var logFiles = extractZipFiles(bytes, logs);
+                var logBytes = logFiles[logs[0].name];
+                if (!logBytes) throw new Error('Could not extract the log file from the ZIP.');
+                useUploadedLog(
+                    fflate.strFromU8(logBytes),
+                    { bytes: bytes },
+                    uploadId
+                );
+            }).catch(function (error) {
+                if (uploadId === latestUploadId) {
+                    setDumpLogFillStatus(error && error.message
+                        ? error.message
+                        : 'Could not read the ZIP file.');
+                }
+            });
+            return;
+        }
+
         var reader = new FileReader();
         reader.onload = function (ev) {
-            textarea.value = ev.target.result;
-            setDumpLogTextareaState(textarea, true);
-            fillButton.click();
+            useUploadedLog(ev.target.result, null, uploadId);
         };
         reader.onerror = function () {
-            setDumpLogFillStatus('Failed to read the selected log file.');
+            if (uploadId === latestUploadId) {
+                setDumpLogFillStatus('Failed to read the selected log file.');
+            }
         };
         reader.readAsText(file);
     }
@@ -1525,6 +1828,7 @@ function initDumpLogFill() {
     if (!button || !textarea) return;
 
     textarea.addEventListener('input', function () {
+        textarea.dumpLogZipArchive = null;
         if (!clearButton || clearButton.hidden || textarea.readOnly) return;
         setDumpLogControls('ready');
         clearDumpLogSession();
@@ -1546,6 +1850,9 @@ function initDumpLogFill() {
             textarea.focus();
             return;
         }
+        var zipArchive = textarea.dumpLogZipArchive || null;
+        textarea.dumpLogZipArchive = null;
+        var requestBody = JSON.stringify({ log: textarea.value });
         setDumpLogControls('busy');
 
         var csrfMeta = document.querySelector('meta[name="csrf-token"]');
@@ -1558,7 +1865,7 @@ function initDumpLogFill() {
                 'Content-Type': 'application/json',
                 'X-CSRF-Token': csrfToken || ''
             },
-            body: JSON.stringify({ log: textarea.value })
+            body: requestBody
         }).then(function (response) {
             if (response.status === 422) {
                 return response.json().then(function (data) {
@@ -1578,18 +1885,43 @@ function initDumpLogFill() {
             return response.json();
         }).then(function (data) {
             var applied = applyParsedRedumperLog(data);
+            var warningMessage = '';
+            if (zipArchive) {
+                var seed = parseDumpLogZipJson(zipArchive.bytes);
+                if (seed && typeof seed === 'object' && !Array.isArray(seed)) {
+                    // Warn if seed JSON differs from redumper log parsing
+                    if (data.system_code && String(data.system_code).trim()) {
+                        var seedValues = Object.create(null);
+                        collectDumpLogJsonFields(seed, seedValues);
+                        var seedSystem = seedValues.system_code;
+                        var seedMedia = seedValues.media_type;
+                        var seedSystemValue = seedSystem && seedSystem[seedSystem.length - 1];
+                        var seedMediaValue = seedMedia && seedMedia[seedMedia.length - 1];
+                        var differs = (seedSystemValue
+                            && String(seedSystemValue) !== String(data.system_code))
+                            || (data.media_type && seedMediaValue
+                                && String(seedMediaValue) !== String(data.media_type));
+                        if (differs) {
+                            warningMessage = ' Warning: Set to ' + (seedSystemValue || data.system_code) + ' ' + (seedMediaValue || data.media_type || '')
+                                + ' but Redumper log suggests ' + data.system_code + ' ' + (data.media_type || '');
+                        }
+                    }
+                    applied += applyDumpLogZipJson(seed, false);
+                }
+                applied += applyDumpLogZipFields(zipArchive.bytes);
+            }
             if (applied === 0) {
                 if (textarea.classList.contains('dump-log-scrollable')) {
                     setDumpLogControls('loaded');
                 } else {
                     setDumpLogControls('ready');
                 }
-                setDumpLogFillStatus('No supported values were found.');
+                setDumpLogFillStatus('No supported values were found.' + warningMessage);
                 return;
             }
 
             setDumpLogControls('loaded');
-            var message = 'Filled ' + applied + (applied === 1 ? ' field.' : ' fields.');
+            var message = 'Filled ' + applied + (applied === 1 ? ' field.' : ' fields.') + warningMessage;
             var form = document.getElementById('disc-edit-form');
             var validateButton = form
                 ? form.querySelector('button[type="submit"][name="action"][value="validate"]')
