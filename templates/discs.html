@@ -271,10 +271,19 @@
                 <span>Additional Mould</span>
                 <input type="text" name="additional_mould" value="{{ filter_additional_mould }}">
             </label>
-            <label class="advanced-search-row">
+            <div class="advanced-search-row">
                 <span>Offset</span>
-                <input type="text" name="offset" value="{{ filter_offset }}">
-            </label>
+                <div class="count-range-controls">
+                    <input type="number" id="offset-min" name="offset_min" value="{{ filter_offset_min }}" step="1" placeholder="Min" aria-label="Minimum offset">
+                    <span class="count-range-separator" aria-hidden="true">to</span>
+                    <input type="number" id="offset-max" name="offset_max" value="{{ filter_offset_max }}" step="1" placeholder="Max" aria-label="Maximum offset" {% if offset_exact %}disabled{% endif %}>
+                    <input type="hidden" id="offset-max-mirror" name="offset_max" value="{{ filter_offset_max }}" {% if !offset_exact %}disabled{% endif %}>
+                    <label class="count-exact-toggle" for="offset-exact">
+                        <input type="checkbox" id="offset-exact" {% if offset_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
             <div class="advanced-search-actions">
                 <button type="submit">Apply</button>
             </div>
@@ -377,7 +386,8 @@
                     {% if !filter_toolstamp.is_empty() %}<input type="hidden" name="toolstamp" value="{{ filter_toolstamp }}">{% endif %}
                     {% if !filter_mould_sid.is_empty() %}<input type="hidden" name="mould_sid" value="{{ filter_mould_sid }}">{% endif %}
                     {% if !filter_additional_mould.is_empty() %}<input type="hidden" name="additional_mould" value="{{ filter_additional_mould }}">{% endif %}
-                    {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}
+                    {% if !filter_offset_min.is_empty() %}<input type="hidden" name="offset_min" value="{{ filter_offset_min }}">{% endif %}
+                    {% if !filter_offset_max.is_empty() %}<input type="hidden" name="offset_max" value="{{ filter_offset_max }}">{% endif %}
                     {% if !filter_volume_label.is_empty() %}<input type="hidden" name="volume_label" value="{{ filter_volume_label }}">{% endif %}
                     {% if volume_label_exact %}<input type="hidden" name="volume_label_exact" value="1">{% endif %}
                     {% if !filter_internal_serial.is_empty() %}<input type="hidden" name="internal_serial" value="{{ filter_internal_serial }}">{% endif %}
@@ -498,7 +508,8 @@
                     {% if !filter_toolstamp.is_empty() %}<input type="hidden" name="toolstamp" value="{{ filter_toolstamp }}">{% endif %}
                     {% if !filter_mould_sid.is_empty() %}<input type="hidden" name="mould_sid" value="{{ filter_mould_sid }}">{% endif %}
                     {% if !filter_additional_mould.is_empty() %}<input type="hidden" name="additional_mould" value="{{ filter_additional_mould }}">{% endif %}
-                    {% if !filter_offset.is_empty() %}<input type="hidden" name="offset" value="{{ filter_offset }}">{% endif %}
+                    {% if !filter_offset_min.is_empty() %}<input type="hidden" name="offset_min" value="{{ filter_offset_min }}">{% endif %}
+                    {% if !filter_offset_max.is_empty() %}<input type="hidden" name="offset_max" value="{{ filter_offset_max }}">{% endif %}
                     {% if !filter_volume_label.is_empty() %}<input type="hidden" name="volume_label" value="{{ filter_volume_label }}">{% endif %}
                     {% if volume_label_exact %}<input type="hidden" name="volume_label_exact" value="1">{% endif %}
                     {% if !filter_internal_serial.is_empty() %}<input type="hidden" name="internal_serial" value="{{ filter_internal_serial }}">{% endif %}
@@ -631,6 +642,7 @@
 
         initExactRange('tracks');
         initExactRange('errors');
+        initExactRange('offset');
 
         function syncEdcFilter(changed) {
             if (!edcValue) return;
