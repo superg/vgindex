@@ -397,7 +397,7 @@
         <thead>
             <tr>
                 {% if current_user.is_some() %}
-                <th class="dumped-by-me-col" title="Dumped by me"><a href="{{ self.dumped_filter_url() }}">{% if dumped_filter == "dumped" %}✔{% else if dumped_filter == "not_dumped" %}✘{% else %}👤{% endif %}</a></th>
+                <th class="dumped-by-me-col" title="Dumped by me"><a href="{{ self.dumped_filter_url() }}">👤{% if dumped_filter == "dumped" %}✔{% endif %}{% if dumped_filter == "not_dumped" %}✘{% endif %}</a></th>
                 {% endif %}
                 <th class="region-col"><a href="{{ self.sort_url("region", next_region_order) }}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="title-col"><a href="{{ self.sort_url("title", next_title_order) }}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
