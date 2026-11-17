@@ -390,6 +390,7 @@ pub struct DiscsQuery {
     pub internal_serial_exact: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
+    pub dumped_filter: Option<String>,
     #[serde(default, deserialize_with = "empty_string_as_none")]
     pub page: Option<i64>,
     pub dumper: Option<String>,
@@ -959,6 +960,19 @@ fn normalize_sort_order(order: Option<&str>) -> String {
     }
 }
 
+fn normalize_dumped_filter(filter: Option<&str>) -> String {
+    match filter
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "dumped" => "dumped".to_string(),
+        "not_dumped" => "not_dumped".to_string(),
+        _ => String::new(),
+    }
+}
+
 #[derive(Template)]
 #[template(path = "discs.html")]
 struct DiscsTemplate {
@@ -1030,6 +1044,7 @@ struct DiscsTemplate {
     next_page: i64,
     sort_column: String,
     sort_order: String,
+    dumped_filter: String,
     next_region_order: String,
     next_title_order: String,
     next_system_order: String,
@@ -1042,7 +1057,7 @@ struct DiscsTemplate {
 impl SiteConfig for DiscsTemplate {}
 
 impl DiscsTemplate {
-    fn url(&self, page: i64, letter: &str, sort: &str, order: &str) -> String {
+    fn url(&self, page: i64, letter: &str, sort: &str, order: &str, dumped_filter: &str) -> String {
         build_discs_url(DiscsUrlOptions {
             system: &self.filter_system,
             region: &self.filter_region,
@@ -1092,6 +1107,7 @@ impl DiscsTemplate {
             q: &self.filter_q,
             sort,
             order,
+            dumped_filter,
             page,
             advanced: self.advanced_explicit,
         })
@@ -1103,15 +1119,25 @@ impl DiscsTemplate {
             &self.filter_letter,
             &self.sort_column,
             &self.sort_order,
+            &self.dumped_filter,
         )
     }
 
     fn letter_url(&self, letter: &str) -> String {
-        self.url(1, letter, &self.sort_column, &self.sort_order)
+        self.url(1, letter, &self.sort_column, &self.sort_order, &self.dumped_filter)
     }
 
     fn sort_url(&self, sort: &str, order: &str) -> String {
-        self.url(1, &self.filter_letter, sort, order)
+        self.url(1, &self.filter_letter, sort, order, &self.dumped_filter)
+    }
+
+    fn dumped_filter_url(&self) -> String {
+        let next_filter = match self.dumped_filter.as_str() {
+            "dumped" => "not_dumped",
+            "not_dumped" => "",
+            _ => "dumped",
+        };
+        self.url(1, &self.filter_letter, &self.sort_column, &self.sort_order, next_filter)
     }
 }
 
@@ -1165,6 +1191,7 @@ struct DiscsUrlOptions<'a> {
     q: &'a str,
     sort: &'a str,
     order: &'a str,
+    dumped_filter: &'a str,
     page: i64,
     advanced: bool,
 }
@@ -1172,18 +1199,27 @@ struct DiscsUrlOptions<'a> {
 fn build_discs_count_cache_key(
     mut options: DiscsUrlOptions<'_>,
     member_protection_visibility: bool,
+    dumped_user_id: Option<i32>,
 ) -> String {
     options.sort = "title";
     options.order = "asc";
     options.page = 1;
     options.advanced = false;
+    let dumped_user_scope = if options.dumped_filter.is_empty() {
+        "none".to_string()
+    } else {
+        dumped_user_id
+            .map(|user_id| user_id.to_string())
+            .unwrap_or_else(|| "none".to_string())
+    };
     format!(
-        "protection_scope={}:{}",
+        "protection_scope={}:dumped_user_scope={}:{}",
         if member_protection_visibility {
             "member"
         } else {
             "public"
         },
+        dumped_user_scope,
         build_discs_url(options)
     )
 }
@@ -1268,6 +1304,7 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("q", options.q),
             ("sort", sort),
             ("order", order),
+            ("dumped_filter", options.dumped_filter),
             ("page", &page),
             ("advanced", advanced),
         ],
@@ -2015,7 +2052,6 @@ async fn discs_page(
         ));
     }
 
-    let where_sql = where_clauses.join(" AND ");
     let current_user_id = user.user().map(|u| u.id);
     let dumped_by_me_sql = if current_user_id.is_some() {
         bind_idx += 1;
@@ -2025,6 +2061,17 @@ async fn discs_page(
     } else {
         "FALSE".to_string()
     };
+    let dumped_filter = if user.is_logged_in() {
+        normalize_dumped_filter(query.dumped_filter.as_deref())
+    } else {
+        String::new()
+    };
+    match dumped_filter.as_str() {
+        "dumped" => where_clauses.push(dumped_by_me_sql.clone()),
+        "not_dumped" => where_clauses.push(format!("NOT ({dumped_by_me_sql})")),
+        _ => {}
+    }
+    let where_sql = where_clauses.join(" AND ");
 
     let sort_column = normalize_disc_sort(query.sort.as_deref());
     let sort_order_str = normalize_sort_order(query.order.as_deref());
@@ -2238,10 +2285,16 @@ async fn discs_page(
             q: &count_key_q,
             sort: &sort_column,
             order: &sort_order_str,
+            dumped_filter: &dumped_filter,
             page,
             advanced: advanced_explicit,
         },
         active_protection.is_some() && user.is_logged_in(),
+        if dumped_filter.is_empty() {
+            None
+        } else {
+            current_user_id
+        },
     );
     let mut cached_total_count = state.discs_cache.counts.get(&count_cache_key).await;
     let count_load_lock = if cached_total_count.is_none() {
@@ -2427,7 +2480,11 @@ async fn discs_page(
         bind_queries!(dumper_id);
     }
     if let Some(current_user_id) = current_user_id {
-        select_query = select_query.bind(current_user_id);
+        if dumped_filter.is_empty() {
+            select_query = select_query.bind(current_user_id);
+        } else {
+            bind_queries!(current_user_id);
+        }
     }
 
     let total_count = if let Some(count_query) = count_query {
@@ -2493,6 +2550,7 @@ async fn discs_page(
             q: &filter_q,
             sort: &sort_column,
             order: &sort_order_str,
+            dumped_filter: &dumped_filter,
             page: total_pages.max(1),
             advanced: advanced_explicit,
         }))
@@ -2641,6 +2699,7 @@ async fn discs_page(
             next_page: page + 1,
             sort_column: sort_column.clone(),
             sort_order: sort_order_str,
+            dumped_filter,
             next_region_order: next_order("region"),
             next_title_order: next_order("title"),
             next_system_order: next_order("system"),
@@ -3346,6 +3405,7 @@ mod tests {
                 q: "Game Name",
                 sort: "status",
                 order: "desc",
+                dumped_filter: "",
                 page: 2,
                 advanced: true,
             }),
@@ -3930,6 +3990,7 @@ mod tests {
                 ..Default::default()
             },
             false,
+            None,
         );
         let navigated = build_discs_count_cache_key(
             DiscsUrlOptions {
@@ -3941,6 +4002,7 @@ mod tests {
                 ..Default::default()
             },
             false,
+            None,
         );
         let member = build_discs_count_cache_key(
             DiscsUrlOptions {
@@ -3949,6 +4011,7 @@ mod tests {
                 ..Default::default()
             },
             true,
+            None,
         );
 
         assert_eq!(first, navigated);
