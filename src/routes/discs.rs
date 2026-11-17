@@ -738,7 +738,11 @@ fn scalar_text_null_clause(field: ScalarTextField) -> String {
 }
 
 fn scalar_text_any_clause(field: ScalarTextField) -> String {
-    format!("d.{} IS NOT NULL", field.column())
+    let predicate = format!("d.{} IS NOT NULL", field.column());
+    match field.capability() {
+        Some(capability) => format!("(s.{capability} AND {predicate})"),
+        None => predicate,
+    }
 }
 
 fn add_scalar_text_clauses(
@@ -805,7 +809,11 @@ fn array_text_empty_clause(field: ArrayTextField) -> String {
 }
 
 fn array_text_any_clause(field: ArrayTextField) -> String {
-    format!("COALESCE(cardinality(d.{}), 0) > 0", field.column())
+    format!(
+        "(s.{} AND COALESCE(cardinality(d.{}), 0) > 0)",
+        field.capability(),
+        field.column()
+    )
 }
 
 fn add_array_text_clauses(
@@ -2558,12 +2566,18 @@ async fn discs_page_response(
     }
 
     let count_requires_system_join = active_title_foreign.is_some()
+        || title_foreign_mode == TextMatchMode::Any
         || active_disc_number.is_some()
         || active_disc_title.is_some()
+        || disc_title_mode == TextMatchMode::Any
         || active_disc_title_foreign.is_some()
+        || disc_title_foreign_mode == TextMatchMode::Any
         || active_serial.is_some()
+        || serial_mode == TextMatchMode::Any
         || active_edition.is_some()
+        || edition_mode == TextMatchMode::Any
         || active_barcode.is_some()
+        || barcode_mode == TextMatchMode::Any
         || filter_errors_min_value.is_some()
         || filter_errors_max_value.is_some()
         || !filter_edc.is_empty()
