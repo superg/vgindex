@@ -89,22 +89,24 @@
             </label>
             <div class="advanced-search-row">
                 <span id="title-filter-label">Title</span>
-                <div class="text-exact-controls">
+                <div class="text-match-controls">
                     <input type="text" id="title-filter" name="title" value="{{ filter_title }}" aria-labelledby="title-filter-label">
-                    <label class="text-exact-toggle" for="title-exact">
-                        <input type="checkbox" id="title-exact" name="title_exact" value="1" data-requires-nonblank="title" {% if title_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                    <select name="title_mode" class="text-match-mode" data-target-input="title-filter" aria-label="Title match mode" data-requires-nonblank="title">
+                        <option value="" {% if title_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if title_mode == "exact" %}selected{% endif %}>Exact</option>
+                    </select>
                 </div>
             </div>
             <div class="advanced-search-row">
                 <span id="title-foreign-filter-label">Foreign Title</span>
-                <div class="text-exact-controls">
-                    <input type="text" id="title-foreign-filter" name="title_foreign" value="{{ filter_title_foreign }}" aria-labelledby="title-foreign-filter-label">
-                    <label class="text-exact-toggle" for="title-foreign-exact">
-                        <input type="checkbox" id="title-foreign-exact" name="title_foreign_exact" value="1" {% if title_foreign_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <div class="text-match-controls">
+                    <input type="text" id="title-foreign-filter" name="title_foreign" value="{{ filter_title_foreign }}" aria-labelledby="title-foreign-filter-label" {% if title_foreign_mode == "null" || title_foreign_mode == "any" %}disabled{% endif %}>
+                    <select name="title_foreign_mode" class="text-match-mode" data-target-input="title-foreign-filter" aria-label="Foreign Title match mode">
+                        <option value="" {% if title_foreign_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if title_foreign_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if title_foreign_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if title_foreign_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <label class="advanced-search-row">
@@ -113,82 +115,98 @@
             </label>
             <div class="advanced-search-row">
                 <span id="disc-title-filter-label">Disc Title</span>
-                <div class="text-exact-controls">
-                    <input type="text" id="disc-title-filter" name="disc_title" value="{{ filter_disc_title }}" aria-labelledby="disc-title-filter-label">
-                    <label class="text-exact-toggle" for="disc-title-exact">
-                        <input type="checkbox" id="disc-title-exact" name="disc_title_exact" value="1" {% if disc_title_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <div class="text-match-controls">
+                    <input type="text" id="disc-title-filter" name="disc_title" value="{{ filter_disc_title }}" aria-labelledby="disc-title-filter-label" {% if disc_title_mode == "null" || disc_title_mode == "any" %}disabled{% endif %}>
+                    <select name="disc_title_mode" class="text-match-mode" data-target-input="disc-title-filter" aria-label="Disc Title match mode">
+                        <option value="" {% if disc_title_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if disc_title_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if disc_title_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if disc_title_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <div class="advanced-search-row">
                 <span id="disc-title-foreign-filter-label">Foreign Disc Title</span>
-                <div class="text-exact-controls">
-                    <input type="text" id="disc-title-foreign-filter" name="disc_title_foreign" value="{{ filter_disc_title_foreign }}" aria-labelledby="disc-title-foreign-filter-label">
-                    <label class="text-exact-toggle" for="disc-title-foreign-exact">
-                        <input type="checkbox" id="disc-title-foreign-exact" name="disc_title_foreign_exact" value="1" {% if disc_title_foreign_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <div class="text-match-controls">
+                    <input type="text" id="disc-title-foreign-filter" name="disc_title_foreign" value="{{ filter_disc_title_foreign }}" aria-labelledby="disc-title-foreign-filter-label" {% if disc_title_foreign_mode == "null" || disc_title_foreign_mode == "any" %}disabled{% endif %}>
+                    <select name="disc_title_foreign_mode" class="text-match-mode" data-target-input="disc-title-foreign-filter" aria-label="Foreign Disc Title match mode">
+                        <option value="" {% if disc_title_foreign_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if disc_title_foreign_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if disc_title_foreign_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if disc_title_foreign_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <div class="advanced-search-row">
                 <span id="filename-suffix-filter-label">Filename Suffix</span>
-                <div class="text-exact-controls">
-                    <input type="text" id="filename-suffix-filter" name="filename_suffix" value="{{ filter_filename_suffix }}" aria-labelledby="filename-suffix-filter-label">
-                    <label class="text-exact-toggle" for="filename-suffix-exact">
-                        <input type="checkbox" id="filename-suffix-exact" name="filename_suffix_exact" value="1" {% if filename_suffix_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <div class="text-match-controls">
+                    <input type="text" id="filename-suffix-filter" name="filename_suffix" value="{{ filter_filename_suffix }}" aria-labelledby="filename-suffix-filter-label" {% if filename_suffix_mode == "null" || filename_suffix_mode == "any" %}disabled{% endif %}>
+                    <select name="filename_suffix_mode" class="text-match-mode" data-target-input="filename-suffix-filter" aria-label="Filename Suffix match mode">
+                        <option value="" {% if filename_suffix_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if filename_suffix_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if filename_suffix_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if filename_suffix_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <div class="advanced-search-row">
                 <span id="serial-filter-label">Disc Serial</span>
-                <div class="text-exact-controls">
-                    <input type="text" id="serial-filter" name="serial" value="{{ filter_serial }}" aria-labelledby="serial-filter-label">
-                    <label class="text-exact-toggle" for="serial-exact">
-                        <input type="checkbox" id="serial-exact" name="serial_exact" value="1" {% if serial_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <div class="text-match-controls">
+                    <input type="text" id="serial-filter" name="serial" value="{{ filter_serial }}" aria-labelledby="serial-filter-label" {% if serial_mode == "null" || serial_mode == "any" %}disabled{% endif %}>
+                    <select name="serial_mode" class="text-match-mode" data-target-input="serial-filter" aria-label="Disc Serial match mode">
+                        <option value="" {% if serial_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if serial_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if serial_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if serial_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <div class="advanced-search-row">
                 <span id="edition-filter-label">Edition</span>
-                <div class="text-exact-controls">
-                    <input type="text" id="edition-filter" name="edition" value="{{ filter_edition }}" aria-labelledby="edition-filter-label">
-                    <label class="text-exact-toggle" for="edition-exact">
-                        <input type="checkbox" id="edition-exact" name="edition_exact" value="1" {% if edition_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <div class="text-match-controls">
+                    <input type="text" id="edition-filter" name="edition" value="{{ filter_edition }}" aria-labelledby="edition-filter-label" {% if edition_mode == "null" || edition_mode == "any" %}disabled{% endif %}>
+                    <select name="edition_mode" class="text-match-mode" data-target-input="edition-filter" aria-label="Edition match mode">
+                        <option value="" {% if edition_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if edition_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if edition_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if edition_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <div class="advanced-search-row">
                 <span id="barcode-filter-label">Barcode</span>
-                <div class="text-exact-controls">
-                    <input type="text" id="barcode-filter" name="barcode" value="{{ filter_barcode }}" aria-labelledby="barcode-filter-label">
-                    <label class="text-exact-toggle" for="barcode-exact">
-                        <input type="checkbox" id="barcode-exact" name="barcode_exact" value="1" {% if barcode_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <div class="text-match-controls">
+                    <input type="text" id="barcode-filter" name="barcode" value="{{ filter_barcode }}" aria-labelledby="barcode-filter-label" {% if barcode_mode == "null" || barcode_mode == "any" %}disabled{% endif %}>
+                    <select name="barcode_mode" class="text-match-mode" data-target-input="barcode-filter" aria-label="Barcode match mode">
+                        <option value="" {% if barcode_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if barcode_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if barcode_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if barcode_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <div class="advanced-search-row">
                 <span id="volume-label-filter-label">Volume Label</span>
-                <div class="text-exact-controls">
-                    <input type="text" id="volume-label-filter" name="volume_label" value="{{ filter_volume_label }}" aria-labelledby="volume-label-filter-label">
-                    <label class="text-exact-toggle" for="volume-label-exact">
-                        <input type="checkbox" id="volume-label-exact" name="volume_label_exact" value="1" {% if volume_label_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <div class="text-match-controls">
+                    <input type="text" id="volume-label-filter" name="volume_label" value="{{ filter_volume_label }}" aria-labelledby="volume-label-filter-label" {% if volume_label_mode == "null" || volume_label_mode == "any" %}disabled{% endif %}>
+                    <select name="volume_label_mode" class="text-match-mode" data-target-input="volume-label-filter" aria-label="Volume Label match mode">
+                        <option value="" {% if volume_label_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if volume_label_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if volume_label_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if volume_label_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <div class="advanced-search-row">
                 <span id="internal-serial-filter-label">Internal Serial</span>
-                <div class="text-exact-controls">
-                    <input type="text" id="internal-serial-filter" name="internal_serial" value="{{ filter_internal_serial }}" aria-labelledby="internal-serial-filter-label">
-                    <label class="text-exact-toggle" for="internal-serial-exact">
-                        <input type="checkbox" id="internal-serial-exact" name="internal_serial_exact" value="1" {% if internal_serial_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <div class="text-match-controls">
+                    <input type="text" id="internal-serial-filter" name="internal_serial" value="{{ filter_internal_serial }}" aria-labelledby="internal-serial-filter-label" {% if internal_serial_mode == "null" || internal_serial_mode == "any" %}disabled{% endif %}>
+                    <select name="internal_serial_mode" class="text-match-mode" data-target-input="internal-serial-filter" aria-label="Internal Serial match mode">
+                        <option value="" {% if internal_serial_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if internal_serial_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if internal_serial_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if internal_serial_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <label class="advanced-search-row">
@@ -349,24 +367,24 @@
                     <input type="hidden" name="order" value="{{ sort_order }}" data-default-value="asc">
                     {% if current_user.is_some() %}<input type="hidden" name="dumped_filter" value="{{ dumped_filter }}">{% endif %}
                     {% if !filter_title.is_empty() %}<input type="hidden" name="title" value="{{ filter_title }}">{% endif %}
-                    {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
+                    {% if !title_mode.is_empty() %}<input type="hidden" name="title_mode" value="{{ title_mode }}">{% endif %}
                     {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}
-                    {% if title_foreign_exact %}<input type="hidden" name="title_foreign_exact" value="1">{% endif %}
+                    {% if !title_foreign_mode.is_empty() %}<input type="hidden" name="title_foreign_mode" value="{{ title_foreign_mode }}">{% endif %}
                     {% if !filter_disc_number.is_empty() %}<input type="hidden" name="disc_number" value="{{ filter_disc_number }}">{% endif %}
                     {% if !filter_disc_title.is_empty() %}<input type="hidden" name="disc_title" value="{{ filter_disc_title }}">{% endif %}
-                    {% if disc_title_exact %}<input type="hidden" name="disc_title_exact" value="1">{% endif %}
+                    {% if !disc_title_mode.is_empty() %}<input type="hidden" name="disc_title_mode" value="{{ disc_title_mode }}">{% endif %}
                     {% if !filter_disc_title_foreign.is_empty() %}<input type="hidden" name="disc_title_foreign" value="{{ filter_disc_title_foreign }}">{% endif %}
-                    {% if disc_title_foreign_exact %}<input type="hidden" name="disc_title_foreign_exact" value="1">{% endif %}
+                    {% if !disc_title_foreign_mode.is_empty() %}<input type="hidden" name="disc_title_foreign_mode" value="{{ disc_title_foreign_mode }}">{% endif %}
                     {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
-                    {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
+                    {% if !serial_mode.is_empty() %}<input type="hidden" name="serial_mode" value="{{ serial_mode }}">{% endif %}
                     {% if !filter_filename_suffix.is_empty() %}<input type="hidden" name="filename_suffix" value="{{ filter_filename_suffix }}">{% endif %}
-                    {% if filename_suffix_exact %}<input type="hidden" name="filename_suffix_exact" value="1">{% endif %}
+                    {% if !filename_suffix_mode.is_empty() %}<input type="hidden" name="filename_suffix_mode" value="{{ filename_suffix_mode }}">{% endif %}
                     {% if !filter_edition.is_empty() %}
                     <input type="hidden" name="edition" value="{{ filter_edition }}">
                     {% endif %}
-                    {% if edition_exact %}<input type="hidden" name="edition_exact" value="1">{% endif %}
+                    {% if !edition_mode.is_empty() %}<input type="hidden" name="edition_mode" value="{{ edition_mode }}">{% endif %}
                     {% if !filter_barcode.is_empty() %}<input type="hidden" name="barcode" value="{{ filter_barcode }}">{% endif %}
-                    {% if barcode_exact %}<input type="hidden" name="barcode_exact" value="1">{% endif %}
+                    {% if !barcode_mode.is_empty() %}<input type="hidden" name="barcode_mode" value="{{ barcode_mode }}">{% endif %}
                     {% if !filter_universal_hash.is_empty() %}<input type="hidden" name="universal_hash" value="{{ filter_universal_hash }}">{% endif %}
                     {% if !filter_exe_date.is_empty() %}<input type="hidden" name="exe_date" value="{{ filter_exe_date }}">{% endif %}
                     {% if !filter_tracks_min.is_empty() %}<input type="hidden" name="tracks_min" value="{{ filter_tracks_min }}">{% endif %}
@@ -389,9 +407,9 @@
                     {% if !filter_offset_min.is_empty() %}<input type="hidden" name="offset_min" value="{{ filter_offset_min }}">{% endif %}
                     {% if !filter_offset_max.is_empty() %}<input type="hidden" name="offset_max" value="{{ filter_offset_max }}">{% endif %}
                     {% if !filter_volume_label.is_empty() %}<input type="hidden" name="volume_label" value="{{ filter_volume_label }}">{% endif %}
-                    {% if volume_label_exact %}<input type="hidden" name="volume_label_exact" value="1">{% endif %}
+                    {% if !volume_label_mode.is_empty() %}<input type="hidden" name="volume_label_mode" value="{{ volume_label_mode }}">{% endif %}
                     {% if !filter_internal_serial.is_empty() %}<input type="hidden" name="internal_serial" value="{{ filter_internal_serial }}">{% endif %}
-                    {% if internal_serial_exact %}<input type="hidden" name="internal_serial_exact" value="1">{% endif %}
+                    {% if !internal_serial_mode.is_empty() %}<input type="hidden" name="internal_serial_mode" value="{{ internal_serial_mode }}">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                     {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}
                 </form>
@@ -475,22 +493,22 @@
                     <input type="hidden" name="order" value="{{ sort_order }}" data-default-value="asc">
                     {% if current_user.is_some() %}<input type="hidden" name="dumped_filter" value="{{ dumped_filter }}">{% endif %}
                     {% if !filter_title.is_empty() %}<input type="hidden" name="title" value="{{ filter_title }}">{% endif %}
-                    {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
+                    {% if !title_mode.is_empty() %}<input type="hidden" name="title_mode" value="{{ title_mode }}">{% endif %}
                     {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}
-                    {% if title_foreign_exact %}<input type="hidden" name="title_foreign_exact" value="1">{% endif %}
+                    {% if !title_foreign_mode.is_empty() %}<input type="hidden" name="title_foreign_mode" value="{{ title_foreign_mode }}">{% endif %}
                     {% if !filter_disc_number.is_empty() %}<input type="hidden" name="disc_number" value="{{ filter_disc_number }}">{% endif %}
                     {% if !filter_disc_title.is_empty() %}<input type="hidden" name="disc_title" value="{{ filter_disc_title }}">{% endif %}
-                    {% if disc_title_exact %}<input type="hidden" name="disc_title_exact" value="1">{% endif %}
+                    {% if !disc_title_mode.is_empty() %}<input type="hidden" name="disc_title_mode" value="{{ disc_title_mode }}">{% endif %}
                     {% if !filter_disc_title_foreign.is_empty() %}<input type="hidden" name="disc_title_foreign" value="{{ filter_disc_title_foreign }}">{% endif %}
-                    {% if disc_title_foreign_exact %}<input type="hidden" name="disc_title_foreign_exact" value="1">{% endif %}
+                    {% if !disc_title_foreign_mode.is_empty() %}<input type="hidden" name="disc_title_foreign_mode" value="{{ disc_title_foreign_mode }}">{% endif %}
                     {% if !filter_serial.is_empty() %}<input type="hidden" name="serial" value="{{ filter_serial }}">{% endif %}
-                    {% if serial_exact %}<input type="hidden" name="serial_exact" value="1">{% endif %}
+                    {% if !serial_mode.is_empty() %}<input type="hidden" name="serial_mode" value="{{ serial_mode }}">{% endif %}
                     {% if !filter_filename_suffix.is_empty() %}<input type="hidden" name="filename_suffix" value="{{ filter_filename_suffix }}">{% endif %}
-                    {% if filename_suffix_exact %}<input type="hidden" name="filename_suffix_exact" value="1">{% endif %}
+                    {% if !filename_suffix_mode.is_empty() %}<input type="hidden" name="filename_suffix_mode" value="{{ filename_suffix_mode }}">{% endif %}
                     {% if !filter_edition.is_empty() %}<input type="hidden" name="edition" value="{{ filter_edition }}">{% endif %}
-                    {% if edition_exact %}<input type="hidden" name="edition_exact" value="1">{% endif %}
+                    {% if !edition_mode.is_empty() %}<input type="hidden" name="edition_mode" value="{{ edition_mode }}">{% endif %}
                     {% if !filter_barcode.is_empty() %}<input type="hidden" name="barcode" value="{{ filter_barcode }}">{% endif %}
-                    {% if barcode_exact %}<input type="hidden" name="barcode_exact" value="1">{% endif %}
+                    {% if !barcode_mode.is_empty() %}<input type="hidden" name="barcode_mode" value="{{ barcode_mode }}">{% endif %}
                     {% if !filter_universal_hash.is_empty() %}<input type="hidden" name="universal_hash" value="{{ filter_universal_hash }}">{% endif %}
                     {% if !filter_exe_date.is_empty() %}<input type="hidden" name="exe_date" value="{{ filter_exe_date }}">{% endif %}
                     {% if !filter_tracks_min.is_empty() %}<input type="hidden" name="tracks_min" value="{{ filter_tracks_min }}">{% endif %}
@@ -509,9 +527,9 @@
                     {% if !filter_offset_min.is_empty() %}<input type="hidden" name="offset_min" value="{{ filter_offset_min }}">{% endif %}
                     {% if !filter_offset_max.is_empty() %}<input type="hidden" name="offset_max" value="{{ filter_offset_max }}">{% endif %}
                     {% if !filter_volume_label.is_empty() %}<input type="hidden" name="volume_label" value="{{ filter_volume_label }}">{% endif %}
-                    {% if volume_label_exact %}<input type="hidden" name="volume_label_exact" value="1">{% endif %}
+                    {% if !volume_label_mode.is_empty() %}<input type="hidden" name="volume_label_mode" value="{{ volume_label_mode }}">{% endif %}
                     {% if !filter_internal_serial.is_empty() %}<input type="hidden" name="internal_serial" value="{{ filter_internal_serial }}">{% endif %}
-                    {% if internal_serial_exact %}<input type="hidden" name="internal_serial_exact" value="1">{% endif %}
+                    {% if !internal_serial_mode.is_empty() %}<input type="hidden" name="internal_serial_mode" value="{{ internal_serial_mode }}">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                     {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}
                 </form>
@@ -641,6 +659,18 @@
         initExactRange('tracks');
         initExactRange('errors');
         initExactRange('offset');
+
+        form.querySelectorAll('.text-match-mode').forEach(function(select) {
+            var input = document.getElementById(select.dataset.targetInput);
+            if (!input) return;
+
+            function syncTextMatchMode() {
+                input.disabled = select.value === 'null' || select.value === 'any';
+            }
+
+            select.addEventListener('change', syncTextMatchMode);
+            syncTextMatchMode();
+        });
 
         function syncEdcFilter(changed) {
             if (!edcValue) return;
