@@ -254,7 +254,9 @@ pub async fn submit_draft_submission(
 
     Ok(sqlx::query_as(
         "UPDATE disc_submissions
-         SET submission_comment = $1, target_disc_id = $2, changes = $3,
+         SET submission_comment = CASE WHEN $1::text IS NULL THEN submission_comment
+             ELSE concat_ws(E'\n\n---\n\n', NULLIF(submission_comment, ''), $1) END,
+             target_disc_id = $2, changes = $3,
              dump_log = $4, extra_upload_url = $5, status = 'Pending',
              submission_token = $6, submission_fingerprint = $7
          WHERE id = $8 AND submitter_id = $9
@@ -306,7 +308,9 @@ pub async fn save_draft_submission(
 
     Ok(sqlx::query_as(
         "UPDATE disc_submissions
-         SET submission_comment = $1, target_disc_id = $2, changes = $3,
+         SET submission_comment = CASE WHEN $1::text IS NULL THEN submission_comment
+             ELSE concat_ws(E'\n\n---\n\n', NULLIF(submission_comment, ''), $1) END,
+             target_disc_id = $2, changes = $3,
              dump_log = $4, extra_upload_url = $5,
              submission_token = $6, submission_fingerprint = $7
          WHERE id = $8 AND submitter_id = $9
@@ -1865,7 +1869,9 @@ pub async fn comment_submission(
 
     let result = sqlx::query(
         "UPDATE disc_submissions SET reviewer_id = $1,
-         review_comment = $2, reviewed_at = NOW()
+         review_comment = CASE WHEN $2::text IS NULL THEN review_comment
+             ELSE concat_ws(E'\n\n---\n\n', NULLIF(review_comment, ''), $2) END,
+         reviewed_at = NOW()
          WHERE id = $3 AND status = 'Pending'",
     )
     .bind(reviewer_id)
@@ -1893,7 +1899,9 @@ pub async fn reject_submission(
 
     let result = sqlx::query(
         "UPDATE disc_submissions SET status = 'Rejected', reviewer_id = $1,
-         review_comment = $2, reviewed_at = NOW()
+         review_comment = CASE WHEN $2::text IS NULL THEN review_comment
+             ELSE concat_ws(E'\n\n---\n\n', NULLIF(review_comment, ''), $2) END,
+         reviewed_at = NOW()
          WHERE id = $3 AND status = 'Pending'",
     )
     .bind(reviewer_id)
@@ -1923,7 +1931,8 @@ pub async fn draft_submission(
 
     let result = sqlx::query(
         "UPDATE disc_submissions SET status = 'Draft', reviewer_id = $1,
-         review_comment = $2, reviewed_at = NOW()
+         review_comment = concat_ws(E'\n\n---\n\n', NULLIF(review_comment, ''), $2),
+         reviewed_at = NOW()
          WHERE id = $3 AND submission_type = 'Disc' AND status = 'Pending'",
     )
     .bind(reviewer_id)
@@ -2171,7 +2180,9 @@ async fn approve_submission_on(
 
     let claim = sqlx::query(
         "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1,
-         review_comment = $2, reviewed_at = NOW(), changes_original = changes, changes = $3
+         review_comment = CASE WHEN $2::text IS NULL THEN review_comment
+             ELSE concat_ws(E'\n\n---\n\n', NULLIF(review_comment, ''), $2) END,
+         reviewed_at = NOW(), changes_original = changes, changes = $3
          WHERE id = $4 AND status = 'Pending'
            AND target_disc_id IS NOT DISTINCT FROM $5",
     )

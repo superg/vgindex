@@ -91,7 +91,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
 </section>
 {% endif %}
 
-{% if is_review_mode && !submission_comment.is_empty() %}
+{% if (is_review_mode || draft_submission_id > 0) && !submission_comment.is_empty() %}
 <section>
     <h3>Submission Comment</h3>
     <p class="pre-wrap section-text">{{ submission_comment }}</p>
@@ -730,7 +730,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
 
 
 {% if is_review_mode %}
-    <label>Review Comment
+    <label>Add Review Comment
         <textarea name="review_comment" rows="2" class="auto-expand fixed-80" placeholder="Optional comment about this review">{{ review_comment_input }}</textarea>
     </label>
     <div class="form-actions review-actions">
@@ -742,8 +742,8 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
         <button type="submit" name="action" value="comment" class="btn-comment" formnovalidate>Comment</button>
     </div>
     {% else %}
-    <label>Submission Comment{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %} <span aria-hidden="true">*</span>{% endif %}
-        <textarea name="submission_comment" rows="2" class="auto-expand fixed-80" placeholder="{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %}Required comment describing this edit{% else %}Optional comment about this submission{% endif %}"{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %} required{% endif %}>{{ submission_comment }}</textarea>
+    <label>{% if draft_submission_id > 0 %}Add Submission Comment{% else %}Submission Comment{% endif %}{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %} <span aria-hidden="true">*</span>{% endif %}
+        <textarea name="submission_comment" rows="2" class="auto-expand fixed-80" placeholder="{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %}Required comment describing this edit{% else %}Optional comment about this submission{% endif %}"{% if !is_add_mode && !is_review_mode && submit_button_text == "Submit" %} required{% endif %}>{{ submission_comment_input }}</textarea>
     </label>
 
     {% if show_submit_as %}

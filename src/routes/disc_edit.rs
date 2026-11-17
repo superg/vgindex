@@ -234,6 +234,7 @@ pub(crate) struct DiscEditTemplate {
     pub submitter_id: i32,
     pub submitter_name: String,
     pub submission_comment: String,
+    pub submission_comment_input: String,
     pub dump_log_display: String,
     pub extra_upload_url_display: String,
     pub submission_status: String,
@@ -1250,6 +1251,7 @@ async fn edit_page(
             submitter_id: 0,
             submitter_name: String::new(),
             submission_comment: String::new(),
+            submission_comment_input: String::new(),
             dump_log_display: String::new(),
             extra_upload_url_display: String::new(),
             submission_status: String::new(),
@@ -2116,7 +2118,10 @@ async fn render_form_with_context(
         submitter_name: draft_context
             .map(|(_, submitter_name, _)| submitter_name.to_string())
             .unwrap_or_default(),
-        submission_comment: form.submission_comment.clone().unwrap_or_default(),
+        submission_comment: draft_context
+            .and_then(|(sub, _, _)| sub.submission_comment.clone())
+            .unwrap_or_default(),
+        submission_comment_input: form.submission_comment.clone().unwrap_or_default(),
         dump_log_display: String::new(),
         extra_upload_url_display: String::new(),
         submission_status: draft_context
@@ -2945,6 +2950,7 @@ async fn add_page(
             submitter_id: 0,
             submitter_name: String::new(),
             submission_comment: String::new(),
+            submission_comment_input: String::new(),
             dump_log_display: String::new(),
             extra_upload_url_display: String::new(),
             submission_status: String::new(),
@@ -4302,6 +4308,7 @@ fn attach_draft_form_snapshot(
     let mut draft_form = form.clone();
     draft_form.submission_token.clear();
     draft_form.draft_submission_id = None;
+    draft_form.submission_comment = None;
     let draft_form = serde_json::to_value(draft_form)
         .map_err(|error| AppError::Internal(format!("failed to serialize draft form: {error}")))?;
     let Some(changes) = changes.as_object_mut() else {
@@ -6715,7 +6722,7 @@ mod operation_delta_tests {
         assert!(!template.contains("list=\"submit-as"));
         assert!(!template.contains("select name=\"submit_as\""));
 
-        let comment_pos = template.find(r#"<label>Submission Comment"#).unwrap();
+        let comment_pos = template.find(r#"name="submission_comment""#).unwrap();
         let submit_as_pos = template.find(r#"<label>Submit As"#).unwrap();
         let validate_pos = template.find(r#"name="action" value="validate""#).unwrap();
         assert!(comment_pos < submit_as_pos);
