@@ -318,6 +318,7 @@
 <p class="disc-count-line"><small>{% if total_count == 1 %}1 disc found.{% else %}{{ total_count }} discs found.{% endif %}</small></p>
 
 <div id="disc-results">
+    <div class="disc-results-toolbar">
     {% if total_pages > 1 %}
     <nav aria-label="Pagination">
         <ul>
@@ -391,6 +392,14 @@
         </ul>
     </nav>
     {% endif %}
+    {% if current_user.is_some() %}
+    {% if csv_export_disabled %}
+    <span class="export-csv-button is-disabled" aria-disabled="true" title="{{ csv_export_limit_message }}">Export as CSV</span>
+    {% else %}
+    <a href="{{ self.export_url() }}" class="export-csv-button">Export as CSV</a>
+    {% endif %}
+    {% endif %}
+    </div>
 
     <div class="disc-table-scaler">
     <table class="disc-table striped">

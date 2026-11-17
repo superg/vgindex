@@ -468,19 +468,43 @@ table.striped td {
     justify-content: center;
 }
 
-.download-links-cell a {
+.download-links-cell a,
+.export-csv-button {
     padding: 0.1rem 0.5rem;
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 0.3rem;
     text-decoration: none;
     line-height: 1.4;
 }
-.download-links-cell a:hover {
+.download-links-cell a:hover,
+.export-csv-button:not(.is-disabled):hover {
     border-color: var(--pico-muted-border-color);
     background: color-mix(in srgb, var(--pico-primary) 20%, transparent);
 }
+.export-csv-button.is-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
 
 /* Align pagination with the left edge of its result table. */
+.disc-results-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.15rem;
+}
+.disc-results-toolbar nav[aria-label="Pagination"] {
+    flex: 1;
+    width: auto;
+    margin: 0;
+}
+.export-csv-button {
+    color: var(--pico-primary);
+    background: transparent;
+    font-size: 0.8rem;
+    margin: 0 0 0 auto;
+    white-space: nowrap;
+}
 nav[aria-label="Pagination"] {
     width: 100%;
 }
