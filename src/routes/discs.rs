@@ -31,6 +31,7 @@ use super::compact_query_url;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/discs", get(discs_page))
+        .route("/discs/export-csv", get(discs_export))
         .route("/api/disc-dumpers", get(disc_dumpers_directory))
         .route("/api/discs", get(discs_search))
 }
@@ -1038,6 +1039,8 @@ struct DiscsTemplate {
     filter_dumper: String,
     filter_dumper_name: String,
     total_count: i64,
+    csv_export_disabled: bool,
+    csv_export_limit_message: String,
     page: i64,
     total_pages: i64,
     prev_page: i64,
@@ -1129,6 +1132,12 @@ impl DiscsTemplate {
 
     fn sort_url(&self, sort: &str, order: &str) -> String {
         self.url(1, &self.filter_letter, sort, order, &self.dumped_filter)
+    }
+
+    fn export_url(&self) -> String {
+        self
+            .url(1, &self.filter_letter, &self.sort_column, &self.sort_order, &self.dumped_filter)
+            .replacen("/discs", "/discs/export-csv", 1)
     }
 
     fn dumped_filter_url(&self) -> String {
@@ -1401,6 +1410,127 @@ fn group_disc_flags(rows: Vec<DiscFlagRow>) -> HashMap<i32, DiscFlags> {
     grouped
 }
 
+fn append_csv_row(output: &mut String, fields: &[&str]) {
+    for (index, field) in fields.iter().enumerate() {
+        if index > 0 {
+            output.push(',');
+        }
+        output.push('"');
+        if field
+            .trim_start()
+            .chars()
+            .next()
+            .is_some_and(|character| matches!(character, '=' | '+' | '-' | '@'))
+        {
+            output.push('\'');
+        }
+        for character in field.chars() {
+            if character == '"' {
+                output.push_str("\"\"");
+            } else {
+                output.push(character);
+            }
+        }
+        output.push('"');
+    }
+    output.push_str("\r\n");
+}
+
+fn build_disc_csv(rows: &[RawDiscRow], flags_by_disc: &HashMap<i32, DiscFlags>) -> String {
+    let mut output = String::with_capacity(rows.len() * 128);
+    append_csv_row(
+        &mut output,
+        &[
+            "Dumped by me",
+            "Region",
+            "Title",
+            "Foreign Title",
+            "System",
+            "Version",
+            "Edition",
+            "Language",
+            "Serial",
+            "Status",
+        ],
+    );
+
+    for row in rows {
+        let flags = flags_by_disc.get(&row.id);
+        let regions = flags
+            .map(|flags| {
+                flags
+                    .regions
+                    .iter()
+                    .map(|flag| flag.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        let languages = flags
+            .map(|flags| {
+                flags
+                    .languages
+                    .iter()
+                    .map(|flag| flag.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        let title = format_display_title(
+            &row.title,
+            if row.has_disc_number {
+                row.disc_number.as_deref()
+            } else {
+                None
+            },
+            if row.has_disc_title {
+                row.disc_title.as_deref()
+            } else {
+                None
+            },
+            row.filename_suffix.as_deref(),
+        );
+        let foreign_title = if row.has_title_foreign {
+            row.title_foreign.as_deref().unwrap_or_default()
+        } else {
+            ""
+        };
+        let system =
+            crate::db::models::short_system_display(&row.system_short_name, &row.system_code);
+        let version = row.version.as_deref().unwrap_or_default();
+        let edition = if row.has_edition {
+            row.edition.as_deref().unwrap_or_default()
+        } else {
+            ""
+        };
+        let serial = if row.has_serial {
+            row.serial.as_deref().unwrap_or_default()
+        } else {
+            ""
+        };
+        let dumped_by_me = if row.dumped_by_me { "Yes" } else { "No" };
+        let status = row.status.to_string();
+
+        append_csv_row(
+            &mut output,
+            &[
+                dumped_by_me,
+                &regions,
+                &title,
+                foreign_title,
+                &system,
+                version,
+                edition,
+                &languages,
+                serial,
+                &status,
+            ],
+        );
+    }
+
+    output
+}
+
 struct SystemOption {
     code: String,
     name: String,
@@ -1598,13 +1728,49 @@ fn add_edc_clause(where_clauses: &mut Vec<String>, edc: &str) {
 }
 
 const PAGE_SIZE: i64 = 100;
+const CSV_EXPORT_LIMIT: i64 = 5_000;
 
 async fn discs_page(
     State(state): State<AppState>,
     user: CurrentUser,
     Query(query): Query<DiscsQuery>,
 ) -> AppResult<Response> {
-    let page = query.page.unwrap_or(1).max(1);
+    discs_page_response(state, user, query, false).await
+}
+
+async fn discs_export(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Query(query): Query<DiscsQuery>,
+) -> AppResult<Response> {
+    if !user.is_logged_in() {
+        return Err(AppError::Unauthorized);
+    }
+    discs_page_response(state, user, query, true).await
+}
+
+fn csv_export_limit_message() -> String {
+    format!(
+        "CSV exports are limited to {CSV_EXPORT_LIMIT} discs. \
+         Narrow your filters and try again."
+    )
+}
+
+fn csv_export_limit_response() -> Response {
+    (StatusCode::PAYLOAD_TOO_LARGE, csv_export_limit_message()).into_response()
+}
+
+async fn discs_page_response(
+    state: AppState,
+    user: CurrentUser,
+    query: DiscsQuery,
+    export_csv: bool,
+) -> AppResult<Response> {
+    let page = if export_csv {
+        1
+    } else {
+        query.page.unwrap_or(1).max(1)
+    };
     let offset = (page - 1) * PAGE_SIZE;
     let can_view_disabled_discs = user.can_view_disabled_discs();
 
@@ -2296,8 +2462,12 @@ async fn discs_page(
             current_user_id
         },
     );
-    let mut cached_total_count = state.discs_cache.counts.get(&count_cache_key).await;
-    let count_load_lock = if cached_total_count.is_none() {
+    let mut cached_total_count = if export_csv {
+        None
+    } else {
+        state.discs_cache.counts.get(&count_cache_key).await
+    };
+    let count_load_lock = if !export_csv && cached_total_count.is_none() {
         Some(state.discs_cache.counts.load_lock(&count_cache_key).await)
     } else {
         None
@@ -2306,7 +2476,7 @@ async fn discs_page(
         Some(lock) => Some(lock.lock().await),
         None => None,
     };
-    if cached_total_count.is_none() {
+    if !export_csv && cached_total_count.is_none() {
         cached_total_count = state.discs_cache.counts.get(&count_cache_key).await;
     }
 
@@ -2336,6 +2506,12 @@ async fn discs_page(
     let sql_count = format!(
         "SELECT COUNT(*) FROM discs d{count_system_join}{track_count_join} WHERE {where_sql}"
     );
+    let select_limit = if export_csv {
+        CSV_EXPORT_LIMIT + 1
+    } else {
+        PAGE_SIZE
+    };
+    let select_offset = if export_csv { 0 } else { offset };
     let sql_select = format!(
         "{sort_cte} SELECT d.id, d.title, d.disc_number, d.disc_title, d.filename_suffix,
                 d.title_foreign,
@@ -2352,11 +2528,10 @@ async fn discs_page(
          {sort_join}
          {track_count_join}
          WHERE {where_sql}
-         ORDER BY {order_by} LIMIT {PAGE_SIZE} OFFSET {offset}"
+         ORDER BY {order_by} LIMIT {select_limit} OFFSET {select_offset}"
     );
 
-    let mut count_query = cached_total_count
-        .is_none()
+    let mut count_query = (!export_csv && cached_total_count.is_none())
         .then(|| sqlx::query_scalar::<_, i64>(&sql_count));
     let mut select_query = sqlx::query_as::<_, RawDiscRow>(&sql_select);
 
@@ -2487,20 +2662,24 @@ async fn discs_page(
         }
     }
 
-    let total_count = if let Some(count_query) = count_query {
+    let total_count = if export_csv {
+        None
+    } else if let Some(count_query) = count_query {
         let total_count = count_query.fetch_one(&state.pool).await?;
         state
             .discs_cache
             .counts
             .insert(count_cache_key, total_count)
             .await;
-        total_count
+        Some(total_count)
     } else {
-        cached_total_count.unwrap()
+        cached_total_count
     };
-    let total_pages = (total_count + PAGE_SIZE - 1) / PAGE_SIZE;
+    let total_pages = total_count
+        .map(|count| (count + PAGE_SIZE - 1) / PAGE_SIZE)
+        .unwrap_or_default();
 
-    if page > total_pages.max(1) {
+    if !export_csv && page > total_pages.max(1) {
         return Ok(Redirect::to(&build_discs_url(DiscsUrlOptions {
             system: &filter_system,
             region: &filter_region,
@@ -2558,6 +2737,34 @@ async fn discs_page(
     }
 
     let raw_rows: Vec<RawDiscRow> = select_query.fetch_all(&state.pool).await?;
+
+    if export_csv {
+        if raw_rows.len() as i64 > CSV_EXPORT_LIMIT {
+            return Ok(csv_export_limit_response());
+        }
+
+        let disc_ids = raw_rows.iter().map(|row| row.id).collect::<Vec<_>>();
+        let flags_by_disc = load_disc_flags(&state.pool, &disc_ids).await?;
+        let csv = build_disc_csv(&raw_rows, &flags_by_disc);
+        return Ok((
+            StatusCode::OK,
+            [
+                (
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("text/csv; charset=utf-8"),
+                ),
+                (
+                    header::CONTENT_DISPOSITION,
+                    HeaderValue::from_static("attachment; filename=\"discs.csv\""),
+                ),
+                (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+            ],
+            csv,
+        )
+            .into_response());
+    }
+
+    let total_count = total_count.expect("disc page requests load a total count");
 
     if !quick_search_terms.is_empty() && total_count == 1 {
         if let Some(row) = raw_rows.first() {
@@ -2693,6 +2900,8 @@ async fn discs_page(
             filter_dumper,
             filter_dumper_name,
             total_count,
+            csv_export_disabled: total_count > CSV_EXPORT_LIMIT,
+            csv_export_limit_message: csv_export_limit_message(),
             page,
             total_pages,
             prev_page: page - 1,
