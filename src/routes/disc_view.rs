@@ -1959,8 +1959,20 @@ fn allowed_html_tag(s: &str) -> Option<usize> {
         }
     }
 
-    if s.starts_with("<a ") || s.starts_with("<A ") || s.starts_with("<img ") {
-        return s.find('>').map(|end| end + 1);
+    if s.starts_with("<a href=") {
+        let end = s.find('>')?;
+        let url = &s[8..end];
+        let url = url
+            .strip_prefix('"')
+            .and_then(|u| u.strip_suffix('"'))
+            .unwrap_or(url);
+        let site = url
+            .strip_prefix('/')
+            .is_some_and(|path| path.starts_with(|c: char| c.is_ascii_alphanumeric()));
+        let web = url.starts_with("http://") || url.starts_with("https://");
+        if (site || web) && !url.contains(|c: char| c == '"' || c.is_whitespace()) {
+            return Some(end + 1);
+        }
     }
 
     None
@@ -2498,6 +2510,29 @@ mod tests {
     #[test]
     fn postgap_type_form_2_tag_includes_its_value() {
         assert_eq!(format_comments("[T:PT2]"), "<b>Postgap type</b>: Form 2");
+    }
+
+    #[test]
+    fn comment_links_need_a_web_or_site_address() {
+        for link in [
+            "<a href=/disc/1/>x</a>",
+            r#"<a href="/disc/1/">x</a>"#,
+            r#"<a href="https://redump.info/">x</a>"#,
+        ] {
+            assert_eq!(format_comments(link), link);
+        }
+        for tag in [
+            r#"<a href="javascript:alert(1)">"#,
+            "<a href=//evil.example/>",
+            r"<a href=/\evil.example/>",
+            r#"<a href="/&#47;evil.example/">"#,
+            "<a href=\"/\t/evil.example/\">",
+            r#"<a href="/x" onclick="alert(1)">"#,
+            r#"<a href=""/onclick=alert(1)">"#,
+            "<img src=/a.png onerror=alert(1)>",
+        ] {
+            assert!(format_comments(tag).starts_with("&lt;"), "{tag}");
+        }
     }
 
     fn test_state() -> AppState {
