@@ -477,13 +477,9 @@ table.striped td {
     line-height: 1.4;
 }
 .download-links-cell a:hover,
-.export-csv-button:not(.is-disabled):hover {
+.export-csv-button:hover {
     border-color: var(--pico-muted-border-color);
     background: color-mix(in srgb, var(--pico-primary) 20%, transparent);
-}
-.export-csv-button.is-disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
 }
 
 /* Align pagination with the left edge of its result table. */
