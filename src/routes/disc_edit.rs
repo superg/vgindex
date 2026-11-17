@@ -6974,12 +6974,13 @@ mod operation_delta_tests {
         let script = include_str!("../../static/js/disc_edit.js");
         let css = include_str!("../../static/css/app.css").replace("\r\n", "\n");
 
-        assert!(template.contains(r#"<input type="file" id="dump-log-file-input" accept=".log" hidden>"#));
+        assert!(template.contains(r#"<input type="file" id="dump-log-file-input" accept=".log,.zip" hidden>"#));
         assert!(!template.contains(r#"<small id="dump-log-fill-status""#));
 
         assert!(script.contains("function initDumpLogFill()"));
         assert!(script.contains("fetch('/api/parse-redumper-log'"));
-        assert!(script.contains("body: JSON.stringify({ log: textarea.value })"));
+        assert!(script.contains("var requestBody = JSON.stringify({ log: textarea.value });"));
+        assert!(script.contains("body: requestBody"));
         assert!(script.contains("function applyParsedRedumperLog(data)"));
         assert!(script.contains("saveRingFromDom();"));
         assert!(script.contains("ringEntries[0].offset_value = String(data.offset_value)"));
