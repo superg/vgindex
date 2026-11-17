@@ -1705,7 +1705,9 @@ function initDumpLogDragDrop() {
     var fileInput = document.getElementById('dump-log-file-input');
     if (!textarea || !fillButton) return;
 
-    var latestUploadId = 0;
+    if (!textarea.dumpLogLatestUploadId) {
+        textarea.dumpLogLatestUploadId = 0;
+    }
 
     function rejectUploadWhileParsing() {
         if (!fillButton.disabled) return false;
@@ -1714,7 +1716,7 @@ function initDumpLogDragDrop() {
     }
 
     function useUploadedLog(text, zipArchive, uploadId) {
-        if (uploadId !== latestUploadId || rejectUploadWhileParsing()) return;
+        if (uploadId !== textarea.dumpLogLatestUploadId || rejectUploadWhileParsing()) return;
         textarea.value = text;
         textarea.dumpLogZipArchive = zipArchive;
         setDumpLogTextareaState(textarea, true);
@@ -1724,7 +1726,7 @@ function initDumpLogDragDrop() {
     function loadDumpLogFile(file) {
         // Validate before parsing ZIP
         if (!file || rejectUploadWhileParsing()) return;
-        var uploadId = ++latestUploadId;
+        var uploadId = ++textarea.dumpLogLatestUploadId;
         var extension = file.name.toLowerCase().split('.').pop();
         if (extension !== 'log' && extension !== 'zip') {
             setDumpLogFillStatus('Only redumper .log and .zip files are supported.');
@@ -1741,7 +1743,7 @@ function initDumpLogDragDrop() {
 
         if (extension === 'zip') {
             file.arrayBuffer().then(function (buffer) {
-                if (uploadId !== latestUploadId || rejectUploadWhileParsing()) return;
+                if (uploadId !== textarea.dumpLogLatestUploadId || rejectUploadWhileParsing()) return;
                 var bytes = new Uint8Array(buffer);
                 var logs = findZipFiles(bytes, function (file) {
                     return hasFileExtension(file, '.log');
@@ -1779,7 +1781,7 @@ function initDumpLogDragDrop() {
                     uploadId
                 );
             }).catch(function (error) {
-                if (uploadId === latestUploadId) {
+                if (uploadId === textarea.dumpLogLatestUploadId) {
                     setDumpLogFillStatus(error && error.message
                         ? error.message
                         : 'Could not read the ZIP file.');
@@ -1790,10 +1792,11 @@ function initDumpLogDragDrop() {
 
         var reader = new FileReader();
         reader.onload = function (ev) {
+            if (uploadId !== textarea.dumpLogLatestUploadId || rejectUploadWhileParsing()) return;
             useUploadedLog(ev.target.result, null, uploadId);
         };
         reader.onerror = function () {
-            if (uploadId === latestUploadId) {
+            if (uploadId === textarea.dumpLogLatestUploadId) {
                 setDumpLogFillStatus('Failed to read the selected log file.');
             }
         };
@@ -1837,6 +1840,7 @@ function initDumpLogFill() {
     if (clearButton) {
         clearButton.addEventListener('click', function () {
             resetDumpLogInput(textarea);
+            textarea.dumpLogLatestUploadId++;
             setDumpLogFillStatus('');
             setDumpLogControls('ready');
             clearDumpLogSession();
