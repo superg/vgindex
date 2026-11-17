@@ -740,7 +740,7 @@ nav[aria-label="Pagination"] ul {
 #filter-form.advanced-search-visible .advanced-search-row input[name="disc_number"] {
     width: calc(3ch + 0.8rem + (var(--pico-border-width) * 2));
 }
-.text-exact-controls {
+.text-match-controls {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -749,26 +749,18 @@ nav[aria-label="Pagination"] ul {
     max-width: 100%;
     min-width: 0;
 }
-#filter-form .text-exact-controls input[type="text"],
-#filter-form.advanced-search-visible .text-exact-controls input[type="text"] {
+#filter-form .text-match-controls input[type="text"],
+#filter-form.advanced-search-visible .text-match-controls input[type="text"] {
     flex: 1 1 10rem;
     width: 0;
     min-width: 8rem;
 }
-#filter-form .text-exact-toggle,
-#filter-form.advanced-search-visible .text-exact-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.2rem;
-    width: auto;
+#filter-form .text-match-controls .text-match-mode,
+#filter-form.advanced-search-visible .text-match-controls .text-match-mode {
+    flex: 0 0 6rem;
+    width: 6rem;
+    min-width: 0;
     margin: 0;
-    white-space: nowrap;
-}
-#filter-form .text-exact-toggle input {
-    margin: 0;
-}
-#filter-form .text-exact-toggle span {
-    text-align: left;
 }
 .count-range-controls {
     display: grid;
@@ -967,18 +959,14 @@ nav[aria-label="Pagination"] ul {
         max-width: 100%;
         min-width: 0;
     }
-    .text-exact-controls {
+    .text-match-controls {
         width: 100%;
     }
-    #filter-form .text-exact-controls input[type="text"],
-    #filter-form.advanced-search-visible .text-exact-controls input[type="text"] {
+    #filter-form .text-match-controls input[type="text"],
+    #filter-form.advanced-search-visible .text-match-controls input[type="text"] {
         flex-basis: 10rem;
         width: 0;
         min-width: 8rem;
-    }
-    #filter-form .text-exact-toggle,
-    #filter-form.advanced-search-visible .text-exact-toggle {
-        width: auto;
     }
     .disc-sort-controls {
         width: 100%;

@@ -353,23 +353,23 @@ pub struct DiscsQuery {
     pub status: Option<String>,
     pub q: Option<String>,
     pub title: Option<String>,
-    pub title_exact: Option<String>,
+    pub title_mode: Option<String>,
     pub title_foreign: Option<String>,
-    pub title_foreign_exact: Option<String>,
+    pub title_foreign_mode: Option<String>,
     pub disc_number: Option<String>,
     pub disc_title: Option<String>,
-    pub disc_title_exact: Option<String>,
+    pub disc_title_mode: Option<String>,
     pub disc_title_foreign: Option<String>,
-    pub disc_title_foreign_exact: Option<String>,
+    pub disc_title_foreign_mode: Option<String>,
     pub serial: Option<String>,
-    pub serial_exact: Option<String>,
+    pub serial_mode: Option<String>,
     pub filename_suffix: Option<String>,
-    pub filename_suffix_exact: Option<String>,
+    pub filename_suffix_mode: Option<String>,
     pub exe_date: Option<String>,
     pub edition: Option<String>,
-    pub edition_exact: Option<String>,
+    pub edition_mode: Option<String>,
     pub barcode: Option<String>,
-    pub barcode_exact: Option<String>,
+    pub barcode_mode: Option<String>,
     pub universal_hash: Option<String>,
     pub tracks_min: Option<String>,
     pub tracks_max: Option<String>,
@@ -387,9 +387,9 @@ pub struct DiscsQuery {
     pub offset_min: Option<String>,
     pub offset_max: Option<String>,
     pub volume_label: Option<String>,
-    pub volume_label_exact: Option<String>,
+    pub volume_label_mode: Option<String>,
     pub internal_serial: Option<String>,
-    pub internal_serial_exact: Option<String>,
+    pub internal_serial_mode: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
     pub dumped_filter: Option<String>,
@@ -605,8 +605,40 @@ fn array_text_bind_value(value: &str, exact: bool) -> String {
     }
 }
 
-fn exact_filter_enabled(exact: Option<&str>) -> bool {
-    exact == Some("1")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextMatchMode {
+    Contains,
+    Exact,
+    IsNull,
+    Any,
+}
+
+impl TextMatchMode {
+    fn from_query(mode: Option<&str>) -> Self {
+        match mode {
+            Some("exact") => Self::Exact,
+            Some("null") => Self::IsNull,
+            Some("any") => Self::Any,
+            _ => Self::Contains,
+        }
+    }
+
+    fn as_query_value(self) -> &'static str {
+        match self {
+            Self::Contains => "",
+            Self::Exact => "exact",
+            Self::IsNull => "null",
+            Self::Any => "any",
+        }
+    }
+
+    fn is_exact(self) -> bool {
+        self == Self::Exact
+    }
+
+    fn searches_text(self) -> bool {
+        matches!(self, Self::Contains | Self::Exact)
+    }
 }
 
 fn scalar_text_bind_value(value: &str, exact: bool) -> String {
@@ -705,17 +737,24 @@ fn scalar_text_null_clause(field: ScalarTextField) -> String {
     format!("d.{} IS NULL", field.column())
 }
 
+fn scalar_text_any_clause(field: ScalarTextField) -> String {
+    format!("d.{} IS NOT NULL", field.column())
+}
+
 fn add_scalar_text_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
-    filters: [(ScalarTextField, bool, bool, bool); 8],
+    filters: [(ScalarTextField, bool, TextMatchMode); 8],
 ) {
-    for (field, active, exact, empty_exact) in filters {
-        if active {
-            *bind_idx += 1;
-            where_clauses.push(scalar_text_search_clause(field, *bind_idx, exact));
-        } else if empty_exact {
-            where_clauses.push(scalar_text_null_clause(field));
+    for (field, active, mode) in filters {
+        match mode {
+            TextMatchMode::Contains | TextMatchMode::Exact if active => {
+                *bind_idx += 1;
+                where_clauses.push(scalar_text_search_clause(field, *bind_idx, mode.is_exact()));
+            }
+            TextMatchMode::IsNull => where_clauses.push(scalar_text_null_clause(field)),
+            TextMatchMode::Any => where_clauses.push(scalar_text_any_clause(field)),
+            TextMatchMode::Contains | TextMatchMode::Exact => {}
         }
     }
 }
@@ -765,17 +804,24 @@ fn array_text_empty_clause(field: ArrayTextField) -> String {
     format!("COALESCE(cardinality(d.{}), 0) = 0", field.column())
 }
 
+fn array_text_any_clause(field: ArrayTextField) -> String {
+    format!("COALESCE(cardinality(d.{}), 0) > 0", field.column())
+}
+
 fn add_array_text_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
-    filters: [(ArrayTextField, bool, bool, bool); 3],
+    filters: [(ArrayTextField, bool, TextMatchMode); 3],
 ) {
-    for (field, active, exact, empty_exact) in filters {
-        if active {
-            *bind_idx += 1;
-            where_clauses.push(array_text_search_clause(field, *bind_idx, exact));
-        } else if empty_exact {
-            where_clauses.push(array_text_empty_clause(field));
+    for (field, active, mode) in filters {
+        match mode {
+            TextMatchMode::Contains | TextMatchMode::Exact if active => {
+                *bind_idx += 1;
+                where_clauses.push(array_text_search_clause(field, *bind_idx, mode.is_exact()));
+            }
+            TextMatchMode::IsNull => where_clauses.push(array_text_empty_clause(field)),
+            TextMatchMode::Any => where_clauses.push(array_text_any_clause(field)),
+            TextMatchMode::Contains | TextMatchMode::Exact => {}
         }
     }
 }
@@ -1021,23 +1067,23 @@ struct DiscsTemplate {
     filter_letter: String,
     filter_q: String,
     filter_title: String,
-    title_exact: bool,
+    title_mode: String,
     filter_title_foreign: String,
-    title_foreign_exact: bool,
+    title_foreign_mode: String,
     filter_disc_number: String,
     filter_disc_title: String,
-    disc_title_exact: bool,
+    disc_title_mode: String,
     filter_disc_title_foreign: String,
-    disc_title_foreign_exact: bool,
+    disc_title_foreign_mode: String,
     filter_serial: String,
-    serial_exact: bool,
+    serial_mode: String,
     filter_filename_suffix: String,
-    filename_suffix_exact: bool,
+    filename_suffix_mode: String,
     filter_exe_date: String,
     filter_edition: String,
-    edition_exact: bool,
+    edition_mode: String,
     filter_barcode: String,
-    barcode_exact: bool,
+    barcode_mode: String,
     filter_universal_hash: String,
     filter_tracks_min: String,
     filter_tracks_max: String,
@@ -1058,9 +1104,9 @@ struct DiscsTemplate {
     filter_offset_max: String,
     offset_exact: bool,
     filter_volume_label: String,
-    volume_label_exact: bool,
+    volume_label_mode: String,
     filter_internal_serial: String,
-    internal_serial_exact: bool,
+    internal_serial_mode: String,
     advanced_open: bool,
     advanced_explicit: bool,
     filter_dumper: String,
@@ -1097,23 +1143,23 @@ impl DiscsTemplate {
             letter,
             dumper: &self.filter_dumper,
             title: &self.filter_title,
-            title_exact: self.title_exact,
+            title_mode: &self.title_mode,
             title_foreign: &self.filter_title_foreign,
-            title_foreign_exact: self.title_foreign_exact,
+            title_foreign_mode: &self.title_foreign_mode,
             disc_number: &self.filter_disc_number,
             disc_title: &self.filter_disc_title,
-            disc_title_exact: self.disc_title_exact,
+            disc_title_mode: &self.disc_title_mode,
             disc_title_foreign: &self.filter_disc_title_foreign,
-            disc_title_foreign_exact: self.disc_title_foreign_exact,
+            disc_title_foreign_mode: &self.disc_title_foreign_mode,
             serial: &self.filter_serial,
-            serial_exact: self.serial_exact,
+            serial_mode: &self.serial_mode,
             filename_suffix: &self.filter_filename_suffix,
-            filename_suffix_exact: self.filename_suffix_exact,
+            filename_suffix_mode: &self.filename_suffix_mode,
             exe_date: &self.filter_exe_date,
             edition: &self.filter_edition,
-            edition_exact: self.edition_exact,
+            edition_mode: &self.edition_mode,
             barcode: &self.filter_barcode,
-            barcode_exact: self.barcode_exact,
+            barcode_mode: &self.barcode_mode,
             universal_hash: &self.filter_universal_hash,
             tracks_min: &self.filter_tracks_min,
             tracks_max: &self.filter_tracks_max,
@@ -1131,9 +1177,9 @@ impl DiscsTemplate {
             offset_min: &self.filter_offset_min,
             offset_max: &self.filter_offset_max,
             volume_label: &self.filter_volume_label,
-            volume_label_exact: self.volume_label_exact,
+            volume_label_mode: &self.volume_label_mode,
             internal_serial: &self.filter_internal_serial,
-            internal_serial_exact: self.internal_serial_exact,
+            internal_serial_mode: &self.internal_serial_mode,
             q: &self.filter_q,
             sort,
             order,
@@ -1188,23 +1234,23 @@ struct DiscsUrlOptions<'a> {
     letter: &'a str,
     dumper: &'a str,
     title: &'a str,
-    title_exact: bool,
+    title_mode: &'a str,
     title_foreign: &'a str,
-    title_foreign_exact: bool,
+    title_foreign_mode: &'a str,
     disc_number: &'a str,
     disc_title: &'a str,
-    disc_title_exact: bool,
+    disc_title_mode: &'a str,
     disc_title_foreign: &'a str,
-    disc_title_foreign_exact: bool,
+    disc_title_foreign_mode: &'a str,
     serial: &'a str,
-    serial_exact: bool,
+    serial_mode: &'a str,
     filename_suffix: &'a str,
-    filename_suffix_exact: bool,
+    filename_suffix_mode: &'a str,
     exe_date: &'a str,
     edition: &'a str,
-    edition_exact: bool,
+    edition_mode: &'a str,
     barcode: &'a str,
-    barcode_exact: bool,
+    barcode_mode: &'a str,
     universal_hash: &'a str,
     tracks_min: &'a str,
     tracks_max: &'a str,
@@ -1222,9 +1268,9 @@ struct DiscsUrlOptions<'a> {
     offset_min: &'a str,
     offset_max: &'a str,
     volume_label: &'a str,
-    volume_label_exact: bool,
+    volume_label_mode: &'a str,
     internal_serial: &'a str,
-    internal_serial_exact: bool,
+    internal_serial_mode: &'a str,
     q: &'a str,
     sort: &'a str,
     order: &'a str,
@@ -1272,23 +1318,6 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
         .then_some(options.order)
         .unwrap_or_default();
     let advanced = if options.advanced { "1" } else { "" };
-    let exact_param = |enabled: bool| {
-        if enabled {
-            "1"
-        } else {
-            ""
-        }
-    };
-    let title_exact = exact_param(options.title_exact && !options.title.trim().is_empty());
-    let title_foreign_exact = exact_param(options.title_foreign_exact);
-    let disc_title_exact = exact_param(options.disc_title_exact);
-    let disc_title_foreign_exact = exact_param(options.disc_title_foreign_exact);
-    let serial_exact = exact_param(options.serial_exact);
-    let filename_suffix_exact = exact_param(options.filename_suffix_exact);
-    let edition_exact = exact_param(options.edition_exact);
-    let barcode_exact = exact_param(options.barcode_exact);
-    let volume_label_exact = exact_param(options.volume_label_exact);
-    let internal_serial_exact = exact_param(options.internal_serial_exact);
 
     compact_query_url(
         "/discs",
@@ -1302,22 +1331,22 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("letter", options.letter),
             ("dumper", options.dumper),
             ("title", options.title),
-            ("title_exact", title_exact),
+            ("title_mode", options.title_mode),
             ("title_foreign", options.title_foreign),
-            ("title_foreign_exact", title_foreign_exact),
+            ("title_foreign_mode", options.title_foreign_mode),
             ("disc_number", options.disc_number),
             ("disc_title", options.disc_title),
-            ("disc_title_exact", disc_title_exact),
+            ("disc_title_mode", options.disc_title_mode),
             ("disc_title_foreign", options.disc_title_foreign),
-            ("disc_title_foreign_exact", disc_title_foreign_exact),
+            ("disc_title_foreign_mode", options.disc_title_foreign_mode),
             ("serial", options.serial),
-            ("serial_exact", serial_exact),
+            ("serial_mode", options.serial_mode),
             ("filename_suffix", options.filename_suffix),
-            ("filename_suffix_exact", filename_suffix_exact),
+            ("filename_suffix_mode", options.filename_suffix_mode),
             ("edition", options.edition),
-            ("edition_exact", edition_exact),
+            ("edition_mode", options.edition_mode),
             ("barcode", options.barcode),
-            ("barcode_exact", barcode_exact),
+            ("barcode_mode", options.barcode_mode),
             ("universal_hash", options.universal_hash),
             ("exe_date", options.exe_date),
             ("tracks_min", options.tracks_min),
@@ -1336,9 +1365,9 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("offset_min", options.offset_min),
             ("offset_max", options.offset_max),
             ("volume_label", options.volume_label),
-            ("volume_label_exact", volume_label_exact),
+            ("volume_label_mode", options.volume_label_mode),
             ("internal_serial", options.internal_serial),
-            ("internal_serial_exact", internal_serial_exact),
+            ("internal_serial_mode", options.internal_serial_mode),
             ("q", options.q),
             ("sort", sort),
             ("order", order),
@@ -1818,14 +1847,22 @@ async fn discs_page_response(
     let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
     let quick_search_terms = quick_search_terms(&filter_q);
     let hash_candidates = load_hash_candidates(&state.pool, &quick_search_terms).await?;
-    let active_title = active_verbatim_filter(query.title.as_ref());
-    let title_exact = active_title.is_some() && exact_filter_enabled(query.title_exact.as_deref());
+    let requested_title = active_verbatim_filter(query.title.as_ref());
+    let title_mode = match TextMatchMode::from_query(query.title_mode.as_deref()) {
+        TextMatchMode::IsNull | TextMatchMode::Any => TextMatchMode::Contains,
+        TextMatchMode::Exact if requested_title.is_none() => TextMatchMode::Contains,
+        mode => mode,
+    };
+    let active_title = requested_title.filter(|_| title_mode.searches_text());
+    let title_exact = title_mode.is_exact();
     let title_bind = active_title
         .as_deref()
         .map(|value| scalar_text_bind_value(value, title_exact));
     let filter_title = title_bind.clone().unwrap_or_default();
-    let active_title_foreign = active_verbatim_filter(query.title_foreign.as_ref());
-    let title_foreign_exact = exact_filter_enabled(query.title_foreign_exact.as_deref());
+    let title_foreign_mode = TextMatchMode::from_query(query.title_foreign_mode.as_deref());
+    let active_title_foreign = active_verbatim_filter(query.title_foreign.as_ref())
+        .filter(|_| title_foreign_mode.searches_text());
+    let title_foreign_exact = title_foreign_mode.is_exact();
     let title_foreign_bind = active_title_foreign
         .as_deref()
         .map(|value| scalar_text_bind_value(value, title_foreign_exact));
@@ -1835,41 +1872,52 @@ async fn discs_page_response(
         .as_deref()
         .map(|value| scalar_text_bind_value(value, true));
     let filter_disc_number = disc_number_bind.clone().unwrap_or_default();
-    let active_disc_title = active_verbatim_filter(query.disc_title.as_ref());
-    let disc_title_exact = exact_filter_enabled(query.disc_title_exact.as_deref());
+    let disc_title_mode = TextMatchMode::from_query(query.disc_title_mode.as_deref());
+    let active_disc_title = active_verbatim_filter(query.disc_title.as_ref())
+        .filter(|_| disc_title_mode.searches_text());
+    let disc_title_exact = disc_title_mode.is_exact();
     let disc_title_bind = active_disc_title
         .as_deref()
         .map(|value| scalar_text_bind_value(value, disc_title_exact));
     let filter_disc_title = disc_title_bind.clone().unwrap_or_default();
-    let active_disc_title_foreign = active_verbatim_filter(query.disc_title_foreign.as_ref());
-    let disc_title_foreign_exact =
-        exact_filter_enabled(query.disc_title_foreign_exact.as_deref());
+    let disc_title_foreign_mode =
+        TextMatchMode::from_query(query.disc_title_foreign_mode.as_deref());
+    let active_disc_title_foreign = active_verbatim_filter(query.disc_title_foreign.as_ref())
+        .filter(|_| disc_title_foreign_mode.searches_text());
+    let disc_title_foreign_exact = disc_title_foreign_mode.is_exact();
     let disc_title_foreign_bind = active_disc_title_foreign
         .as_deref()
         .map(|value| scalar_text_bind_value(value, disc_title_foreign_exact));
     let filter_disc_title_foreign = disc_title_foreign_bind.clone().unwrap_or_default();
-    let active_serial = active_verbatim_filter(query.serial.as_ref());
+    let serial_mode = TextMatchMode::from_query(query.serial_mode.as_deref());
+    let active_serial =
+        active_verbatim_filter(query.serial.as_ref()).filter(|_| serial_mode.searches_text());
     let filter_serial = active_serial.clone().unwrap_or_default();
-    let serial_exact = exact_filter_enabled(query.serial_exact.as_deref());
+    let serial_exact = serial_mode.is_exact();
     let serial_bind = active_serial
         .as_deref()
         .map(|value| array_text_bind_value(value, serial_exact));
-    let filename_suffix_exact =
-        exact_filter_enabled(query.filename_suffix_exact.as_deref());
-    let active_filename_suffix = active_advanced_filter(query.filename_suffix.as_ref());
+    let filename_suffix_mode = TextMatchMode::from_query(query.filename_suffix_mode.as_deref());
+    let active_filename_suffix = active_advanced_filter(query.filename_suffix.as_ref())
+        .filter(|_| filename_suffix_mode.searches_text());
+    let filename_suffix_exact = filename_suffix_mode.is_exact();
     let filename_suffix_bind = active_filename_suffix
         .as_deref()
         .map(|value| scalar_text_bind_value(value, filename_suffix_exact));
     let filter_filename_suffix = filename_suffix_bind.clone().unwrap_or_default();
-    let active_edition = active_verbatim_filter(query.edition.as_ref());
+    let edition_mode = TextMatchMode::from_query(query.edition_mode.as_deref());
+    let active_edition =
+        active_verbatim_filter(query.edition.as_ref()).filter(|_| edition_mode.searches_text());
     let filter_edition = active_edition.clone().unwrap_or_default();
-    let edition_exact = exact_filter_enabled(query.edition_exact.as_deref());
+    let edition_exact = edition_mode.is_exact();
     let edition_bind = active_edition
         .as_deref()
         .map(|value| array_text_bind_value(value, edition_exact));
-    let active_barcode = active_verbatim_filter(query.barcode.as_ref());
+    let barcode_mode = TextMatchMode::from_query(query.barcode_mode.as_deref());
+    let active_barcode =
+        active_verbatim_filter(query.barcode.as_ref()).filter(|_| barcode_mode.searches_text());
     let filter_barcode = active_barcode.clone().unwrap_or_default();
-    let barcode_exact = exact_filter_enabled(query.barcode_exact.as_deref());
+    let barcode_exact = barcode_mode.is_exact();
     let barcode_bind = active_barcode
         .as_deref()
         .map(|value| array_text_bind_value(value, barcode_exact));
@@ -1951,16 +1999,19 @@ async fn discs_page_response(
     let filter_offset_max = filter_offset_max_value
         .map(|value| value.to_string())
         .unwrap_or_default();
-    let offset_exact = filter_offset_min_value.is_some()
-        && filter_offset_min_value == filter_offset_max_value;
-    let active_volume_label = active_advanced_filter(query.volume_label.as_ref());
-    let volume_label_exact = exact_filter_enabled(query.volume_label_exact.as_deref());
+    let offset_exact = filter_offset_min_value.is_some() && filter_offset_min_value == filter_offset_max_value;
+    let volume_label_mode = TextMatchMode::from_query(query.volume_label_mode.as_deref());
+    let active_volume_label = active_advanced_filter(query.volume_label.as_ref())
+        .filter(|_| volume_label_mode.searches_text());
+    let volume_label_exact = volume_label_mode.is_exact();
     let volume_label_bind = active_volume_label
         .as_deref()
         .map(|value| scalar_text_bind_value(value, volume_label_exact));
     let filter_volume_label = volume_label_bind.clone().unwrap_or_default();
-    let active_internal_serial = active_advanced_filter(query.internal_serial.as_ref());
-    let internal_serial_exact = exact_filter_enabled(query.internal_serial_exact.as_deref());
+    let internal_serial_mode = TextMatchMode::from_query(query.internal_serial_mode.as_deref());
+    let active_internal_serial = active_advanced_filter(query.internal_serial.as_ref())
+        .filter(|_| internal_serial_mode.searches_text());
+    let internal_serial_exact = internal_serial_mode.is_exact();
     let internal_serial_bind = active_internal_serial
         .as_deref()
         .map(|value| scalar_text_bind_value(value, internal_serial_exact));
@@ -2120,50 +2171,42 @@ async fn discs_page_response(
             (
                 ScalarTextField::Title,
                 active_title.is_some(),
-                title_exact,
-                title_exact && active_title.is_none(),
+                title_mode,
             ),
             (
                 ScalarTextField::ForeignTitle,
                 active_title_foreign.is_some(),
-                title_foreign_exact,
-                title_foreign_exact && active_title_foreign.is_none(),
+                title_foreign_mode,
             ),
             (
                 ScalarTextField::DiscNumber,
                 active_disc_number.is_some(),
-                true,
-                false,
+                TextMatchMode::Exact,
             ),
             (
                 ScalarTextField::DiscTitle,
                 active_disc_title.is_some(),
-                disc_title_exact,
-                disc_title_exact && active_disc_title.is_none(),
+                disc_title_mode,
             ),
             (
                 ScalarTextField::ForeignDiscTitle,
                 active_disc_title_foreign.is_some(),
-                disc_title_foreign_exact,
-                disc_title_foreign_exact && active_disc_title_foreign.is_none(),
+                disc_title_foreign_mode,
             ),
             (
                 ScalarTextField::VolumeLabel,
                 active_volume_label.is_some(),
-                volume_label_exact,
-                volume_label_exact && active_volume_label.is_none(),
+                volume_label_mode,
             ),
             (
                 ScalarTextField::InternalSerial,
                 active_internal_serial.is_some(),
-                internal_serial_exact,
-                internal_serial_exact && active_internal_serial.is_none(),
+                internal_serial_mode,
             ),
             (
                 ScalarTextField::FilenameSuffix,
                 active_filename_suffix.is_some(),
-                filename_suffix_exact,
-                filename_suffix_exact && active_filename_suffix.is_none(),
+                filename_suffix_mode,
             ),
         ],
     );
@@ -2174,20 +2217,17 @@ async fn discs_page_response(
             (
                 ArrayTextField::Serial,
                 active_serial.is_some(),
-                serial_exact,
-                serial_exact && active_serial.is_none(),
+                serial_mode,
             ),
             (
                 ArrayTextField::Edition,
                 active_edition.is_some(),
-                edition_exact,
-                edition_exact && active_edition.is_none(),
+                edition_mode,
             ),
             (
                 ArrayTextField::Barcode,
                 active_barcode.is_some(),
-                barcode_exact,
-                barcode_exact && active_barcode.is_none(),
+                barcode_mode,
             ),
         ],
     );
@@ -2448,22 +2488,22 @@ async fn discs_page_response(
             letter: &filter_letter,
             dumper: &filter_dumper,
             title: &count_key_title,
-            title_exact,
+            title_mode: title_mode.as_query_value(),
             title_foreign: &count_key_title_foreign,
-            title_foreign_exact,
+            title_foreign_mode: title_foreign_mode.as_query_value(),
             disc_number: &count_key_disc_number,
             disc_title: &count_key_disc_title,
-            disc_title_exact,
+            disc_title_mode: disc_title_mode.as_query_value(),
             disc_title_foreign: &count_key_disc_title_foreign,
-            disc_title_foreign_exact,
+            disc_title_foreign_mode: disc_title_foreign_mode.as_query_value(),
             serial: &count_key_serial,
-            serial_exact,
+            serial_mode: serial_mode.as_query_value(),
             filename_suffix: &count_key_filename_suffix,
-            filename_suffix_exact,
+            filename_suffix_mode: filename_suffix_mode.as_query_value(),
             edition: &count_key_edition,
-            edition_exact,
+            edition_mode: edition_mode.as_query_value(),
             barcode: &count_key_barcode,
-            barcode_exact,
+            barcode_mode: barcode_mode.as_query_value(),
             universal_hash: &count_key_universal_hash,
             exe_date: &filter_exe_date,
             tracks_min: &filter_tracks_min,
@@ -2482,9 +2522,9 @@ async fn discs_page_response(
             offset_min: &filter_offset_min,
             offset_max: &filter_offset_max,
             volume_label: &count_key_volume_label,
-            volume_label_exact,
+            volume_label_mode: volume_label_mode.as_query_value(),
             internal_serial: &count_key_internal_serial,
-            internal_serial_exact,
+            internal_serial_mode: internal_serial_mode.as_query_value(),
             q: &count_key_q,
             sort: &sort_column,
             order: &sort_order_str,
@@ -2731,22 +2771,22 @@ async fn discs_page_response(
             letter: &filter_letter,
             dumper: &filter_dumper,
             title: &filter_title,
-            title_exact,
+            title_mode: title_mode.as_query_value(),
             title_foreign: &filter_title_foreign,
-            title_foreign_exact,
+            title_foreign_mode: title_foreign_mode.as_query_value(),
             disc_number: &filter_disc_number,
             disc_title: &filter_disc_title,
-            disc_title_exact,
+            disc_title_mode: disc_title_mode.as_query_value(),
             disc_title_foreign: &filter_disc_title_foreign,
-            disc_title_foreign_exact,
+            disc_title_foreign_mode: disc_title_foreign_mode.as_query_value(),
             serial: &filter_serial,
-            serial_exact,
+            serial_mode: serial_mode.as_query_value(),
             filename_suffix: &filter_filename_suffix,
-            filename_suffix_exact,
+            filename_suffix_mode: filename_suffix_mode.as_query_value(),
             edition: &filter_edition,
-            edition_exact,
+            edition_mode: edition_mode.as_query_value(),
             barcode: &filter_barcode,
-            barcode_exact,
+            barcode_mode: barcode_mode.as_query_value(),
             universal_hash: &filter_universal_hash,
             exe_date: &filter_exe_date,
             tracks_min: &filter_tracks_min,
@@ -2765,9 +2805,9 @@ async fn discs_page_response(
             offset_min: &filter_offset_min,
             offset_max: &filter_offset_max,
             volume_label: &filter_volume_label,
-            volume_label_exact,
+            volume_label_mode: volume_label_mode.as_query_value(),
             internal_serial: &filter_internal_serial,
-            internal_serial_exact,
+            internal_serial_mode: internal_serial_mode.as_query_value(),
             q: &filter_q,
             sort: &sort_column,
             order: &sort_order_str,
@@ -2899,23 +2939,23 @@ async fn discs_page_response(
             filter_letter,
             filter_q,
             filter_title,
-            title_exact,
+            title_mode: title_mode.as_query_value().to_string(),
             filter_title_foreign,
-            title_foreign_exact,
+            title_foreign_mode: title_foreign_mode.as_query_value().to_string(),
             filter_disc_number,
             filter_disc_title,
-            disc_title_exact,
+            disc_title_mode: disc_title_mode.as_query_value().to_string(),
             filter_disc_title_foreign,
-            disc_title_foreign_exact,
+            disc_title_foreign_mode: disc_title_foreign_mode.as_query_value().to_string(),
             filter_serial,
-            serial_exact,
+            serial_mode: serial_mode.as_query_value().to_string(),
             filter_filename_suffix,
-            filename_suffix_exact,
+            filename_suffix_mode: filename_suffix_mode.as_query_value().to_string(),
             filter_exe_date,
             filter_edition,
-            edition_exact,
+            edition_mode: edition_mode.as_query_value().to_string(),
             filter_barcode,
-            barcode_exact,
+            barcode_mode: barcode_mode.as_query_value().to_string(),
             filter_universal_hash,
             filter_tracks_min,
             filter_tracks_max,
@@ -2936,9 +2976,9 @@ async fn discs_page_response(
             filter_offset_max,
             offset_exact,
             filter_volume_label,
-            volume_label_exact,
+            volume_label_mode: volume_label_mode.as_query_value().to_string(),
             filter_internal_serial,
-            internal_serial_exact,
+            internal_serial_mode: internal_serial_mode.as_query_value().to_string(),
             advanced_open,
             advanced_explicit,
             filter_dumper,
@@ -3372,15 +3412,15 @@ mod tests {
         assert_eq!(template.matches("name=\"media\"").count(), 3);
         assert_eq!(template.matches("name=\"category\"").count(), 3);
         assert_eq!(template.matches("name=\"title\"").count(), 3);
-        assert_eq!(template.matches("name=\"title_exact\"").count(), 3);
+        assert_eq!(template.matches("name=\"title_mode\"").count(), 3);
         assert_eq!(template.matches("name=\"title_foreign\"").count(), 3);
-        assert_eq!(template.matches("name=\"title_foreign_exact\"").count(), 3);
+        assert_eq!(template.matches("name=\"title_foreign_mode\"").count(), 3);
         assert_eq!(template.matches("name=\"serial\"").count(), 3);
-        assert_eq!(template.matches("name=\"serial_exact\"").count(), 3);
+        assert_eq!(template.matches("name=\"serial_mode\"").count(), 3);
         assert_eq!(template.matches("name=\"edition\"").count(), 3);
-        assert_eq!(template.matches("name=\"edition_exact\"").count(), 3);
+        assert_eq!(template.matches("name=\"edition_mode\"").count(), 3);
         assert_eq!(template.matches("name=\"barcode\"").count(), 3);
-        assert_eq!(template.matches("name=\"barcode_exact\"").count(), 3);
+        assert_eq!(template.matches("name=\"barcode_mode\"").count(), 3);
         assert_eq!(template.matches("name=\"universal_hash\"").count(), 3);
         assert_eq!(template.matches("name=\"tracks_min\"").count(), 3);
         assert_eq!(template.matches("name=\"tracks_max\"").count(), 4);
@@ -3415,7 +3455,7 @@ mod tests {
             assert!(template.contains(&format!("id=\"{prefix}-exact\"")));
             assert!(template.contains(&format!("initExactRange('{prefix}')")));
         }
-        assert_eq!(template.matches("<span>Exact</span>").count(), 13);
+        assert_eq!(template.matches("<span>Exact</span>").count(), 3);
         assert!(template.contains("{% if tracks_exact %}checked{% endif %}"));
         assert!(template.contains("{% if errors_exact %}checked{% endif %}"));
         assert!(template.contains("{% if offset_exact %}checked{% endif %}"));
@@ -3426,13 +3466,14 @@ mod tests {
     }
 
     #[test]
-    fn text_exact_controls_can_be_submitted_without_text() {
+    fn text_match_modes_preserve_null_filters_without_text() {
         let template = include_str!("../../templates/discs.html");
 
         for (field, id) in [
             ("title_foreign", "title-foreign"),
             ("disc_title", "disc-title"),
             ("disc_title_foreign", "disc-title-foreign"),
+            ("filename_suffix", "filename-suffix"),
             ("serial", "serial"),
             ("edition", "edition"),
             ("barcode", "barcode"),
@@ -3441,14 +3482,20 @@ mod tests {
         ] {
             assert!(template.contains(&format!("id=\"{id}-filter\" name=\"{field}\"")));
             assert!(template.contains(&format!(
-                "id=\"{id}-exact\" name=\"{field}_exact\" value=\"1\""
+                "name=\"{field}_mode\" class=\"text-match-mode\" data-target-input=\"{id}-filter\""
             )));
-            assert!(template.contains(&format!("{{% if {field}_exact %}}checked{{% endif %}}")));
+            assert!(template.contains(&format!(
+                "<option value=\"null\" {{% if {field}_mode == \"null\" %}}selected{{% endif %}}>"
+            )));
+            assert!(template.contains(&format!(
+                "<option value=\"any\" {{% if {field}_mode == \"any\" %}}selected{{% endif %}}>"
+            )));
         }
-        assert!(template.contains(
-            "name=\"title_exact\" value=\"1\" data-requires-nonblank=\"title\""
-        ));
-        assert_eq!(template.matches("data-requires-nonblank=").count(), 1);
+        let title_row = template.split_once("id=\"title-filter-label\"").unwrap().1.split_once("</div>").unwrap().0;
+        assert!(title_row.contains("value=\"exact\""));
+        assert!(!title_row.contains("value=\"null\""));
+        assert!(!title_row.contains("value=\"any\""));
+        assert!(template.contains("input.disabled = select.value === 'null' || select.value === 'any'"));
     }
 
     #[test]
@@ -3620,23 +3667,23 @@ mod tests {
                 letter: "#",
                 dumper: "A/B",
                 title: "Game Title!",
-                title_exact: true,
+                title_mode: "exact",
                 title_foreign: "Foreign Title",
-                title_foreign_exact: true,
+                title_foreign_mode: "exact",
                 disc_number: "2",
                 disc_title: "Bonus Disc",
-                disc_title_exact: true,
+                disc_title_mode: "exact",
                 disc_title_foreign: "Foreign Disc Title",
-                disc_title_foreign_exact: true,
+                disc_title_foreign_mode: "exact",
                 serial: "SLUS 12345",
-                serial_exact: true,
+                serial_mode: "exact",
                 filename_suffix: "",
-                filename_suffix_exact: false,
+                filename_suffix_mode: "",
                 exe_date: "",
                 edition: "Limited Edition",
-                edition_exact: true,
+                edition_mode: "exact",
                 barcode: "0 12345 67890",
-                barcode_exact: true,
+                barcode_mode: "exact",
                 universal_hash: "AABBCCDDEEFF00112233445566778899AABBCCDD",
                 tracks_min: "2",
                 tracks_max: "8",
@@ -3654,9 +3701,9 @@ mod tests {
                 offset_min: "123",
                 offset_max: "123",
                 volume_label: "GAME_DISC",
-                volume_label_exact: true,
+                volume_label_mode: "exact",
                 internal_serial: "SLUS-12345",
-                internal_serial_exact: true,
+                internal_serial_mode: "exact",
                 q: "Game Name",
                 sort: "status",
                 order: "desc",
@@ -3664,7 +3711,7 @@ mod tests {
                 page: 2,
                 advanced: true,
             }),
-            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&disc_number=2&disc_title=Bonus%20Disc&disc_title_exact=1&disc_title_foreign=Foreign%20Disc%20Title&disc_title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset_min=123&offset_max=123&volume_label=GAME_DISC&volume_label_exact=1&internal_serial=SLUS-12345&internal_serial_exact=1&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
+            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_mode=exact&title_foreign=Foreign%20Title&title_foreign_mode=exact&disc_number=2&disc_title=Bonus%20Disc&disc_title_mode=exact&disc_title_foreign=Foreign%20Disc%20Title&disc_title_foreign_mode=exact&serial=SLUS%2012345&serial_mode=exact&edition=Limited%20Edition&edition_mode=exact&barcode=0%2012345%2067890&barcode_mode=exact&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset_min=123&offset_max=123&volume_label=GAME_DISC&volume_label_mode=exact&internal_serial=SLUS-12345&internal_serial_mode=exact&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
         );
 
         assert_eq!(
@@ -3681,17 +3728,17 @@ mod tests {
 
         assert_eq!(
             build_discs_url(DiscsUrlOptions {
-                title_exact: true,
-                title_foreign_exact: true,
-                serial_exact: true,
-                edition_exact: true,
-                barcode_exact: true,
+                title_mode: "exact",
+                title_foreign_mode: "exact",
+                serial_mode: "exact",
+                edition_mode: "exact",
+                barcode_mode: "exact",
                 sort: "title",
                 order: "asc",
                 page: 1,
                 ..Default::default()
             }),
-            "/discs?title_foreign_exact=1&serial_exact=1&edition_exact=1&barcode_exact=1"
+            "/discs?title_mode=exact&title_foreign_mode=exact&serial_mode=exact&edition_mode=exact&barcode_mode=exact"
         );
     }
 
@@ -3882,11 +3929,24 @@ mod tests {
     }
 
     #[test]
-    fn exact_flags_require_only_literal_one_and_allow_blank_text() {
-        assert!(exact_filter_enabled(Some("1")));
-        assert!(!exact_filter_enabled(Some("true")));
-        assert!(!exact_filter_enabled(Some("0")));
-        assert!(!exact_filter_enabled(None));
+    fn text_match_modes_accept_known_values_only() {
+        assert_eq!(
+            TextMatchMode::from_query(Some("exact")),
+            TextMatchMode::Exact
+        );
+        assert_eq!(
+            TextMatchMode::from_query(Some("null")),
+            TextMatchMode::IsNull
+        );
+        assert_eq!(
+            TextMatchMode::from_query(Some("any")),
+            TextMatchMode::Any
+        );
+        assert_eq!(
+            TextMatchMode::from_query(Some("1")),
+            TextMatchMode::Contains
+        );
+        assert_eq!(TextMatchMode::from_query(None), TextMatchMode::Contains);
     }
 
     #[test]
@@ -3964,23 +4024,23 @@ mod tests {
             &mut clauses,
             &mut bind_idx,
             [
-                (ScalarTextField::Title, true, false, false),
-                (ScalarTextField::ForeignTitle, true, true, false),
-                (ScalarTextField::DiscNumber, false, false, false),
-                (ScalarTextField::DiscTitle, false, false, false),
-                (ScalarTextField::ForeignDiscTitle, false, false, false),
-                (ScalarTextField::VolumeLabel, true, false, false),
-                (ScalarTextField::InternalSerial, true, false, false),
-                (ScalarTextField::FilenameSuffix, false, false, false),
+                (ScalarTextField::Title, true, TextMatchMode::Contains),
+                (ScalarTextField::ForeignTitle, true, TextMatchMode::Exact),
+                (ScalarTextField::DiscNumber, false, TextMatchMode::Contains),
+                (ScalarTextField::DiscTitle, false, TextMatchMode::Contains),
+                (ScalarTextField::ForeignDiscTitle, false, TextMatchMode::Contains),
+                (ScalarTextField::VolumeLabel, true, TextMatchMode::Contains),
+                (ScalarTextField::InternalSerial, true, TextMatchMode::Contains),
+                (ScalarTextField::FilenameSuffix, false, TextMatchMode::Contains),
             ],
         );
         add_array_text_clauses(
             &mut clauses,
             &mut bind_idx,
             [
-                (ArrayTextField::Serial, true, false, false),
-                (ArrayTextField::Edition, false, false, false),
-                (ArrayTextField::Barcode, false, false, false),
+                (ArrayTextField::Serial, true, TextMatchMode::Contains),
+                (ArrayTextField::Edition, false, TextMatchMode::Contains),
+                (ArrayTextField::Barcode, false, TextMatchMode::Contains),
             ],
         );
 
@@ -4007,9 +4067,9 @@ mod tests {
             &mut clauses,
             &mut bind_idx,
             [
-                (ArrayTextField::Serial, true, false, false),
-                (ArrayTextField::Edition, true, true, false),
-                (ArrayTextField::Barcode, true, false, false),
+                (ArrayTextField::Serial, true, TextMatchMode::Contains),
+                (ArrayTextField::Edition, true, TextMatchMode::Exact),
+                (ArrayTextField::Barcode, true, TextMatchMode::Contains),
             ],
         );
 
@@ -4135,21 +4195,21 @@ mod tests {
 
     #[test]
     fn disc_query_uses_unsuffixed_advanced_text_parameters_only() {
-        let uri = "/discs?title=Game&title_exact=1&title_foreign=Foreign&title_foreign_exact=1&serial=SLUS-12345&serial_exact=1&edition=Limited&edition_exact=1&barcode=012345&barcode_exact=1&universal_hash=aabbccddeeff00112233445566778899aabbccdd&protection=SecuROM&comments=Note&contents=Bonus%20videos&mastering_code=MASTER-L0&mastering_sid=IFPI-L123&toolstamp=A1&mould_sid=IFPI-1234&additional_mould=A2&offset_min=-123&offset_max=456&ringcode=OLD&edition_q=Old&comments_q=Old"
+        let uri = "/discs?title=Game&title_mode=exact&title_foreign=Foreign&title_foreign_mode=exact&serial=SLUS-12345&serial_mode=exact&edition=Limited&edition_mode=exact&barcode=012345&barcode_mode=exact&universal_hash=aabbccddeeff00112233445566778899aabbccdd&protection=SecuROM&comments=Note&contents=Bonus%20videos&mastering_code=MASTER-L0&mastering_sid=IFPI-L123&toolstamp=A1&mould_sid=IFPI-1234&additional_mould=A2&offset_min=-123&offset_max=456&ringcode=OLD&edition_q=Old&comments_q=Old"
                 .parse()
                 .unwrap();
         let Query(query) = Query::<DiscsQuery>::try_from_uri(&uri).unwrap();
 
         assert_eq!(query.title.as_deref(), Some("Game"));
-        assert_eq!(query.title_exact.as_deref(), Some("1"));
+        assert_eq!(query.title_mode.as_deref(), Some("exact"));
         assert_eq!(query.title_foreign.as_deref(), Some("Foreign"));
-        assert_eq!(query.title_foreign_exact.as_deref(), Some("1"));
+        assert_eq!(query.title_foreign_mode.as_deref(), Some("exact"));
         assert_eq!(query.serial.as_deref(), Some("SLUS-12345"));
-        assert_eq!(query.serial_exact.as_deref(), Some("1"));
+        assert_eq!(query.serial_mode.as_deref(), Some("exact"));
         assert_eq!(query.edition.as_deref(), Some("Limited"));
-        assert_eq!(query.edition_exact.as_deref(), Some("1"));
+        assert_eq!(query.edition_mode.as_deref(), Some("exact"));
         assert_eq!(query.barcode.as_deref(), Some("012345"));
-        assert_eq!(query.barcode_exact.as_deref(), Some("1"));
+        assert_eq!(query.barcode_mode.as_deref(), Some("exact"));
         assert_eq!(
             query.universal_hash.as_deref(),
             Some("aabbccddeeff00112233445566778899aabbccdd")
