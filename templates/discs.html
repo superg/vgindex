@@ -282,6 +282,7 @@
         <input type="hidden" name="q" value="{{ filter_q }}">
         <input type="hidden" name="letter" value="{{ filter_letter }}">
         <input type="hidden" name="order" value="{{ sort_order }}" data-default-value="asc">
+        {% if current_user.is_some() %}<input type="hidden" name="dumped_order" value="{{ dumped_order }}">{% endif %}
         <input type="hidden" name="advanced" id="advanced-flag" value="{% if advanced_explicit %}1{% else %}0{% endif %}" data-default-value="0">
         <div class="letter-picker">
             <a href="{{ self.letter_url("") }}" {% if filter_letter.is_empty() %}class="active"{% endif %}>All</a>
@@ -336,6 +337,7 @@
                     <input type="hidden" name="q" value="{{ filter_q }}">
                     <input type="hidden" name="sort" value="{{ sort_column }}" data-default-value="title">
                     <input type="hidden" name="order" value="{{ sort_order }}" data-default-value="asc">
+                    {% if current_user.is_some() %}<input type="hidden" name="dumped_order" value="{{ dumped_order }}">{% endif %}
                     {% if !filter_title.is_empty() %}<input type="hidden" name="title" value="{{ filter_title }}">{% endif %}
                     {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
                     {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}
@@ -395,7 +397,7 @@
         <thead>
             <tr>
                 {% if current_user.is_some() %}
-                <th class="dumped-by-me-col" title="Dumped by me">👤</th>
+                <th class="dumped-by-me-col" title="Dumped by me"><a href="{{ self.dumped_order_url() }}">👤{% if dumped_order == "first" %} ▲{% endif %}{% if dumped_order == "last" %} ▼{% endif %}</a></th>
                 {% endif %}
                 <th class="region-col"><a href="{{ self.sort_url("region", next_region_order) }}">Region{% if sort_column == "region" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
                 <th class="title-col"><a href="{{ self.sort_url("title", next_title_order) }}">Title{% if sort_column == "title" %} {% if sort_order == "asc" %}▼{% else %}▲{% endif %}{% endif %}</a></th>
@@ -454,6 +456,7 @@
                     <input type="hidden" name="q" value="{{ filter_q }}">
                     <input type="hidden" name="sort" value="{{ sort_column }}" data-default-value="title">
                     <input type="hidden" name="order" value="{{ sort_order }}" data-default-value="asc">
+                    {% if current_user.is_some() %}<input type="hidden" name="dumped_order" value="{{ dumped_order }}">{% endif %}
                     {% if !filter_title.is_empty() %}<input type="hidden" name="title" value="{{ filter_title }}">{% endif %}
                     {% if title_exact %}<input type="hidden" name="title_exact" value="1">{% endif %}
                     {% if !filter_title_foreign.is_empty() %}<input type="hidden" name="title_foreign" value="{{ filter_title_foreign }}">{% endif %}

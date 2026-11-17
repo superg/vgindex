@@ -390,6 +390,7 @@ pub struct DiscsQuery {
     pub internal_serial_exact: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
+    pub dumped_order: Option<String>,
     #[serde(default, deserialize_with = "empty_string_as_none")]
     pub page: Option<i64>,
     pub dumper: Option<String>,
@@ -959,6 +960,19 @@ fn normalize_sort_order(order: Option<&str>) -> String {
     }
 }
 
+fn normalize_dumped_order(order: Option<&str>) -> String {
+    match order
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "first" => "first".to_string(),
+        "last" => "last".to_string(),
+        _ => String::new(),
+    }
+}
+
 #[derive(Template)]
 #[template(path = "discs.html")]
 struct DiscsTemplate {
@@ -1030,6 +1044,7 @@ struct DiscsTemplate {
     next_page: i64,
     sort_column: String,
     sort_order: String,
+    dumped_order: String,
     next_region_order: String,
     next_title_order: String,
     next_system_order: String,
@@ -1042,7 +1057,7 @@ struct DiscsTemplate {
 impl SiteConfig for DiscsTemplate {}
 
 impl DiscsTemplate {
-    fn url(&self, page: i64, letter: &str, sort: &str, order: &str) -> String {
+    fn url(&self, page: i64, letter: &str, sort: &str, order: &str, dumped_order: &str) -> String {
         build_discs_url(DiscsUrlOptions {
             system: &self.filter_system,
             region: &self.filter_region,
@@ -1092,6 +1107,7 @@ impl DiscsTemplate {
             q: &self.filter_q,
             sort,
             order,
+            dumped_order,
             page,
             advanced: self.advanced_explicit,
         })
@@ -1103,15 +1119,25 @@ impl DiscsTemplate {
             &self.filter_letter,
             &self.sort_column,
             &self.sort_order,
+            &self.dumped_order,
         )
     }
 
     fn letter_url(&self, letter: &str) -> String {
-        self.url(1, letter, &self.sort_column, &self.sort_order)
+        self.url(1, letter, &self.sort_column, &self.sort_order, &self.dumped_order)
     }
 
     fn sort_url(&self, sort: &str, order: &str) -> String {
-        self.url(1, &self.filter_letter, sort, order)
+        self.url(1, &self.filter_letter, sort, order, &self.dumped_order)
+    }
+
+    fn dumped_order_url(&self) -> String {
+        let next_order = match self.dumped_order.as_str() {
+            "first" => "last",
+            "last" => "",
+            _ => "first",
+        };
+        self.url(1, &self.filter_letter, &self.sort_column, &self.sort_order, next_order)
     }
 }
 
@@ -1165,6 +1191,7 @@ struct DiscsUrlOptions<'a> {
     q: &'a str,
     sort: &'a str,
     order: &'a str,
+    dumped_order: &'a str,
     page: i64,
     advanced: bool,
 }
@@ -1175,6 +1202,7 @@ fn build_discs_count_cache_key(
 ) -> String {
     options.sort = "title";
     options.order = "asc";
+    options.dumped_order = "";
     options.page = 1;
     options.advanced = false;
     format!(
@@ -1268,6 +1296,7 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("q", options.q),
             ("sort", sort),
             ("order", order),
+            ("dumped_order", options.dumped_order),
             ("page", &page),
             ("advanced", advanced),
         ],
@@ -2028,6 +2057,11 @@ async fn discs_page(
 
     let sort_column = normalize_disc_sort(query.sort.as_deref());
     let sort_order_str = normalize_sort_order(query.order.as_deref());
+    let dumped_order = if user.is_logged_in() {
+        normalize_dumped_order(query.dumped_order.as_deref())
+    } else {
+        String::new()
+    };
 
     let mut sort_cte = String::new();
     let mut sort_join = "";
@@ -2075,7 +2109,12 @@ async fn discs_page(
     } else {
         "ASC"
     };
-    let order_by = disc_order_by_sql(&sort_column, sort_col, sort_dir);
+    let base_order_by = disc_order_by_sql(&sort_column, sort_col, sort_dir);
+    let order_by = match dumped_order.as_str() {
+        "first" => format!("dumped_by_me DESC, {base_order_by}"),
+        "last" => format!("dumped_by_me ASC, {base_order_by}"),
+        _ => base_order_by,
+    };
 
     let count_key_title = title_bind
         .as_deref()
@@ -2238,6 +2277,7 @@ async fn discs_page(
             q: &count_key_q,
             sort: &sort_column,
             order: &sort_order_str,
+            dumped_order: "",
             page,
             advanced: advanced_explicit,
         },
@@ -2493,6 +2533,7 @@ async fn discs_page(
             q: &filter_q,
             sort: &sort_column,
             order: &sort_order_str,
+            dumped_order: &dumped_order,
             page: total_pages.max(1),
             advanced: advanced_explicit,
         }))
@@ -2641,6 +2682,7 @@ async fn discs_page(
             next_page: page + 1,
             sort_column: sort_column.clone(),
             sort_order: sort_order_str,
+            dumped_order,
             next_region_order: next_order("region"),
             next_title_order: next_order("title"),
             next_system_order: next_order("system"),
@@ -3346,6 +3388,7 @@ mod tests {
                 q: "Game Name",
                 sort: "status",
                 order: "desc",
+                dumped_order: "",
                 page: 2,
                 advanced: true,
             }),
