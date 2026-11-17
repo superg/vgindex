@@ -384,7 +384,8 @@ pub struct DiscsQuery {
     pub toolstamp: Option<String>,
     pub mould_sid: Option<String>,
     pub additional_mould: Option<String>,
-    pub offset: Option<String>,
+    pub offset_min: Option<String>,
+    pub offset_max: Option<String>,
     pub volume_label: Option<String>,
     pub volume_label_exact: Option<String>,
     pub internal_serial: Option<String>,
@@ -843,9 +844,21 @@ fn normalize_exe_date_filter(value: Option<&str>) -> Option<String> {
     }
 }
 
-fn offset_search_clause(bind_idx: u32) -> String {
+fn offset_range_clause(min_bind: Option<u32>, max_bind: Option<u32>) -> String {
+    let value_range = |column: &str| {
+        let mut conditions = Vec::new();
+        if let Some(bind_idx) = min_bind {
+            conditions.push(format!("{column} >= ${bind_idx}"));
+        }
+        if let Some(bind_idx) = max_bind {
+            conditions.push(format!("{column} <= ${bind_idx}"));
+        }
+        conditions.join(" AND ")
+    };
+    let primary_range = value_range("offset_entry.offset_value");
+    let extra_range = value_range("offset_entry.offset_extra_value");
     format!(
-        "EXISTS (SELECT 1 FROM disc_ring_code_entries offset_entry WHERE offset_entry.disc_id = d.id AND (offset_entry.offset_value = ${bind_idx} OR (s.has_offset_extra AND offset_entry.offset_extra_value = ${bind_idx})))"
+        "EXISTS (SELECT 1 FROM disc_ring_code_entries offset_entry WHERE offset_entry.disc_id = d.id AND (({primary_range}) OR (s.has_offset_extra AND ({extra_range}))))"
     )
 }
 
@@ -853,7 +866,8 @@ fn add_ring_filter_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
     filters: [(RingTextField, bool); 5],
-    offset_active: bool,
+    offset_min_active: bool,
+    offset_max_active: bool,
 ) {
     for (field, active) in filters {
         if active {
@@ -861,9 +875,20 @@ fn add_ring_filter_clauses(
             where_clauses.push(ring_text_search_clause(field, *bind_idx));
         }
     }
-    if offset_active {
+    let min_bind = if offset_min_active {
         *bind_idx += 1;
-        where_clauses.push(offset_search_clause(*bind_idx));
+        Some(*bind_idx)
+    } else {
+        None
+    };
+    let max_bind = if offset_max_active {
+        *bind_idx += 1;
+        Some(*bind_idx)
+    } else {
+        None
+    };
+    if min_bind.is_some() || max_bind.is_some() {
+        where_clauses.push(offset_range_clause(min_bind, max_bind));
     }
 }
 
@@ -1029,7 +1054,9 @@ struct DiscsTemplate {
     filter_toolstamp: String,
     filter_mould_sid: String,
     filter_additional_mould: String,
-    filter_offset: String,
+    filter_offset_min: String,
+    filter_offset_max: String,
+    offset_exact: bool,
     filter_volume_label: String,
     volume_label_exact: bool,
     filter_internal_serial: String,
@@ -1102,7 +1129,8 @@ impl DiscsTemplate {
             toolstamp: &self.filter_toolstamp,
             mould_sid: &self.filter_mould_sid,
             additional_mould: &self.filter_additional_mould,
-            offset: &self.filter_offset,
+            offset_min: &self.filter_offset_min,
+            offset_max: &self.filter_offset_max,
             volume_label: &self.filter_volume_label,
             volume_label_exact: self.volume_label_exact,
             internal_serial: &self.filter_internal_serial,
@@ -1192,7 +1220,8 @@ struct DiscsUrlOptions<'a> {
     toolstamp: &'a str,
     mould_sid: &'a str,
     additional_mould: &'a str,
-    offset: &'a str,
+    offset_min: &'a str,
+    offset_max: &'a str,
     volume_label: &'a str,
     volume_label_exact: bool,
     internal_serial: &'a str,
@@ -1305,7 +1334,8 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("toolstamp", options.toolstamp),
             ("mould_sid", options.mould_sid),
             ("additional_mould", options.additional_mould),
-            ("offset", options.offset),
+            ("offset_min", options.offset_min),
+            ("offset_max", options.offset_max),
             ("volume_label", options.volume_label),
             ("volume_label_exact", volume_label_exact),
             ("internal_serial", options.internal_serial),
@@ -1914,10 +1944,16 @@ async fn discs_page_response(
     let additional_mould_bind = active_additional_mould
         .as_deref()
         .map(disc_service::normalize_ringcode_whitespace);
-    let filter_offset_value = normalize_offset_filter(query.offset.as_deref());
-    let filter_offset = filter_offset_value
+    let filter_offset_min_value = normalize_offset_filter(query.offset_min.as_deref());
+    let filter_offset_max_value = normalize_offset_filter(query.offset_max.as_deref());
+    let filter_offset_min = filter_offset_min_value
         .map(|value| value.to_string())
         .unwrap_or_default();
+    let filter_offset_max = filter_offset_max_value
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    let offset_exact = filter_offset_min_value.is_some()
+        && filter_offset_min_value == filter_offset_max_value;
     let active_volume_label = active_advanced_filter(query.volume_label.as_ref());
     let volume_label_exact = exact_filter_enabled(query.volume_label_exact.as_deref());
     let volume_label_bind = active_volume_label
@@ -2207,7 +2243,8 @@ async fn discs_page_response(
                 active_additional_mould.is_some(),
             ),
         ],
-        filter_offset_value.is_some(),
+        filter_offset_min_value.is_some(),
+        filter_offset_max_value.is_some(),
     );
     if filter_dumper_unknown {
         where_clauses.push("FALSE".to_string());
@@ -2443,7 +2480,8 @@ async fn discs_page_response(
             toolstamp: &count_key_toolstamp,
             mould_sid: &count_key_mould_sid,
             additional_mould: &count_key_additional_mould,
-            offset: &filter_offset,
+            offset_min: &filter_offset_min,
+            offset_max: &filter_offset_max,
             volume_label: &count_key_volume_label,
             volume_label_exact,
             internal_serial: &count_key_internal_serial,
@@ -2491,7 +2529,8 @@ async fn discs_page_response(
         || filter_errors_max_value.is_some()
         || !filter_edc.is_empty()
         || active_protection.is_some()
-        || filter_offset_value.is_some();
+        || filter_offset_min_value.is_some()
+        || filter_offset_max_value.is_some();
     let count_system_join = if count_requires_system_join {
         " JOIN systems s ON s.code = d.system_code"
     } else {
@@ -2648,8 +2687,11 @@ async fn discs_page_response(
     if let Some(additional_mould) = &additional_mould_bind {
         bind_queries!(additional_mould.clone());
     }
-    if let Some(offset) = filter_offset_value {
-        bind_queries!(offset);
+    if let Some(offset_min) = filter_offset_min_value {
+        bind_queries!(offset_min);
+    }
+    if let Some(offset_max) = filter_offset_max_value {
+        bind_queries!(offset_max);
     }
     if let Some(dumper_id) = filter_dumper_id {
         bind_queries!(dumper_id);
@@ -2721,7 +2763,8 @@ async fn discs_page_response(
             toolstamp: &filter_toolstamp,
             mould_sid: &filter_mould_sid,
             additional_mould: &filter_additional_mould,
-            offset: &filter_offset,
+            offset_min: &filter_offset_min,
+            offset_max: &filter_offset_max,
             volume_label: &filter_volume_label,
             volume_label_exact,
             internal_serial: &filter_internal_serial,
@@ -2890,7 +2933,9 @@ async fn discs_page_response(
             filter_toolstamp,
             filter_mould_sid,
             filter_additional_mould,
-            filter_offset,
+            filter_offset_min,
+            filter_offset_max,
+            offset_exact,
             filter_volume_label,
             volume_label_exact,
             filter_internal_serial,
@@ -3352,7 +3397,8 @@ mod tests {
         assert_eq!(template.matches("name=\"toolstamp\"").count(), 3);
         assert_eq!(template.matches("name=\"mould_sid\"").count(), 3);
         assert_eq!(template.matches("name=\"additional_mould\"").count(), 3);
-        assert_eq!(template.matches("name=\"offset\"").count(), 3);
+        assert_eq!(template.matches("name=\"offset_min\"").count(), 3);
+        assert_eq!(template.matches("name=\"offset_max\"").count(), 4);
         assert!(!template.contains("name=\"ringcode\""));
         assert!(!template.contains("edition_q"));
         assert!(!template.contains("comments_q"));
@@ -3361,19 +3407,20 @@ mod tests {
     }
 
     #[test]
-    fn exact_track_and_error_controls_mirror_independently() {
+    fn exact_numeric_filter_controls_mirror_independently() {
         let template = include_str!("../../templates/discs.html");
 
-        for prefix in ["tracks", "errors"] {
+        for prefix in ["tracks", "errors", "offset"] {
             assert!(template.contains(&format!("id=\"{prefix}-min\"")));
             assert!(template.contains(&format!("id=\"{prefix}-max\"")));
             assert!(template.contains(&format!("id=\"{prefix}-max-mirror\"")));
             assert!(template.contains(&format!("id=\"{prefix}-exact\"")));
             assert!(template.contains(&format!("initExactRange('{prefix}')")));
         }
-        assert_eq!(template.matches("<span>Exact</span>").count(), 12);
+        assert_eq!(template.matches("<span>Exact</span>").count(), 13);
         assert!(template.contains("{% if tracks_exact %}checked{% endif %}"));
         assert!(template.contains("{% if errors_exact %}checked{% endif %}"));
+        assert!(template.contains("{% if offset_exact %}checked{% endif %}"));
         assert!(template.contains("max.value = min.value"));
         assert!(template.contains("maxMirror.value = min.value"));
         assert!(template.contains("max.disabled = true"));
@@ -3606,7 +3653,8 @@ mod tests {
                 toolstamp: "A 1",
                 mould_sid: "IFPI 1234",
                 additional_mould: "A2",
-                offset: "123",
+                offset_min: "123",
+                offset_max: "123",
                 volume_label: "GAME_DISC",
                 volume_label_exact: true,
                 internal_serial: "SLUS-12345",
@@ -3618,7 +3666,7 @@ mod tests {
                 page: 2,
                 advanced: true,
             }),
-            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&disc_number=2&disc_title=Bonus%20Disc&disc_title_exact=1&disc_title_foreign=Foreign%20Disc%20Title&disc_title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset=123&volume_label=GAME_DISC&volume_label_exact=1&internal_serial=SLUS-12345&internal_serial_exact=1&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
+            "/discs?system=PS2&region=us&language=en&media=dvd9&category=Bonus%20Discs&status=Verified&letter=%23&dumper=A%2FB&title=Game%20Title%21&title_exact=1&title_foreign=Foreign%20Title&title_foreign_exact=1&disc_number=2&disc_title=Bonus%20Disc&disc_title_exact=1&disc_title_foreign=Foreign%20Disc%20Title&disc_title_foreign_exact=1&serial=SLUS%2012345&serial_exact=1&edition=Limited%20Edition&edition_exact=1&barcode=0%2012345%2067890&barcode_exact=1&universal_hash=AABBCCDDEEFF00112233445566778899AABBCCDD&tracks_min=2&tracks_max=8&errors_min=3&errors_max=12&edc=no&protection=SecuROM%207%2B&comments=Disc%20%26%20manual&contents=Game%20data%20%26%20extras&mastering_code=MASTER%20%20L0&mastering_sid=IFPI%20L123&toolstamp=A%201&mould_sid=IFPI%201234&additional_mould=A2&offset_min=123&offset_max=123&volume_label=GAME_DISC&volume_label_exact=1&internal_serial=SLUS-12345&internal_serial_exact=1&q=Game%20Name&sort=status&order=desc&page=2&advanced=1"
         );
 
         assert_eq!(
@@ -4031,10 +4079,10 @@ mod tests {
     }
 
     #[test]
-    fn offset_clause_matches_primary_or_applicable_extra_offset_exactly() {
+    fn offset_range_clause_matches_primary_or_applicable_extra_offset() {
         assert_eq!(
-            offset_search_clause(9),
-            "EXISTS (SELECT 1 FROM disc_ring_code_entries offset_entry WHERE offset_entry.disc_id = d.id AND (offset_entry.offset_value = $9 OR (s.has_offset_extra AND offset_entry.offset_extra_value = $9)))"
+            offset_range_clause(Some(9), Some(10)),
+            "EXISTS (SELECT 1 FROM disc_ring_code_entries offset_entry WHERE offset_entry.disc_id = d.id AND ((offset_entry.offset_value >= $9 AND offset_entry.offset_value <= $10) OR (s.has_offset_extra AND (offset_entry.offset_extra_value >= $9 AND offset_entry.offset_extra_value <= $10))))"
         );
     }
 
@@ -4054,9 +4102,10 @@ mod tests {
                 (RingTextField::AdditionalMould, true),
             ],
             true,
+            true,
         );
 
-        assert_eq!(bind_idx, 14);
+        assert_eq!(bind_idx, 15);
         assert_eq!(clauses.len(), 8);
         assert!(clauses[1].contains("search_fold($8)"));
         assert!(clauses[2].contains("LOWER($9)"));
@@ -4064,7 +4113,8 @@ mod tests {
         assert!(clauses[4].contains("LOWER($11)"));
         assert!(clauses[5].contains("LOWER($12)"));
         assert!(clauses[6].contains("LOWER($13)"));
-        assert!(clauses[7].contains("offset_entry.offset_value = $14"));
+        assert!(clauses[7].contains("offset_entry.offset_value >= $14"));
+        assert!(clauses[7].contains("offset_entry.offset_value <= $15"));
     }
 
     #[test]
@@ -4087,7 +4137,7 @@ mod tests {
 
     #[test]
     fn disc_query_uses_unsuffixed_advanced_text_parameters_only() {
-        let uri = "/discs?title=Game&title_exact=1&title_foreign=Foreign&title_foreign_exact=1&serial=SLUS-12345&serial_exact=1&edition=Limited&edition_exact=1&barcode=012345&barcode_exact=1&universal_hash=aabbccddeeff00112233445566778899aabbccdd&protection=SecuROM&comments=Note&contents=Bonus%20videos&mastering_code=MASTER-L0&mastering_sid=IFPI-L123&toolstamp=A1&mould_sid=IFPI-1234&additional_mould=A2&offset=%2B123&ringcode=OLD&edition_q=Old&comments_q=Old"
+        let uri = "/discs?title=Game&title_exact=1&title_foreign=Foreign&title_foreign_exact=1&serial=SLUS-12345&serial_exact=1&edition=Limited&edition_exact=1&barcode=012345&barcode_exact=1&universal_hash=aabbccddeeff00112233445566778899aabbccdd&protection=SecuROM&comments=Note&contents=Bonus%20videos&mastering_code=MASTER-L0&mastering_sid=IFPI-L123&toolstamp=A1&mould_sid=IFPI-1234&additional_mould=A2&offset_min=-123&offset_max=456&ringcode=OLD&edition_q=Old&comments_q=Old"
                 .parse()
                 .unwrap();
         let Query(query) = Query::<DiscsQuery>::try_from_uri(&uri).unwrap();
@@ -4114,7 +4164,8 @@ mod tests {
         assert_eq!(query.toolstamp.as_deref(), Some("A1"));
         assert_eq!(query.mould_sid.as_deref(), Some("IFPI-1234"));
         assert_eq!(query.additional_mould.as_deref(), Some("A2"));
-        assert_eq!(query.offset.as_deref(), Some("+123"));
+        assert_eq!(query.offset_min.as_deref(), Some("-123"));
+        assert_eq!(query.offset_max.as_deref(), Some("456"));
 
         let legacy_uri = "/discs?edition_q=Old&comments_q=Old".parse().unwrap();
         let Query(legacy_query) = Query::<DiscsQuery>::try_from_uri(&legacy_uri).unwrap();
