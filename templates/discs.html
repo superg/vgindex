@@ -403,9 +403,7 @@
     </nav>
     {% endif %}
     {% if current_user.is_some() %}
-    {% if csv_export_disabled %}
-    <span class="export-csv-button is-disabled" aria-disabled="true" title="{{ csv_export_limit_message }}">Export as CSV</span>
-    {% else %}
+    {% if show_csv_export %}
     <a href="{{ self.export_url() }}" class="export-csv-button">Export as CSV</a>
     {% endif %}
     {% endif %}
