@@ -1849,9 +1849,7 @@ fn format_comments(raw: &str) -> String {
         ("[T:TID]", "<b>Taito ID</b>:"),
         ("[T:KOEI]", "<b>Koei ID</b>:"),
         ("[T:LAID]", "<b>LucasArts ID</b>:"),
-        ("[T:PT2]", "<b>Postgap type</b>: Form 2"),
         ("[T:ACC]", "<b>Acclaim ID</b>:"),
-        ("[T:VFC]", "<b>BBFC Reg. No.</b>:"),
         ("[T:GTID]", "<b>GT Interactive ID</b>:"),
         ("[T:KIRZ]", "<b>King Records ID</b>:"),
         ("[T:PCID]", "<b>Pony Canyon ID</b>:"),
@@ -1871,6 +1869,10 @@ fn format_comments(raw: &str) -> String {
         ("[T:GF]", "<b>Game Footage</b>:"),
         ("[T:RD]", "<b>Rolling Demos</b>:"),
         ("[T:SG]", "<b>Savegames</b>:"),
+        ("[T:GA]", "<b>Games</b>:"),
+        ("[T:APP]", "<b>Applications</b>:"),
+        ("[T:SIM]", "<b>Steam Depot ID (.sis/.sim/.sid)</b>:"),
+        ("[T:CSM]", "<b>Steam Depot ID (.sis/.csm/.csd)</b>:"),
     ];
 
     let mut s = raw.to_string();
@@ -2505,11 +2507,6 @@ mod tests {
         let rows = build_bca_mastering_rows(&[record]);
 
         assert_eq!(rows[0].date, "2000-03-01");
-    }
-
-    #[test]
-    fn postgap_type_form_2_tag_includes_its_value() {
-        assert_eq!(format_comments("[T:PT2]"), "<b>Postgap type</b>: Form 2");
     }
 
     #[test]
