@@ -8,8 +8,13 @@
 
 {% match download_pack_version %}
 {% when Some with (version) %}
+{% if can_download_database %}
 <p class="downloads-page-desc">You may also download all files from the
     <a href="/downloads/pack">daily pack (<time datetime="{{ version }}">{{ version }}</time>)</a></p>
+{% else %}
+<p class="downloads-page-desc">You may also download all files from the daily pack
+    (<time datetime="{{ version }}">{{ version }}</time>) after <a href="/login">logging in</a>.</p>
+{% endif %}
 {% when None %}
 {% endmatch %}
 

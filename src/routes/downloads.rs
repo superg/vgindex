@@ -318,7 +318,7 @@ async fn download_database(_user: RequireAuth, request: Request) -> Response {
     serve_database_export(export, request).await
 }
 
-async fn download_pack(request: Request) -> Response {
+async fn download_pack(_user: RequireAuth, request: Request) -> Response {
     let path = match archive_service::cached_download_pack_path() {
         Ok(path) => path,
         Err(e) => return e.into_response(),
@@ -518,6 +518,22 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/downloads/database")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn pack_download_rejects_guests() {
+        let response = routes()
+            .with_state(test_state())
+            .oneshot(
+                Request::builder()
+                    .uri("/downloads/pack")
                     .body(Body::empty())
                     .unwrap(),
             )
