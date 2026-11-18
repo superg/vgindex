@@ -318,11 +318,33 @@ async fn download_database(_user: RequireAuth, request: Request) -> Response {
     serve_database_export(export, request).await
 }
 
-async fn download_pack() -> Response {
-    match archive_service::get_cached_download_pack() {
-        Ok(result) => archive_response(result),
-        Err(e) => e.into_response(),
-    }
+async fn download_pack(request: Request) -> Response {
+    let path = match archive_service::cached_download_pack_path() {
+        Ok(path) => path,
+        Err(e) => return e.into_response(),
+    };
+    let Some(filename) = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| HeaderValue::from_str(&format!("attachment; filename=\"{n}\"")).ok())
+    else {
+        return AppError::NotFound.into_response();
+    };
+
+    // ServeFile opens the file asynchronously and streams it in chunks.
+    let mut response = ServeFile::new(path)
+        .oneshot(request)
+        .await
+        .expect("ServeFile is infallible")
+        .into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/zip"),
+    );
+    response
+        .headers_mut()
+        .insert(header::CONTENT_DISPOSITION, filename);
+    response
 }
 
 async fn serve_database_export(

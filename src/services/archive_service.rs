@@ -292,8 +292,8 @@ pub fn download_pack_version() -> Option<String> {
         .map(|date| date.to_string())
 }
 
-pub fn get_cached_download_pack() -> AppResult<ArchiveResult> {
-    find_cached_archive(PACK_SYSTEM, PACK_TYPE).ok_or(AppError::NotFound)
+pub fn cached_download_pack_path() -> AppResult<PathBuf> {
+    newest_zip_path(Path::new(&archive_subdir(PACK_SYSTEM, PACK_TYPE))).ok_or(AppError::NotFound)
 }
 
 fn download_pack_is_due(now: chrono::DateTime<chrono::Utc>, version: Option<&str>) -> bool {
