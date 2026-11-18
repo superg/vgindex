@@ -14,6 +14,27 @@ pub fn validate_non_negative_int(s: &str) -> Result<i64, String> {
     Ok(v)
 }
 
+pub fn validate_exe_date(s: &str) -> Result<(), String> {
+    let bytes = s.trim().as_bytes();
+    let digits_at = |range: std::ops::Range<usize>| bytes[range].iter().all(u8::is_ascii_digit);
+    let valid = match bytes.len() {
+        7 => digits_at(0..4) && bytes[4] == b'-' && digits_at(5..7),
+        10 => {
+            digits_at(0..4)
+                && bytes[4] == b'-'
+                && digits_at(5..7)
+                && bytes[7] == b'-'
+                && digits_at(8..10)
+        }
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err("must be in YYYY-MM-DD or YYYY-MM format".into())
+    }
+}
+
 pub fn validate_signed_int(s: &str) -> Result<i32, String> {
     let s = s.trim();
     if s.is_empty() {

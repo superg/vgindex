@@ -441,6 +441,12 @@ fn parse_raw_hex_input(text: &str) -> Result<Vec<u8>, String> {
 
 fn parse_pvd_hex_dump(text: &str) -> Result<Vec<u8>, String> {
     let mut result = parse_binary_hex_input(text)?;
+    if result.len() < 82 {
+        return Err(format!(
+            "must be at least 82 bytes, got {} bytes",
+            result.len()
+        ));
+    }
     result.truncate(82);
     Ok(result)
 }
