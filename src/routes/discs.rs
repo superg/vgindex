@@ -926,7 +926,7 @@ fn add_pvd_date_clauses(
     }
 
     where_clauses.push(
-        "substring(d.pvd from 14 for 8) <> decode('3030303030303030', 'hex')".to_string(),
+        "encode(substring(d.pvd from 14 for 8), 'hex') ~ '^([3-9a-f][0-9a-f]){8}$'".to_string(),
     );
 
     if pvd_date_min.is_some() {
