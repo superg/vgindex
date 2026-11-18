@@ -365,7 +365,10 @@ pub struct DiscsQuery {
     pub serial_mode: Option<String>,
     pub filename_suffix: Option<String>,
     pub filename_suffix_mode: Option<String>,
-    pub exe_date: Option<String>,
+    pub exe_date_min: Option<String>,
+    pub exe_date_max: Option<String>,
+    pub pvd_date_min: Option<String>,
+    pub pvd_date_max: Option<String>,
     pub edition: Option<String>,
     pub edition_mode: Option<String>,
     pub barcode: Option<String>,
@@ -390,6 +393,8 @@ pub struct DiscsQuery {
     pub volume_label_mode: Option<String>,
     pub internal_serial: Option<String>,
     pub internal_serial_mode: Option<String>,
+    pub version: Option<String>,
+    pub version_mode: Option<String>,
     pub sort: Option<String>,
     pub order: Option<String>,
     pub dumped_filter: Option<String>,
@@ -680,6 +685,7 @@ enum ScalarTextField {
     FilenameSuffix,
     VolumeLabel,
     InternalSerial,
+    Version,
 }
 
 impl ScalarTextField {
@@ -693,12 +699,17 @@ impl ScalarTextField {
             Self::FilenameSuffix => "filename_suffix",
             Self::VolumeLabel => "volume_label",
             Self::InternalSerial => "internal_serial",
+            Self::Version => "version",
         }
     }
 
     fn capability(self) -> Option<&'static str> {
         match self {
-            Self::Title | Self::FilenameSuffix | Self::VolumeLabel | Self::InternalSerial => None,
+            Self::Title
+            | Self::FilenameSuffix
+            | Self::VolumeLabel
+            | Self::InternalSerial
+            | Self::Version => None,
             Self::ForeignTitle => Some("has_title_foreign"),
             Self::DiscNumber => Some("has_disc_number"),
             Self::DiscTitle => Some("has_disc_title"),
@@ -748,7 +759,7 @@ fn scalar_text_any_clause(field: ScalarTextField) -> String {
 fn add_scalar_text_clauses(
     where_clauses: &mut Vec<String>,
     bind_idx: &mut u32,
-    filters: [(ScalarTextField, bool, TextMatchMode); 8],
+    filters: [(ScalarTextField, bool, TextMatchMode); 9],
 ) {
     for (field, active, mode) in filters {
         match mode {
@@ -875,7 +886,7 @@ fn normalize_offset_filter(value: Option<&str>) -> Option<i32> {
     crate::services::validation::validate_signed_int(value?).ok()
 }
 
-fn normalize_exe_date_filter(value: Option<&str>) -> Option<String> {
+fn normalize_date_filter(value: Option<&str>) -> Option<String> {
     let value = value?.trim();
     let bytes = value.as_bytes();
     match value.len() {
@@ -895,6 +906,28 @@ fn normalize_exe_date_filter(value: Option<&str>) -> Option<String> {
             Some(value.to_string())
         }
         _ => None,
+    }
+}
+
+fn pvd_date_bound_bytes(date: &str, fill: u8) -> Vec<u8> {
+    let mut bytes: Vec<u8> = date.bytes().filter(|byte| *byte != b'-').collect();
+    bytes.resize(8, fill);
+    bytes
+}
+
+fn add_pvd_date_clauses(
+    where_clauses: &mut Vec<String>,
+    bind_idx: &mut u32,
+    pvd_date_min: Option<&str>,
+    pvd_date_max: Option<&str>,
+) {
+    if pvd_date_min.is_some() {
+        *bind_idx += 1;
+        where_clauses.push(format!("substring(d.pvd from 14 for 8) >= ${}", *bind_idx));
+    }
+    if pvd_date_max.is_some() {
+        *bind_idx += 1;
+        where_clauses.push(format!("substring(d.pvd from 14 for 8) <= ${}", *bind_idx));
     }
 }
 
@@ -1087,7 +1120,10 @@ struct DiscsTemplate {
     serial_mode: String,
     filter_filename_suffix: String,
     filename_suffix_mode: String,
-    filter_exe_date: String,
+    filter_exe_date_min: String,
+    filter_exe_date_max: String,
+    filter_pvd_date_min: String,
+    filter_pvd_date_max: String,
     filter_edition: String,
     edition_mode: String,
     filter_barcode: String,
@@ -1115,6 +1151,8 @@ struct DiscsTemplate {
     volume_label_mode: String,
     filter_internal_serial: String,
     internal_serial_mode: String,
+    filter_version: String,
+    version_mode: String,
     advanced_open: bool,
     advanced_explicit: bool,
     filter_dumper: String,
@@ -1163,7 +1201,10 @@ impl DiscsTemplate {
             serial_mode: &self.serial_mode,
             filename_suffix: &self.filter_filename_suffix,
             filename_suffix_mode: &self.filename_suffix_mode,
-            exe_date: &self.filter_exe_date,
+            exe_date_min: &self.filter_exe_date_min,
+            exe_date_max: &self.filter_exe_date_max,
+            pvd_date_min: &self.filter_pvd_date_min,
+            pvd_date_max: &self.filter_pvd_date_max,
             edition: &self.filter_edition,
             edition_mode: &self.edition_mode,
             barcode: &self.filter_barcode,
@@ -1188,6 +1229,8 @@ impl DiscsTemplate {
             volume_label_mode: &self.volume_label_mode,
             internal_serial: &self.filter_internal_serial,
             internal_serial_mode: &self.internal_serial_mode,
+            version: &self.filter_version,
+            version_mode: &self.version_mode,
             q: &self.filter_q,
             sort,
             order,
@@ -1254,7 +1297,10 @@ struct DiscsUrlOptions<'a> {
     serial_mode: &'a str,
     filename_suffix: &'a str,
     filename_suffix_mode: &'a str,
-    exe_date: &'a str,
+    exe_date_min: &'a str,
+    exe_date_max: &'a str,
+    pvd_date_min: &'a str,
+    pvd_date_max: &'a str,
     edition: &'a str,
     edition_mode: &'a str,
     barcode: &'a str,
@@ -1279,6 +1325,8 @@ struct DiscsUrlOptions<'a> {
     volume_label_mode: &'a str,
     internal_serial: &'a str,
     internal_serial_mode: &'a str,
+    version: &'a str,
+    version_mode: &'a str,
     q: &'a str,
     sort: &'a str,
     order: &'a str,
@@ -1356,7 +1404,10 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("barcode", options.barcode),
             ("barcode_mode", options.barcode_mode),
             ("universal_hash", options.universal_hash),
-            ("exe_date", options.exe_date),
+            ("exe_date_min", options.exe_date_min),
+            ("exe_date_max", options.exe_date_max),
+            ("pvd_date_min", options.pvd_date_min),
+            ("pvd_date_max", options.pvd_date_max),
             ("tracks_min", options.tracks_min),
             ("tracks_max", options.tracks_max),
             ("errors_min", options.errors_min),
@@ -1376,6 +1427,8 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("volume_label_mode", options.volume_label_mode),
             ("internal_serial", options.internal_serial),
             ("internal_serial_mode", options.internal_serial_mode),
+            ("version", options.version),
+            ("version_mode", options.version_mode),
             ("q", options.q),
             ("sort", sort),
             ("order", order),
@@ -1933,8 +1986,14 @@ async fn discs_page_response(
     let filter_universal_hash = active_universal_hash.clone().unwrap_or_default();
     let universal_hash_bind =
         queue_service::universal_hash_bytes_for_matching(active_universal_hash.as_deref());
-    let active_exe_date = normalize_exe_date_filter(query.exe_date.as_deref());
-    let filter_exe_date = active_exe_date.clone().unwrap_or_default();
+    let active_exe_date_min = normalize_date_filter(query.exe_date_min.as_deref());
+    let active_exe_date_max = normalize_date_filter(query.exe_date_max.as_deref());
+    let filter_exe_date_min = active_exe_date_min.clone().unwrap_or_default();
+    let filter_exe_date_max = active_exe_date_max.clone().unwrap_or_default();
+    let active_pvd_date_min = normalize_date_filter(query.pvd_date_min.as_deref());
+    let active_pvd_date_max = normalize_date_filter(query.pvd_date_max.as_deref());
+    let filter_pvd_date_min = active_pvd_date_min.clone().unwrap_or_default();
+    let filter_pvd_date_max = active_pvd_date_max.clone().unwrap_or_default();
     let filter_tracks_min_value = normalize_non_negative_bound(query.tracks_min.as_deref());
     let filter_tracks_max_value = normalize_non_negative_bound(query.tracks_max.as_deref());
     let filter_tracks_min = filter_tracks_min_value
@@ -2024,6 +2083,14 @@ async fn discs_page_response(
         .as_deref()
         .map(|value| scalar_text_bind_value(value, internal_serial_exact));
     let filter_internal_serial = internal_serial_bind.clone().unwrap_or_default();
+    let version_mode = TextMatchMode::from_query(query.version_mode.as_deref());
+    let active_version =
+        active_advanced_filter(query.version.as_ref()).filter(|_| version_mode.searches_text());
+    let version_exact = version_mode.is_exact();
+    let version_bind = active_version
+        .as_deref()
+        .map(|value| scalar_text_bind_value(value, version_exact));
+    let filter_version = version_bind.clone().unwrap_or_default();
     let active_protection = active_advanced_filter(query.protection.as_ref());
     let active_comments = active_advanced_filter(query.comments.as_ref());
     let active_contents = active_advanced_filter(query.contents.as_ref());
@@ -2216,6 +2283,11 @@ async fn discs_page_response(
                 active_filename_suffix.is_some(),
                 filename_suffix_mode,
             ),
+            (
+                ScalarTextField::Version,
+                active_version.is_some(),
+                version_mode,
+            ),
         ],
     );
     add_array_text_clauses(
@@ -2245,10 +2317,20 @@ async fn discs_page_response(
         active_universal_hash.is_some(),
         universal_hash_bind.as_deref(),
     );
-    if active_exe_date.is_some() {
+    if active_exe_date_min.is_some() {
         bind_idx += 1;
-        where_clauses.push(format!("d.exe_date LIKE ${bind_idx} || '%'"));
+        where_clauses.push(format!("d.exe_date >= LEFT(${bind_idx}, LENGTH(d.exe_date))"));
     }
+    if active_exe_date_max.is_some() {
+        bind_idx += 1;
+        where_clauses.push(format!("LEFT(d.exe_date, LENGTH(${bind_idx})) <= ${bind_idx}"));
+    }
+    add_pvd_date_clauses(
+        &mut where_clauses,
+        &mut bind_idx,
+        active_pvd_date_min.as_deref(),
+        active_pvd_date_max.as_deref(),
+    );
     add_track_count_clauses(
         &mut where_clauses,
         &mut bind_idx,
@@ -2452,6 +2534,16 @@ async fn discs_page_response(
             }
         })
         .unwrap_or_default();
+    let count_key_version = version_bind
+        .as_deref()
+        .map(|value| {
+            if version_exact {
+                value.to_string()
+            } else {
+                value.to_lowercase()
+            }
+        })
+        .unwrap_or_default();
     let count_key_protection = active_protection
         .as_deref()
         .map(str::to_lowercase)
@@ -2513,7 +2605,10 @@ async fn discs_page_response(
             barcode: &count_key_barcode,
             barcode_mode: barcode_mode.as_query_value(),
             universal_hash: &count_key_universal_hash,
-            exe_date: &filter_exe_date,
+            exe_date_min: &filter_exe_date_min,
+            exe_date_max: &filter_exe_date_max,
+            pvd_date_min: &filter_pvd_date_min,
+            pvd_date_max: &filter_pvd_date_max,
             tracks_min: &filter_tracks_min,
             tracks_max: &filter_tracks_max,
             errors_min: &filter_errors_min,
@@ -2533,6 +2628,8 @@ async fn discs_page_response(
             volume_label_mode: volume_label_mode.as_query_value(),
             internal_serial: &count_key_internal_serial,
             internal_serial_mode: internal_serial_mode.as_query_value(),
+            version: &count_key_version,
+            version_mode: version_mode.as_query_value(),
             q: &count_key_q,
             sort: &sort_column,
             order: &sort_order_str,
@@ -2689,6 +2786,9 @@ async fn discs_page_response(
     if let Some(filename_suffix) = &filename_suffix_bind {
         bind_queries!(filename_suffix.clone());
     }
+    if let Some(version) = &version_bind {
+        bind_queries!(version.clone());
+    }
     if let Some(serial) = &serial_bind {
         bind_queries!(serial.clone());
     }
@@ -2701,8 +2801,17 @@ async fn discs_page_response(
     if let Some(universal_hash) = &universal_hash_bind {
         bind_queries!(universal_hash.clone());
     }
-    if let Some(exe_date) = &active_exe_date {
-        bind_queries!(exe_date.clone());
+    if let Some(exe_date_min) = &active_exe_date_min {
+        bind_queries!(exe_date_min.clone());
+    }
+    if let Some(exe_date_max) = &active_exe_date_max {
+        bind_queries!(exe_date_max.clone());
+    }
+    if let Some(pvd_date_min) = &active_pvd_date_min {
+        bind_queries!(pvd_date_bound_bytes(pvd_date_min, b'0'));
+    }
+    if let Some(pvd_date_max) = &active_pvd_date_max {
+        bind_queries!(pvd_date_bound_bytes(pvd_date_max, b'9'));
     }
     if let Some(tracks_min) = filter_tracks_min_value {
         bind_queries!(tracks_min);
@@ -2802,7 +2911,10 @@ async fn discs_page_response(
             barcode: &filter_barcode,
             barcode_mode: barcode_mode.as_query_value(),
             universal_hash: &filter_universal_hash,
-            exe_date: &filter_exe_date,
+            exe_date_min: &filter_exe_date_min,
+            exe_date_max: &filter_exe_date_max,
+            pvd_date_min: &filter_pvd_date_min,
+            pvd_date_max: &filter_pvd_date_max,
             tracks_min: &filter_tracks_min,
             tracks_max: &filter_tracks_max,
             errors_min: &filter_errors_min,
@@ -2822,6 +2934,8 @@ async fn discs_page_response(
             volume_label_mode: volume_label_mode.as_query_value(),
             internal_serial: &filter_internal_serial,
             internal_serial_mode: internal_serial_mode.as_query_value(),
+            version: &filter_version,
+            version_mode: version_mode.as_query_value(),
             q: &filter_q,
             sort: &sort_column,
             order: &sort_order_str,
@@ -2965,7 +3079,10 @@ async fn discs_page_response(
             serial_mode: serial_mode.as_query_value().to_string(),
             filter_filename_suffix,
             filename_suffix_mode: filename_suffix_mode.as_query_value().to_string(),
-            filter_exe_date,
+            filter_exe_date_min,
+            filter_exe_date_max,
+            filter_pvd_date_min,
+            filter_pvd_date_max,
             filter_edition,
             edition_mode: edition_mode.as_query_value().to_string(),
             filter_barcode,
@@ -2993,6 +3110,8 @@ async fn discs_page_response(
             volume_label_mode: volume_label_mode.as_query_value().to_string(),
             filter_internal_serial,
             internal_serial_mode: internal_serial_mode.as_query_value().to_string(),
+            filter_version,
+            version_mode: version_mode.as_query_value().to_string(),
             advanced_open,
             advanced_explicit,
             filter_dumper,
@@ -3403,10 +3522,10 @@ mod tests {
                 && title_foreign < serial
                 && serial < edition
                 && edition < barcode
-                && barcode < universal_hash
-                && universal_hash < tracks
+                && barcode < tracks
                 && tracks < errors
-                && errors < edc
+                && errors < offset
+                && offset < edc
                 && edc < protection
                 && protection < comments
                 && comments < contents
@@ -3415,7 +3534,7 @@ mod tests {
                 && mastering_sid < toolstamp
                 && toolstamp < mould_sid
                 && mould_sid < additional_mould
-                && additional_mould < offset
+                && additional_mould < universal_hash
         );
         assert!(template.contains("<option value=\"\">All Languages</option>"));
         assert!(template.contains("<option value=\"none\""));
@@ -3693,7 +3812,10 @@ mod tests {
                 serial_mode: "exact",
                 filename_suffix: "",
                 filename_suffix_mode: "",
-                exe_date: "",
+                exe_date_min: "",
+                exe_date_max: "",
+                pvd_date_min: "",
+                pvd_date_max: "",
                 edition: "Limited Edition",
                 edition_mode: "exact",
                 barcode: "0 12345 67890",
@@ -3718,6 +3840,8 @@ mod tests {
                 volume_label_mode: "exact",
                 internal_serial: "SLUS-12345",
                 internal_serial_mode: "exact",
+                version: "",
+                version_mode: "",
                 q: "Game Name",
                 sort: "status",
                 order: "desc",
@@ -4046,6 +4170,7 @@ mod tests {
                 (ScalarTextField::VolumeLabel, true, TextMatchMode::Contains),
                 (ScalarTextField::InternalSerial, true, TextMatchMode::Contains),
                 (ScalarTextField::FilenameSuffix, false, TextMatchMode::Contains),
+                (ScalarTextField::Version, false, TextMatchMode::Contains),
             ],
         );
         add_array_text_clauses(

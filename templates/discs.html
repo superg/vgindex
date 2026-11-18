@@ -209,14 +209,23 @@
                     </select>
                 </div>
             </div>
-            <label class="advanced-search-row">
-                <span>Universal Hash</span>
-                <input type="text" name="universal_hash" value="{{ filter_universal_hash }}">
-            </label>
-            <label class="advanced-search-row">
+            <div class="advanced-search-row">
                 <span>EXE Date</span>
-                <input type="text" name="exe_date" value="{{ filter_exe_date }}" placeholder="YYYY-MM-DD" maxlength="10" pattern="[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?" title="YYYY, YYYY-MM, or YYYY-MM-DD">
-            </label>
+                <div class="count-range-controls">
+                    <input type="text" name="exe_date_min" value="{{ filter_exe_date_min }}" placeholder="YYYY-MM-DD" maxlength="10" pattern="[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?" title="YYYY, YYYY-MM, or YYYY-MM-DD" aria-label="Minimum EXE date">
+                    <span class="count-range-separator" aria-hidden="true">to</span>
+                    <input type="text" name="exe_date_max" value="{{ filter_exe_date_max }}" placeholder="YYYY-MM-DD" maxlength="10" pattern="[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?" title="YYYY, YYYY-MM, or YYYY-MM-DD" aria-label="Maximum EXE date">
+                </div>
+            </div>
+
+            <div class="advanced-search-row">
+                <span title="PVD Creation Date">PVD Date</span>
+                <div class="count-range-controls">
+                    <input type="text" name="pvd_date_min" value="{{ filter_pvd_date_min }}" placeholder="YYYY-MM-DD" maxlength="10" pattern="[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?" title="YYYY, YYYY-MM, or YYYY-MM-DD" aria-label="Minimum PVD date">
+                    <span class="count-range-separator" aria-hidden="true">to</span>
+                    <input type="text" name="pvd_date_max" value="{{ filter_pvd_date_max }}" placeholder="YYYY-MM-DD" maxlength="10" pattern="[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?" title="YYYY, YYYY-MM, or YYYY-MM-DD" aria-label="Maximum PVD date">
+                </div>
+            </div>
             <div class="advanced-search-row">
                 <span>Tracks</span>
                 <div class="count-range-controls">
@@ -239,6 +248,19 @@
                     <input type="hidden" id="errors-max-mirror" name="errors_max" value="{{ filter_errors_max }}" {% if !errors_exact %}disabled{% endif %}>
                     <label class="count-exact-toggle" for="errors-exact">
                         <input type="checkbox" id="errors-exact" {% if errors_exact %}checked{% endif %}>
+                        <span>Exact</span>
+                    </label>
+                </div>
+            </div>
+            <div class="advanced-search-row">
+                <span>Offset</span>
+                <div class="count-range-controls">
+                    <input type="number" id="offset-min" name="offset_min" value="{{ filter_offset_min }}" step="1" placeholder="Min" aria-label="Minimum offset">
+                    <span class="count-range-separator" aria-hidden="true">to</span>
+                    <input type="number" id="offset-max" name="offset_max" value="{{ filter_offset_max }}" step="1" placeholder="Max" aria-label="Maximum offset" {% if offset_exact %}disabled{% endif %}>
+                    <input type="hidden" id="offset-max-mirror" name="offset_max" value="{{ filter_offset_max }}" {% if !offset_exact %}disabled{% endif %}>
+                    <label class="count-exact-toggle" for="offset-exact">
+                        <input type="checkbox" id="offset-exact" {% if offset_exact %}checked{% endif %}>
                         <span>Exact</span>
                     </label>
                 </div>
@@ -289,17 +311,20 @@
                 <span>Additional Mould</span>
                 <input type="text" name="additional_mould" value="{{ filter_additional_mould }}">
             </label>
+            <label class="advanced-search-row">
+                <span>Universal Hash</span>
+                <input type="text" name="universal_hash" value="{{ filter_universal_hash }}">
+            </label>
             <div class="advanced-search-row">
-                <span>Offset</span>
-                <div class="count-range-controls">
-                    <input type="number" id="offset-min" name="offset_min" value="{{ filter_offset_min }}" step="1" placeholder="Min" aria-label="Minimum offset">
-                    <span class="count-range-separator" aria-hidden="true">to</span>
-                    <input type="number" id="offset-max" name="offset_max" value="{{ filter_offset_max }}" step="1" placeholder="Max" aria-label="Maximum offset" {% if offset_exact %}disabled{% endif %}>
-                    <input type="hidden" id="offset-max-mirror" name="offset_max" value="{{ filter_offset_max }}" {% if !offset_exact %}disabled{% endif %}>
-                    <label class="count-exact-toggle" for="offset-exact">
-                        <input type="checkbox" id="offset-exact" {% if offset_exact %}checked{% endif %}>
-                        <span>Exact</span>
-                    </label>
+                <span id="version-filter-label">Version</span>
+                <div class="text-match-controls">
+                    <input type="text" id="version-filter" name="version" value="{{ filter_version }}" aria-labelledby="version-filter-label" {% if version_mode == "null" || version_mode == "any" %}disabled{% endif %}>
+                    <select name="version_mode" class="text-match-mode" data-target-input="version-filter" aria-label="Version match mode">
+                        <option value="" {% if version_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if version_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if version_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if version_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
                 </div>
             </div>
             <div class="advanced-search-actions">
@@ -386,7 +411,10 @@
                     {% if !filter_barcode.is_empty() %}<input type="hidden" name="barcode" value="{{ filter_barcode }}">{% endif %}
                     {% if !barcode_mode.is_empty() %}<input type="hidden" name="barcode_mode" value="{{ barcode_mode }}">{% endif %}
                     {% if !filter_universal_hash.is_empty() %}<input type="hidden" name="universal_hash" value="{{ filter_universal_hash }}">{% endif %}
-                    {% if !filter_exe_date.is_empty() %}<input type="hidden" name="exe_date" value="{{ filter_exe_date }}">{% endif %}
+                    {% if !filter_exe_date_min.is_empty() %}<input type="hidden" name="exe_date_min" value="{{ filter_exe_date_min }}">{% endif %}
+                    {% if !filter_exe_date_max.is_empty() %}<input type="hidden" name="exe_date_max" value="{{ filter_exe_date_max }}">{% endif %}
+                    {% if !filter_pvd_date_min.is_empty() %}<input type="hidden" name="pvd_date_min" value="{{ filter_pvd_date_min }}">{% endif %}
+                    {% if !filter_pvd_date_max.is_empty() %}<input type="hidden" name="pvd_date_max" value="{{ filter_pvd_date_max }}">{% endif %}
                     {% if !filter_tracks_min.is_empty() %}<input type="hidden" name="tracks_min" value="{{ filter_tracks_min }}">{% endif %}
                     {% if !filter_tracks_max.is_empty() %}<input type="hidden" name="tracks_max" value="{{ filter_tracks_max }}">{% endif %}
                     {% if !filter_errors_min.is_empty() %}<input type="hidden" name="errors_min" value="{{ filter_errors_min }}">{% endif %}
@@ -410,6 +438,8 @@
                     {% if !volume_label_mode.is_empty() %}<input type="hidden" name="volume_label_mode" value="{{ volume_label_mode }}">{% endif %}
                     {% if !filter_internal_serial.is_empty() %}<input type="hidden" name="internal_serial" value="{{ filter_internal_serial }}">{% endif %}
                     {% if !internal_serial_mode.is_empty() %}<input type="hidden" name="internal_serial_mode" value="{{ internal_serial_mode }}">{% endif %}
+                    {% if !filter_version.is_empty() %}<input type="hidden" name="version" value="{{ filter_version }}">{% endif %}
+                    {% if !version_mode.is_empty() %}<input type="hidden" name="version_mode" value="{{ version_mode }}">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                     {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}
                 </form>
@@ -510,7 +540,10 @@
                     {% if !filter_barcode.is_empty() %}<input type="hidden" name="barcode" value="{{ filter_barcode }}">{% endif %}
                     {% if !barcode_mode.is_empty() %}<input type="hidden" name="barcode_mode" value="{{ barcode_mode }}">{% endif %}
                     {% if !filter_universal_hash.is_empty() %}<input type="hidden" name="universal_hash" value="{{ filter_universal_hash }}">{% endif %}
-                    {% if !filter_exe_date.is_empty() %}<input type="hidden" name="exe_date" value="{{ filter_exe_date }}">{% endif %}
+                    {% if !filter_exe_date_min.is_empty() %}<input type="hidden" name="exe_date_min" value="{{ filter_exe_date_min }}">{% endif %}
+                    {% if !filter_exe_date_max.is_empty() %}<input type="hidden" name="exe_date_max" value="{{ filter_exe_date_max }}">{% endif %}
+                    {% if !filter_pvd_date_min.is_empty() %}<input type="hidden" name="pvd_date_min" value="{{ filter_pvd_date_min }}">{% endif %}
+                    {% if !filter_pvd_date_max.is_empty() %}<input type="hidden" name="pvd_date_max" value="{{ filter_pvd_date_max }}">{% endif %}
                     {% if !filter_tracks_min.is_empty() %}<input type="hidden" name="tracks_min" value="{{ filter_tracks_min }}">{% endif %}
                     {% if !filter_tracks_max.is_empty() %}<input type="hidden" name="tracks_max" value="{{ filter_tracks_max }}">{% endif %}
                     {% if !filter_errors_min.is_empty() %}<input type="hidden" name="errors_min" value="{{ filter_errors_min }}">{% endif %}
@@ -530,6 +563,8 @@
                     {% if !volume_label_mode.is_empty() %}<input type="hidden" name="volume_label_mode" value="{{ volume_label_mode }}">{% endif %}
                     {% if !filter_internal_serial.is_empty() %}<input type="hidden" name="internal_serial" value="{{ filter_internal_serial }}">{% endif %}
                     {% if !internal_serial_mode.is_empty() %}<input type="hidden" name="internal_serial_mode" value="{{ internal_serial_mode }}">{% endif %}
+                    {% if !filter_version.is_empty() %}<input type="hidden" name="version" value="{{ filter_version }}">{% endif %}
+                    {% if !version_mode.is_empty() %}<input type="hidden" name="version_mode" value="{{ version_mode }}">{% endif %}
                     {% if !filter_dumper.is_empty() %}<input type="hidden" name="dumper" value="{{ filter_dumper }}">{% endif %}
                     {% if advanced_explicit %}<input type="hidden" name="advanced" value="1">{% endif %}
                 </form>
