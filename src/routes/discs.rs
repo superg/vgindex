@@ -921,6 +921,14 @@ fn add_pvd_date_clauses(
     pvd_date_min: Option<&str>,
     pvd_date_max: Option<&str>,
 ) {
+    if pvd_date_min.is_none() && pvd_date_max.is_none() {
+        return;
+    }
+
+    where_clauses.push(
+        "substring(d.pvd from 14 for 8) <> decode('3030303030303030', 'hex')".to_string(),
+    );
+
     if pvd_date_min.is_some() {
         *bind_idx += 1;
         where_clauses.push(format!("substring(d.pvd from 14 for 8) >= ${}", *bind_idx));
@@ -1988,10 +1996,24 @@ async fn discs_page_response(
         queue_service::universal_hash_bytes_for_matching(active_universal_hash.as_deref());
     let active_exe_date_min = normalize_date_filter(query.exe_date_min.as_deref());
     let active_exe_date_max = normalize_date_filter(query.exe_date_max.as_deref());
+    let exe_date_range_inverted = matches!(
+        (&active_exe_date_min, &active_exe_date_max),
+        (Some(min), Some(max)) if {
+            let shared = min.len().min(max.len());
+            min[..shared] > max[..shared]
+        }
+    );
     let filter_exe_date_min = active_exe_date_min.clone().unwrap_or_default();
     let filter_exe_date_max = active_exe_date_max.clone().unwrap_or_default();
     let active_pvd_date_min = normalize_date_filter(query.pvd_date_min.as_deref());
     let active_pvd_date_max = normalize_date_filter(query.pvd_date_max.as_deref());
+    let pvd_date_range_inverted = matches!(
+        (&active_pvd_date_min, &active_pvd_date_max),
+        (Some(min), Some(max)) if {
+            let shared = min.len().min(max.len());
+            min[..shared] > max[..shared]
+        }
+    );
     let filter_pvd_date_min = active_pvd_date_min.clone().unwrap_or_default();
     let filter_pvd_date_max = active_pvd_date_max.clone().unwrap_or_default();
     let filter_tracks_min_value = normalize_non_negative_bound(query.tracks_min.as_deref());
@@ -2331,6 +2353,9 @@ async fn discs_page_response(
         active_pvd_date_min.as_deref(),
         active_pvd_date_max.as_deref(),
     );
+    if exe_date_range_inverted || pvd_date_range_inverted {
+        where_clauses.push("FALSE".to_string());
+    }
     add_track_count_clauses(
         &mut where_clauses,
         &mut bind_idx,
