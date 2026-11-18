@@ -20,11 +20,6 @@ SET additional_moulds = BTRIM(additional_moulds, E' \t\n\r\f')
 WHERE additional_moulds != '' AND additional_moulds ~ '^[ \t\n\r\f]|[ \t\n\r\f]$';
 
 -- Update pseudotag definitions
---
--- Each heading must be the whole line. The line terminator is matched with a
--- lookahead so it is never consumed: it stays in the text, and consecutive
--- matching lines (e.g. "Games:" directly followed by "Applications:") are all
--- replaced. Group 1 is the line start (^ or the preceding newline).
 UPDATE discs
 SET contents = regexp_replace(
     contents,
