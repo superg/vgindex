@@ -1505,6 +1505,15 @@ fn validate_form_with_options(
         }
     }
 
+    if let Some(ref s) = form.exe_date {
+        let s = s.trim();
+        if !s.is_empty() {
+            if let Err(e) = validation::validate_exe_date(s) {
+                errors.push(format!("EXE Date: {}", e));
+            }
+        }
+    }
+
     for (i, lb) in form.layerbreak.iter().enumerate() {
         let s = lb.trim();
         if !s.is_empty() {
@@ -1603,8 +1612,13 @@ fn validate_form_with_options(
     if let Some(ref text) = form.pvd {
         let text = text.trim();
         if !text.is_empty() {
-            if let Err(e) = disc_service::parse_binary_hex_input(text).map(|_| ()) {
-                errors.push(format!("PVD: {}", e));
+            match disc_service::parse_binary_hex_input(text) {
+                Err(e) => errors.push(format!("PVD: {}", e)),
+                Ok(bytes) if bytes.len() < 82 => errors.push(format!(
+                    "PVD: must be at least 82 bytes, got {} bytes",
+                    bytes.len()
+                )),
+                Ok(_) => {}
             }
         }
     }
