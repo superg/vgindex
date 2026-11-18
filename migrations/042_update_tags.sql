@@ -73,20 +73,3 @@ SET comments = regexp_replace(
     'g'
 )
 WHERE comments ~ '(^|\n)\[T:VFC\]';
-
-CREATE TABLE IF NOT EXISTS alternative_disc_title_types (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(64) NOT NULL UNIQUE
-);
-
-INSERT INTO alternative_disc_title_types (name) VALUES
-    ('Internal'),
-    ('Transliterated')
-ON CONFLICT (name) DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS disc_alternative_titles (
-    disc_id INT NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
-    title_type_id INT NOT NULL REFERENCES alternative_disc_title_types(id),
-    title VARCHAR(512) NOT NULL,
-    PRIMARY KEY (disc_id, title_type_id)
-);
