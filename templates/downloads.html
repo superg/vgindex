@@ -6,6 +6,13 @@
 <h3 class="downloads-page-title">Downloads</h3>
 <p class="downloads-page-desc">Download datfiles, cuesheets, and SBI archives for each system.</p>
 
+{% match download_pack_version %}
+{% when Some with (version) %}
+<p class="downloads-page-desc">You may also download all files from the
+    <a href="/downloads/pack">daily pack (<time datetime="{{ version }}">{{ version }}</time>)</a></p>
+{% when None %}
+{% endmatch %}
+
 <div class="downloads-table-scaler">
 <table class="striped downloads-table" data-downloads-width-source>
     <thead>
