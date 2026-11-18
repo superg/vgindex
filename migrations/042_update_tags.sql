@@ -20,6 +20,11 @@ SET additional_moulds = BTRIM(additional_moulds, E' \t\n\r\f')
 WHERE additional_moulds != '' AND additional_moulds ~ '^[ \t\n\r\f]|[ \t\n\r\f]$';
 
 -- Update pseudotag definitions
+--
+-- Each heading must be the whole line. The line terminator is matched with a
+-- lookahead so it is never consumed: it stays in the text, and consecutive
+-- matching lines (e.g. "Games:" directly followed by "Applications:") are all
+-- replaced. Group 1 is the line start (^ or the preceding newline).
 UPDATE discs
 SET contents = regexp_replace(
     contents,
@@ -68,11 +73,11 @@ WHERE comments ~ '(^|\n)\[T:PT2\](?=\r?\n|$)';
 UPDATE discs
 SET comments = regexp_replace(
     comments,
-    '(^|\n)\[T:VFC\](?=\r?\n|$)',
+    '(^|\n)\[T:VFC\]',
     E'\\1[T:BBFC]',
     'g'
 )
-WHERE comments ~ '(^|\n)\[T:VFC\](?=\r?\n|$)';
+WHERE comments ~ '(^|\n)\[T:VFC\]';
 
 CREATE TABLE IF NOT EXISTS alternative_disc_title_types (
     id SERIAL PRIMARY KEY,
