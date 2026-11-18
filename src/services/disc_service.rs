@@ -100,10 +100,12 @@ fn is_horizontal_whitespace(ch: char) -> bool {
 }
 
 pub(crate) fn normalize_ringcode_whitespace(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
+    let trimmed = value.trim();
+    
+    let mut out = String::with_capacity(trimmed.len());
     let mut run = String::new();
 
-    for ch in value.chars() {
+    for ch in trimmed.chars() {
         if is_horizontal_whitespace(ch) {
             run.push(ch);
             continue;
@@ -2076,6 +2078,15 @@ mod tests {
         assert_eq!(normalize_ringcode_whitespace("MASTER\t\tL0"), "MASTER\tL0");
         assert_eq!(normalize_ringcode_whitespace("MASTER\tL0"), "MASTER\tL0");
         assert_eq!(normalize_ringcode_whitespace("A\n  B"), "A\n\tB");
+    }
+
+    #[test]
+    fn ringcode_whitespace_normalization_strips_leading_and_trailing_whitespace() {
+        assert_eq!(normalize_ringcode_whitespace("  MASTER L0  "), "MASTER L0");
+        assert_eq!(normalize_ringcode_whitespace("\t MASTER  L0 \t"), "MASTER\tL0");
+        assert_eq!(normalize_ringcode_whitespace("   "), "");
+        assert_eq!(normalize_ringcode_whitespace("  IFPI L123  "), "IFPI L123");
+        assert_eq!(normalize_ringcode_whitespace(" \t AB  CD \t "), "AB\tCD");
     }
 
     #[test]

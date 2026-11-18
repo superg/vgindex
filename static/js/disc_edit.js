@@ -551,7 +551,7 @@ function saveRingFromDom() {
 
 function normalizeRingcodeWhitespace(value) {
     if (value === null || value === undefined) return '';
-    return String(value).replace(/[^\S\r\n]{2,}/g, '\t');
+    return String(value).trim().replace(/[^\S\r\n]{2,}/g, '\t');
 }
 
 function normalizeRingLayerWhitespace(layer) {
