@@ -292,6 +292,7 @@ pub async fn save_draft_submission(
     extra_upload_url: Option<&str>,
     submission_token: Option<&str>,
     submission_fingerprint: Option<&str>,
+    expected_revision: i64,
 ) -> AppResult<Option<DiscSubmission>> {
     let submission_token = normalize_submission_token(submission_token)?;
     let submission_fingerprint = if submission_token.is_some() {
@@ -319,6 +320,7 @@ pub async fn save_draft_submission(
              submission_token = $6, submission_fingerprint = $7
          WHERE id = $8 AND submitter_id = $9
            AND submission_type = 'Disc' AND status = 'Draft'
+           AND submission_revision = $10
          RETURNING *",
     )
     .bind(submission_comment.as_deref())
@@ -330,6 +332,7 @@ pub async fn save_draft_submission(
     .bind(submission_fingerprint.as_deref())
     .bind(submission_id)
     .bind(submitter_id)
+    .bind(expected_revision)
     .fetch_optional(pool)
     .await?)
 }

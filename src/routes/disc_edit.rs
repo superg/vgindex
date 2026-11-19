@@ -3265,7 +3265,12 @@ async fn add_submit(
     if save_as_draft {
         attach_draft_form_snapshot(&mut changes, &form)?;
         if let Some(draft_submission) = draft_submission.as_ref() {
-            let saved = queue_service::save_draft_submission(
+            let expected_revision = form
+                .submission_revision
+                .as_deref()
+                .and_then(|value| value.trim().parse::<i64>().ok())
+                .ok_or_else(|| AppError::BadRequest(STALE_DRAFT_FORM_ERROR.into()))?;
+            queue_service::save_draft_submission(
                 &state.pool,
                 draft_submission.id,
                 user.id,
@@ -3276,13 +3281,11 @@ async fn add_submit(
                 extra_upload_url_text,
                 Some(&form.submission_token),
                 Some(&request_fingerprint),
+                expected_revision,
             )
-            .await?;
-            return if saved.is_some() {
-                Ok(Redirect::to(&user_drafts_url(&user.username)).into_response())
-            } else {
-                Ok(Redirect::to("/queue").into_response())
-            };
+            .await?
+            .ok_or_else(|| AppError::BadRequest(STALE_DRAFT_FORM_ERROR.into()))?;
+            return Ok(Redirect::to(&user_drafts_url(&user.username)).into_response());
         }
 
         let creation = queue_service::create_draft_submission(
