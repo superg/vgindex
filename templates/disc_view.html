@@ -261,22 +261,22 @@
             <tr class="{% if row.first_in_entry && row.entry_num > 1 %}ring-group-start{% endif %}{% if row.entry_even %} ring-entry-even{% endif %}">
                 {% if row.entry_rowspan > 0 %}<td class="entry-num ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
                 {% if ring_vis.layer %}<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>{% endif %}
-                {% if ring_vis.mastering_code %}<td class="ring-fixed-cell ring-mastering-code">{{ row.mastering_code|safe }}</td>{% endif %}
-                {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell ring-mastering-sid">{{ row.mastering_sid|safe }}</td>{% endif %}
-                {% if ring_vis.toolstamps %}<td class="ring-fixed-cell ring-toolstamps">{{ row.toolstamps|safe }}</td>{% endif %}
-                {% if ring_vis.mould_sids %}<td class="ring-fixed-cell ring-mould-sids">{{ row.mould_sids|safe }}</td>{% endif %}
-                {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell ring-additional-moulds">{{ row.additional_moulds|safe }}</td>{% endif %}
+                {% if ring_vis.mastering_code %}<td class="ring-fixed-cell ring-mastering-code">{% if !row.mastering_code.is_empty() %}<span class="ring-value">{{ row.mastering_code|safe }}</span>{% endif %}</td>{% endif %}
+                {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell ring-mastering-sid">{% if !row.mastering_sid.is_empty() %}<span class="ring-value">{{ row.mastering_sid|safe }}</span>{% endif %}</td>{% endif %}
+                {% if ring_vis.toolstamps %}<td class="ring-fixed-cell ring-toolstamps">{% if !row.toolstamps.is_empty() %}<span class="ring-value">{{ row.toolstamps|safe }}</span>{% endif %}</td>{% endif %}
+                {% if ring_vis.mould_sids %}<td class="ring-fixed-cell ring-mould-sids">{% if !row.mould_sids.is_empty() %}<span class="ring-value">{{ row.mould_sids|safe }}</span>{% endif %}</td>{% endif %}
+                {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell ring-additional-moulds">{% if !row.additional_moulds.is_empty() %}<span class="ring-value">{{ row.additional_moulds|safe }}</span>{% endif %}</td>{% endif %}
                 {% if ring_vis.offset %}
-                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell ring-offset"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell ring-offset"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{% if !row.offset.is_empty() %}<span class="ring-value">{{ row.offset }}</span>{% endif %}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.offset_extra %}
-                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell ring-offset-extra"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset_extra }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell ring-offset-extra"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{% if !row.offset_extra.is_empty() %}<span class="ring-value">{{ row.offset_extra }}</span>{% endif %}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.sample_data_start %}
-                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell ring-sample-start"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.sample_data_start }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell ring-sample-start"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{% if !row.sample_data_start.is_empty() %}<span class="ring-value">{{ row.sample_data_start }}</span>{% endif %}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.comment %}
-                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell ring-comment"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.comment }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell ring-comment"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{% if !row.comment.is_empty() %}<span class="ring-value">{{ row.comment }}</span>{% endif %}</td>{% endif %}
                 {% endif %}
             </tr>
             {% endfor %}

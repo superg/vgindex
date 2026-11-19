@@ -4691,8 +4691,19 @@ body:has(.submission-info) main.container > section h3 {
     background-color: #c62828;
     border-color: #c62828;
 }
+.submission-info .form-actions {
+    display: flex;
+    width: min(100%, calc((32rem - 1rem) / 2));
+    margin: 1rem auto 0.35rem;
+}
+.submission-info .form-actions button {
+    width: 100%;
+    margin-bottom: 0;
+    text-align: center;
+}
 .review-actions .btn-draft,
-.disc-edit .form-actions .btn-draft {
+.disc-edit .form-actions .btn-draft,
+.submission-info .btn-draft {
     background-color: #d65a00;
     border-color: #d65a00;
 }

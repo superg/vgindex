@@ -280,6 +280,98 @@ pub async fn process_dirty_archive_systems(
     Ok(systems)
 }
 
+const PACK_SYSTEM: &str = "redump";
+const PACK_TYPE: &str = "pack";
+
+pub fn download_pack_version() -> Option<String> {
+    let path = newest_zip_path(Path::new(&archive_subdir(PACK_SYSTEM, PACK_TYPE)))?;
+    let stem = path.file_stem()?.to_str()?;
+    let date = stem.strip_suffix(')')?.rsplit_once('(')?.1;
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .ok()
+        .map(|date| date.to_string())
+}
+
+pub fn cached_download_pack_path() -> AppResult<PathBuf> {
+    newest_zip_path(Path::new(&archive_subdir(PACK_SYSTEM, PACK_TYPE))).ok_or(AppError::NotFound)
+}
+
+fn download_pack_is_due(now: chrono::DateTime<chrono::Utc>, version: Option<&str>) -> bool {
+    let Some(built) = version.and_then(|v| chrono::NaiveDate::parse_from_str(v, "%Y-%m-%d").ok())
+    else {
+        return true;
+    };
+    built < now.date_naive()
+}
+
+async fn generate_download_pack(pool: &PgPool) -> AppResult<ArchiveResult> {
+    let systems: Vec<String> = sqlx::query_scalar(
+        "SELECT s.code FROM systems s
+         WHERE EXISTS (SELECT 1 FROM discs d WHERE d.system_code = s.code)
+         ORDER BY LOWER(CONCAT_WS(' ', NULLIF(s.manufacturer, ''), s.name))",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let err = |e: &dyn std::fmt::Display| AppError::Internal(e.to_string());
+    let mut buf = Vec::new();
+    let mut zip = ZipWriter::new(std::io::Cursor::new(&mut buf));
+    // input already compressed
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored)
+        .large_file(true);
+
+    for code in &systems {
+        for (archive_type, folder) in [
+            ("dat", "Datfiles"),
+            ("cue", "Cuesheets"),
+            ("sbi", "SBI"),
+            ("extras", "Extras Datfiles"),
+        ] {
+            let archive = match get_cached_archive(pool, code, archive_type).await {
+                Ok(archive) => archive,
+                Err(AppError::NotFound) => continue,
+                Err(e) => return Err(e),
+            };
+            zip.start_file(format!("{folder}/{}", archive.filename), options)
+                .map_err(|e| err(&e))?;
+            zip.write_all(&archive.data).map_err(|e| err(&e))?;
+        }
+    }
+
+    for bios in crate::routes::downloads::BIOS_DOWNLOADS {
+        let path = Path::new(bios.path);
+        let Some(filename) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        zip.start_file(format!("BIOS/{filename}"), options)
+            .map_err(|e| err(&e))?;
+        zip.write_all(&std::fs::read(path).map_err(|e| err(&e))?)
+            .map_err(|e| err(&e))?;
+    }
+
+    zip.finish().map_err(|e| err(&e))?;
+    Ok(ArchiveResult {
+        data: buf,
+        filename: format!(
+            "Redump Daily Pack ({}).zip",
+            chrono::Utc::now().format("%Y-%m-%d")
+        ),
+    })
+}
+
+pub async fn regenerate_download_pack_if_due(
+    pool: &PgPool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> AppResult<()> {
+    if !download_pack_is_due(now, download_pack_version().as_deref()) {
+        return Ok(());
+    }
+    tracing::info!("Generating download pack");
+    let pack = generate_download_pack(pool).await?;
+    store_archive(PACK_SYSTEM, PACK_TYPE, &pack).map_err(|e| AppError::Internal(e.to_string()))
+}
+
 pub async fn run_archive_worker(
     pool: PgPool,
     metadata: ArchiveMetadata,
@@ -300,6 +392,9 @@ pub async fn run_archive_worker(
         .await
         {
             tracing::error!("Failed to generate disc database export: {err}");
+        }
+        if let Err(err) = regenerate_download_pack_if_due(&pool, chrono::Utc::now()).await {
+            tracing::error!("Failed to generate download pack: {err}");
         }
     }
 }

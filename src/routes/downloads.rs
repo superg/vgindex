@@ -26,6 +26,7 @@ pub fn routes() -> Router<AppState> {
         .route("/sbi/{system}", get(download_sbi))
         .route("/extras/{system}", get(download_extras))
         .route("/downloads/database", get(download_database))
+        .route("/downloads/pack", get(download_pack))
 }
 
 #[derive(Template)]
@@ -34,6 +35,7 @@ struct DownloadsTemplate {
     current_user: Option<AuthenticatedUser>,
     can_download_database: bool,
     database_export: Option<DatabaseDownload>,
+    download_pack_version: Option<String>,
     systems: Vec<SystemDownload>,
     bios_systems: Vec<BiosDownload>,
 }
@@ -60,13 +62,13 @@ struct DatabaseDownload {
     datetime: String,
 }
 
-struct BiosDownloadSpec {
+pub(crate) struct BiosDownloadSpec {
     code: &'static str,
     fallback_name: &'static str,
-    path: &'static str,
+    pub(crate) path: &'static str,
 }
 
-const BIOS_DOWNLOADS: &[BiosDownloadSpec] = &[
+pub(crate) const BIOS_DOWNLOADS: &[BiosDownloadSpec] = &[
     BiosDownloadSpec {
         code: "XBOX",
         fallback_name: "Microsoft Xbox",
@@ -211,6 +213,7 @@ async fn downloads_page(State(state): State<AppState>, user: CurrentUser) -> Htm
             current_user: user.user().cloned(),
             can_download_database: authenticated,
             database_export: database_export_download(),
+            download_pack_version: archive_service::download_pack_version(),
             systems,
             bios_systems: bios_downloads(&system_names),
         }
@@ -260,19 +263,23 @@ fn dat_archive_type_for_features(features: &str) -> bool {
 async fn serve_archive(state: &AppState, system: &str, archive_type: &str) -> Response {
     let system = normalize_archive_system_code(system);
     match archive_service::get_cached_archive(&state.pool, &system, archive_type).await {
-        Ok(result) => (
-            [
-                (header::CONTENT_TYPE, "application/zip".to_string()),
-                (
-                    header::CONTENT_DISPOSITION,
-                    format!("attachment; filename=\"{}\"", result.filename),
-                ),
-            ],
-            result.data,
-        )
-            .into_response(),
+        Ok(result) => archive_response(result),
         Err(e) => e.into_response(),
     }
+}
+
+fn archive_response(result: archive_service::ArchiveResult) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "application/zip".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}\"", result.filename),
+            ),
+        ],
+        result.data,
+    )
+        .into_response()
 }
 
 async fn download_dat(State(state): State<AppState>, Path(system): Path<String>) -> Response {
@@ -309,6 +316,35 @@ async fn download_database(_user: RequireAuth, request: Request) -> Response {
     };
 
     serve_database_export(export, request).await
+}
+
+async fn download_pack(_user: RequireAuth, request: Request) -> Response {
+    let path = match archive_service::cached_download_pack_path() {
+        Ok(path) => path,
+        Err(e) => return e.into_response(),
+    };
+    let Some(filename) = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| HeaderValue::from_str(&format!("attachment; filename=\"{n}\"")).ok())
+    else {
+        return AppError::NotFound.into_response();
+    };
+
+    // ServeFile opens the file asynchronously and streams it in chunks.
+    let mut response = ServeFile::new(path)
+        .oneshot(request)
+        .await
+        .expect("ServeFile is infallible")
+        .into_response();
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/zip"),
+    );
+    response
+        .headers_mut()
+        .insert(header::CONTENT_DISPOSITION, filename);
+    response
 }
 
 async fn serve_database_export(
@@ -375,6 +411,7 @@ mod tests {
                 date: "2026-07-03 19:25:58 UTC".to_string(),
                 datetime: "2026-07-03T19:25:58Z".to_string(),
             }),
+            download_pack_version: Some("2026-07-03".to_string()),
             systems: vec![
                 SystemDownload {
                     code: "PS3".to_string(),
@@ -481,6 +518,22 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/downloads/database")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn pack_download_rejects_guests() {
+        let response = routes()
+            .with_state(test_state())
+            .oneshot(
+                Request::builder()
+                    .uri("/downloads/pack")
                     .body(Body::empty())
                     .unwrap(),
             )
