@@ -24,6 +24,15 @@
 {% block title %}Submission #{{ submission_id }}{% endblock %}
 
 {% block content %}
+{% if !validation_errors.is_empty() %}
+<div class="validation-errors" role="alert">
+    <ul>
+    {% for err in validation_errors %}
+        <li>{{ err }}</li>
+    {% endfor %}
+    </ul>
+</div>
+{% endif %}
 <div class="submission-info">
     <table class="table-compact table-fit-section">
         <tr><td><strong>Submission Type</strong></td><td>{{ submission_type_display }}</td></tr>
@@ -44,18 +53,17 @@
         {% endif %}
     </table>
 
+    {% if can_return_to_draft %}
+    <form method="post" action="/queue/{{ submission_id }}/draft" class="form-actions">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="submission_revision" value="{{ submission_revision }}">
+        <button type="submit" class="btn-draft">Return to Draft</button>
+    </form>
+    {% endif %}
+
     {% call changes_details("Submitted Metadata", submitted_changes, false) %}
     {% call changes_details("Approved Changes", approved_changes, true) %}
 </div>
-
-{% if !dump_log_display.is_empty() %}
-<section>
-    <details class="dump-log-details" open>
-        <summary><h3>Dump Log</h3></summary>
-        <p class="pre-wrap section-text dump-log-content">{{ dump_log_display }}</p>
-    </details>
-</section>
-{% endif %}
 
 {% if !submission_comment.is_empty() %}
 <section>
@@ -68,6 +76,15 @@
 <section>
     <h3>Review Comment</h3>
     <p class="pre-wrap section-text">{{ review_comment_display }}</p>
+</section>
+{% endif %}
+
+{% if !dump_log_display.is_empty() %}
+<section>
+    <details class="dump-log-details" open>
+        <summary><h3>Dump Log</h3></summary>
+        <p class="pre-wrap section-text dump-log-content">{{ dump_log_display }}</p>
+    </details>
 </section>
 {% endif %}
 

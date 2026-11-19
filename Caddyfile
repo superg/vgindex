@@ -42,7 +42,7 @@
 (crawler_guard_app) {
 	@crawler_generated {
 		header_regexp User-Agent "(?i)(bot|crawler|spider|slurp|archiver|facebookexternalhit|meta-externalagent|meta-webindexer|aiwebindex)"
-		path /api/* /auth/* /login /logout /queue /queue/* /maintenance /maintenance/* /disc/submit /downloads/database /datfile/* /cues/* /sbi/* /list/*
+		path /api/* /auth/* /login /logout /queue /queue/* /maintenance /maintenance/* /disc/submit /downloads/database /downloads/pack /datfile/* /cues/* /sbi/* /list/*
 	}
 	respond @crawler_generated "Crawler access to generated navigation is disabled.\n" 403
 
@@ -127,6 +127,7 @@
 		Disallow: /*/edit
 		Disallow: /discs?
 		Disallow: /downloads/database
+		Disallow: /downloads/pack
 		Disallow: /datfile/
 		Disallow: /cues/
 		Disallow: /sbi/

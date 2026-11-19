@@ -25,6 +25,8 @@ use crate::AppState;
 
 const ADD_DISC_MATCH_LOOKUP_ERROR: &str =
     "Disc matching: could not check existing discs. Please try again.";
+const STALE_DRAFT_FORM_ERROR: &str =
+    "This draft changed after the form was loaded. Reload the draft and try again.";
 const NEW_RINGCODE_EDIT_ERROR: &str = "Ring Codes: new entries must be submitted through Add Disc.";
 
 fn add_disc_match_lookup_errors() -> Vec<String> {
@@ -68,7 +70,7 @@ fn user_queue_url(username: &str) -> String {
     format!("/queue?submitter={}", urlencoding::encode(username))
 }
 
-fn user_drafts_url(username: &str) -> String {
+pub(crate) fn user_drafts_url(username: &str) -> String {
     format!(
         "/queue?status=Draft&submitter={}",
         urlencoding::encode(username)
@@ -230,6 +232,7 @@ pub(crate) struct DiscEditTemplate {
     pub review_annotations: Vec<ReviewAnnotation>,
     pub review_old_multiline: Vec<ReviewOldMultiline>,
     pub submission_id: i32,
+    pub submission_revision: i64,
     pub submission_type_display: String,
     pub submitter_id: i32,
     pub submitter_name: String,
@@ -378,8 +381,8 @@ pub(crate) async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData
     .await?;
     let all_categories: Vec<CategoryRow> =
         sqlx::query_as("SELECT id, name FROM categories ORDER BY name")
-            .fetch_all(pool)
-            .await?;
+        .fetch_all(pool)
+        .await?;
     let all_regions: Vec<Region> = sqlx::query_as("SELECT * FROM regions ORDER BY sort_order")
         .fetch_all(pool)
         .await?;
@@ -557,6 +560,23 @@ fn validate_edit_submission_comment(form: &DiscEditForm, can_edit_directly: bool
         Vec::new()
     } else {
         vec!["Submission Comment: required when submitting an edit".to_string()]
+    }
+}
+
+fn validate_draft_resubmission_comment(
+    form: &DiscEditForm,
+    submission: Option<&DiscSubmission>,
+) -> Vec<String> {
+    if submission.is_some_and(|submission| {
+        submission.submission_revision > 0
+            || submission.reviewer_id.is_some()
+            || submission.reviewed_at.is_some()
+    })
+        && trimmed_nonempty(form.submission_comment.as_deref()).is_none()
+    {
+        vec!["Submission Comment: required when resubmitting a returned draft".to_string()]
+    } else {
+        Vec::new()
     }
 }
 
@@ -1247,6 +1267,7 @@ async fn edit_page(
             review_annotations: vec![],
             review_old_multiline: vec![],
             submission_id: 0,
+            submission_revision: 0,
             submission_type_display: String::new(),
             submitter_id: 0,
             submitter_name: String::new(),
@@ -1275,6 +1296,8 @@ pub struct DiscEditForm {
     pub submission_token: String,
     #[serde(default)]
     pub draft_submission_id: Option<String>,
+    #[serde(default)]
+    pub submission_revision: Option<String>,
     #[serde(default)]
     pub system_code: String,
     #[serde(default)]
@@ -2125,6 +2148,12 @@ async fn render_form_with_context(
         review_annotations: vec![],
         review_old_multiline: vec![],
         submission_id: draft_context.map_or(0, |(sub, _, _)| sub.id),
+        submission_revision: draft_context.map_or(0, |(sub, _, _)| {
+            form.submission_revision
+                .as_deref()
+                .and_then(|value| value.trim().parse::<i64>().ok())
+                .unwrap_or(sub.submission_revision)
+        }),
         submission_type_display: draft_context
             .map(|(sub, _, _)| sub.display_kind().to_string())
             .unwrap_or_default(),
@@ -2960,6 +2989,7 @@ async fn add_page(
             review_annotations: vec![],
             review_old_multiline: vec![],
             submission_id: 0,
+            submission_revision: 0,
             submission_type_display: String::new(),
             submitter_id: 0,
             submitter_name: String::new(),
@@ -3147,6 +3177,12 @@ async fn add_submit(
     {
         errors.push("Dump Log: cannot be empty".to_string());
     }
+    if !save_as_draft {
+        errors.extend(validate_draft_resubmission_comment(
+            &form,
+            draft_submission.as_ref(),
+        ));
+    }
 
     let extra_upload_url_text = trimmed_nonempty(form.extra_upload_url.as_deref());
 
@@ -3229,7 +3265,12 @@ async fn add_submit(
     if save_as_draft {
         attach_draft_form_snapshot(&mut changes, &form)?;
         if let Some(draft_submission) = draft_submission.as_ref() {
-            let saved = queue_service::save_draft_submission(
+            let expected_revision = form
+                .submission_revision
+                .as_deref()
+                .and_then(|value| value.trim().parse::<i64>().ok())
+                .ok_or_else(|| AppError::BadRequest(STALE_DRAFT_FORM_ERROR.into()))?;
+            queue_service::save_draft_submission(
                 &state.pool,
                 draft_submission.id,
                 user.id,
@@ -3240,13 +3281,11 @@ async fn add_submit(
                 extra_upload_url_text,
                 Some(&form.submission_token),
                 Some(&request_fingerprint),
+                expected_revision,
             )
-            .await?;
-            return if saved.is_some() {
-                Ok(Redirect::to(&user_drafts_url(&user.username)).into_response())
-            } else {
-                Ok(Redirect::to("/queue").into_response())
-            };
+            .await?
+            .ok_or_else(|| AppError::BadRequest(STALE_DRAFT_FORM_ERROR.into()))?;
+            return Ok(Redirect::to(&user_drafts_url(&user.username)).into_response());
         }
 
         let creation = queue_service::create_draft_submission(
@@ -3273,7 +3312,14 @@ async fn add_submit(
     }
 
     if let Some(draft_submission) = draft_submission.as_ref() {
-        let submitted = queue_service::submit_draft_submission(
+        let expected_revision = form
+            .submission_revision
+            .as_deref()
+            .and_then(|value| value.trim().parse::<i64>().ok())
+            .ok_or_else(|| {
+                AppError::BadRequest(STALE_DRAFT_FORM_ERROR.into())
+            })?;
+        queue_service::submit_draft_submission(
             &state.pool,
             draft_submission.id,
             user.id,
@@ -3284,16 +3330,12 @@ async fn add_submit(
             extra_upload_url_text,
             Some(&form.submission_token),
             Some(&request_fingerprint),
+            expected_revision,
         )
-        .await?;
-        if submitted.is_some() {
-            state.draft_count_cache.decrement(user.id).await;
-        }
-        return if submitted.is_some() {
-            Ok(Redirect::to(&user_queue_url(&user.username)).into_response())
-        } else {
-            Ok(Redirect::to("/queue").into_response())
-        };
+        .await?
+        .ok_or_else(|| AppError::BadRequest(STALE_DRAFT_FORM_ERROR.into()))?;
+        state.draft_count_cache.decrement(user.id).await;
+        return Ok(Redirect::to(&user_queue_url(&user.username)).into_response());
     }
 
     if user.role.can_edit_directly() && !is_verification {
@@ -4322,6 +4364,7 @@ fn attach_draft_form_snapshot(
     let mut draft_form = form.clone();
     draft_form.submission_token.clear();
     draft_form.draft_submission_id = None;
+    draft_form.submission_revision = None;
     draft_form.submission_comment = None;
     let draft_form = serde_json::to_value(draft_form)
         .map_err(|error| AppError::Internal(format!("failed to serialize draft form: {error}")))?;
@@ -4623,6 +4666,7 @@ mod operation_delta_tests {
         DiscEditForm {
             submission_token: generate_submission_token(),
             draft_submission_id: None,
+            submission_revision: None,
             system_code: detail.disc.system_code.clone(),
             media_type: detail.disc.media_type.code().to_string(),
             title: detail.disc.title.clone(),
@@ -4688,6 +4732,7 @@ mod operation_delta_tests {
         DiscEditForm {
             submission_token: generate_submission_token(),
             draft_submission_id: None,
+            submission_revision: None,
             system_code: "SYS".to_string(),
             media_type: "DVD".to_string(),
             title: "New Game".to_string(),
@@ -6898,6 +6943,7 @@ mod operation_delta_tests {
             extra_upload_url: None,
             submission_token: None,
             submission_fingerprint: None,
+            submission_revision: 0,
             status: SubmissionStatus::Draft,
             reviewer_id: None,
             review_comment: None,

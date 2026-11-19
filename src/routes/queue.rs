@@ -38,6 +38,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/queue", get(queue_list))
         .route("/queue/{id}", get(submission_detail))
+        .route("/queue/{id}/draft", post(return_submission_to_draft))
         .route("/queue/{id}/review", post(review_submit))
 }
 
@@ -56,6 +57,7 @@ pub struct QueueQuery {
 #[derive(Deserialize, Default)]
 struct SubmissionDetailQuery {
     retargeted: Option<u8>,
+    stale: Option<u8>,
 }
 
 struct SystemOption {
@@ -553,6 +555,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
             .clone()
             .unwrap_or_else(disc_edit::generate_submission_token);
         form.draft_submission_id = Some(sub.id.to_string());
+        form.submission_revision = Some(sub.submission_revision.to_string());
         form.submission_comment = None;
         return Ok(form);
     }
@@ -622,6 +625,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
             .clone()
             .unwrap_or_else(disc_edit::generate_submission_token),
         draft_submission_id: Some(sub.id.to_string()),
+        submission_revision: Some(sub.submission_revision.to_string()),
         system_code: string("system_code").unwrap_or_default(),
         media_type: string("media_type").unwrap_or_default(),
         title: string("title").unwrap_or_default(),
@@ -773,6 +777,11 @@ async fn submission_detail(
             display_kind,
             &submitter_name,
             &reviewer_name,
+            if query.stale == Some(1) {
+                vec![STALE_SUBMISSION_READONLY_ERROR.to_string()]
+            } else {
+                vec![]
+            },
         )
         .await?
         .into_response());
@@ -859,6 +868,36 @@ async fn submission_detail(
     );
 
     Ok(Html(template.render().unwrap()).into_response())
+}
+
+#[derive(Deserialize)]
+struct ReturnToDraftForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    submission_revision: i64,
+}
+
+async fn return_submission_to_draft(
+    State(state): State<AppState>,
+    RequireAuth(user): RequireAuth,
+    Path(id): Path<i32>,
+    Form(form): Form<ReturnToDraftForm>,
+) -> AppResult<Response> {
+    csrf::verify_token(&user, &form.csrf_token)?;
+
+    if queue_service::return_submission_to_draft(
+        &state.pool,
+        id,
+        user.id,
+        form.submission_revision,
+    )
+    .await?
+    {
+        state.draft_count_cache.increment(user.id).await;
+    }
+
+    Ok(Redirect::to(&disc_edit::user_drafts_url(&user.username)).into_response())
 }
 
 fn build_review_template(
@@ -1133,6 +1172,7 @@ fn build_review_template(
         review_annotations: vec![],
         review_old_multiline: vec![],
         submission_id: sub.id,
+        submission_revision: sub.submission_revision,
         submission_type_display: sub.display_kind().to_string(),
         submitter_id: sub.submitter_id,
         submitter_name: submitter_name.to_string(),
@@ -1733,6 +1773,9 @@ fn apply_review_diff_context(
 #[template(path = "queue_detail.html")]
 struct QueueDetailTemplate {
     current_user: Option<AuthenticatedUser>,
+    can_return_to_draft: bool,
+    csrf_token: String,
+    submission_revision: i64,
     submission_id: i32,
     submission_type_display: String,
     submitter_id: i32,
@@ -1749,6 +1792,7 @@ struct QueueDetailTemplate {
     target_disc_id: i32,
     submitted_changes: Vec<ChangeRow>,
     approved_changes: Vec<ChangeRow>,
+    validation_errors: Vec<String>,
 }
 impl SiteConfig for QueueDetailTemplate {}
 
@@ -1871,9 +1915,22 @@ async fn render_readonly_detail(
     display_kind: SubmissionDisplayKind,
     submitter_name: &str,
     reviewer_name: &str,
+    validation_errors: Vec<String>,
 ) -> AppResult<Html<String>> {
+    let can_return_to_draft = sub.status == SubmissionStatus::Pending
+        && sub.submission_type == SubmissionType::Disc
+        && current_user
+            .as_ref()
+            .is_some_and(|user| user.id == sub.submitter_id);
+    let csrf_token = current_user
+        .as_ref()
+        .map(|user| user.csrf_token.clone())
+        .unwrap_or_default();
     let template = QueueDetailTemplate {
         current_user,
+        can_return_to_draft,
+        csrf_token,
+        submission_revision: sub.submission_revision,
         submission_id: sub.id,
         submission_type_display: display_kind.to_string(),
         submitter_id: sub.submitter_id,
@@ -1903,6 +1960,7 @@ async fn render_readonly_detail(
                 .filter(|original| !original.is_null())
                 .map(|_| &sub.changes),
         ),
+        validation_errors,
     };
 
     Ok(Html(template.render().unwrap()))
@@ -2320,12 +2378,16 @@ pub struct ReviewForm {
     #[serde(default)]
     pub review_base_hash: String,
     #[serde(default)]
+    pub submission_revision: i64,
+    #[serde(default)]
     pub retarget_disc_id: String,
     #[serde(flatten)]
     pub disc: DiscEditForm,
 }
 
 const STALE_REVIEW_ERROR: &str = "This disc changed after the review page loaded. The page has been refreshed with the latest data; review it again before approving.";
+const STALE_SUBMISSION_ERROR: &str = "This submission was updated or returned to Draft after the review page loaded. Your changes were not applied. The page has been refreshed with the latest submission; review it again.";
+const STALE_SUBMISSION_READONLY_ERROR: &str = "This submission was updated or returned to Draft after the review page loaded, so your action was not applied.";
 const DRAFT_REVIEW_COMMENT_ERROR: &str =
     "Review Comment: required when returning a submission to Draft";
 const RETARGET_DISC_ID_ERROR: &str =
@@ -2444,6 +2506,29 @@ async fn render_latest_review_with_errors(
     Ok(Html(template.render().unwrap()).into_response())
 }
 
+async fn stale_review_response(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    id: i32,
+    review_comment: Option<&str>,
+) -> AppResult<Response> {
+    let sub = queue_service::get_submission(&state.pool, id).await?;
+    if sub.status == SubmissionStatus::Pending && can_review_submission(user, &sub) {
+        let ref_data = fetch_ref_data(&state.pool).await?;
+        return render_latest_review_with_errors(
+            state,
+            user,
+            &sub,
+            &ref_data,
+            vec![STALE_SUBMISSION_ERROR.to_string()],
+            review_comment,
+            None,
+        )
+        .await;
+    }
+    Ok(Redirect::to(&format!("/queue/{id}?stale=1")).into_response())
+}
+
 async fn render_retarget_error(
     state: &AppState,
     current_user: &AuthenticatedUser,
@@ -2479,8 +2564,10 @@ async fn review_submit(
         return Err(AppError::Forbidden);
     }
 
-    if sub.status != SubmissionStatus::Pending {
-        return Ok(Redirect::to("/queue").into_response());
+    if sub.status != SubmissionStatus::Pending
+        || form.submission_revision != sub.submission_revision
+    {
+        return stale_review_response(&state, &user, id, form.review_comment.as_deref()).await;
     }
 
     let review_comment = form
@@ -2491,8 +2578,11 @@ async fn review_submit(
         .filter(|s| !s.is_empty());
 
     if form.action == "comment" {
-        queue_service::comment_submission(&state.pool, id, user.id, review_comment.as_deref())
-            .await?;
+        let commented = queue_service::comment_submission(&state.pool, id, user.id, review_comment.as_deref(), sub.submission_revision)
+        .await?;
+        if !commented {
+            return stale_review_response(&state, &user, id, review_comment.as_deref()).await;
+        }
         return Ok(Redirect::to("/queue").into_response());
     }
 
@@ -2516,9 +2606,9 @@ async fn review_submit(
             .await;
         };
         let drafted =
-            queue_service::draft_submission(&state.pool, id, user.id, review_comment).await?;
+            queue_service::draft_submission(&state.pool, id, user.id, review_comment, sub.submission_revision).await?;
         if !drafted {
-            return Ok(Redirect::to("/queue").into_response());
+            return stale_review_response(&state, &user, id, Some(review_comment)).await;
         }
         state.draft_count_cache.increment(sub.submitter_id).await;
         return Ok(Redirect::to("/queue").into_response());
@@ -2526,11 +2616,11 @@ async fn review_submit(
 
     if form.action == "reject" {
         let rejected =
-            queue_service::reject_submission(&state.pool, id, user.id, review_comment.as_deref())
+            queue_service::reject_submission(&state.pool, id, user.id, review_comment.as_deref(), sub.submission_revision)
                 .await?;
 
         if !rejected {
-            return Ok(Redirect::to("/queue").into_response());
+            return stale_review_response(&state, &user, id, review_comment.as_deref()).await;
         }
         return Ok(Redirect::to("/queue").into_response());
     }
@@ -2563,6 +2653,7 @@ async fn review_submit(
             sub.id,
             sub.target_disc_id,
             target_disc_id,
+            sub.submission_revision,
         )
         .await?;
         return match outcome {
@@ -2611,7 +2702,7 @@ async fn review_submit(
                 .await
             }
             queue_service::ManualRetargetOutcome::SubmissionChanged => {
-                Ok(Redirect::to(&format!("/queue/{id}")).into_response())
+                stale_review_response(&state, &user, id, review_comment.as_deref()).await
             }
         };
     }
@@ -2724,13 +2815,14 @@ async fn review_submit(
                 target_disc_id,
                 form.disc.files_xml.as_deref(),
                 form.disc.universal_hash.as_deref(),
+                sub.submission_revision,
             )
             .await?;
 
             if outcome {
                 return Ok(Redirect::to(&format!("/queue/{id}?retargeted=1")).into_response());
             }
-            return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
+            return stale_review_response(&state, &user, id, review_comment.as_deref()).await;
         }
     }
 
@@ -2775,7 +2867,7 @@ async fn review_submit(
             Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
         }
         queue_service::ApprovalOutcome::AlreadyProcessed => {
-            Ok(Redirect::to("/queue").into_response())
+            stale_review_response(&state, &user, id, review_comment.as_deref()).await
         }
         queue_service::ApprovalOutcome::StaleDiscState => {
             render_latest_review_with_errors(
@@ -3195,6 +3287,7 @@ mod tests {
             extra_upload_url: None,
             submission_token: None,
             submission_fingerprint: None,
+            submission_revision: 0,
             status: SubmissionStatus::Pending,
             reviewer_id: None,
             review_comment: None,
@@ -3422,6 +3515,7 @@ mod tests {
             SubmissionDisplayKind::NewDisc,
             "submitter",
             "moderator",
+            vec![],
         )
         .await
         .unwrap();
@@ -3447,6 +3541,7 @@ mod tests {
             SubmissionDisplayKind::Verification,
             "submitter",
             "moderator",
+            vec![],
         )
         .await
         .unwrap();
@@ -3739,6 +3834,9 @@ mod tests {
                 avatar_url: Some("https://example.test/avatar.png".to_string()),
                 draft_count: 0,
             }),
+            can_return_to_draft: false,
+            csrf_token: "test-csrf-token".to_string(),
+            submission_revision: 0,
             submission_id: 1,
             submission_type_display: "Edit".to_string(),
             submitter_id: 2,
@@ -3755,6 +3853,7 @@ mod tests {
             target_disc_id: 3,
             submitted_changes: vec![],
             approved_changes: vec![],
+            validation_errors: vec![],
         };
 
         let html = template.render().unwrap();
@@ -3766,6 +3865,9 @@ mod tests {
     fn queue_detail_template_shows_original_json_before_final_json() {
         let template = QueueDetailTemplate {
             current_user: None,
+            can_return_to_draft: false,
+            csrf_token: String::new(),
+            submission_revision: 0,
             submission_id: 1,
             submission_type_display: "Edit".to_string(),
             submitter_id: 2,
@@ -3789,6 +3891,7 @@ mod tests {
                 "ring_codes": [{ "id": 7, "layers": [{ "index": 1,
                     "mould_sids": { "remove": { "old": "IFPI 947M" } } }] }]
             }))),
+            validation_errors: vec![],
         };
 
         let html = template.render().unwrap();

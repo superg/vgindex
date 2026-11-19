@@ -234,6 +234,7 @@ pub async fn submit_draft_submission(
     extra_upload_url: Option<&str>,
     submission_token: Option<&str>,
     submission_fingerprint: Option<&str>,
+    expected_revision: i64,
 ) -> AppResult<Option<DiscSubmission>> {
     let normalized_submission_comment = submission_comment
         .map(normalize_newlines)
@@ -258,9 +259,11 @@ pub async fn submit_draft_submission(
              ELSE concat_ws(E'\n\n---\n\n', NULLIF(submission_comment, ''), $1) END,
              target_disc_id = $2, changes = $3,
              dump_log = $4, extra_upload_url = $5, status = 'Pending',
-             submission_token = $6, submission_fingerprint = $7
+             submission_token = $6, submission_fingerprint = $7,
+             submission_revision = submission_revision + 1
          WHERE id = $8 AND submitter_id = $9
            AND submission_type = 'Disc' AND status = 'Draft'
+           AND submission_revision = $10
          RETURNING *",
     )
     .bind(normalized_submission_comment.as_deref())
@@ -272,6 +275,7 @@ pub async fn submit_draft_submission(
     .bind(submission_fingerprint.as_deref())
     .bind(submission_id)
     .bind(submitter_id)
+    .bind(expected_revision)
     .fetch_optional(pool)
     .await?)
 }
@@ -288,6 +292,7 @@ pub async fn save_draft_submission(
     extra_upload_url: Option<&str>,
     submission_token: Option<&str>,
     submission_fingerprint: Option<&str>,
+    expected_revision: i64,
 ) -> AppResult<Option<DiscSubmission>> {
     let submission_token = normalize_submission_token(submission_token)?;
     let submission_fingerprint = if submission_token.is_some() {
@@ -315,6 +320,7 @@ pub async fn save_draft_submission(
              submission_token = $6, submission_fingerprint = $7
          WHERE id = $8 AND submitter_id = $9
            AND submission_type = 'Disc' AND status = 'Draft'
+           AND submission_revision = $10
          RETURNING *",
     )
     .bind(submission_comment.as_deref())
@@ -326,6 +332,7 @@ pub async fn save_draft_submission(
     .bind(submission_fingerprint.as_deref())
     .bind(submission_id)
     .bind(submitter_id)
+    .bind(expected_revision)
     .fetch_optional(pool)
     .await?)
 }
@@ -1861,6 +1868,7 @@ pub async fn comment_submission(
     id: i32,
     reviewer_id: i32,
     review_comment: Option<&str>,
+    expected_revision: i64,
 ) -> AppResult<bool> {
     let normalized_review_comment: Option<String> = review_comment
         .map(normalize_newlines)
@@ -1872,11 +1880,12 @@ pub async fn comment_submission(
          review_comment = CASE WHEN $2::text IS NULL THEN review_comment
              ELSE concat_ws(E'\n\n---\n\n', NULLIF(review_comment, ''), $2) END,
          reviewed_at = NOW()
-         WHERE id = $3 AND status = 'Pending'",
+         WHERE id = $3 AND status = 'Pending' AND submission_revision = $4",
     )
     .bind(reviewer_id)
     .bind(normalized_review_comment.as_deref())
     .bind(id)
+    .bind(expected_revision)
     .execute(pool)
     .await?;
 
@@ -1891,6 +1900,7 @@ pub async fn reject_submission(
     id: i32,
     reviewer_id: i32,
     review_comment: Option<&str>,
+    expected_revision: i64,
 ) -> AppResult<bool> {
     let normalized_review_comment: Option<String> = review_comment
         .map(normalize_newlines)
@@ -1898,15 +1908,17 @@ pub async fn reject_submission(
         .filter(|s| !s.is_empty());
 
     let result = sqlx::query(
-        "UPDATE disc_submissions SET status = 'Rejected', reviewer_id = $1,
+        "UPDATE disc_submissions SET status = 'Rejected',
+         submission_revision = submission_revision + 1, reviewer_id = $1,
          review_comment = CASE WHEN $2::text IS NULL THEN review_comment
              ELSE concat_ws(E'\n\n---\n\n', NULLIF(review_comment, ''), $2) END,
          reviewed_at = NOW()
-         WHERE id = $3 AND status = 'Pending'",
+         WHERE id = $3 AND status = 'Pending' AND submission_revision = $4",
     )
     .bind(reviewer_id)
     .bind(normalized_review_comment.as_deref())
     .bind(id)
+    .bind(expected_revision)
     .execute(pool)
     .await?;
 
@@ -1921,6 +1933,7 @@ pub async fn draft_submission(
     id: i32,
     reviewer_id: i32,
     review_comment: &str,
+    expected_revision: i64,
 ) -> AppResult<bool> {
     let normalized_review_comment = normalize_newlines(review_comment).trim().to_string();
     if normalized_review_comment.is_empty() {
@@ -1930,14 +1943,39 @@ pub async fn draft_submission(
     }
 
     let result = sqlx::query(
-        "UPDATE disc_submissions SET status = 'Draft', reviewer_id = $1,
+        "UPDATE disc_submissions SET status = 'Draft',
+         submission_revision = submission_revision + 1, reviewer_id = $1,
          review_comment = concat_ws(E'\n\n---\n\n', NULLIF(review_comment, ''), $2),
          reviewed_at = NOW()
-         WHERE id = $3 AND submission_type = 'Disc' AND status = 'Pending'",
+         WHERE id = $3 AND submission_type = 'Disc' AND status = 'Pending'
+           AND submission_revision = $4",
     )
     .bind(reviewer_id)
     .bind(&normalized_review_comment)
     .bind(id)
+    .bind(expected_revision)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// Let a submitter return their own pending disc submission to Draft.
+pub async fn return_submission_to_draft(
+    pool: &PgPool,
+    id: i32,
+    submitter_id: i32,
+    expected_revision: i64,
+) -> AppResult<bool> {
+    let result = sqlx::query(
+        "UPDATE disc_submissions
+         SET status = 'Draft', submission_revision = submission_revision + 1
+         WHERE id = $1 AND submitter_id = $2 AND submission_type = 'Disc'
+           AND status = 'Pending' AND submission_revision = $3",
+    )
+    .bind(id)
+    .bind(submitter_id)
+    .bind(expected_revision)
     .execute(pool)
     .await?;
 
@@ -1957,15 +1995,19 @@ async fn update_pending_submission_target(
     submission_id: i32,
     expected_target_disc_id: Option<i32>,
     target_disc_id: Option<i32>,
+    expected_revision: i64,
 ) -> AppResult<PendingTargetUpdateOutcome> {
     let result = sqlx::query(
-        "UPDATE disc_submissions SET target_disc_id = $1
+        "UPDATE disc_submissions
+         SET target_disc_id = $1, submission_revision = submission_revision + 1
          WHERE id = $2 AND submission_type = 'Disc' AND status = 'Pending'
-           AND target_disc_id IS NOT DISTINCT FROM $3",
+           AND target_disc_id IS NOT DISTINCT FROM $3
+           AND submission_revision = $4",
     )
     .bind(target_disc_id)
     .bind(submission_id)
     .bind(expected_target_disc_id)
+    .bind(expected_revision)
     .execute(&mut *conn)
     .await?;
 
@@ -1982,6 +2024,7 @@ pub(crate) async fn retarget_pending_submission(
     expected_target_disc_id: i32,
     files_xml: Option<&str>,
     universal_hash: Option<&str>,
+    expected_revision: i64,
 ) -> AppResult<bool> {
     let mut tx = pool.begin().await?;
     acquire_approval_lock(&mut tx).await?;
@@ -1993,7 +2036,7 @@ pub(crate) async fn retarget_pending_submission(
         return Ok(false);
     }
 
-    if update_pending_submission_target(&mut tx, submission_id, None, Some(expected_target_disc_id))
+    if update_pending_submission_target(&mut tx, submission_id, None, Some(expected_target_disc_id), expected_revision)
         .await?
         != PendingTargetUpdateOutcome::Updated
     {
@@ -2010,6 +2053,7 @@ pub(crate) async fn manually_retarget_pending_submission(
     submission_id: i32,
     expected_target_disc_id: Option<i32>,
     target_disc_id: Option<i32>,
+    expected_revision: i64,
 ) -> AppResult<ManualRetargetOutcome> {
     let mut tx = pool.begin().await?;
     acquire_approval_lock(&mut tx).await?;
@@ -2018,10 +2062,12 @@ pub(crate) async fn manually_retarget_pending_submission(
         "SELECT target_disc_id FROM disc_submissions
          WHERE id = $1 AND submission_type = 'Disc' AND status = 'Pending'
            AND target_disc_id IS NOT DISTINCT FROM $2
+           AND submission_revision = $3
          FOR UPDATE",
     )
     .bind(submission_id)
     .bind(expected_target_disc_id)
+    .bind(expected_revision)
     .fetch_optional(&mut *tx)
     .await?;
     let Some((current_target,)) = current_target else {
@@ -2057,6 +2103,7 @@ pub(crate) async fn manually_retarget_pending_submission(
         submission_id,
         expected_target_disc_id,
         target_disc_id,
+        expected_revision,
     )
     .await?;
     match outcome {
@@ -2119,12 +2166,14 @@ async fn approve_submission_on(
     review_comment: Option<&str>,
     expected_review_base_hash: Option<&str>,
 ) -> AppResult<ApprovalOutcome> {
-    let current_state: Option<(SubmissionStatus, Option<i32>)> =
-        sqlx::query_as("SELECT status, target_disc_id FROM disc_submissions WHERE id = $1")
-            .bind(sub.id)
-            .fetch_optional(&mut *conn)
-            .await?;
-    if current_state != Some((SubmissionStatus::Pending, sub.target_disc_id)) {
+    let current_state: Option<(SubmissionStatus, Option<i32>, i64)> = sqlx::query_as(
+        "SELECT status, target_disc_id, submission_revision
+         FROM disc_submissions WHERE id = $1",
+    )
+    .bind(sub.id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    if current_state != Some((SubmissionStatus::Pending, sub.target_disc_id, sub.submission_revision)) {
         return Ok(ApprovalOutcome::AlreadyProcessed);
     }
 
@@ -2179,18 +2228,21 @@ async fn approve_submission_on(
         .filter(|s| !s.is_empty());
 
     let claim = sqlx::query(
-        "UPDATE disc_submissions SET status = 'Approved', reviewer_id = $1,
+        "UPDATE disc_submissions SET status = 'Approved',
+         submission_revision = submission_revision + 1, reviewer_id = $1,
          review_comment = CASE WHEN $2::text IS NULL THEN review_comment
              ELSE concat_ws(E'\n\n---\n\n', NULLIF(review_comment, ''), $2) END,
          reviewed_at = NOW(), changes_original = changes, changes = $3
          WHERE id = $4 AND status = 'Pending'
-           AND target_disc_id IS NOT DISTINCT FROM $5",
+           AND target_disc_id IS NOT DISTINCT FROM $5
+           AND submission_revision = $6",
     )
     .bind(reviewer_id)
     .bind(normalized_review_comment.as_deref())
     .bind(&stored_data)
     .bind(sub.id)
     .bind(sub.target_disc_id)
+    .bind(sub.submission_revision)
     .execute(&mut *conn)
     .await?;
 
@@ -2699,7 +2751,7 @@ mod tests {
 
     #[tokio::test]
     async fn draft_requires_a_review_comment_before_database_access() {
-        let error = draft_submission(&unreachable_pool(), 1, 1, " \r\n ")
+        let error = draft_submission(&unreachable_pool(), 1, 1, " \r\n ", 0)
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::BadRequest(_)));
@@ -2871,11 +2923,16 @@ mod tests {
         expected_target_disc_id: Option<i32>,
         target_disc_id: Option<i32>,
     ) -> ManualRetargetOutcome {
+        let expected_revision = get_submission(pool, submission_id)
+            .await
+            .unwrap()
+            .submission_revision;
         manually_retarget_pending_submission(
             pool,
             submission_id,
             expected_target_disc_id,
             target_disc_id,
+            expected_revision,
         )
         .await
         .unwrap()
@@ -2992,6 +3049,7 @@ mod tests {
             fixture.disc_id,
             Some(dat),
             Some(&universal_hash),
+            creation.submission.submission_revision,
         )
         .await
         .unwrap();
@@ -3013,6 +3071,7 @@ mod tests {
             fixture.disc_id,
             Some(dat),
             Some(&universal_hash),
+            retargeted_submission.submission_revision,
         )
         .await
         .unwrap();
@@ -3437,6 +3496,7 @@ mod tests {
             creation.submission.id,
             Some(primary.disc_id),
             Some(alternate.disc_id),
+            creation.submission.submission_revision,
         );
         let (approval, retarget) = tokio::join!(approval, retarget);
         let approval = approval.unwrap();
@@ -3725,6 +3785,7 @@ mod tests {
             creation.submission.id,
             fixture.submitter_id,
             Some("race"),
+            creation.submission.submission_revision,
         );
         let (approve, reject) = tokio::join!(approve, reject);
         let approve = approve.unwrap();
@@ -3790,6 +3851,7 @@ mod tests {
             original.id,
             fixture.submitter_id,
             "Please correct this submission",
+            original.submission_revision,
         )
         .await
         .unwrap());
@@ -3810,6 +3872,25 @@ mod tests {
             "comments": { "add": { "new": "Corrected submission" } }
         });
         let revised_fingerprint = random_test_token();
+        let stale = submit_draft_submission(
+            &pool,
+            drafted.id,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            revised_changes.clone(),
+            Some("revised submission comment"),
+            Some("revised dump log"),
+            Some("https://example.test/revised"),
+            Some(&token),
+            Some(&revised_fingerprint),
+            drafted.submission_revision + 1,
+        )
+        .await
+        .unwrap();
+        assert!(
+            stale.is_none(),
+            "a stale revision must not update the draft"
+        );
         let updated = submit_draft_submission(
             &pool,
             drafted.id,
@@ -3821,6 +3902,7 @@ mod tests {
             Some("https://example.test/revised"),
             Some(&token),
             Some(&revised_fingerprint),
+            drafted.submission_revision,
         )
         .await
         .unwrap()
@@ -3837,6 +3919,7 @@ mod tests {
             None,
             Some(&token),
             Some(&overwrite_fingerprint),
+            drafted.submission_revision,
         )
         .await
         .unwrap();
@@ -3889,7 +3972,7 @@ mod tests {
             None,
             None,
         );
-        let draft = draft_submission(&pool, creation.submission.id, fixture.submitter_id, "race");
+        let draft = draft_submission(&pool, creation.submission.id, fixture.submitter_id, "race", creation.submission.submission_revision);
         let (approve, draft) = tokio::join!(approve, draft);
         let approve = approve.unwrap();
         let draft = draft.unwrap();
@@ -3964,6 +4047,7 @@ mod tests {
             creation.submission.id,
             fixture.submitter_id,
             "fix it",
+            creation.submission.submission_revision,
         )
         .await
         .unwrap();
@@ -4201,6 +4285,7 @@ mod tests {
             extra_upload_url: None,
             submission_token: None,
             submission_fingerprint: None,
+            submission_revision: 0,
             status: SubmissionStatus::Pending,
             reviewer_id: None,
             review_comment: None,

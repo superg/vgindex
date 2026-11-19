@@ -121,6 +121,7 @@ struct MaintenanceSubmissionRow {
     extra_upload_url: Option<String>,
     submission_token: Option<String>,
     submission_fingerprint: Option<String>,
+    submission_revision: i64,
     status: SubmissionStatus,
     reviewer_id: Option<i32>,
     review_comment: Option<String>,
@@ -144,6 +145,7 @@ struct MaintenanceSubmissionEditor {
     extra_upload_url: String,
     submission_token: String,
     submission_fingerprint: String,
+    submission_revision: i64,
     status: String,
     reviewer_id: String,
     reviewer_username: String,
@@ -1597,7 +1599,7 @@ async fn fetch_maintenance_submission(
     Ok(sqlx::query_as(
         "SELECT id, submission_type, submitter_id, submission_comment, target_disc_id,
                 changes_original, changes, dump_log, extra_upload_url, submission_token,
-                submission_fingerprint, status, reviewer_id, review_comment, created_at,
+                submission_fingerprint, submission_revision, status, reviewer_id, review_comment, created_at,
                 reviewed_at, xmin::TEXT AS row_version
          FROM disc_submissions
          WHERE id = $1",
@@ -1647,6 +1649,7 @@ fn maintenance_submission_editor(
         extra_upload_url: row.extra_upload_url.clone().unwrap_or_default(),
         submission_token: row.submission_token.clone().unwrap_or_default(),
         submission_fingerprint: row.submission_fingerprint.clone().unwrap_or_default(),
+        submission_revision: row.submission_revision,
         status: row.status.to_string(),
         reviewer_id: row.reviewer_id.map(|id| id.to_string()).unwrap_or_default(),
         reviewer_username: username_for_id(users, row.reviewer_id),
@@ -1677,6 +1680,7 @@ fn submission_editor_from_form(
         extra_upload_url: form.extra_upload_url.clone(),
         submission_token: row.submission_token.clone().unwrap_or_default(),
         submission_fingerprint: row.submission_fingerprint.clone().unwrap_or_default(),
+        submission_revision: row.submission_revision,
         status: form.status.clone(),
         reviewer_id: form.reviewer_id.clone(),
         reviewer_username: form.reviewer_username.clone(),
@@ -1939,7 +1943,7 @@ async fn update_maintenance_submission_on(
     let row: Option<MaintenanceSubmissionRow> = sqlx::query_as(
         "SELECT id, submission_type, submitter_id, submission_comment, target_disc_id,
                 changes_original, changes, dump_log, extra_upload_url, submission_token,
-                submission_fingerprint, status, reviewer_id, review_comment, created_at,
+                submission_fingerprint, submission_revision, status, reviewer_id, review_comment, created_at,
                 reviewed_at, xmin::TEXT AS row_version
          FROM disc_submissions
          WHERE id = $1
@@ -1965,7 +1969,8 @@ async fn update_maintenance_submission_on(
          SET submission_type = $2, submitter_id = $3, submission_comment = $4,
              target_disc_id = $5, changes_original = $6, changes = $7, dump_log = $8,
              extra_upload_url = $9, status = $10, reviewer_id = $11,
-             review_comment = $12, created_at = $13, reviewed_at = $14
+             review_comment = $12, created_at = $13, reviewed_at = $14,
+             submission_revision = submission_revision + 1
          WHERE id = $1",
     )
     .bind(submission_id)
@@ -3212,6 +3217,7 @@ mod tests {
             extra_upload_url: "https://example.com/upload".to_string(),
             submission_token: "submission-token".to_string(),
             submission_fingerprint: "submission-fingerprint".to_string(),
+            submission_revision: 3,
             status: "Pending".to_string(),
             reviewer_id: "8".to_string(),
             reviewer_username: "Bob".to_string(),
@@ -4205,7 +4211,7 @@ mod tests {
         sqlx::query_as(
             "SELECT id, submission_type, submitter_id, submission_comment, target_disc_id,
                     changes_original, changes, dump_log, extra_upload_url, submission_token,
-                    submission_fingerprint, status, reviewer_id, review_comment, created_at,
+                    submission_fingerprint, submission_revision, status, reviewer_id, review_comment, created_at,
                     reviewed_at, xmin::TEXT AS row_version
              FROM disc_submissions WHERE id = $1",
         )
