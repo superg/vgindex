@@ -33,9 +33,6 @@ html {
     font-size: 100%;
 }
 @media (max-width: 768px) {
-    .disc-table .title-col {
-        min-width: 30rem;
-    }
     .disc-table .truncate {
         max-width: 5rem;
     }
@@ -47,11 +44,23 @@ html {
         padding-right: 1rem;
     }
 }
+/* Phones and small tablets keep the columns that pick a disc; the rest are on its page */
+@media (max-width: 768px) {
+    .disc-table .version-col,
+    .disc-table .edition-col,
+    .disc-table .language-col,
+    .disc-table .serial-col {
+        display: none;
+    }
+    .disc-table .title-col {
+        min-width: 0;
+    }
+}
 
 button,
 [type="submit"],
 [role="button"] {
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     padding: 0.35rem 1rem;
 }
 
@@ -92,7 +101,7 @@ footer.container p {
 }
 
 main > h3 {
-    font-size: 1.22rem;
+    font-size: 1.25rem;
     font-weight: 600;
     margin-bottom: 0.75rem;
 }
@@ -130,6 +139,11 @@ main > h3 {
 
 .disc-table-scaler {
     container-type: inline-size;
+    /* Just above 768px the full list can be a little wider than the window: it scrolls */
+    overflow-x: auto;
+    /* Wide screens: the list stops at 82rem, so a title and its details stay close together */
+    max-width: 82rem;
+    margin-inline: auto;
 }
 
 /* Reusable horizontal scroll wrapper for tables */
@@ -157,7 +171,7 @@ main > h3 {
 }
 .disc-table td, .disc-table th {
     padding: 0.04rem 0.5rem;
-    font-size: 0.85rem;
+    font-size: 0.875rem;
     vertical-align: middle;
 }
 .disc-table td a {
@@ -174,7 +188,7 @@ main > h3 {
 }
 .disc-table .title-col .foreign-title {
     margin-top: 0.08rem;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     line-height: 1.2;
     /* Shared muted value grey (auto light/dark via --pico-code-color). */
     color: var(--pico-code-color);
@@ -317,6 +331,9 @@ main > h3 {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+.disc-table td.truncate > small {
+    font-size: 0.75rem;
+}
 .disc-table .system-col {
     width: 6rem;
     max-width: 6rem;
@@ -370,7 +387,7 @@ table.striped td {
     margin-bottom: 1.5rem;
 }
 .qa-question {
-    font-size: 0.92rem;
+    font-size: 0.875rem;
     margin-bottom: 0.2rem;
     text-align: center;
     color: #565e6a;
@@ -379,17 +396,21 @@ table.striped td {
     color: #C8CED8;
 }
 .qa-answer {
-    font-size: 0.85rem;
+    font-size: 0.875rem;
     margin: 0;
 }
 .qa-answer li {
-    font-size: 0.85rem;
+    font-size: 0.875rem;
 }
 .about-footer {
     margin-top: 2rem;
     text-align: center;
-    opacity: 0.45;
+    color: var(--pico-muted-color);
     font-size: 0.75rem;
+}
+.about-footer a {
+    color: inherit;
+    text-decoration: underline;
 }
 
 /* 404 page */
@@ -403,7 +424,7 @@ table.striped td {
     text-align: center;
 }
 .not-found-message {
-    font-size: 0.85rem;
+    font-size: 0.875rem;
     text-align: center;
     color: #565e6a;
 }
@@ -417,7 +438,7 @@ table.striped td {
     margin-bottom: 0.75rem;
 }
 .downloads-page-desc {
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     text-align: center;
 }
 .downloads-section-title {
@@ -436,13 +457,13 @@ table.striped td {
 /* Downloads table — font sizes and colors match home page recent dumps */
 .downloads-table th {
     padding: 0.08rem 0.5rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
     text-align: left;
     color: #565e6a;
 }
 .downloads-table td {
     padding: 0.08rem 0.5rem;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     vertical-align: middle;
 }
 [data-theme="dark"] .downloads-table th {
@@ -464,8 +485,31 @@ table.striped td {
 .bios-download-links-cell {
     justify-content: center;
 }
+/* A Downloads table that doesn't fit scrolls inside its box */
+/* The Downloads tables share one column, so they are as wide as the widest */
+.downloads-tables {
+    display: grid;
+    grid-template-columns: minmax(0, max-content);
+    justify-content: center;
+}
+.downloads-tables .downloads-table {
+    width: 100%;
+}
+.downloads-table-scaler {
+    overflow-x: auto;
+}
 .downloads-table[data-downloads-match-width] .download-links-cell {
     justify-content: center;
+}
+/* Phones: dates and buttons wrap instead of the table shrinking */
+@media (max-width: 768px) {
+    .downloads-table {
+        width: auto;
+    }
+    .download-links-cell {
+        flex-wrap: wrap;
+        white-space: normal;
+    }
 }
 
 .download-links-cell a,
@@ -497,7 +541,7 @@ table.striped td {
 .export-csv-button {
     color: var(--pico-primary);
     background: transparent;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     margin: 0 0 0 auto;
     white-space: nowrap;
 }
@@ -518,7 +562,7 @@ nav[aria-label="Pagination"] ul {
 }
 #disc-results nav[aria-label="Pagination"] ul li,
 #disc-results nav[aria-label="Pagination"] ul li a {
-    font-size: 0.8rem;
+    font-size: 0.875rem;
 }
 
 /* Page jump input */
@@ -527,12 +571,12 @@ nav[aria-label="Pagination"] ul {
     align-items: center;
     gap: 0.3rem;
     margin: 0;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     white-space: nowrap;
 }
 .page-jump-input {
     width: 2.5rem;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     padding: 0 0.3rem !important;
     height: 1.5em !important;
     margin: 0;
@@ -563,7 +607,7 @@ nav[aria-label="Pagination"] ul {
 }
 
 .disc-count-line small {
-    font-size: 0.8rem;
+    font-size: 0.875rem;
 }
 
 #disc-results > nav[aria-label="Pagination"] {
@@ -927,7 +971,8 @@ nav[aria-label="Pagination"] ul {
     line-height: 1.2;
 }
 
-@media (max-width: 640px) {
+/* Up to the 768px boundary the filters stack in one column; the two-column grid needs about 730px */
+@media (max-width: 768px) {
     #filter-form,
     #filter-form.advanced-search-visible {
         grid-template-columns: minmax(0, 1fr);
@@ -1007,7 +1052,7 @@ nav[aria-label="Pagination"] ul {
     text-decoration: none;
     border: 1px solid var(--pico-muted-border-color);
     border-radius: 4px;
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     line-height: 1;
     transition: background-color 0.15s;
 }
@@ -1023,34 +1068,20 @@ nav[aria-label="Pagination"] ul {
     background-color: #212B38;
 }
 .letter-picker a.active {
-    background: var(--pico-primary);
+    background: var(--pico-primary-background);
     color: var(--pico-primary-inverse);
-    border-color: var(--pico-primary);
+    border-color: var(--pico-primary-background);
 }
 
-@media (max-width: 640px) {
-    .letter-picker {
-        display: grid;
-        grid-template-columns: repeat(14, minmax(0, 1fr));
-        gap: 0.12rem;
-        width: min(100%, 22rem);
-        max-width: 100%;
-    }
-    .letter-picker a,
-    .letter-picker a:not(:first-child) {
-        width: auto;
-        min-width: 0;
-        min-height: 0;
-        aspect-ratio: 1;
-        padding: 0;
-        font-size: 0.72rem;
-    }
+/* Phones: the letters keep their size and wrap onto more lines */
+#filter-form > .letter-picker {
+    max-width: 100%;
 }
 
 /* Hex dump */
 .hex-dump {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     white-space: pre;
     overflow-x: auto;
     background: var(--pico-code-background-color);
@@ -1081,11 +1112,11 @@ nav[aria-label="Pagination"] ul {
 .disc-view {
     --disc-info-max-width: clamp(58ch, 36vw, 82ch);
     --disc-aux-max-width: clamp(24rem, 34vw, 48rem);
-    font-size: 0.7rem;
+    font-size: 0.75rem;
 }
 .disc-view h2 { font-size: 1rem; text-align: center; margin-bottom: 0; font-weight: 600; }
-.disc-view h3 { font-size: 0.9rem; text-align: center; margin-bottom: 0.15rem; margin-top: 0.2rem; }
-.disc-view h4 { font-size: 0.78rem; margin-bottom: 0.15rem; }
+.disc-view h3 { font-size: 0.875rem; text-align: center; margin-bottom: 0.15rem; margin-top: 0.2rem; }
+.disc-view h4 { font-size: 0.75rem; margin-bottom: 0.15rem; }
 /* Center sections and their tables */
 .disc-view section {
     text-align: center;
@@ -1169,7 +1200,7 @@ nav[aria-label="Pagination"] ul {
         table-layout: auto;
     }
 }
-@media (max-width: 760px) {
+@media (max-width: 768px) {
     .disc-view .grid {
         grid-template-areas:
             "disc side";
@@ -1204,25 +1235,16 @@ nav[aria-label="Pagination"] ul {
     }
     .disc-view .table-compact td,
     .disc-view .table-compact th {
-        padding: 0.03rem 0.18rem;
-        font-size: 0.58rem;
+        font-size: 0.75rem;
         overflow-wrap: anywhere;
         word-break: break-word;
     }
-    .disc-view .table-compact td:first-child,
-    .disc-view .table-compact th:first-child {
-        padding-left: 0.2rem;
-    }
-    .disc-view .table-compact td:last-child,
-    .disc-view .table-compact th:last-child {
-        padding-right: 0.2rem;
-    }
     .disc-view .disc-info-table td:first-child,
     .disc-view .dump-info-section .table-compact td:first-child {
-        width: 3.4rem;
+        width: 4.1rem;
     }
     .disc-view h3 {
-        font-size: 0.65rem;
+        font-size: 0.75rem;
     }
     .disc-view .status-dot {
         width: 8px;
@@ -1231,7 +1253,7 @@ nav[aria-label="Pagination"] ul {
     }
     .disc-view .section-collapsible .pre-wrap {
         width: 100%;
-        font-size: 0.58rem;
+        font-size: 0.75rem;
         padding: 0.12rem 0.25rem;
     }
 }
@@ -1241,42 +1263,18 @@ nav[aria-label="Pagination"] ul {
     padding: 0.15rem 0.55rem;
     margin-bottom: 0.3rem;
 }
-.disc-view .detail-section.table-fits {
-    width: fit-content;
-    max-width: 100%;
-    margin-left: auto;
-    margin-right: auto;
+/* The boxes share one centred column as wide as the widest box, never wider than the page;
+   a table that doesn't fit scrolls inside its box */
+.disc-details {
+    display: grid;
+    grid-template-columns: minmax(0, max-content);
+    justify-content: center;
 }
-.disc-view.has-overflowing-detail-sections .detail-section.table-fits {
-    width: 100% !important;
-    max-width: 100%;
-    margin-left: 0;
-    margin-right: 0;
+.disc-details > .detail-section {
+    min-width: 0;
 }
-.disc-view .detail-section.table-fits .table-scroll {
-    width: max-content;
-    max-width: 100%;
-    /* Section is classified as fitting, so never show a horizontal scrollbar —
-       avoids a spurious bar from sub-pixel width mismatches. Only genuinely
-       overflowing sections (.table-overflows) keep overflow-x: auto. */
-    overflow-x: hidden;
-}
-.disc-view .detail-section.table-fits .table-scroll > table {
-    margin-left: 0;
-    margin-right: 0;
-}
-.disc-view .detail-section.table-overflows {
-    width: 100%;
-    max-width: 100%;
-    margin-left: 0;
-    margin-right: 0;
-}
-.disc-view .detail-section.table-overflows .table-scroll {
-    width: 100%;
-}
-.disc-view .detail-section.table-overflows .table-scroll > table {
-    margin-left: 0;
-    margin-right: 0;
+.disc-details .table-scroll {
+    overflow-x: auto;
 }
 .disc-view table {
     margin-left: auto;
@@ -1292,7 +1290,7 @@ nav[aria-label="Pagination"] ul {
 .disc-view .table-scroll-compact > table td,
 .disc-view .table-scroll-compact > table th {
     padding: 0.04rem 0.35rem;
-    font-size: 0.85rem;
+    font-size: 0.875rem;
     vertical-align: middle;
 }
 .disc-view .table-compact td:first-child,
@@ -1333,29 +1331,45 @@ nav[aria-label="Pagination"] ul {
     white-space: normal;
     overflow-wrap: break-word;
 }
-@media (max-width: 760px) {
+@media (max-width: 768px) {
     .disc-view .grid > section.disc-info-section {
         width: 100%;
         max-width: 100%;
     }
     .disc-view .table-compact td,
     .disc-view .table-compact th {
-        padding: 0.03rem 0.18rem;
-        font-size: 0.58rem;
+        font-size: 0.75rem;
         overflow-wrap: anywhere;
         word-break: break-word;
     }
-    .disc-view .table-compact td:first-child,
-    .disc-view .table-compact th:first-child {
-        padding-left: 0.2rem;
+    .disc-view .disc-info-table td:first-child,
+    .disc-view .dump-info-section .table-compact td:first-child {
+        width: 4.1rem;
     }
-    .disc-view .table-compact td:last-child,
-    .disc-view .table-compact th:last-child {
-        padding-right: 0.2rem;
+}
+@media (max-width: 768px) {
+    /* Phones and small tablets: Disc above Dump, so both tables get the full width and the regular text size */
+    .disc-view .grid {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "disc" "side";
+        row-gap: 0.25rem;
+        margin-bottom: 1.25rem;
+    }
+    .disc-view .disc-info-table,
+    .disc-view .dump-info-section .table-compact {
+        width: 100%;
+    }
+    .disc-view .table-compact td,
+    .disc-view .table-compact th,
+    .disc-view .section-collapsible .pre-wrap {
+        font-size: 0.875rem;
     }
     .disc-view .disc-info-table td:first-child,
     .disc-view .dump-info-section .table-compact td:first-child {
-        width: 3.4rem;
+        width: 7rem;
+    }
+    .disc-view h3 {
+        font-size: 0.875rem;
     }
 }
 .disc-view .binary-metadata {
@@ -1373,6 +1387,9 @@ nav[aria-label="Pagination"] ul {
     font-size: inherit;
 }
 .disc-view .binary-metadata-warning {
+    color: #c62828;
+}
+[data-theme="dark"] .disc-view .binary-metadata-warning {
     color: var(--status-bad);
 }
 .disc-view .binary-table td,
@@ -1396,7 +1413,7 @@ nav[aria-label="Pagination"] ul {
     vertical-align: middle !important;
 }
 .disc-view .detail-section .disc-table {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
 }
 .disc-view .detail-section .disc-table code,
 .disc-view .detail-section .binary-table code,
@@ -1412,6 +1429,135 @@ nav[aria-label="Pagination"] ul {
     background: none;
     border-radius: 0;
     font-size: inherit;
+}
+/* Phones: hex dumps wrap to 8 bytes a line instead of shrinking */
+@media (max-width: 768px) {
+    .disc-view .binary-table td.hex-bytes,
+    .disc-view .binary-table td.hex-ascii {
+        white-space: normal;
+    }
+    .disc-view .binary-table .hex-bytes code {
+        display: inline-block;
+        max-width: 23ch;
+    }
+    .disc-view .binary-table .hex-ascii code {
+        display: inline-block;
+        width: 8ch;
+        line-break: anywhere;
+    }
+    /* SBI: the XOR pair may wrap like the bytes */
+    .disc-view .table-scroll-compact > table.sbi-table {
+        width: auto;
+        max-width: 100%;
+    }
+    .disc-view .sbi-table td:last-child {
+        white-space: normal;
+    }
+    .disc-view .binary-table.sbi-table .hex-bytes code {
+        width: 23ch;
+    }
+}
+/* PVD: the full table from 769px; up to 768px one striped block per date, never shrunk */
+@media (max-width: 768px) {
+    .disc-view .detail-section .pvd-table thead th {
+        padding: 0;
+        text-align: left !important;
+    }
+    .disc-view .detail-section .pvd-table thead th:nth-child(2) {
+        display: none;
+    }
+    .disc-view .detail-section .pvd-table tr {
+        display: grid;
+        grid-template-columns: 5.2rem 4.75rem 5.2rem auto;
+        column-gap: 0.4rem;
+        row-gap: 0.15rem;
+        padding: 0.35rem 0.4rem;
+    }
+    .disc-view .detail-section .pvd-table tbody tr:nth-child(odd) {
+        background-color: #F5F9FC;
+    }
+    .disc-view .detail-section .pvd-table tbody tr > td {
+        background-color: transparent !important;
+        text-align: left !important;
+        padding: 0;
+    }
+    .disc-view .detail-section .pvd-table tbody tr > td:first-child {
+        font-weight: 600;
+    }
+    .disc-view .detail-section .pvd-table tbody tr > td.hex-bytes {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+}
+/* Narrow phones: the PVD row name on its own line, SBI at 6 bytes a line */
+@media (max-width: 359px) {
+    .disc-view .detail-section .pvd-table tr {
+        grid-template-columns: 4.75rem 5.2rem auto;
+    }
+    .disc-view .detail-section .pvd-table thead th:first-child {
+        display: none;
+    }
+    .disc-view .detail-section .pvd-table tbody tr > td:first-child {
+        grid-column: 1 / -1;
+    }
+    .disc-view .detail-section .pvd-table tbody tr > td.hex-bytes {
+        grid-row: 3;
+    }
+    .disc-view .binary-table.sbi-table .hex-bytes code {
+        width: 17ch;
+    }
+}
+@media (max-width: 768px) {
+    /* Phones: one card per BCA mastering entry, every field on its own line */
+    .disc-view .bca-mastering-table,
+    .disc-view .bca-mastering-table tbody {
+        display: block;
+    }
+    .disc-view .table-scroll-compact > table.bca-mastering-table {
+        width: auto;
+        max-width: 100%;
+    }
+    .disc-view .bca-mastering-table thead {
+        display: none;
+    }
+    .disc-view .bca-mastering-table tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: 0.1rem;
+        padding: 0.4rem 0.3rem;
+    }
+    .disc-view .detail-section .bca-mastering-table tbody tr:nth-child(odd) {
+        background-color: #F5F9FC;
+    }
+    .disc-view .detail-section .bca-mastering-table tbody td {
+        display: grid;
+        grid-template-columns: 5rem minmax(0, 1fr);
+        width: auto;
+        padding: 0;
+        background-color: transparent !important;
+        text-align: left !important;
+        white-space: normal;
+    }
+    .disc-view .detail-section .bca-mastering-table tbody td:first-child {
+        display: block;
+        font-weight: 600;
+    }
+    /* Labels look like the table's column headings */
+    .disc-view .bca-mastering-table td:nth-child(n+2)::before {
+        font-family: var(--pico-font-family);
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--pico-color);
+    }
+    .disc-view .bca-mastering-table td:nth-child(2)::before { content: "Check Bit"; }
+    .disc-view .bca-mastering-table td:nth-child(3)::before { content: "Plant"; }
+    .disc-view .bca-mastering-table td:nth-child(4)::before { content: "Serial"; }
+    .disc-view .bca-mastering-table td:nth-child(5)::before { content: "Date"; }
+    .disc-view .bca-mastering-table td:nth-child(6)::before { content: "Time"; }
+    .disc-view .bca-mastering-table td:nth-child(7)::before { content: "Disc #"; }
+}
+[data-theme="dark"] .disc-view .detail-section .bca-mastering-table tbody tr:nth-child(odd) {
+    background-color: transparent;
 }
 .disc-view table td:first-child {
     text-align: right;
@@ -1443,28 +1589,13 @@ nav[aria-label="Pagination"] ul {
     margin: 0;
 }
 
-/* Dat filename label under Files heading — matches PVD row height */
-.dat-filename {
-    font-size: 0.82rem;
-    line-height: 1.2;
-    text-align: left;
-    margin: 0 0 0.35rem 0;
-    padding: 0;
-}
-.dat-filename code {
-    padding-top: 0;
-    padding-bottom: 0;
-    line-height: inherit;
-    vertical-align: middle;
-}
-
 /* Preserve newlines in multiline text blocks */
 .pre-wrap {
     max-width: 100%;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
-    font-size: 0.85rem;
+    font-size: 0.875rem;
 }
 .disc-view .section-collapsible .pre-wrap {
     max-width: min(100%, var(--disc-aux-max-width));
@@ -1519,7 +1650,7 @@ nav[aria-label="Pagination"] ul {
 /* Custom arrow via ::before on the h3 inside summary */
 .disc-view details > summary h3::after {
     content: ' ▶';
-    font-size: 0.8em;
+    font-size: 0.75rem;
     margin-left: 0.3rem;
     display: inline-block;
     transition: transform 0.15s;
@@ -1551,7 +1682,7 @@ nav[aria-label="Pagination"] ul {
 }
 .dump-log-details > summary h3::after {
     content: ' ▶';
-    font-size: 0.8em;
+    font-size: 0.75rem;
     margin-left: 0.3rem;
     display: inline-block;
     transition: transform 0.15s;
@@ -1613,7 +1744,7 @@ nav[aria-label="Pagination"] ul {
     width: auto;
     margin: 0;
     padding: 0.35rem 0.6rem;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     line-height: 1.2;
 }
 .disc-bottom-actions {
@@ -1644,7 +1775,7 @@ nav[aria-label="Pagination"] ul {
         width: 100%;
         margin: 0;
         padding: 0.45rem 0.6rem;
-        font-size: 0.8rem;
+        font-size: 0.875rem;
         line-height: 1.2;
         text-align: center;
     }
@@ -1669,7 +1800,7 @@ nav[aria-label="Pagination"] ul {
 /* Foreign title — sits directly under main h2, same size as section headings */
 .disc-view h2.foreign-title {
     margin-top: 0.15rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
     color: var(--pico-muted-color);
     font-weight: 550;
 }
@@ -1684,6 +1815,73 @@ nav[aria-label="Pagination"] ul {
 .files-table td {
     width: auto;
     white-space: nowrap;
+}
+@media (max-width: 768px) {
+    /* Phones: one card per file, every hash on its own line */
+    .disc-view .files-table,
+    .disc-view .files-table tbody {
+        display: block;
+    }
+    .disc-view .files-table thead {
+        display: none;
+    }
+    .disc-view .table-scroll-compact > table.files-table {
+        width: auto;
+        max-width: 100%;
+    }
+    .disc-view .files-table tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: 0.1rem;
+        padding: 0.4rem 0.3rem;
+    }
+    .disc-view .detail-section .files-table tbody tr:nth-child(odd) {
+        background-color: #F5F9FC;
+    }
+    .disc-view .detail-section .files-table tbody tr > td {
+        background-color: transparent !important;
+    }
+    .disc-view .files-table td {
+        display: block;
+        padding: 0;
+        background: none;
+        text-align: left !important;
+    }
+    /* The file name on its own, its metadata below, one entry a line */
+    .disc-view .table-scroll-compact > table.files-table td:first-child {
+        width: auto;
+        white-space: normal;
+        overflow-wrap: break-word;
+        padding-left: 0;
+        margin-bottom: 0.25rem;
+    }
+    .disc-view .files-table td:nth-child(n+2) {
+        display: grid;
+        grid-template-columns: 3.3rem minmax(0, 1fr);
+        padding-left: 0;
+    }
+    /* A SHA-1 fills a 390px screen; narrower ones wrap it instead of cutting it off */
+    .disc-view .table-scroll-compact > table.files-table td:nth-child(n+2) {
+        white-space: normal;
+        padding-right: 0;
+    }
+    .disc-view .files-table td:nth-child(n+2) code {
+        overflow-wrap: anywhere;
+    }
+    /* Labels look like the table's column headings */
+    .disc-view .files-table td:nth-child(n+2)::before {
+        font-family: var(--pico-font-family);
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .disc-view .files-table td:nth-child(2)::before { content: "Size"; }
+    .disc-view .files-table td:nth-child(3)::before { content: "CRC-32"; }
+    .disc-view .files-table td:nth-child(4)::before { content: "MD5"; }
+    .disc-view .files-table td:nth-child(5)::before { content: "SHA-1"; }
+}
+[data-theme="dark"] .disc-view .detail-section .pvd-table tbody tr:nth-child(odd),
+[data-theme="dark"] .disc-view .detail-section .files-table tbody tr:nth-child(odd) {
+    background-color: transparent;
 }
 .disc-view .files-table tbody tr.files-synthetic-row td {
     background-color: #edf1f5 !important;
@@ -1737,6 +1935,103 @@ nav[aria-label="Pagination"] ul {
     font-weight: inherit;
     color: inherit;
 }
+/* Room between the detail tables' rows, the same at every width */
+.disc-view .detail-section .disc-table td,
+.disc-view .detail-section .disc-table th,
+.disc-view .detail-section .binary-table td,
+.disc-view .detail-section .binary-table th,
+.disc-view .detail-section .ring-table td,
+.disc-view .detail-section .ring-table th {
+    line-height: 1.35;
+    padding-top: 0.1rem;
+    padding-bottom: 0.1rem;
+}
+@media (max-width: 768px) {
+    /* Phones: one card per ring layer, every field on its own line */
+    .disc-view .ring-table,
+    .disc-view .ring-table tbody {
+        display: block;
+    }
+    .disc-view .table-scroll-compact > table.ring-table {
+        width: auto;
+    }
+    .disc-view .ring-table thead,
+    .disc-view .ring-table colgroup {
+        display: none;
+    }
+    .disc-view .ring-table tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        row-gap: 0.1rem;
+        padding: 0.4rem 0.3rem;
+    }
+    /* Layers of one entry share its card */
+    .disc-view .ring-table tr:not(:has(> td.entry-num)) {
+        padding-top: 0.2rem;
+    }
+    .disc-view .detail-section .ring-table tbody tr:not(.ring-entry-even) {
+        background-color: #F5F9FC;
+    }
+    .disc-view .detail-section .ring-table tbody tr > td {
+        background-color: transparent !important;
+        border-top: none;
+    }
+    .disc-view .ring-group-start {
+        border-top: 1px solid #e8ebef;
+    }
+    .disc-view .detail-section .ring-table td {
+        display: block;
+        padding: 0;
+        text-align: left !important;
+    }
+    .disc-view .table-scroll-compact > table.ring-table td.entry-num {
+        width: 1.4rem;
+        padding: 0;
+        text-align: left !important;
+    }
+    .disc-view .table-scroll-compact > table.ring-table td.ring-layer-col {
+        width: auto;
+        padding: 0;
+        text-align: left !important;
+    }
+    .disc-view .table-scroll-compact > table.ring-table td.ring-layer-col:first-child {
+        margin-left: 1.4rem;
+    }
+    .disc-view .ring-table td:not(.entry-num):not(.ring-layer-col) {
+        flex: 0 0 100%;
+        display: grid;
+        grid-template-columns: 7.2rem minmax(0, 1fr);
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    /* Fields a layer doesn't have are left out */
+    .disc-view .ring-table td:not(.entry-num):not(.ring-layer-col):empty {
+        display: none;
+    }
+    /* Labels look like the table's column headings */
+    .disc-view .ring-table td:not(.entry-num):not(.ring-layer-col)::before {
+        font-family: var(--pico-font-family);
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--pico-color);
+    }
+    .disc-view .ring-table .ring-mastering-code::before { content: "Mastering Code"; }
+    .disc-view .ring-table .ring-mastering-sid::before { content: "Mastering SID"; }
+    .disc-view .ring-table .ring-toolstamps::before { content: "Toolstamps"; }
+    .disc-view .ring-table .ring-mould-sids::before { content: "Mould SIDs"; }
+    .disc-view .ring-table .ring-additional-moulds::before { content: "Additional Moulds"; }
+    .disc-view .ring-table .ring-offset::before { content: "Offset"; }
+    .disc-view .ring-table .ring-offset-extra::before { content: "Extra Offset"; }
+    .disc-view .ring-table .ring-sample-start::before { content: "Sample Start"; }
+    .disc-view .ring-table .ring-comment::before { content: "Comment"; }
+}
+[data-theme="dark"] .disc-view .detail-section .ring-table tbody tr:not(.ring-entry-even) {
+    background-color: transparent;
+}
+[data-theme="dark"] .disc-view .ring-group-start {
+    border-top-color: #2C3540;
+}
 .ring-tab-marker {
     display: inline-block;
     width: 3ch;
@@ -1768,14 +2063,14 @@ header .site-nav {
     overflow: visible;
 }
 
-/* Row 1: logo + search + login */
+/* Row 1: logo + search + login; wraps onto a second line where it doesn't fit */
 header .site-nav-top {
     display: flex !important;
     flex-direction: row !important;
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
     align-items: center;
     justify-content: center;
-    gap: 1rem;
+    gap: 0.4rem 1rem;
     width: 100%;
     box-sizing: border-box;
 }
@@ -1813,7 +2108,7 @@ header .site-nav-top {
     align-items: center;
     padding: 0 1rem;
     margin: 0;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     line-height: 1;
 }
 .user-menu-button {
@@ -1821,7 +2116,7 @@ header .site-nav-top {
     justify-content: flex-start;
     gap: 0;
     padding: 0 0.55rem 0 0 !important;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     line-height: 1;
     border: 1.5px solid #9fb1c3;
     border-radius: var(--pico-border-radius);
@@ -1854,7 +2149,7 @@ header .site-nav-top {
     border-radius: 0;
     background: transparent;
     box-shadow: none;
-    font-size: 1.45rem;
+    font-size: 1.5rem;
     line-height: 1;
     overflow: hidden;
 }
@@ -1935,7 +2230,8 @@ header .site-nav-links {
     --nav-band-fade: 12rem;
     display: flex !important;
     flex-direction: row !important;
-    flex-wrap: nowrap !important;
+    /* Wraps where the links don't fit */
+    flex-wrap: wrap !important;
     list-style: none;
     margin: 0.5rem auto 0.09rem !important;
     padding: 0.08rem 0 !important;
@@ -2063,12 +2359,10 @@ header .site-nav-links > li:first-child {
     text-decoration-thickness: 1.5px;
     transition: background-color 0.15s, color 0.15s;
 }
-/* Narrow screens: shrink the nav links so the row fits on one line instead of
-   overflowing horizontally (which triggers mobile shrink-to-fit). */
+/* Narrow screens: tighter nav links, same text size; the row wraps where they don't fit */
 @media (max-width: 32rem) {
     .site-nav-links > li > a,
     .site-nav-links > li > .submenu-label {
-        font-size: 0.9rem;
         padding-left: 0.2rem !important;
         padding-right: 0.2rem !important;
     }
@@ -2233,7 +2527,7 @@ nav .quick-search input[type="text"] {
     padding: 0 0.5rem;
     height: var(--nav-bar-height);
     box-sizing: border-box;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
     width: clamp(100px, 18vw, 200px);
     border: 1.5px solid #9fb1c3;
     background-color: var(--pico-form-element-background-color);
@@ -2283,7 +2577,7 @@ nav .quick-search input[type="text"] {
 }
 .home-sections h3 {
     margin-bottom: 0.98rem;
-    font-size: 1.22rem;
+    font-size: 1.25rem;
     font-weight: 600;
 }
 @media (max-width: 768px) {
@@ -2293,7 +2587,7 @@ nav .quick-search input[type="text"] {
 }
 .home-sections p {
     margin-bottom: 0.29rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
 }
 .home-sections .home-news {
     text-align: left;
@@ -2303,7 +2597,7 @@ nav .quick-search input[type="text"] {
 }
 .home-news-empty {
     text-align: left;
-    font-size: 0.85rem;
+    font-size: 0.875rem;
 }
 .home-news-list {
     display: flex;
@@ -2322,7 +2616,7 @@ nav .quick-search input[type="text"] {
 }
 .home-news-header h4 {
     margin: 0 0 0.12rem;
-    font-size: 0.98rem;
+    font-size: 1rem;
     font-weight: 600;
     line-height: 1.28;
 }
@@ -2332,7 +2626,7 @@ nav .quick-search input[type="text"] {
     gap: 0.25rem 0.45rem;
     margin: 0 0 0.35rem;
     color: #565e6a;
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     line-height: 1.15;
 }
 [data-theme="dark"] .home-news .home-news-meta {
@@ -2340,7 +2634,7 @@ nav .quick-search input[type="text"] {
 }
 .home-news-content {
     color: var(--pico-color);
-    font-size: 0.86rem;
+    font-size: 0.875rem;
     line-height: 1.45;
     overflow-wrap: anywhere;
 }
@@ -2370,7 +2664,7 @@ nav .quick-search input[type="text"] {
 }
 .home-sections .home-news-actions,
 .home-sections .home-news-forum-link {
-    font-size: 0.86rem;
+    font-size: 0.875rem;
 }
 .home-news-actions a,
 .home-news-forum-link a {
@@ -2385,11 +2679,6 @@ nav .quick-search input[type="text"] {
 }
 .home-news-forum-link {
     text-align: center;
-}
-.recent-dumps-scaler,
-.recent-changes-scaler {
-    width: 100%;
-    max-width: 100%;
 }
 .home-recent-dumps .recent-dumps {
     margin: 0 auto;
@@ -2441,14 +2730,14 @@ nav .quick-search input[type="text"] {
 /* Recent dumps table */
 .recent-dumps th {
     padding: 0.04rem 0.2rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
     white-space: nowrap;
     text-align: left;
     color: #565e6a;
 }
 .recent-dumps td {
     padding: 0.04rem 0.2rem;
-    font-size: 0.85rem;
+    font-size: 0.875rem;
     vertical-align: middle;
     white-space: nowrap;
 }
@@ -2499,17 +2788,13 @@ nav .quick-search input[type="text"] {
         table-layout: auto;
     }
     .recent-dumps th {
-        padding: 0.025rem 0.09rem;
-        font-size: 0.66rem;
+        font-size: 0.75rem;
     }
     .recent-dumps td {
-        padding: 0.025rem 0.09rem;
-        font-size: 0.62rem;
+        font-size: 0.75rem;
     }
     .recent-dumps .date-col {
         width: 3.65rem;
-        padding-left: 0.05rem;
-        padding-right: 0.02rem;
     }
     .recent-dumps .region-col {
         width: 2.15rem;
@@ -2528,16 +2813,25 @@ nav .quick-search input[type="text"] {
     .recent-dumps .region-col .region-flags {
         max-width: calc(2 * 1.55em);
     }
-    .recent-dumps .title-col {
-        padding-left: 0.14rem;
-    }
     .recent-dumps .title-col a {
         max-width: 100%;
     }
     .recent-dumps .system-col {
-        padding-right: 0.08rem;
         width: 1%;
         white-space: nowrap;
+    }
+}
+@media (max-width: 768px) {
+    /* Phones and small tablets: regular text size; long titles wrap instead of being cut off */
+    .recent-dumps td {
+        font-size: 0.875rem;
+    }
+    .recent-dumps .date-col {
+        width: 1%;
+    }
+    .recent-dumps .title-col a {
+        white-space: normal;
+        max-width: none;
     }
 }
 .clickable-row {
@@ -2698,7 +2992,7 @@ fieldset {
 }
 fieldset legend {
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 1rem;
 }
 
 .auth-form-title {
@@ -2718,7 +3012,7 @@ article input[type="password"] {
 
 /* Code blocks in submission detail */
 pre code {
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     max-height: 400px;
     overflow-y: auto;
 }
@@ -2870,14 +3164,14 @@ body:has(.disc-edit) footer.container hr {
     width: max-content;
     margin: 0;
     padding: 0.15rem 0.6rem;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     white-space: nowrap;
 }
 .disc-edit .disc-meta-row > .transliterate-note {
     grid-column: 2 / -1;
     margin-top: 0.15rem;
     color: var(--pico-muted-color);
-    font-size: 0.8rem;
+    font-size: 0.875rem;
 }
 .disc-edit .grid {
     gap: 0.35rem;
@@ -2897,7 +3191,7 @@ body:has(.disc-edit) footer.container hr {
     width: auto;
     margin: 0;
     padding: 0.22rem 0.55rem;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
 }
 .disc-edit.disc-add:not(.show-all-flags) .flag-check-extra {
     display: none !important;
@@ -3061,7 +3355,7 @@ body:has(.disc-edit) footer.container hr {
     border-bottom: none;
 }
 .pic-layerbreak-hint {
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     color: var(--pico-muted-color);
     white-space: nowrap;
 }
@@ -3150,7 +3444,7 @@ body:has(.disc-edit) footer.container hr {
     width: 100%;
 }
 .review-field-annotation-label {
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     opacity: 0.85;
 }
 .review-field-annotation-item {
@@ -3281,7 +3575,7 @@ body:has(.disc-edit) footer.container hr {
 .array-add-btn {
     width: fit-content;
     padding: 0.15rem 0.5rem;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
 }
 
 /* Ring code edit table */
@@ -3312,7 +3606,7 @@ body:has(.disc-edit) footer.container hr {
 .ring-edit-table input[type="text"] {
     margin-bottom: 0;
     padding: 0.15rem 0.25rem;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     height: auto;
 }
 .ring-edit-table th,
@@ -3355,7 +3649,7 @@ body:has(.disc-edit) footer.container hr {
     background: #f3f6fa;
     color: #17202b;
     box-shadow: 0 0.25rem 0.75rem rgba(20, 27, 36, 0.18);
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 600;
     line-height: 1.25;
     white-space: normal;
@@ -3385,14 +3679,14 @@ body:has(.disc-edit) footer.container hr {
 }
 .ring-edit-table .remove-entry {
     padding: 0.1rem 0.35rem;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     margin: 0;
 }
 
 /* Hex dump textarea */
 .hex-dump-input {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     line-height: 1.3;
 }
 
@@ -3517,7 +3811,7 @@ textarea.full-width-textarea {
     border-radius: var(--pico-border-radius, 0.25rem);
     margin-top: 0;
     margin-bottom: 1rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
 }
 .validation-errors {
     background: #ce7e7b;
@@ -3585,7 +3879,7 @@ textarea.full-width-textarea {
     border: var(--pico-border-width) solid transparent;
     border-bottom: none;
     border-radius: 4px 4px 0 0;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
 }
 
 .maintenance-tabs a.active {
@@ -3856,7 +4150,7 @@ textarea.full-width-textarea {
 
 .maintenance-users-picker-help {
     color: var(--pico-muted-color);
-    font-size: 0.8rem;
+    font-size: 0.875rem;
 }
 
 .maintenance-user-actions {
@@ -3897,7 +4191,7 @@ textarea.full-width-textarea {
     grid-column: 1 / -1;
     margin-bottom: 0.35rem;
     color: var(--pico-muted-color);
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     text-align: center;
 }
 
@@ -4043,7 +4337,7 @@ textarea.full-width-textarea {
     align-items: center;
     gap: 0.22rem;
     margin: 0;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     font-weight: normal;
     white-space: nowrap;
 }
@@ -4099,7 +4393,7 @@ textarea.full-width-textarea {
 .maintenance-action-note {
     margin: 0.45rem auto 0;
     max-width: 100%;
-    font-size: 0.85rem;
+    font-size: 0.875rem;
     text-align: center;
 }
 
@@ -4135,7 +4429,7 @@ textarea.full-width-textarea {
     width: calc((100% - 1rem) / 2);
     margin: 0 auto;
     padding: 0.35rem 1rem;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     text-align: center;
 }
 .disc-edit .dump-log-fill-controls button[hidden] {
@@ -4168,7 +4462,7 @@ textarea.full-width-textarea {
     line-height: 1;
     cursor: pointer;
     transition: transform var(--pico-transition);
-    font-size: 0.8em;
+    font-size: 0.75rem;
     font-weight: inherit;
     font-family: inherit;
 }
@@ -4297,7 +4591,7 @@ tr.field-changed > td { background-color: rgba(255, 235, 59, 0.18); }
     overflow-x: visible;
     white-space: pre-wrap;
     word-wrap: break-word;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     border: var(--pico-border-width) solid var(--pico-form-element-border-color);
     border-radius: var(--pico-border-radius);
     background: var(--pico-code-background-color);
@@ -4324,7 +4618,7 @@ tr.field-changed > td { background-color: rgba(255, 235, 59, 0.18); }
 /* Wrapped text blocks for dump log, comments, etc. */
 .section-text {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     line-height: 1.4;
     background: var(--pico-code-background-color);
     padding: 0.75rem;
@@ -4360,7 +4654,7 @@ body:has(.submission-info) main.container > section .section-text {
 }
 body:has(.submission-info) main.container > section h3 {
     margin-bottom: 0.35rem;
-    font-size: 0.9rem;
+    font-size: 0.875rem;
     font-weight: 600;
 }
 

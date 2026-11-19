@@ -633,25 +633,6 @@
         select.addEventListener('pointerdown', load);
     }
 
-    function scaleDiscTable() {
-        var wrapper = document.querySelector('.disc-table-scaler');
-        var table = wrapper && wrapper.querySelector('table');
-        if (!table) return;
-        table.style.transform = '';
-        table.style.transformOrigin = '';
-        wrapper.style.height = '';
-        wrapper.style.overflow = '';
-        var containerWidth = wrapper.clientWidth;
-        var tableWidth = table.scrollWidth;
-        if (tableWidth > containerWidth && containerWidth > 0) {
-            var scale = containerWidth / tableWidth;
-            table.style.transform = 'scale(' + scale + ')';
-            table.style.transformOrigin = 'top left';
-            wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
-            wrapper.style.overflow = 'hidden';
-        }
-    }
-
     function initAdvancedSearchToggle() {
         var form = document.getElementById('filter-form');
         var toggle = document.querySelector('.advanced-search-toggle');
@@ -809,11 +790,9 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        scaleDiscTable();
     initDumperDirectory();
     initAdvancedSearchToggle();
     });
-    window.addEventListener('resize', scaleDiscTable);
 })();
 </script>
 {% endblock %}

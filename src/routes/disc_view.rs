@@ -2210,7 +2210,7 @@ fn format_sbi_contents(sector: u32, qdata: &[u8]) -> String {
         if b == expected_byte {
             parts.push(hex);
         } else {
-            parts.push(format!(r#"<span style="color: #ff0000;">{}</span>"#, hex));
+            parts.push(format!(r#"<span class="sbi-highlight">{}</span>"#, hex));
         }
     }
     parts.join(" ")
@@ -2948,12 +2948,12 @@ mod tests {
         let template = include_str!("../../templates/disc_view.html");
 
         assert!(template.contains(r#"<td class="entry-num ring-entry-cell""#));
-        assert!(template.contains(r#"<td class="ring-fixed-cell ring-entry-cell""#));
-        assert!(template.contains(r#"<td class="ring-entry-cell""#));
+        assert!(template.contains(r#"<td class="ring-fixed-cell ring-entry-cell ring-offset""#));
+        assert!(template.contains(r#"<td class="ring-entry-cell ring-sample-start""#));
         assert!(template
             .contains(r#"<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>"#));
         assert!(
-            template.contains(r#"<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>"#)
+            template.contains(r#"<td class="ring-fixed-cell ring-mastering-code">{{ row.mastering_code|safe }}</td>"#)
         );
         assert!(!template.contains(r#"<td class="ring-layer-col ring-entry-cell""#));
         assert!(!template.contains(
@@ -3014,11 +3014,11 @@ mod tests {
         let html = template.render().unwrap();
 
         assert!(
-            html.contains(r#"<td class="ring-fixed-cell ring-entry-cell" rowspan="2">+123</td>"#)
+            html.contains(r#"<td class="ring-fixed-cell ring-entry-cell ring-offset" rowspan="2">+123</td>"#)
         );
-        assert!(html.contains(r#"<td class="ring-fixed-cell ring-entry-cell" rowspan="2">+4</td>"#));
-        assert!(html.contains(r#"<td class="ring-entry-cell" rowspan="2">+5678</td>"#));
-        assert!(html.contains(r#"<td class="ring-entry-cell" rowspan="2">Entry comment</td>"#));
+        assert!(html.contains(r#"<td class="ring-fixed-cell ring-entry-cell ring-offset-extra" rowspan="2">+4</td>"#));
+        assert!(html.contains(r#"<td class="ring-entry-cell ring-sample-start" rowspan="2">+5678</td>"#));
+        assert!(html.contains(r#"<td class="ring-entry-cell ring-comment" rowspan="2">Entry comment</td>"#));
         assert_eq!(html.matches("+123").count(), 1);
         assert_eq!(html.matches("+4").count(), 1);
         assert_eq!(html.matches("+5678").count(), 1);
