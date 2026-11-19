@@ -2875,7 +2875,6 @@ async fn add_page(
                 &media_type_code,
             ),
             categories: build_add_category_options(&ref_data.all_categories, ""),
-            tags: build_tag_options(&ref_data.all_tags, &[]),
             regions: build_check_options(&ref_data.all_regions, &[]),
             languages: build_lang_check_options(&ref_data.all_languages, &[]),
 
