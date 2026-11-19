@@ -30,6 +30,9 @@ pub fn routes() -> Router<AppState> {
         .route("/maintenance/systems", post(save_systems))
         .route("/maintenance/regions", post(save_regions))
         .route("/maintenance/languages", post(save_languages))
+        .route("/maintenance/tags", post(save_tag))
+        .route("/maintenance/tags/{tag_id}/rename", post(rename_tag))
+        .route("/maintenance/tags/{tag_id}/delete", post(delete_tag))
         .route("/maintenance/rebuild-cue", post(rebuild_cue))
         .route(
             "/maintenance/trigger-archive-generation",
@@ -49,6 +52,7 @@ const BACKUP_DIR: &str = "./data/backups";
 const BACKUP_PREFIX: &str = "vgindex-backup-";
 const BACKUP_SUFFIX: &str = ".tar.gz";
 const DELETED_USERNAME: &str = "Deleted";
+const TAG_NAME_MAX_LENGTH: usize = 64;
 
 #[derive(Deserialize, Default)]
 struct MaintenanceQuery {
@@ -68,6 +72,7 @@ struct MaintenanceTemplate {
     system_rows: Vec<SystemEditorRow>,
     region_rows: Vec<LookupEditorRow>,
     language_rows: Vec<LookupEditorRow>,
+    tag_rows: Vec<TagEditorRow>,
     flag_options: Vec<FlagOption>,
     system_input_sizes: SystemInputSizes,
     region_input_sizes: LookupInputSizes,
@@ -82,6 +87,7 @@ struct MaintenanceTemplate {
     show_systems: bool,
     show_regions: bool,
     show_languages: bool,
+    show_tags: bool,
     show_misc: bool,
     show_users: bool,
     show_submissions: bool,
@@ -802,6 +808,153 @@ async fn save_languages(
     .await
 }
 
+#[derive(Deserialize)]
+struct TagForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    name: String,
+}
+
+fn normalize_tag_name(value: &str) -> Result<&str, String> {
+    let name = value.trim();
+    if name.is_empty() {
+        return Err("Tag name cannot be empty.".to_string());
+    }
+    if name.chars().count() > TAG_NAME_MAX_LENGTH {
+        return Err(format!(
+            "Tag names must be {TAG_NAME_MAX_LENGTH} characters or fewer."
+        ));
+    }
+    Ok(name)
+}
+
+async fn save_tag(
+    State(state): State<AppState>,
+    RequireModerator(user): RequireModerator,
+    Form(form): Form<TagForm>,
+) -> AppResult<Response> {
+    csrf::verify_token(&user, &form.csrf_token)?;
+
+    let name = match normalize_tag_name(&form.name) {
+        Ok(name) => name,
+        Err(message) => return Ok(redirect_with_message("tags", "error", &message)),
+    };
+
+    let inserted = sqlx::query("INSERT INTO tags (name) VALUES ($1) ON CONFLICT DO NOTHING")
+        .bind(name)
+        .execute(&state.pool)
+        .await?;
+    if inserted.rows_affected() == 0 {
+        return Ok(redirect_with_message(
+            "tags",
+            "error",
+            "A tag with that name already exists.",
+        ));
+    }
+
+    Ok(redirect_with_message(
+        "tags",
+        "status",
+        &format!("Added tag “{name}”."),
+    ))
+}
+
+async fn rename_tag(
+    State(state): State<AppState>,
+    RequireModerator(user): RequireModerator,
+    AxumPath(tag_id): AxumPath<i32>,
+    Form(form): Form<TagForm>,
+) -> AppResult<Response> {
+    csrf::verify_token(&user, &form.csrf_token)?;
+
+    let name = match normalize_tag_name(&form.name) {
+        Ok(name) => name,
+        Err(message) => return Ok(redirect_with_message("tags", "error", &message)),
+    };
+    let renamed: Option<String> = sqlx::query_scalar(
+        "UPDATE tags AS target
+         SET name = $2
+         WHERE target.id = $1
+           AND NOT EXISTS (
+               SELECT 1 FROM tags existing
+               WHERE existing.id <> target.id
+                 AND LOWER(existing.name) = LOWER($2)
+           )
+         RETURNING target.name",
+    )
+    .bind(tag_id)
+    .bind(name)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(name) = renamed {
+        return Ok(redirect_with_message(
+            "tags",
+            "status",
+            &format!("Renamed tag to “{name}”."),
+        ));
+    }
+
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM tags WHERE id = $1)")
+        .bind(tag_id)
+        .fetch_one(&state.pool)
+        .await?;
+    Ok(if exists {
+        redirect_with_message("tags", "error", "A tag with that name already exists.")
+    } else {
+        redirect_with_message("tags", "error", "Tag was not found.")
+    })
+}
+
+async fn delete_tag(
+    State(state): State<AppState>,
+    RequireModerator(user): RequireModerator,
+    AxumPath(tag_id): AxumPath<i32>,
+    Form(form): Form<CsrfForm>,
+) -> AppResult<Response> {
+    csrf::verify_form(&user, &form)?;
+
+    let deleted: Option<String> = sqlx::query_scalar(
+        "DELETE FROM tags AS target
+         WHERE target.id = $1
+           AND NOT EXISTS (
+               SELECT 1 FROM disc_tags WHERE tag_id = target.id
+           )
+         RETURNING target.name",
+    )
+    .bind(tag_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(name) = deleted {
+        return Ok(redirect_with_message(
+            "tags",
+            "status",
+            &format!("Deleted tag “{name}”."),
+        ));
+    }
+
+    let in_use: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1 FROM disc_tags
+             WHERE tag_id = $1
+         )",
+    )
+    .bind(tag_id)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(if in_use {
+        redirect_with_message(
+            "tags",
+            "error",
+            "This tag is assigned to one or more discs and cannot be deleted.",
+        )
+    } else {
+        redirect_with_message("tags", "error", "Tag was not found.")
+    })
+}
+
 async fn render_submission_validation_errors(
     state: &AppState,
     user: AuthenticatedUser,
@@ -1032,6 +1185,12 @@ struct LookupEditorRow {
     name: String,
     flag_code: String,
     sort_order: String,
+}
+
+#[derive(Clone, Debug, sqlx::FromRow)]
+struct TagEditorRow {
+    id: i32,
+    name: String,
 }
 
 #[derive(Clone, Debug)]
@@ -1453,6 +1612,7 @@ async fn build_maintenance_template(
             build_lookup_editor_rows(&languages)
         }
     };
+    let tag_rows = fetch_tag_editor_rows(pool).await?;
     let flag_options = load_flag_options()?;
     let user_rows = if user.role.can_admin() && query.tab.as_deref() == Some("users") {
         fetch_maintenance_users(pool).await?
@@ -1503,6 +1663,7 @@ async fn build_maintenance_template(
         system_rows,
         region_rows,
         language_rows,
+        tag_rows,
         flag_options,
         user_rows,
         submission_users,
@@ -1519,6 +1680,7 @@ fn maintenance_template(
     system_rows: Vec<SystemEditorRow>,
     region_rows: Vec<LookupEditorRow>,
     language_rows: Vec<LookupEditorRow>,
+    tag_rows: Vec<TagEditorRow>,
     flag_options: Vec<FlagOption>,
     user_rows: Vec<MaintenanceUser>,
     submission_users: Vec<UserIdentity>,
@@ -1530,6 +1692,7 @@ fn maintenance_template(
         Some("systems") => "systems",
         Some("regions") => "regions",
         Some("languages") => "languages",
+        Some("tags") => "tags",
         Some("misc") => "misc",
         Some("users") if user.role.can_admin() => "users",
         Some("submissions") if user.role.can_admin() => "submissions",
@@ -1548,6 +1711,7 @@ fn maintenance_template(
         system_rows,
         region_rows,
         language_rows,
+        tag_rows,
         flag_options,
         system_input_sizes,
         region_input_sizes,
@@ -1562,6 +1726,7 @@ fn maintenance_template(
         show_systems: active_tab == "systems",
         show_regions: active_tab == "regions",
         show_languages: active_tab == "languages",
+        show_tags: active_tab == "tags",
         show_misc: active_tab == "misc",
         show_users: active_tab == "users",
         show_submissions: active_tab == "submissions",
@@ -2087,6 +2252,14 @@ async fn fetch_lookup_records(
         }
     };
     Ok(sqlx::query_as(sql).fetch_all(pool).await?)
+}
+
+async fn fetch_tag_editor_rows(pool: &sqlx::PgPool) -> AppResult<Vec<TagEditorRow>> {
+    Ok(
+        sqlx::query_as("SELECT id, name FROM tags ORDER BY LOWER(name), name")
+            .fetch_all(pool)
+            .await?,
+    )
 }
 
 fn load_flag_options() -> AppResult<Vec<FlagOption>> {
@@ -3189,6 +3362,10 @@ mod tests {
             system_rows,
             region_rows,
             language_rows,
+            vec![TagEditorRow {
+                id: 1,
+                name: "Games".to_string(),
+            }],
             test_flag_options(),
             Vec::new(),
             Vec::new(),
@@ -3369,11 +3546,12 @@ mod tests {
         assert_eq!(
             html.matches(r#"name="_csrf" value="test-csrf-token""#)
                 .count(),
-            6
+            9
         );
         assert!(html.contains(r#"action="/maintenance/systems""#));
         assert!(html.contains(r#"action="/maintenance/regions""#));
         assert!(html.contains(r#"action="/maintenance/languages""#));
+        assert!(html.contains(r#"action="/maintenance/tags""#));
         assert!(html.contains(r#"action="/maintenance/rebuild-cue""#));
         assert!(html.contains(r#"action="/maintenance/trigger-archive-generation""#));
     }

@@ -194,6 +194,7 @@ struct DiscViewTemplate {
     system_code: String,
     media_type: String,
     category: String,
+    tags: Vec<String>,
     regions: Vec<ViewFlag>,
     lang_flags: Vec<ViewFlag>,
     show_title_foreign: bool,
@@ -1032,6 +1033,7 @@ async fn disc_view(
             system_code: detail.system.code.clone(),
             media_type: detail.disc.media_type.to_string(),
             category: detail.disc.category.to_string(),
+            tags: detail.tags,
             regions: detail
                 .regions
                 .iter()
@@ -2659,6 +2661,7 @@ mod tests {
             system_code: "PS3".to_string(),
             media_type: "Blu-ray Disc".to_string(),
             category: "Games".to_string(),
+            tags: Vec::new(),
             regions: Vec::new(),
             lang_flags: Vec::new(),
             show_title_foreign: false,

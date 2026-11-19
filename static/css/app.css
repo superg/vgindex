@@ -611,6 +611,19 @@ nav[aria-label="Pagination"] ul {
     text-align: right;
     line-height: 1.1;
 }
+
+/* Bold blue labels for the currently activated filters when advanced box is open */
+:is(#filter-form.advanced-search-visible > label, #filter-form.advanced-search-visible #advanced-search-panel > .advanced-search-row):has(
+    input:not([type="checkbox"])[value]:not([value=""]),
+    select:not(.text-match-mode) option[selected]:not([value=""]),
+    select.text-match-mode option[value="null"][selected],
+    select.text-match-mode option[value="any"][selected],
+    select[name="dumper"][data-selected-dumper]:not([data-selected-dumper=""])
+) > span {
+    color: var(--pico-primary);
+    font-weight: 600;
+}
+
 #filter-form select {
     font-size: 0.75rem;
     /* Looser line-height + vertical padding so descenders (g, p, y) are never
@@ -846,7 +859,8 @@ nav[aria-label="Pagination"] ul {
 #filter-form.advanced-search-visible select[name="status"],
 #filter-form.advanced-search-visible select[name="language"],
 #filter-form.advanced-search-visible select[name="media"],
-#filter-form.advanced-search-visible select[name="category"] {
+#filter-form.advanced-search-visible select[name="category"],
+#filter-form.advanced-search-visible select[name="tag"] {
     width: var(--advanced-dumper-control-width, max-content);
 }
 .disc-sort-controls {
@@ -2841,6 +2855,8 @@ body:has(.disc-edit) footer.container hr {
     margin: 0 !important;
 }
 .disc-edit .disc-meta-label {
+    font-size: 0.75rem;
+    font-weight: 600;
     text-align: right;
     line-height: 1.1;
     white-space: nowrap;
@@ -2856,6 +2872,42 @@ body:has(.disc-edit) footer.container hr {
 .disc-edit .disc-meta-row > select {
     width: max-content;
     max-width: 100%;
+}
+.disc-edit .disc-tag-dropdown {
+    display: block;
+    margin: calc(var(--pico-spacing) * 0.25) 0 0;
+    min-width: 0;
+    max-width: min(34rem, calc(100vw - 11rem));
+}
+.disc-edit :is(.disc-tag-dropdown > summary, .disc-tag-option-list) {
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-form-element-background-color);
+}
+.disc-edit .disc-tag-dropdown > summary {
+    width: max-content;
+    max-width: 100%;
+    margin: 0;
+    padding: 0.15rem 0.35rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: var(--pico-line-height);
+}
+.disc-edit .disc-tag-option-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.1rem 0.45rem;
+    width: 100%;
+    min-width: min(20rem, calc(100vw - 11rem));
+    margin-top: 0.2rem;
+    padding: 0.35rem;
+}
+.disc-edit .disc-tag-option span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.disc-edit .disc-tag-option input[type="checkbox"] {
+    flex: 0 0 auto;
 }
 .disc-edit .disc-meta-row > input[name="disc_number"] {
     width: calc(3ch + 0.7rem + (var(--pico-border-width) * 2));
@@ -2961,8 +3013,12 @@ body:has(.disc-edit) footer.container hr {
     .flag-check-list {
         columns: 1;
     }
+    .disc-edit .disc-tag-option-list {
+        grid-template-columns: 1fr;
+    }
 }
-.flag-check {
+.flag-check,
+.disc-edit .disc-tag-option {
     display: flex !important;
     break-inside: avoid;
     align-items: center;
@@ -2971,8 +3027,14 @@ body:has(.disc-edit) footer.container hr {
     font-size: 0.75rem;
     cursor: pointer;
 }
-.flag-check input[type="checkbox"] {
+.flag-check input[type="checkbox"],
+.disc-edit .disc-tag-option input[type="checkbox"] {
     margin: 0;
+}
+.disc-edit .disc-tag-option {
+    gap: 0.3rem;
+    margin: 0;
+    padding: 0.08rem 0.2rem;
 }
 .flag-check .flag-icon {
     height: 1em;
@@ -3935,7 +3997,9 @@ textarea.full-width-textarea {
 }
 
 .maintenance-systems-form,
-.maintenance-editor-form {
+.maintenance-editor-form,
+.maintenance-tag-rename-form,
+.maintenance-tag-delete-form {
     margin: 0;
 }
 
@@ -4012,7 +4076,9 @@ textarea.full-width-textarea {
 .maintenance-system-text-row input[type="text"],
 .maintenance-editor-text-row input[type="text"],
 .maintenance-simple-row input[type="text"],
-.maintenance-simple-row select {
+.maintenance-simple-row select,
+.maintenance-tag-rename-form input[type="text"],
+.maintenance-tag-add-row input[type="text"] {
     width: auto;
     min-width: 0;
     height: auto;
@@ -4075,12 +4141,74 @@ textarea.full-width-textarea {
 }
 
 .maintenance-system-save button,
-.maintenance-editor-save button {
+.maintenance-editor-save button,
+.maintenance-tag-card button,
+.maintenance-tag-add-row button {
     width: auto;
     margin: 0;
     padding: 0.25rem 0.75rem;
     font-size: 0.75rem;
     line-height: 1.2;
+}
+
+.maintenance-tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.45rem;
+    max-width: 58rem;
+    margin: 0 auto;
+}
+
+.maintenance-tag-card {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    max-width: 100%;
+    padding: 0.3rem;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-card-background-color);
+}
+
+.maintenance-tag-rename-form {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.maintenance-tag-rename-form input[type="text"] {
+    width: min(14rem, 38vw);
+}
+
+.maintenance-tag-card button,
+.maintenance-tag-add-row button {
+    padding: 0.25rem 0.55rem;
+}
+
+.maintenance-tag-delete-button {
+    background-color: #c62828;
+    border-color: #c62828;
+}
+
+.maintenance-tag-add-form {
+    margin: 0.75rem 0 0;
+}
+
+.maintenance-tag-add-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    width: min(24rem, 100%);
+    margin: 0 auto;
+}
+
+.maintenance-tag-add-row input[type="text"] {
+    width: 100%;
+    flex: 1 1 auto;
 }
 
 .maintenance-action form {

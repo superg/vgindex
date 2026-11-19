@@ -1430,7 +1430,13 @@ fn resolve_submission_snapshot_with_mode(
     for (key, value) in change_obj {
         match key.as_str() {
             "draft_form" => {}
-            "regions" | "languages" | "serial" | "edition" | "barcode" | "bca_mastering" => {
+            "regions"
+            | "languages"
+            | "tags"
+            | "serial"
+            | "edition"
+            | "barcode"
+            | "bca_mastering" => {
                 let old = json_str_vec(resolved_obj.get(key).unwrap_or(&serde_json::Value::Null));
                 let updated = apply_set_operation(&old, value)?;
                 resolved_obj.insert(key.clone(), updated);

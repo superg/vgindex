@@ -39,6 +39,11 @@ CREATE TABLE categories (
     name TEXT NOT NULL UNIQUE
 );
 
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
 CREATE TABLE regions (
     code TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
@@ -160,6 +165,12 @@ CREATE TABLE disc_languages (
     PRIMARY KEY (disc_id, language_code)
 );
 
+CREATE TABLE disc_tags (
+    disc_id INTEGER NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (disc_id, tag_id)
+);
+
 CREATE TABLE disc_ring_code_entries (
     id INTEGER PRIMARY KEY,
     disc_id INTEGER NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
@@ -224,6 +235,12 @@ struct DiscBcaMasteringRow {
 
 #[derive(sqlx::FromRow)]
 struct CategoryRow {
+    id: i32,
+    name: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct TagRow {
     id: i32,
     name: String,
 }
@@ -338,6 +355,12 @@ struct DiscRegionRow {
 struct DiscLanguageRow {
     disc_id: i32,
     language_code: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct DiscTagRow {
+    disc_id: i32,
+    tag_id: i32,
 }
 
 #[derive(sqlx::FromRow)]
@@ -544,6 +567,10 @@ async fn generate_export_inner(
         table = "categories"
     );
     tracing::info!(
+        rows = export_tags(&mut postgres, &mut output).await?,
+        table = "tags"
+    );
+    tracing::info!(
         rows = export_regions(&mut postgres, &mut output).await?,
         table = "regions"
     );
@@ -578,6 +605,10 @@ async fn generate_export_inner(
     tracing::info!(
         rows = export_disc_languages(&mut postgres, &mut output).await?,
         table = "disc_languages"
+    );
+    tracing::info!(
+        rows = export_disc_tags(&mut postgres, &mut output).await?,
+        table = "disc_tags"
     );
     tracing::info!(
         rows = export_ring_entries(&mut postgres, &mut output).await?,
@@ -681,6 +712,24 @@ async fn export_categories(
         .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
         sqlx::query("INSERT INTO categories VALUES (?, ?)")
+            .bind(row.id)
+            .bind(row.name)
+            .execute(&mut **sqlite)
+            .await?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+async fn export_tags(
+    postgres: &mut Transaction<'_, Postgres>,
+    sqlite: &mut Transaction<'_, Sqlite>,
+) -> AppResult<u64> {
+    let mut count = 0;
+    let mut rows =
+        sqlx::query_as::<_, TagRow>("SELECT id, name FROM tags ORDER BY id").fetch(&mut **postgres);
+    while let Some(row) = rows.try_next().await? {
+        sqlx::query("INSERT INTO tags VALUES (?, ?)")
             .bind(row.id)
             .bind(row.name)
             .execute(&mut **sqlite)
@@ -963,6 +1012,29 @@ async fn export_disc_languages(
         sqlx::query("INSERT INTO disc_languages VALUES (?, ?)")
             .bind(row.disc_id)
             .bind(row.language_code)
+            .execute(&mut **sqlite)
+            .await?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+async fn export_disc_tags(
+    postgres: &mut Transaction<'_, Postgres>,
+    sqlite: &mut Transaction<'_, Sqlite>,
+) -> AppResult<u64> {
+    let mut count = 0;
+    let mut rows = sqlx::query_as::<_, DiscTagRow>(
+        "SELECT dt.disc_id, dt.tag_id
+         FROM disc_tags dt JOIN discs d ON d.id = dt.disc_id
+         WHERE d.status <> 'Disabled'
+         ORDER BY dt.disc_id, dt.tag_id",
+    )
+    .fetch(&mut **postgres);
+    while let Some(row) = rows.try_next().await? {
+        sqlx::query("INSERT INTO disc_tags VALUES (?, ?)")
+            .bind(row.disc_id)
+            .bind(row.tag_id)
             .execute(&mut **sqlite)
             .await?;
         count += 1;

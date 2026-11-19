@@ -194,6 +194,29 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
             {% endfor %}
         </label>
 
+        <div class="disc-meta-row disc-tags-meta-row{% if !self.highlight_class("tags").is_empty() %} {{ self.highlight_class("tags") }}{% endif %}" data-add-requires-system-media>
+            <span class="disc-meta-label">Tags:</span>
+            <details class="disc-tag-dropdown">
+                <summary>Select tags</summary>
+                <div class="disc-tag-option-list">
+                {% for tag in tags %}
+                    <label class="disc-tag-option{% if !tag.highlight.is_empty() %} item-{{ tag.highlight }}{% endif %}">
+                        <input type="checkbox" name="tags" value="{{ tag.value }}" {% if tag.selected %}checked{% endif %}>
+                        <span>{{ tag.name }}</span>
+                    </label>
+                {% endfor %}
+                </div>
+            </details>
+            {% for ann in self.annotations_for("tags") %}
+            <div class="review-field-annotation">
+                <span class="review-field-annotation-label">{{ ann.label }}:</span>
+                {% for item in ann.values %}
+                <span class="review-field-annotation-item item-{{ ann.kind }}">{{ item }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+
         <label class="disc-meta-row{% if !self.highlight_class("title").is_empty() %} {{ self.highlight_class("title") }}{% endif %}" data-add-requires-system-media>
             <span class="disc-meta-label">Title:</span>
             <input type="text" name="title" value="{{ title }}">

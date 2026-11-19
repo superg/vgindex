@@ -349,6 +349,7 @@ pub struct DiscsQuery {
     pub language: Option<String>,
     pub media: Option<String>,
     pub category: Option<String>,
+    pub tag: Option<String>,
     pub letter: Option<String>,
     pub status: Option<String>,
     pub q: Option<String>,
@@ -1105,6 +1106,7 @@ struct DiscsTemplate {
     languages: Vec<LanguageOption>,
     media_types: Vec<MediaOption>,
     categories: Vec<CategoryOption>,
+    tags: Vec<String>,
     systems_media_json: String,
     letters: Vec<(String, bool)>,
     filter_system: String,
@@ -1112,6 +1114,7 @@ struct DiscsTemplate {
     filter_language: String,
     filter_media: String,
     filter_category: String,
+    filter_tag: String,
     filter_status: String,
     filter_letter: String,
     filter_q: String,
@@ -1193,6 +1196,7 @@ impl DiscsTemplate {
             language: &self.filter_language,
             media: &self.filter_media,
             category: &self.filter_category,
+            tag: &self.filter_tag,
             status: &self.filter_status,
             letter,
             dumper: &self.filter_dumper,
@@ -1289,6 +1293,7 @@ struct DiscsUrlOptions<'a> {
     language: &'a str,
     media: &'a str,
     category: &'a str,
+    tag: &'a str,
     status: &'a str,
     letter: &'a str,
     dumper: &'a str,
@@ -1391,6 +1396,7 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("language", options.language),
             ("media", options.media),
             ("category", options.category),
+            ("tag", options.tag),
             ("status", options.status),
             ("letter", options.letter),
             ("dumper", options.dumper),
@@ -1911,6 +1917,7 @@ async fn discs_page_response(
         .unwrap_or_default()
         .trim()
         .to_string();
+    let requested_tag = query.tag.clone().unwrap_or_default().trim().to_string();
     let filter_status = normalize_status_filter(query.status.as_deref(), can_view_disabled_discs);
     let filter_letter = normalize_letter_filter(query.letter.as_deref());
     let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
@@ -2143,6 +2150,12 @@ async fn discs_page_response(
     let advanced_open = advanced_explicit;
 
     let reference_data = state.discs_cache.references.get(&state.pool).await?;
+    let filter_tag = reference_data
+        .tags
+        .iter()
+        .find(|tag| tag.eq_ignore_ascii_case(&requested_tag))
+        .cloned()
+        .unwrap_or(requested_tag);
     let sys_rows = reference_data.systems.clone();
 
     let systems_media_json = serde_json::to_string(
@@ -2218,6 +2231,12 @@ async fn discs_page_response(
         filter_category_id,
         filter_category_unknown,
     );
+    if !filter_tag.is_empty() {
+        bind_idx += 1;
+        where_clauses.push(format!(
+            "EXISTS (SELECT 1 FROM disc_tags dt_filter JOIN tags t_filter ON t_filter.id = dt_filter.tag_id WHERE dt_filter.disc_id = d.id AND t_filter.name = ${bind_idx})"
+        ));
+    }
     if !filter_region.is_empty() {
         bind_idx += 1;
         where_clauses.push(format!(
@@ -2609,6 +2628,7 @@ async fn discs_page_response(
             language: &filter_language,
             media: &filter_media,
             category: &filter_category,
+            tag: &filter_tag,
             status: &filter_status,
             letter: &filter_letter,
             dumper: &filter_dumper,
@@ -2768,6 +2788,9 @@ async fn discs_page_response(
     if let Some(category_id) = filter_category_id {
         bind_queries!(category_id);
     }
+    if !filter_tag.is_empty() {
+        bind_queries!(filter_tag.clone());
+    }
     if !filter_region.is_empty() {
         bind_queries!(filter_region.clone());
     }
@@ -2915,6 +2938,7 @@ async fn discs_page_response(
             language: &filter_language,
             media: &filter_media,
             category: &filter_category,
+            tag: &filter_tag,
             status: &filter_status,
             letter: &filter_letter,
             dumper: &filter_dumper,
@@ -3078,6 +3102,7 @@ async fn discs_page_response(
             languages,
             media_types,
             categories,
+            tags: reference_data.tags.clone(),
             systems_media_json,
             letters: LETTERS
                 .iter()
@@ -3088,6 +3113,7 @@ async fn discs_page_response(
             filter_language,
             filter_media,
             filter_category,
+            filter_tag,
             filter_status,
             filter_letter,
             filter_q,
@@ -3217,6 +3243,7 @@ struct DiscReferenceData {
     systems: Vec<SystemDropdownRow>,
     media: Vec<MediaFilterRow>,
     categories: Vec<CategoryFilterRow>,
+    tags: Vec<String>,
     regions: Vec<SysRow>,
     languages: Vec<SysRow>,
 }
@@ -3231,6 +3258,8 @@ async fn load_disc_reference_data(pool: &sqlx::PgPool) -> AppResult<DiscReferenc
         sqlx::query_as("SELECT code, name FROM media_types ORDER BY LOWER(name)").fetch_all(pool);
     let categories =
         sqlx::query_as("SELECT id, name FROM categories ORDER BY LOWER(name)").fetch_all(pool);
+    let tags = sqlx::query_scalar::<_, String>("SELECT name FROM tags ORDER BY LOWER(name), name")
+        .fetch_all(pool);
     let regions =
         sqlx::query_as("SELECT code, name FROM regions ORDER BY LOWER(name)").fetch_all(pool);
     let languages = sqlx::query_as(
@@ -3238,13 +3267,14 @@ async fn load_disc_reference_data(pool: &sqlx::PgPool) -> AppResult<DiscReferenc
     )
     .fetch_all(pool);
 
-    let (systems, media, categories, regions, languages) =
-        tokio::try_join!(systems, media, categories, regions, languages)?;
+    let (systems, media, categories, tags, regions, languages) =
+        tokio::try_join!(systems, media, categories, tags, regions, languages)?;
 
     Ok(DiscReferenceData {
         systems,
         media,
         categories,
+        tags,
         regions,
         languages,
     })
@@ -3821,6 +3851,7 @@ mod tests {
                 language: "en",
                 media: "dvd9",
                 category: "Bonus Discs",
+                tag: "",
                 status: "Verified",
                 letter: "#",
                 dumper: "A/B",

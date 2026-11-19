@@ -63,6 +63,24 @@
                 </select>
             </label>
             <label class="advanced-search-row">
+                <span>Tag</span>
+                <select name="tag" onchange="this.form.requestSubmit()">
+                    <option value="">All Tags</option>
+                    {% for tag in tags %}
+                    <option value="{{ tag }}" {% if filter_tag.as_str() == tag.as_str() %}selected{% endif %}>{{ tag }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="advanced-search-row">
+                <span>Dumper</span>
+                <select name="dumper" id="dumper-filter" data-selected-dumper="{{ filter_dumper }}" onchange="this.form.requestSubmit()">
+                    <option value="" {% if filter_dumper.is_empty() %}selected{% endif %}>All Dumpers</option>
+                    {% if !filter_dumper.is_empty() %}
+                    <option value="{{ filter_dumper }}" selected>{{ filter_dumper }}</option>
+                    {% endif %}
+                </select>
+            </label>
+            <label class="advanced-search-row">
                 <span>Status</span>
                 <select name="status" onchange="this.form.requestSubmit()">
                     <option value="" {% if filter_status.is_empty() %}selected{% endif %}>All Statuses (🟢🔵🟡)</option>
@@ -75,15 +93,6 @@
                     <option value="Questionable" {% if filter_status == "Questionable" %}selected{% endif %}>Questionable (🟡)</option>
                     {% if can_view_disabled_discs %}
                     <option value="Disabled" {% if filter_status == "Disabled" %}selected{% endif %}>Disabled (🔴)</option>
-                    {% endif %}
-                </select>
-            </label>
-            <label class="advanced-search-row">
-                <span>Dumper</span>
-                <select name="dumper" id="dumper-filter" data-selected-dumper="{{ filter_dumper }}" onchange="this.form.requestSubmit()">
-                    <option value="" {% if filter_dumper.is_empty() %}selected{% endif %}>All Dumpers</option>
-                    {% if !filter_dumper.is_empty() %}
-                    <option value="{{ filter_dumper }}" selected>{{ filter_dumper }}</option>
                     {% endif %}
                 </select>
             </label>
@@ -109,10 +118,6 @@
                     </select>
                 </div>
             </div>
-            <label class="advanced-search-row">
-                <span>Disc Number</span>
-                <input type="text" id="disc-number-filter" name="disc_number" value="{{ filter_disc_number }}">
-            </label>
             <div class="advanced-search-row">
                 <span id="disc-title-filter-label">Disc Title</span>
                 <div class="text-match-controls">
@@ -137,6 +142,10 @@
                     </select>
                 </div>
             </div>
+            <label class="advanced-search-row">
+                <span>Disc Number</span>
+                <input type="text" id="disc-number-filter" name="disc_number" value="{{ filter_disc_number }}">
+            </label>
             <div class="advanced-search-row">
                 <span id="filename-suffix-filter-label">Filename Suffix</span>
                 <div class="text-match-controls">
@@ -182,6 +191,18 @@
                         <option value="exact" {% if barcode_mode == "exact" %}selected{% endif %}>Exact</option>
                         <option value="null" {% if barcode_mode == "null" %}selected{% endif %}>Empty</option>
                         <option value="any" {% if barcode_mode == "any" %}selected{% endif %}>Not Empty</option>
+                    </select>
+                </div>
+            </div>
+            <div class="advanced-search-row">
+                <span id="version-filter-label">Version</span>
+                <div class="text-match-controls">
+                    <input type="text" id="version-filter" name="version" value="{{ filter_version }}" aria-labelledby="version-filter-label" {% if version_mode == "null" || version_mode == "any" %}disabled{% endif %}>
+                    <select name="version_mode" class="text-match-mode" data-target-input="version-filter" aria-label="Version match mode">
+                        <option value="" {% if version_mode.is_empty() %}selected{% endif %}>Contains</option>
+                        <option value="exact" {% if version_mode == "exact" %}selected{% endif %}>Exact</option>
+                        <option value="null" {% if version_mode == "null" %}selected{% endif %}>Empty</option>
+                        <option value="any" {% if version_mode == "any" %}selected{% endif %}>Not Empty</option>
                     </select>
                 </div>
             </div>
@@ -315,18 +336,6 @@
                 <span>Universal Hash</span>
                 <input type="text" name="universal_hash" value="{{ filter_universal_hash }}">
             </label>
-            <div class="advanced-search-row">
-                <span id="version-filter-label">Version</span>
-                <div class="text-match-controls">
-                    <input type="text" id="version-filter" name="version" value="{{ filter_version }}" aria-labelledby="version-filter-label" {% if version_mode == "null" || version_mode == "any" %}disabled{% endif %}>
-                    <select name="version_mode" class="text-match-mode" data-target-input="version-filter" aria-label="Version match mode">
-                        <option value="" {% if version_mode.is_empty() %}selected{% endif %}>Contains</option>
-                        <option value="exact" {% if version_mode == "exact" %}selected{% endif %}>Exact</option>
-                        <option value="null" {% if version_mode == "null" %}selected{% endif %}>Empty</option>
-                        <option value="any" {% if version_mode == "any" %}selected{% endif %}>Not Empty</option>
-                    </select>
-                </div>
-            </div>
             <div class="advanced-search-actions">
                 <button type="submit">Apply</button>
             </div>
@@ -385,6 +394,7 @@
                     {% if !filter_language.is_empty() %}<input type="hidden" name="language" value="{{ filter_language }}">{% endif %}
                     {% if !filter_media.is_empty() %}<input type="hidden" name="media" value="{{ filter_media }}">{% endif %}
                     {% if !filter_category.is_empty() %}<input type="hidden" name="category" value="{{ filter_category }}">{% endif %}
+                    {% if !filter_tag.is_empty() %}<input type="hidden" name="tag" value="{{ filter_tag }}">{% endif %}
                     <input type="hidden" name="letter" value="{{ filter_letter }}">
                     <input type="hidden" name="status" value="{{ filter_status }}">
                     <input type="hidden" name="q" value="{{ filter_q }}">
@@ -516,6 +526,7 @@
                     {% if !filter_language.is_empty() %}<input type="hidden" name="language" value="{{ filter_language }}">{% endif %}
                     {% if !filter_media.is_empty() %}<input type="hidden" name="media" value="{{ filter_media }}">{% endif %}
                     {% if !filter_category.is_empty() %}<input type="hidden" name="category" value="{{ filter_category }}">{% endif %}
+                    {% if !filter_tag.is_empty() %}<input type="hidden" name="tag" value="{{ filter_tag }}">{% endif %}
                     <input type="hidden" name="letter" value="{{ filter_letter }}">
                     <input type="hidden" name="status" value="{{ filter_status }}">
                     <input type="hidden" name="q" value="{{ filter_q }}">

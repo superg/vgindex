@@ -35,6 +35,7 @@
     <a href="/maintenance?tab=systems" {% if show_systems %}class="active"{% endif %}>Systems</a>
     <a href="/maintenance?tab=regions" {% if show_regions %}class="active"{% endif %}>Regions</a>
     <a href="/maintenance?tab=languages" {% if show_languages %}class="active"{% endif %}>Languages</a>
+    <a href="/maintenance?tab=tags" {% if show_tags %}class="active"{% endif %}>Tags</a>
     <a href="/maintenance?tab=misc" {% if show_misc %}class="active"{% endif %}>Miscellaneous</a>
     {% if can_admin %}
     <a href="/maintenance?tab=users" {% if show_users %}class="active"{% endif %}>Users</a>
@@ -170,6 +171,45 @@
 
         <div class="maintenance-editor-save">
             <button type="submit">Save Languages</button>
+        </div>
+    </form>
+</section>
+
+<section id="maintenance-tags-panel" class="maintenance-panel" {% if !show_tags %}hidden{% endif %}>
+    <div class="maintenance-tag-list">
+    {% for row in tag_rows %}
+        <div class="maintenance-tag-card">
+            <form method="post" action="/maintenance/tags/{{ row.id }}/rename" class="maintenance-tag-rename-form">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <input type="text" name="name" value="{{ row.name }}" maxlength="64" aria-label="Tag name" required>
+                <button type="submit">Rename</button>
+            </form>
+            <form method="post" action="/maintenance/tags/{{ row.id }}/delete" class="maintenance-tag-delete-form">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <button type="submit" class="maintenance-tag-delete-button">Delete</button>
+            </form>
+        </div>
+    {% endfor %}
+    </div>
+
+    <form method="post" action="/maintenance/tags" class="maintenance-tag-add-form">
+        {% match current_user %}
+        {% when Some with (user) %}
+        <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+        {% when None %}
+        {% endmatch %}
+
+        <div class="maintenance-tag-add-row">
+            <input type="text" name="name" maxlength="64" aria-label="New tag name" placeholder="New tag name" required>
+            <button type="submit">Add</button>
         </div>
     </form>
 </section>
