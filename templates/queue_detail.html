@@ -24,6 +24,15 @@
 {% block title %}Submission #{{ submission_id }}{% endblock %}
 
 {% block content %}
+{% if !validation_errors.is_empty() %}
+<div class="validation-errors" role="alert">
+    <ul>
+    {% for err in validation_errors %}
+        <li>{{ err }}</li>
+    {% endfor %}
+    </ul>
+</div>
+{% endif %}
 <div class="submission-info">
     <table class="table-compact table-fit-section">
         <tr><td><strong>Submission Type</strong></td><td>{{ submission_type_display }}</td></tr>

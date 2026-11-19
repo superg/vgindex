@@ -234,6 +234,7 @@ pub async fn submit_draft_submission(
     extra_upload_url: Option<&str>,
     submission_token: Option<&str>,
     submission_fingerprint: Option<&str>,
+    expected_revision: i64,
 ) -> AppResult<Option<DiscSubmission>> {
     let normalized_submission_comment = submission_comment
         .map(normalize_newlines)
@@ -262,6 +263,7 @@ pub async fn submit_draft_submission(
              submission_revision = submission_revision + 1
          WHERE id = $8 AND submitter_id = $9
            AND submission_type = 'Disc' AND status = 'Draft'
+           AND submission_revision = $10
          RETURNING *",
     )
     .bind(normalized_submission_comment.as_deref())
@@ -273,6 +275,7 @@ pub async fn submit_draft_submission(
     .bind(submission_fingerprint.as_deref())
     .bind(submission_id)
     .bind(submitter_id)
+    .bind(expected_revision)
     .fetch_optional(pool)
     .await?)
 }
@@ -3866,6 +3869,25 @@ mod tests {
             "comments": { "add": { "new": "Corrected submission" } }
         });
         let revised_fingerprint = random_test_token();
+        let stale = submit_draft_submission(
+            &pool,
+            drafted.id,
+            fixture.submitter_id,
+            Some(fixture.disc_id),
+            revised_changes.clone(),
+            Some("revised submission comment"),
+            Some("revised dump log"),
+            Some("https://example.test/revised"),
+            Some(&token),
+            Some(&revised_fingerprint),
+            drafted.submission_revision + 1,
+        )
+        .await
+        .unwrap();
+        assert!(
+            stale.is_none(),
+            "a stale revision must not update the draft"
+        );
         let updated = submit_draft_submission(
             &pool,
             drafted.id,
@@ -3877,6 +3899,7 @@ mod tests {
             Some("https://example.test/revised"),
             Some(&token),
             Some(&revised_fingerprint),
+            drafted.submission_revision,
         )
         .await
         .unwrap()
@@ -3893,6 +3916,7 @@ mod tests {
             None,
             Some(&token),
             Some(&overwrite_fingerprint),
+            drafted.submission_revision,
         )
         .await
         .unwrap();

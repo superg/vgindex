@@ -120,6 +120,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     {% endif %}
     {% if draft_submission_id > 0 %}
     <input type="hidden" name="draft_submission_id" value="{{ draft_submission_id }}">
+    <input type="hidden" name="submission_revision" value="{{ submission_revision }}">
     {% endif %}
     {% if is_add_mode %}
     <label>Logs Archive URL

@@ -57,6 +57,7 @@ pub struct QueueQuery {
 #[derive(Deserialize, Default)]
 struct SubmissionDetailQuery {
     retargeted: Option<u8>,
+    stale: Option<u8>,
 }
 
 struct SystemOption {
@@ -554,6 +555,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
             .clone()
             .unwrap_or_else(disc_edit::generate_submission_token);
         form.draft_submission_id = Some(sub.id.to_string());
+        form.submission_revision = Some(sub.submission_revision.to_string());
         form.submission_comment = None;
         return Ok(form);
     }
@@ -623,6 +625,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
             .clone()
             .unwrap_or_else(disc_edit::generate_submission_token),
         draft_submission_id: Some(sub.id.to_string()),
+        submission_revision: Some(sub.submission_revision.to_string()),
         system_code: string("system_code").unwrap_or_default(),
         media_type: string("media_type").unwrap_or_default(),
         title: string("title").unwrap_or_default(),
@@ -774,6 +777,11 @@ async fn submission_detail(
             display_kind,
             &submitter_name,
             &reviewer_name,
+            if query.stale == Some(1) {
+                vec![STALE_SUBMISSION_READONLY_ERROR.to_string()]
+            } else {
+                vec![]
+            },
         )
         .await?
         .into_response());
@@ -1784,6 +1792,7 @@ struct QueueDetailTemplate {
     target_disc_id: i32,
     submitted_changes: Vec<ChangeRow>,
     approved_changes: Vec<ChangeRow>,
+    validation_errors: Vec<String>,
 }
 impl SiteConfig for QueueDetailTemplate {}
 
@@ -1906,6 +1915,7 @@ async fn render_readonly_detail(
     display_kind: SubmissionDisplayKind,
     submitter_name: &str,
     reviewer_name: &str,
+    validation_errors: Vec<String>,
 ) -> AppResult<Html<String>> {
     let can_return_to_draft = sub.status == SubmissionStatus::Pending
         && sub.submission_type == SubmissionType::Disc
@@ -1950,6 +1960,7 @@ async fn render_readonly_detail(
                 .filter(|original| !original.is_null())
                 .map(|_| &sub.changes),
         ),
+        validation_errors,
     };
 
     Ok(Html(template.render().unwrap()))
@@ -2375,6 +2386,8 @@ pub struct ReviewForm {
 }
 
 const STALE_REVIEW_ERROR: &str = "This disc changed after the review page loaded. The page has been refreshed with the latest data; review it again before approving.";
+const STALE_SUBMISSION_ERROR: &str = "This submission was updated or returned to Draft after the review page loaded. Your changes were not applied. The page has been refreshed with the latest submission; review it again.";
+const STALE_SUBMISSION_READONLY_ERROR: &str = "This submission was updated or returned to Draft after the review page loaded, so your action was not applied.";
 const DRAFT_REVIEW_COMMENT_ERROR: &str =
     "Review Comment: required when returning a submission to Draft";
 const RETARGET_DISC_ID_ERROR: &str =
@@ -2493,6 +2506,29 @@ async fn render_latest_review_with_errors(
     Ok(Html(template.render().unwrap()).into_response())
 }
 
+async fn stale_review_response(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    id: i32,
+    review_comment: Option<&str>,
+) -> AppResult<Response> {
+    let sub = queue_service::get_submission(&state.pool, id).await?;
+    if sub.status == SubmissionStatus::Pending && can_review_submission(user, &sub) {
+        let ref_data = fetch_ref_data(&state.pool).await?;
+        return render_latest_review_with_errors(
+            state,
+            user,
+            &sub,
+            &ref_data,
+            vec![STALE_SUBMISSION_ERROR.to_string()],
+            review_comment,
+            None,
+        )
+        .await;
+    }
+    Ok(Redirect::to(&format!("/queue/{id}?stale=1")).into_response())
+}
+
 async fn render_retarget_error(
     state: &AppState,
     current_user: &AuthenticatedUser,
@@ -2528,11 +2564,10 @@ async fn review_submit(
         return Err(AppError::Forbidden);
     }
 
-    if sub.status != SubmissionStatus::Pending {
-        return Ok(Redirect::to("/queue").into_response());
-    }
-    if form.submission_revision != sub.submission_revision {
-        return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
+    if sub.status != SubmissionStatus::Pending
+        || form.submission_revision != sub.submission_revision
+    {
+        return stale_review_response(&state, &user, id, form.review_comment.as_deref()).await;
     }
 
     let review_comment = form
@@ -2543,8 +2578,11 @@ async fn review_submit(
         .filter(|s| !s.is_empty());
 
     if form.action == "comment" {
-        queue_service::comment_submission(&state.pool, id, user.id, review_comment.as_deref(), sub.submission_revision)
-            .await?;
+        let commented = queue_service::comment_submission(&state.pool, id, user.id, review_comment.as_deref(), sub.submission_revision)
+        .await?;
+        if !commented {
+            return stale_review_response(&state, &user, id, review_comment.as_deref()).await;
+        }
         return Ok(Redirect::to("/queue").into_response());
     }
 
@@ -2570,7 +2608,7 @@ async fn review_submit(
         let drafted =
             queue_service::draft_submission(&state.pool, id, user.id, review_comment, sub.submission_revision).await?;
         if !drafted {
-            return Ok(Redirect::to("/queue").into_response());
+            return stale_review_response(&state, &user, id, Some(review_comment)).await;
         }
         state.draft_count_cache.increment(sub.submitter_id).await;
         return Ok(Redirect::to("/queue").into_response());
@@ -2582,7 +2620,7 @@ async fn review_submit(
                 .await?;
 
         if !rejected {
-            return Ok(Redirect::to("/queue").into_response());
+            return stale_review_response(&state, &user, id, review_comment.as_deref()).await;
         }
         return Ok(Redirect::to("/queue").into_response());
     }
@@ -2664,7 +2702,7 @@ async fn review_submit(
                 .await
             }
             queue_service::ManualRetargetOutcome::SubmissionChanged => {
-                Ok(Redirect::to(&format!("/queue/{id}")).into_response())
+                stale_review_response(&state, &user, id, review_comment.as_deref()).await
             }
         };
     }
@@ -2784,7 +2822,7 @@ async fn review_submit(
             if outcome {
                 return Ok(Redirect::to(&format!("/queue/{id}?retargeted=1")).into_response());
             }
-            return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
+            return stale_review_response(&state, &user, id, review_comment.as_deref()).await;
         }
     }
 
@@ -2829,7 +2867,7 @@ async fn review_submit(
             Ok(Redirect::to(&format!("/disc/{disc_id}")).into_response())
         }
         queue_service::ApprovalOutcome::AlreadyProcessed => {
-            Ok(Redirect::to("/queue").into_response())
+            stale_review_response(&state, &user, id, review_comment.as_deref()).await
         }
         queue_service::ApprovalOutcome::StaleDiscState => {
             render_latest_review_with_errors(
@@ -3477,6 +3515,7 @@ mod tests {
             SubmissionDisplayKind::NewDisc,
             "submitter",
             "moderator",
+            vec![],
         )
         .await
         .unwrap();
@@ -3502,6 +3541,7 @@ mod tests {
             SubmissionDisplayKind::Verification,
             "submitter",
             "moderator",
+            vec![],
         )
         .await
         .unwrap();
@@ -3813,6 +3853,7 @@ mod tests {
             target_disc_id: 3,
             submitted_changes: vec![],
             approved_changes: vec![],
+            validation_errors: vec![],
         };
 
         let html = template.render().unwrap();
@@ -3850,6 +3891,7 @@ mod tests {
                 "ring_codes": [{ "id": 7, "layers": [{ "index": 1,
                     "mould_sids": { "remove": { "old": "IFPI 947M" } } }] }]
             }))),
+            validation_errors: vec![],
         };
 
         let html = template.render().unwrap();
