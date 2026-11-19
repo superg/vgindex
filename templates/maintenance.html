@@ -296,6 +296,11 @@
             </label>
 
             <label>
+                <span>Submission Revision</span>
+                <input type="text" value="{{ submission.submission_revision }}" readonly aria-readonly="true">
+            </label>
+
+            <label>
                 <span>Reviewed At</span>
                 <input type="text" name="reviewed_at" value="{{ submission.reviewed_at }}" placeholder="NULL or RFC 3339">
             </label>
