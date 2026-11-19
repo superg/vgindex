@@ -44,6 +44,14 @@
         {% endif %}
     </table>
 
+    {% if can_return_to_draft %}
+    <form method="post" action="/queue/{{ submission_id }}/draft" class="form-actions">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="submission_revision" value="{{ submission_revision }}">
+        <button type="submit" class="btn-draft">Return to Draft</button>
+    </form>
+    {% endif %}
+
     {% call changes_details("Submitted Metadata", submitted_changes, false) %}
     {% call changes_details("Approved Changes", approved_changes, true) %}
 </div>

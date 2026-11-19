@@ -38,6 +38,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/queue", get(queue_list))
         .route("/queue/{id}", get(submission_detail))
+        .route("/queue/{id}/draft", post(return_submission_to_draft))
         .route("/queue/{id}/review", post(review_submit))
 }
 
@@ -861,6 +862,36 @@ async fn submission_detail(
     Ok(Html(template.render().unwrap()).into_response())
 }
 
+#[derive(Deserialize)]
+struct ReturnToDraftForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    submission_revision: i64,
+}
+
+async fn return_submission_to_draft(
+    State(state): State<AppState>,
+    RequireAuth(user): RequireAuth,
+    Path(id): Path<i32>,
+    Form(form): Form<ReturnToDraftForm>,
+) -> AppResult<Response> {
+    csrf::verify_token(&user, &form.csrf_token)?;
+
+    if queue_service::return_submission_to_draft(
+        &state.pool,
+        id,
+        user.id,
+        form.submission_revision,
+    )
+    .await?
+    {
+        state.draft_count_cache.increment(user.id).await;
+    }
+
+    Ok(Redirect::to(&disc_edit::user_drafts_url(&user.username)).into_response())
+}
+
 fn build_review_template(
     current_user: AuthenticatedUser,
     sub: &DiscSubmission,
@@ -1133,6 +1164,7 @@ fn build_review_template(
         review_annotations: vec![],
         review_old_multiline: vec![],
         submission_id: sub.id,
+        submission_revision: sub.submission_revision,
         submission_type_display: sub.display_kind().to_string(),
         submitter_id: sub.submitter_id,
         submitter_name: submitter_name.to_string(),
@@ -1733,6 +1765,9 @@ fn apply_review_diff_context(
 #[template(path = "queue_detail.html")]
 struct QueueDetailTemplate {
     current_user: Option<AuthenticatedUser>,
+    can_return_to_draft: bool,
+    csrf_token: String,
+    submission_revision: i64,
     submission_id: i32,
     submission_type_display: String,
     submitter_id: i32,
@@ -1872,8 +1907,20 @@ async fn render_readonly_detail(
     submitter_name: &str,
     reviewer_name: &str,
 ) -> AppResult<Html<String>> {
+    let can_return_to_draft = sub.status == SubmissionStatus::Pending
+        && sub.submission_type == SubmissionType::Disc
+        && current_user
+            .as_ref()
+            .is_some_and(|user| user.id == sub.submitter_id);
+    let csrf_token = current_user
+        .as_ref()
+        .map(|user| user.csrf_token.clone())
+        .unwrap_or_default();
     let template = QueueDetailTemplate {
         current_user,
+        can_return_to_draft,
+        csrf_token,
+        submission_revision: sub.submission_revision,
         submission_id: sub.id,
         submission_type_display: display_kind.to_string(),
         submitter_id: sub.submitter_id,
@@ -2320,6 +2367,8 @@ pub struct ReviewForm {
     #[serde(default)]
     pub review_base_hash: String,
     #[serde(default)]
+    pub submission_revision: i64,
+    #[serde(default)]
     pub retarget_disc_id: String,
     #[serde(flatten)]
     pub disc: DiscEditForm,
@@ -2482,6 +2531,9 @@ async fn review_submit(
     if sub.status != SubmissionStatus::Pending {
         return Ok(Redirect::to("/queue").into_response());
     }
+    if form.submission_revision != sub.submission_revision {
+        return Ok(Redirect::to(&format!("/queue/{id}")).into_response());
+    }
 
     let review_comment = form
         .review_comment
@@ -2491,7 +2543,7 @@ async fn review_submit(
         .filter(|s| !s.is_empty());
 
     if form.action == "comment" {
-        queue_service::comment_submission(&state.pool, id, user.id, review_comment.as_deref())
+        queue_service::comment_submission(&state.pool, id, user.id, review_comment.as_deref(), sub.submission_revision)
             .await?;
         return Ok(Redirect::to("/queue").into_response());
     }
@@ -2516,7 +2568,7 @@ async fn review_submit(
             .await;
         };
         let drafted =
-            queue_service::draft_submission(&state.pool, id, user.id, review_comment).await?;
+            queue_service::draft_submission(&state.pool, id, user.id, review_comment, sub.submission_revision).await?;
         if !drafted {
             return Ok(Redirect::to("/queue").into_response());
         }
@@ -2526,7 +2578,7 @@ async fn review_submit(
 
     if form.action == "reject" {
         let rejected =
-            queue_service::reject_submission(&state.pool, id, user.id, review_comment.as_deref())
+            queue_service::reject_submission(&state.pool, id, user.id, review_comment.as_deref(), sub.submission_revision)
                 .await?;
 
         if !rejected {
@@ -2563,6 +2615,7 @@ async fn review_submit(
             sub.id,
             sub.target_disc_id,
             target_disc_id,
+            sub.submission_revision,
         )
         .await?;
         return match outcome {
@@ -2724,6 +2777,7 @@ async fn review_submit(
                 target_disc_id,
                 form.disc.files_xml.as_deref(),
                 form.disc.universal_hash.as_deref(),
+                sub.submission_revision,
             )
             .await?;
 
@@ -3195,6 +3249,7 @@ mod tests {
             extra_upload_url: None,
             submission_token: None,
             submission_fingerprint: None,
+            submission_revision: 0,
             status: SubmissionStatus::Pending,
             reviewer_id: None,
             review_comment: None,
@@ -3739,6 +3794,9 @@ mod tests {
                 avatar_url: Some("https://example.test/avatar.png".to_string()),
                 draft_count: 0,
             }),
+            can_return_to_draft: false,
+            csrf_token: "test-csrf-token".to_string(),
+            submission_revision: 0,
             submission_id: 1,
             submission_type_display: "Edit".to_string(),
             submitter_id: 2,
@@ -3766,6 +3824,9 @@ mod tests {
     fn queue_detail_template_shows_original_json_before_final_json() {
         let template = QueueDetailTemplate {
             current_user: None,
+            can_return_to_draft: false,
+            csrf_token: String::new(),
+            submission_revision: 0,
             submission_id: 1,
             submission_type_display: "Edit".to_string(),
             submitter_id: 2,

@@ -68,7 +68,7 @@ fn user_queue_url(username: &str) -> String {
     format!("/queue?submitter={}", urlencoding::encode(username))
 }
 
-fn user_drafts_url(username: &str) -> String {
+pub(crate) fn user_drafts_url(username: &str) -> String {
     format!(
         "/queue?status=Draft&submitter={}",
         urlencoding::encode(username)
@@ -230,6 +230,7 @@ pub(crate) struct DiscEditTemplate {
     pub review_annotations: Vec<ReviewAnnotation>,
     pub review_old_multiline: Vec<ReviewOldMultiline>,
     pub submission_id: i32,
+    pub submission_revision: i64,
     pub submission_type_display: String,
     pub submitter_id: i32,
     pub submitter_name: String,
@@ -557,6 +558,23 @@ fn validate_edit_submission_comment(form: &DiscEditForm, can_edit_directly: bool
         Vec::new()
     } else {
         vec!["Submission Comment: required when submitting an edit".to_string()]
+    }
+}
+
+fn validate_draft_resubmission_comment(
+    form: &DiscEditForm,
+    submission: Option<&DiscSubmission>,
+) -> Vec<String> {
+    if submission.is_some_and(|submission| {
+        submission.submission_revision > 0
+            || submission.reviewer_id.is_some()
+            || submission.reviewed_at.is_some()
+    })
+        && trimmed_nonempty(form.submission_comment.as_deref()).is_none()
+    {
+        vec!["Submission Comment: required when resubmitting a returned draft".to_string()]
+    } else {
+        Vec::new()
     }
 }
 
@@ -1247,6 +1265,7 @@ async fn edit_page(
             review_annotations: vec![],
             review_old_multiline: vec![],
             submission_id: 0,
+            submission_revision: 0,
             submission_type_display: String::new(),
             submitter_id: 0,
             submitter_name: String::new(),
@@ -2125,6 +2144,7 @@ async fn render_form_with_context(
         review_annotations: vec![],
         review_old_multiline: vec![],
         submission_id: draft_context.map_or(0, |(sub, _, _)| sub.id),
+        submission_revision: draft_context.map_or(0, |(sub, _, _)| sub.submission_revision),
         submission_type_display: draft_context
             .map(|(sub, _, _)| sub.display_kind().to_string())
             .unwrap_or_default(),
@@ -2960,6 +2980,7 @@ async fn add_page(
             review_annotations: vec![],
             review_old_multiline: vec![],
             submission_id: 0,
+            submission_revision: 0,
             submission_type_display: String::new(),
             submitter_id: 0,
             submitter_name: String::new(),
@@ -3146,6 +3167,12 @@ async fn add_submit(
         && dump_log_text.is_none()
     {
         errors.push("Dump Log: cannot be empty".to_string());
+    }
+    if !save_as_draft {
+        errors.extend(validate_draft_resubmission_comment(
+            &form,
+            draft_submission.as_ref(),
+        ));
     }
 
     let extra_upload_url_text = trimmed_nonempty(form.extra_upload_url.as_deref());
@@ -6898,6 +6925,7 @@ mod operation_delta_tests {
             extra_upload_url: None,
             submission_token: None,
             submission_fingerprint: None,
+            submission_revision: 0,
             status: SubmissionStatus::Draft,
             reviewer_id: None,
             review_comment: None,

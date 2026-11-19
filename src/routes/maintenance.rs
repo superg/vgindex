@@ -1965,7 +1965,8 @@ async fn update_maintenance_submission_on(
          SET submission_type = $2, submitter_id = $3, submission_comment = $4,
              target_disc_id = $5, changes_original = $6, changes = $7, dump_log = $8,
              extra_upload_url = $9, status = $10, reviewer_id = $11,
-             review_comment = $12, created_at = $13, reviewed_at = $14
+             review_comment = $12, created_at = $13, reviewed_at = $14,
+             submission_revision = submission_revision + 1
          WHERE id = $1",
     )
     .bind(submission_id)

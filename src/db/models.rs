@@ -593,6 +593,7 @@ pub struct DiscSubmission {
     pub extra_upload_url: Option<String>,
     pub submission_token: Option<String>,
     pub submission_fingerprint: Option<String>,
+    pub submission_revision: i64,
     pub status: SubmissionStatus,
     pub reviewer_id: Option<i32>,
     pub review_comment: Option<String>,
