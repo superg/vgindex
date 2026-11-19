@@ -85,15 +85,6 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     {% endif %}
 </div>
 
-{% if is_review_mode && !dump_log_display.is_empty() %}
-<section>
-    <details class="dump-log-details" open>
-        <summary><h3>Dump Log</h3></summary>
-        <p class="pre-wrap section-text dump-log-content">{{ dump_log_display }}</p>
-    </details>
-</section>
-{% endif %}
-
 {% if (is_review_mode || draft_submission_id > 0) && !submission_comment.is_empty() %}
 <section>
     <h3>Submission Comment</h3>
@@ -107,6 +98,15 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
     <p class="pre-wrap section-text">{{ review_comment_display }}</p>
 </section>
 {% endif %}
+{% endif %}
+
+{% if is_review_mode && !dump_log_display.is_empty() %}
+<section>
+    <details class="dump-log-details" open>
+        <summary><h3>Dump Log</h3></summary>
+        <p class="pre-wrap section-text dump-log-content">{{ dump_log_display }}</p>
+    </details>
+</section>
 {% endif %}
 
 <form method="post" action="{% if is_review_mode %}/queue/{{ submission_id }}/review{% else if is_add_mode %}/disc/submit{% else %}/disc/{{ disc_id }}/edit{% endif %}" id="disc-edit-form" class="disc-edit{% if is_add_mode %} disc-add{% endif %}{% if draft_submission_id > 0 %} disc-add-draft{% endif %}{% if add_requires_system_media %} disc-add-minimal{% endif %}" novalidate>

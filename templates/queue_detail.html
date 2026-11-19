@@ -65,15 +65,6 @@
     {% call changes_details("Approved Changes", approved_changes, true) %}
 </div>
 
-{% if !dump_log_display.is_empty() %}
-<section>
-    <details class="dump-log-details" open>
-        <summary><h3>Dump Log</h3></summary>
-        <p class="pre-wrap section-text dump-log-content">{{ dump_log_display }}</p>
-    </details>
-</section>
-{% endif %}
-
 {% if !submission_comment.is_empty() %}
 <section>
     <h3>Submission Comment</h3>
@@ -85,6 +76,15 @@
 <section>
     <h3>Review Comment</h3>
     <p class="pre-wrap section-text">{{ review_comment_display }}</p>
+</section>
+{% endif %}
+
+{% if !dump_log_display.is_empty() %}
+<section>
+    <details class="dump-log-details" open>
+        <summary><h3>Dump Log</h3></summary>
+        <p class="pre-wrap section-text dump-log-content">{{ dump_log_display }}</p>
+    </details>
 </section>
 {% endif %}
 
