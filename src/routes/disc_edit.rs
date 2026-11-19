@@ -846,7 +846,7 @@ pub(crate) fn build_category_options(
 }
 
 pub(crate) fn build_tag_options(all_tags: &[TagRow], selected_names: &[String]) -> Vec<TagOption> {
-    all_tags
+    let mut options: Vec<TagOption> = all_tags
         .iter()
         .map(|tag| TagOption {
             value: tag.name.clone(),
@@ -854,7 +854,23 @@ pub(crate) fn build_tag_options(all_tags: &[TagRow], selected_names: &[String]) 
             selected: selected_names.iter().any(|name| name == &tag.name),
             highlight: String::new(),
         })
-        .collect()
+        .collect();
+    for name in selected_names {
+        if name.trim().is_empty()
+            || options
+                .iter()
+                .any(|option| option.value.as_str() == name.as_str())
+        {
+            continue;
+        }
+        options.push(TagOption {
+            value: name.clone(),
+            name: format!("{name} (missing from tag catalog)"),
+            selected: true,
+            highlight: String::new(),
+        });
+    }
+    options
 }
 
 pub(crate) fn validate_tag_selection(tags: &[String], all_tags: &[TagRow]) -> Vec<String> {

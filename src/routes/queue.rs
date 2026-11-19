@@ -2123,17 +2123,20 @@ fn compute_field_highlights(
     }
 
     let mut tag_highlights = std::collections::HashMap::new();
-    let db_tags = str_set(&db_snapshot["tags"]);
-    let ch_tags = str_set(&changes["tags"]);
-    for tag in &ch_tags {
-        if !db_tags.contains(tag) {
-            tag_highlights.insert(tag.clone(), "added".to_string());
-        }
+    let tag_change = submitted_changes.get("tags");
+    let added_tags = tag_change
+        .and_then(|change| change.get("add"))
+        .map(|values| str_set(values))
+        .unwrap_or_default();
+    let removed_tags = tag_change
+        .and_then(|change| change.get("remove"))
+        .map(|values| str_set(values))
+        .unwrap_or_default();
+    for tag in added_tags {
+        tag_highlights.insert(tag, "added".to_string());
     }
-    for tag in &db_tags {
-        if !ch_tags.contains(tag) {
-            tag_highlights.insert(tag.clone(), "removed".to_string());
-        }
+    for tag in removed_tags {
+        tag_highlights.insert(tag, "removed".to_string());
     }
     if !tag_highlights.is_empty() {
         changed_fields.push("tags:changed".to_string());
@@ -2756,7 +2759,9 @@ async fn review_submit(
     }
 
     let mut errors = validate_form(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
-    errors.extend(validate_tag_selection(&form.disc.tags, &ref_data.all_tags));
+    let mut tags_to_validate = form.disc.tags.clone();
+    tags_to_validate.extend(array_strings(&sub.changes["tags"]["add"]));
+    errors.extend(validate_tag_selection(&tags_to_validate, &ref_data.all_tags));
     if comments_text_contains_review_delimiter(form.disc.comments.as_deref()) {
         errors.push("Comments: remove the review delimiter before approval".to_string());
     }
