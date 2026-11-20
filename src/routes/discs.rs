@@ -350,7 +350,8 @@ pub struct DiscsQuery {
     pub language: Option<String>,
     pub media: Option<String>,
     pub category: Option<String>,
-    pub tag: Option<Vec<String>>,
+    #[serde(default)]
+    pub tag: Vec<String>,
     pub tag_mode: Option<String>,
     pub letter: Option<String>,
     pub status: Option<String>,
@@ -1945,7 +1946,6 @@ async fn discs_page_response(
     let requested_tag_mode = normalize_tag_mode(query.tag_mode.as_deref());
     let requested_tags = query
         .tag
-        .unwrap_or_default()
         .into_iter()
         .map(|tag| tag.trim().to_string())
         .filter(|tag| !tag.is_empty())
