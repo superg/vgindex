@@ -6,6 +6,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use axum_extra::extract::Query as MultiQuery;
 use serde::Deserialize;
 use std::{
     collections::HashMap,
@@ -349,7 +350,8 @@ pub struct DiscsQuery {
     pub language: Option<String>,
     pub media: Option<String>,
     pub category: Option<String>,
-    pub tag: Option<String>,
+    pub tag: Option<Vec<String>>,
+    pub tag_mode: Option<String>,
     pub letter: Option<String>,
     pub status: Option<String>,
     pub q: Option<String>,
@@ -1035,6 +1037,14 @@ fn normalize_language_filter(language: Option<&str>) -> String {
     language.unwrap_or_default().trim().to_ascii_lowercase()
 }
 
+fn normalize_tag_mode(mode: Option<&str>) -> String {
+    match mode.unwrap_or_default().trim().to_ascii_lowercase().as_str() {
+        "and" => "and".to_string(),
+        "not" => "not".to_string(),
+        _ => String::new(),
+    }
+}
+
 fn normalize_non_negative_bound(value: Option<&str>) -> Option<i32> {
     value?
         .trim()
@@ -1106,7 +1116,7 @@ struct DiscsTemplate {
     languages: Vec<LanguageOption>,
     media_types: Vec<MediaOption>,
     categories: Vec<CategoryOption>,
-    tags: Vec<String>,
+    tags: Vec<TagFilterOption>,
     systems_media_json: String,
     letters: Vec<(String, bool)>,
     filter_system: String,
@@ -1114,7 +1124,9 @@ struct DiscsTemplate {
     filter_language: String,
     filter_media: String,
     filter_category: String,
-    filter_tag: String,
+    selected_tag_count: usize,
+    filter_tags: Vec<String>,
+    filter_tag_mode: String,
     filter_status: String,
     filter_letter: String,
     filter_q: String,
@@ -1196,7 +1208,8 @@ impl DiscsTemplate {
             language: &self.filter_language,
             media: &self.filter_media,
             category: &self.filter_category,
-            tag: &self.filter_tag,
+            tags: &self.filter_tags,
+            tag_mode: &self.filter_tag_mode,
             status: &self.filter_status,
             letter,
             dumper: &self.filter_dumper,
@@ -1293,7 +1306,8 @@ struct DiscsUrlOptions<'a> {
     language: &'a str,
     media: &'a str,
     category: &'a str,
-    tag: &'a str,
+    tags: &'a [String],
+    tag_mode: &'a str,
     status: &'a str,
     letter: &'a str,
     dumper: &'a str,
@@ -1388,7 +1402,7 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
         .unwrap_or_default();
     let advanced = if options.advanced { "1" } else { "" };
 
-    compact_query_url(
+    let mut url = compact_query_url(
         "/discs",
         &[
             ("system", options.system),
@@ -1396,7 +1410,7 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("language", options.language),
             ("media", options.media),
             ("category", options.category),
-            ("tag", options.tag),
+            ("tag_mode", options.tag_mode),
             ("status", options.status),
             ("letter", options.letter),
             ("dumper", options.dumper),
@@ -1450,7 +1464,13 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("page", &page),
             ("advanced", advanced),
         ],
-    )
+    );
+    for tag in options.tags {
+        url.push(if url.contains('?') { '&' } else { '?' });
+        url.push_str("tag=");
+        url.push_str(&urlencoding::encode(tag));
+    }
+    url
 }
 
 struct DiscRow {
@@ -1694,6 +1714,11 @@ struct CategoryOption {
     selected: bool,
 }
 
+struct TagFilterOption {
+    name: String,
+    selected: bool,
+}
+
 #[derive(Clone, sqlx::FromRow)]
 struct MediaFilterRow {
     code: String,
@@ -1866,7 +1891,7 @@ const CSV_EXPORT_LIMIT: i64 = 5_000;
 async fn discs_page(
     State(state): State<AppState>,
     user: CurrentUser,
-    Query(query): Query<DiscsQuery>,
+    MultiQuery(query): MultiQuery<DiscsQuery>,
 ) -> AppResult<Response> {
     discs_page_response(state, user, query, false).await
 }
@@ -1874,7 +1899,7 @@ async fn discs_page(
 async fn discs_export(
     State(state): State<AppState>,
     user: CurrentUser,
-    Query(query): Query<DiscsQuery>,
+    MultiQuery(query): MultiQuery<DiscsQuery>,
 ) -> AppResult<Response> {
     if !user.is_logged_in() {
         return Err(AppError::Unauthorized);
@@ -1917,7 +1942,14 @@ async fn discs_page_response(
         .unwrap_or_default()
         .trim()
         .to_string();
-    let requested_tag = query.tag.clone().unwrap_or_default().trim().to_string();
+    let requested_tag_mode = normalize_tag_mode(query.tag_mode.as_deref());
+    let requested_tags = query
+        .tag
+        .unwrap_or_default()
+        .into_iter()
+        .map(|tag| tag.trim().to_string())
+        .filter(|tag| !tag.is_empty())
+        .collect::<Vec<_>>();
     let filter_status = normalize_status_filter(query.status.as_deref(), can_view_disabled_discs);
     let filter_letter = normalize_letter_filter(query.letter.as_deref());
     let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
@@ -2150,12 +2182,29 @@ async fn discs_page_response(
     let advanced_open = advanced_explicit;
 
     let reference_data = state.discs_cache.references.get(&state.pool).await?;
-    let filter_tag = reference_data
+    let filter_tags = reference_data
         .tags
         .iter()
-        .find(|tag| tag.eq_ignore_ascii_case(&requested_tag))
+        .filter(|tag| {
+            requested_tags
+                .iter()
+                .any(|requested| tag.eq_ignore_ascii_case(requested))
+        })
         .cloned()
-        .unwrap_or(requested_tag);
+        .collect::<Vec<_>>();
+    let filter_tag_mode = if filter_tags.is_empty() {
+        String::new()
+    } else {
+        requested_tag_mode
+    };
+    let tag_options = reference_data
+        .tags
+        .iter()
+        .map(|tag| TagFilterOption {
+            name: tag.clone(),
+            selected: filter_tags.iter().any(|selected| selected == tag),
+        })
+        .collect::<Vec<_>>();
     let sys_rows = reference_data.systems.clone();
 
     let systems_media_json = serde_json::to_string(
@@ -2231,11 +2280,19 @@ async fn discs_page_response(
         filter_category_id,
         filter_category_unknown,
     );
-    if !filter_tag.is_empty() {
+    if !filter_tags.is_empty() {
         bind_idx += 1;
-        where_clauses.push(format!(
-            "EXISTS (SELECT 1 FROM disc_tags dt_filter JOIN tags t_filter ON t_filter.id = dt_filter.tag_id WHERE dt_filter.disc_id = d.id AND t_filter.name = ${bind_idx})"
-        ));
+        let matching_tags = format!(
+            "SELECT 1 FROM disc_tags dt_filter JOIN tags t_filter ON t_filter.id = dt_filter.tag_id WHERE dt_filter.disc_id = d.id AND t_filter.name = ANY(${bind_idx})"
+        );
+        let tag_clause = match filter_tag_mode.as_str() {
+            "and" => format!(
+                "EXISTS ({matching_tags} GROUP BY dt_filter.disc_id HAVING COUNT(DISTINCT t_filter.id) = cardinality(${bind_idx}))"
+            ),
+            "not" => format!("NOT EXISTS ({matching_tags})"),
+            _ => format!("EXISTS ({matching_tags})"),
+        };
+        where_clauses.push(tag_clause);
     }
     if !filter_region.is_empty() {
         bind_idx += 1;
@@ -2628,7 +2685,8 @@ async fn discs_page_response(
             language: &filter_language,
             media: &filter_media,
             category: &filter_category,
-            tag: &filter_tag,
+            tags: &filter_tags,
+            tag_mode: &filter_tag_mode,
             status: &filter_status,
             letter: &filter_letter,
             dumper: &filter_dumper,
@@ -2788,8 +2846,8 @@ async fn discs_page_response(
     if let Some(category_id) = filter_category_id {
         bind_queries!(category_id);
     }
-    if !filter_tag.is_empty() {
-        bind_queries!(filter_tag.clone());
+    if !filter_tags.is_empty() {
+        bind_queries!(filter_tags.clone());
     }
     if !filter_region.is_empty() {
         bind_queries!(filter_region.clone());
@@ -2938,7 +2996,8 @@ async fn discs_page_response(
             language: &filter_language,
             media: &filter_media,
             category: &filter_category,
-            tag: &filter_tag,
+            tags: &filter_tags,
+            tag_mode: &filter_tag_mode,
             status: &filter_status,
             letter: &filter_letter,
             dumper: &filter_dumper,
@@ -3102,7 +3161,7 @@ async fn discs_page_response(
             languages,
             media_types,
             categories,
-            tags: reference_data.tags.clone(),
+            tags: tag_options,
             systems_media_json,
             letters: LETTERS
                 .iter()
@@ -3113,7 +3172,9 @@ async fn discs_page_response(
             filter_language,
             filter_media,
             filter_category,
-            filter_tag,
+            selected_tag_count: filter_tags.len(),
+            filter_tags,
+            filter_tag_mode,
             filter_status,
             filter_letter,
             filter_q,
@@ -3851,7 +3912,8 @@ mod tests {
                 language: "en",
                 media: "dvd9",
                 category: "Bonus Discs",
-                tag: "",
+                tags: &[],
+                tag_mode: "",
                 status: "Verified",
                 letter: "#",
                 dumper: "A/B",
@@ -4393,7 +4455,7 @@ mod tests {
         let uri = "/discs?title=Game&title_mode=exact&title_foreign=Foreign&title_foreign_mode=exact&serial=SLUS-12345&serial_mode=exact&edition=Limited&edition_mode=exact&barcode=012345&barcode_mode=exact&universal_hash=aabbccddeeff00112233445566778899aabbccdd&protection=SecuROM&comments=Note&contents=Bonus%20videos&mastering_code=MASTER-L0&mastering_sid=IFPI-L123&toolstamp=A1&mould_sid=IFPI-1234&additional_mould=A2&offset_min=-123&offset_max=456&ringcode=OLD&edition_q=Old&comments_q=Old"
                 .parse()
                 .unwrap();
-        let Query(query) = Query::<DiscsQuery>::try_from_uri(&uri).unwrap();
+        let MultiQuery(query) = MultiQuery::<DiscsQuery>::try_from_uri(&uri).unwrap();
 
         assert_eq!(query.title.as_deref(), Some("Game"));
         assert_eq!(query.title_mode.as_deref(), Some("exact"));
@@ -4421,7 +4483,7 @@ mod tests {
         assert_eq!(query.offset_max.as_deref(), Some("456"));
 
         let legacy_uri = "/discs?edition_q=Old&comments_q=Old".parse().unwrap();
-        let Query(legacy_query) = Query::<DiscsQuery>::try_from_uri(&legacy_uri).unwrap();
+        let MultiQuery(legacy_query) = MultiQuery::<DiscsQuery>::try_from_uri(&legacy_uri).unwrap();
         assert!(legacy_query.edition.is_none());
         assert!(legacy_query.protection.is_none());
         assert!(legacy_query.comments.is_none());
@@ -4777,7 +4839,8 @@ mod tests {
                 ..Default::default()
             },
         ] {
-            let response = discs_page(State(state.clone()), CurrentUser(None), Query(query))
+            let response =
+                discs_page(State(state.clone()), CurrentUser(None), MultiQuery(query))
                 .await
                 .unwrap();
             assert!(

@@ -13,5 +13,6 @@ CREATE TABLE disc_tags (
 
 INSERT INTO tags (name)
 VALUES
-    ('Unlicensed'),
-    ('Multi-game Disc');
+    ('Aftermarket'),
+    ('Key Disc'),
+    ('Unlicensed');

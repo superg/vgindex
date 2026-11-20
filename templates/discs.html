@@ -62,15 +62,27 @@
                     {% endfor %}
                 </select>
             </label>
-            <label class="advanced-search-row">
-                <span>Tag</span>
-                <select name="tag" onchange="this.form.requestSubmit()">
-                    <option value="">All Tags</option>
-                    {% for tag in tags %}
-                    <option value="{{ tag }}" {% if filter_tag.as_str() == tag.as_str() %}selected{% endif %}>{{ tag }}</option>
-                    {% endfor %}
-                </select>
-            </label>
+            <div class="advanced-search-row">
+                <span id="tag-filter-label">Tags</span>
+                <div class="text-match-controls tag-filter-controls">
+                    <details class="disc-tag-dropdown disc-filter-tags">
+                        <summary aria-labelledby="tag-filter-label">{% if selected_tag_count == 0 %}Select tags{% else %}Select tags ({{ selected_tag_count }} selected){% endif %}</summary>
+                        <div class="disc-tag-option-list disc-filter-tag-options">
+                            {% for tag in tags %}
+                            <label class="disc-tag-option">
+                                <input type="checkbox" name="tag" value="{{ tag.name }}" {% if tag.selected %}checked{% endif %}>
+                                <span>{{ tag.name }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </details>
+                    <select name="tag_mode" class="tag-match-mode" aria-label="Tag match mode">
+                        <option value="" {% if filter_tag_mode.is_empty() %}selected{% endif %}>Or</option>
+                        <option value="and" {% if filter_tag_mode == "and" %}selected{% endif %}>And</option>
+                        <option value="not" {% if filter_tag_mode == "not" %}selected{% endif %}>Not</option>
+                    </select>
+                </div>
+            </div>
             <label class="advanced-search-row">
                 <span>Dumper</span>
                 <select name="dumper" id="dumper-filter" data-selected-dumper="{{ filter_dumper }}" onchange="this.form.requestSubmit()">
@@ -394,7 +406,8 @@
                     {% if !filter_language.is_empty() %}<input type="hidden" name="language" value="{{ filter_language }}">{% endif %}
                     {% if !filter_media.is_empty() %}<input type="hidden" name="media" value="{{ filter_media }}">{% endif %}
                     {% if !filter_category.is_empty() %}<input type="hidden" name="category" value="{{ filter_category }}">{% endif %}
-                    {% if !filter_tag.is_empty() %}<input type="hidden" name="tag" value="{{ filter_tag }}">{% endif %}
+                    {% for tag in filter_tags %}<input type="hidden" name="tag" value="{{ tag }}">{% endfor %}
+                    {% if !filter_tag_mode.is_empty() %}<input type="hidden" name="tag_mode" value="{{ filter_tag_mode }}">{% endif %}
                     <input type="hidden" name="letter" value="{{ filter_letter }}">
                     <input type="hidden" name="status" value="{{ filter_status }}">
                     <input type="hidden" name="q" value="{{ filter_q }}">
@@ -526,7 +539,8 @@
                     {% if !filter_language.is_empty() %}<input type="hidden" name="language" value="{{ filter_language }}">{% endif %}
                     {% if !filter_media.is_empty() %}<input type="hidden" name="media" value="{{ filter_media }}">{% endif %}
                     {% if !filter_category.is_empty() %}<input type="hidden" name="category" value="{{ filter_category }}">{% endif %}
-                    {% if !filter_tag.is_empty() %}<input type="hidden" name="tag" value="{{ filter_tag }}">{% endif %}
+                    {% for tag in filter_tags %}<input type="hidden" name="tag" value="{{ tag }}">{% endfor %}
+                    {% if !filter_tag_mode.is_empty() %}<input type="hidden" name="tag_mode" value="{{ filter_tag_mode }}">{% endif %}
                     <input type="hidden" name="letter" value="{{ filter_letter }}">
                     <input type="hidden" name="status" value="{{ filter_status }}">
                     <input type="hidden" name="q" value="{{ filter_q }}">
