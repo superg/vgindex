@@ -117,6 +117,11 @@ impl DiscsCache {
         *self.dumpers.value.write().await = None;
         self.counts.values.write().await.clear();
     }
+
+    pub async fn invalidate_tag_references(&self) {
+        let _refresh = self.references.refresh.lock().await;
+        *self.references.value.write().await = None;
+    }
 }
 
 #[derive(Clone)]

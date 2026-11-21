@@ -853,6 +853,7 @@ async fn save_tag(
         ));
     }
 
+    state.discs_cache.invalidate_tag_references().await;
     Ok(redirect_with_message(
         "tags",
         "status",
@@ -889,6 +890,7 @@ async fn rename_tag(
     .await?;
 
     if let Some(name) = renamed {
+        state.discs_cache.invalidate_tag_references().await;
         return Ok(redirect_with_message(
             "tags",
             "status",
@@ -928,6 +930,7 @@ async fn delete_tag(
     .await?;
 
     if let Some(name) = deleted {
+        state.discs_cache.invalidate_tag_references().await;
         return Ok(redirect_with_message(
             "tags",
             "status",

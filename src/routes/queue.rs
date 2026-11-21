@@ -2759,9 +2759,7 @@ async fn review_submit(
     }
 
     let mut errors = validate_form(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
-    let mut tags_to_validate = form.disc.tags.clone();
-    tags_to_validate.extend(array_strings(&sub.changes["tags"]["add"]));
-    errors.extend(validate_tag_selection(&tags_to_validate, &ref_data.all_tags));
+    errors.extend(validate_tag_selection(&form.disc.tags, &ref_data.all_tags));
     if comments_text_contains_review_delimiter(form.disc.comments.as_deref()) {
         errors.push("Comments: remove the review delimiter before approval".to_string());
     }
