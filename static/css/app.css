@@ -615,12 +615,16 @@ nav[aria-label="Pagination"] ul {
 /* Bold blue labels for the currently activated filters when advanced box is open */
 :is(#filter-form.advanced-search-visible > label, #filter-form.advanced-search-visible #advanced-search-panel > .advanced-search-row):has(
     input:not([type="checkbox"])[value]:not([value=""]),
-    input[type="checkbox"]:checked,
+    input[type="checkbox"]:checked:not([name="tag"]),
     select:not(.text-match-mode) option[selected]:not([value=""]),
     select.text-match-mode option[value="null"][selected],
     select.text-match-mode option[value="any"][selected],
     select[name="dumper"][data-selected-dumper]:not([data-selected-dumper=""])
 ) > span {
+    color: var(--pico-primary);
+    font-weight: 600;
+}
+#filter-form.advanced-search-visible #advanced-search-panel > .tag-filter-active > #tag-filter-label {
     color: var(--pico-primary);
     font-weight: 600;
 }
@@ -869,6 +873,9 @@ nav[aria-label="Pagination"] ul {
     min-height: 1.6rem;
     padding: 0.2rem 0.5rem;
     white-space: nowrap;
+}
+#filter-form .disc-filter-tags.disc-tag-dropdown > summary:focus:not([role]) {
+    color: var(--pico-accordion-close-summary-color);
 }
 #filter-form .disc-filter-tags > .disc-filter-tag-options {
     position: absolute;

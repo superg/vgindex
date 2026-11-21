@@ -194,6 +194,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
             {% endfor %}
         </label>
 
+        {% if !tags.is_empty() %}
         <div class="disc-meta-row disc-tags-meta-row{% if !self.highlight_class("tags").is_empty() %} {{ self.highlight_class("tags") }}{% endif %}" data-add-requires-system-media>
             <span class="disc-meta-label">Tags:</span>
             <details class="disc-tag-dropdown">
@@ -216,6 +217,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
             </div>
             {% endfor %}
         </div>
+        {% endif %}
 
         <label class="disc-meta-row{% if !self.highlight_class("title").is_empty() %} {{ self.highlight_class("title") }}{% endif %}" data-add-requires-system-media>
             <span class="disc-meta-label">Title:</span>

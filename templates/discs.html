@@ -62,7 +62,8 @@
                     {% endfor %}
                 </select>
             </label>
-            <div class="advanced-search-row">
+            {% if !tags.is_empty() %}
+            <div class="advanced-search-row{% if selected_tag_count > 0 %} tag-filter-active{% endif %}">
                 <span id="tag-filter-label">Tags</span>
                 <div class="text-match-controls tag-filter-controls">
                     <details class="disc-tag-dropdown disc-filter-tags">
@@ -83,6 +84,7 @@
                     </select>
                 </div>
             </div>
+            {% endif %}
             <label class="advanced-search-row">
                 <span>Dumper</span>
                 <select name="dumper" id="dumper-filter" data-selected-dumper="{{ filter_dumper }}" onchange="this.form.requestSubmit()">
