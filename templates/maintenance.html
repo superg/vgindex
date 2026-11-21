@@ -35,8 +35,8 @@
     <a href="/maintenance?tab=systems" {% if show_systems %}class="active"{% endif %}>Systems</a>
     <a href="/maintenance?tab=regions" {% if show_regions %}class="active"{% endif %}>Regions</a>
     <a href="/maintenance?tab=languages" {% if show_languages %}class="active"{% endif %}>Languages</a>
-    <a href="/maintenance?tab=tags" {% if show_tags %}class="active"{% endif %}>Tags</a>
     <a href="/maintenance?tab=misc" {% if show_misc %}class="active"{% endif %}>Miscellaneous</a>
+    <a href="/maintenance?tab=tags" {% if show_tags %}class="active"{% endif %}>Tags</a>
     {% if can_admin %}
     <a href="/maintenance?tab=users" {% if show_users %}class="active"{% endif %}>Users</a>
     <a href="/maintenance?tab=submissions" {% if show_submissions %}class="active"{% endif %}>Submissions</a>
@@ -175,6 +175,35 @@
     </form>
 </section>
 
+<section id="maintenance-misc-panel" class="maintenance-panel" {% if !show_misc %}hidden{% endif %}>
+    <div class="maintenance-actions">
+        <section class="maintenance-action">
+            <form method="post" action="/maintenance/rebuild-cue">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <button type="submit">Rebuild CUE</button>
+            </form>
+            <p class="maintenance-action-note">Updates CUE sheets and hashes. Run after changing filename character substitution rules.</p>
+        </section>
+
+        <section class="maintenance-action">
+            <form method="post" action="/maintenance/trigger-archive-generation">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <button type="submit">Trigger Archive Generation</button>
+            </form>
+            <p class="maintenance-action-note">Marks all systems for archive generation. The background worker rebuilds pending archives on its next scheduled pass.</p>
+        </section>
+    </div>
+</section>
+
+{% if can_admin %}
 <section id="maintenance-tags-panel" class="maintenance-panel" {% if !show_tags %}hidden{% endif %}>
     <div class="maintenance-tag-list">
     {% for row in tag_rows %}
@@ -214,35 +243,6 @@
     </form>
 </section>
 
-<section id="maintenance-misc-panel" class="maintenance-panel" {% if !show_misc %}hidden{% endif %}>
-    <div class="maintenance-actions">
-        <section class="maintenance-action">
-            <form method="post" action="/maintenance/rebuild-cue">
-                {% match current_user %}
-                {% when Some with (user) %}
-                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
-                {% when None %}
-                {% endmatch %}
-                <button type="submit">Rebuild CUE</button>
-            </form>
-            <p class="maintenance-action-note">Updates CUE sheets and hashes. Run after changing filename character substitution rules.</p>
-        </section>
-
-        <section class="maintenance-action">
-            <form method="post" action="/maintenance/trigger-archive-generation">
-                {% match current_user %}
-                {% when Some with (user) %}
-                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
-                {% when None %}
-                {% endmatch %}
-                <button type="submit">Trigger Archive Generation</button>
-            </form>
-            <p class="maintenance-action-note">Marks all systems for archive generation. The background worker rebuilds pending archives on its next scheduled pass.</p>
-        </section>
-    </div>
-</section>
-
-{% if can_admin %}
 <section id="maintenance-submissions-panel" class="maintenance-panel" {% if !show_submissions %}hidden{% endif %}>
     <form method="get" action="/maintenance" class="maintenance-submission-lookup">
         <input type="hidden" name="tab" value="submissions">

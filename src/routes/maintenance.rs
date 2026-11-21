@@ -246,7 +246,7 @@ async fn maintenance_page(
 ) -> AppResult<Html<String>> {
     if matches!(
         query.tab.as_deref(),
-        Some("users" | "submissions" | "backup")
+        Some("tags" | "users" | "submissions" | "backup")
     ) && !user.role.can_admin()
     {
         return Err(AppError::Forbidden);
@@ -831,7 +831,7 @@ fn normalize_tag_name(value: &str) -> Result<&str, String> {
 
 async fn save_tag(
     State(state): State<AppState>,
-    RequireModerator(user): RequireModerator,
+    RequireAdmin(user): RequireAdmin,
     Form(form): Form<TagForm>,
 ) -> AppResult<Response> {
     csrf::verify_token(&user, &form.csrf_token)?;
@@ -863,7 +863,7 @@ async fn save_tag(
 
 async fn rename_tag(
     State(state): State<AppState>,
-    RequireModerator(user): RequireModerator,
+    RequireAdmin(user): RequireAdmin,
     AxumPath(tag_id): AxumPath<i32>,
     Form(form): Form<TagForm>,
 ) -> AppResult<Response> {
@@ -911,7 +911,7 @@ async fn rename_tag(
 
 async fn delete_tag(
     State(state): State<AppState>,
-    RequireModerator(user): RequireModerator,
+    RequireAdmin(user): RequireAdmin,
     AxumPath(tag_id): AxumPath<i32>,
     Form(form): Form<CsrfForm>,
 ) -> AppResult<Response> {
@@ -1615,7 +1615,11 @@ async fn build_maintenance_template(
             build_lookup_editor_rows(&languages)
         }
     };
-    let tag_rows = fetch_tag_editor_rows(pool).await?;
+    let tag_rows = if user.role.can_admin() {
+        fetch_tag_editor_rows(pool).await?
+    } else {
+        Vec::new()
+    };
     let flag_options = load_flag_options()?;
     let user_rows = if user.role.can_admin() && query.tab.as_deref() == Some("users") {
         fetch_maintenance_users(pool).await?
@@ -1695,7 +1699,7 @@ fn maintenance_template(
         Some("systems") => "systems",
         Some("regions") => "regions",
         Some("languages") => "languages",
-        Some("tags") => "tags",
+        Some("tags") if user.role.can_admin() => "tags",
         Some("misc") => "misc",
         Some("users") if user.role.can_admin() => "users",
         Some("submissions") if user.role.can_admin() => "submissions",
@@ -3544,12 +3548,14 @@ mod tests {
 
     #[test]
     fn maintenance_forms_include_csrf_fields() {
-        let html = maintenance_template_for_tests(false).render().unwrap();
+        let html = maintenance_template_for_role(UserRole::Admin, None, Vec::new())
+            .render()
+            .unwrap();
 
         assert_eq!(
             html.matches(r#"name="_csrf" value="test-csrf-token""#)
                 .count(),
-            9
+            12
         );
         assert!(html.contains(r#"action="/maintenance/systems""#));
         assert!(html.contains(r#"action="/maintenance/regions""#));
