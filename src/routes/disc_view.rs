@@ -668,6 +668,12 @@ struct PicMetadata {
     layerbreak_mismatch: bool,
 }
 
+pub(crate) struct PicDiLayout {
+    pub(crate) disc_type: &'static str,
+    pub(crate) block_size: usize,
+    pub(crate) block_count: Option<usize>,
+}
+
 impl Default for PicMetadata {
     fn default() -> Self {
         Self {
@@ -1207,48 +1213,29 @@ async fn disc_view(
 
 fn parse_pic_metadata(pic: &[u8], dat_size: Option<u64>) -> PicMetadata {
     let mut metadata = PicMetadata::default();
-    let Some(body) = pic.get(4..) else {
+    let Some(layout) = pic_di_layout(pic) else {
         return metadata;
     };
-    let Some(first_block) = body.get(..0x20) else {
-        return metadata;
-    };
+    metadata.disc_type = Some(layout.disc_type.to_string());
 
-    if &first_block[..2] != b"DI" {
+    if layout.block_size == 0x70 {
         return metadata;
     }
-    let type_code = &first_block[8..11];
-    let (disc_type, block_size) = match type_code {
-        b"BDR" => ("BD-R", 0x70),
-        b"BDE" => ("BD-RE", 0x70),
-        b"BDO" => ("BD-ROM", 0x40),
-        b"BDU" => ("UHD BD-ROM", 0x40),
-        b"XG4" => ("XGD4", 0x40),
-        _ => return metadata,
-    };
-    metadata.disc_type = Some(disc_type.to_string());
-
-    if block_size == 0x70 {
+    let Some(block_count) = layout.block_count else {
         return metadata;
-    }
-    let block_count = match body[3] {
-        0x08 => 1,
-        0x10 => 2,
-        0x18 => 3,
-        _ => return metadata,
     };
-    let Some(blocks) = body.get(..block_count * block_size) else {
+    let Some(blocks) = pic
+        .get(4..)
+        .and_then(|body| body.get(..block_count * layout.block_size))
+    else {
         return metadata;
     };
 
     let mut full_sectors = 0u64;
     let mut layerbreaks = Vec::with_capacity(block_count.saturating_sub(1));
     let mut used_sectors = None;
-    let mut layer_count = None;
-    let mut sectors_to_end = None;
 
-    for (index, block) in blocks.chunks_exact(block_size).enumerate() {
-        let block_layer_count = block[12] >> 4;
+    for (index, block) in blocks.chunks_exact(layout.block_size).enumerate() {
         let Some(block_sectors_to_end) =
             u32::from_be_bytes(block[20..24].try_into().unwrap()).checked_sub(1)
         else {
@@ -1256,20 +1243,6 @@ fn parse_pic_metadata(pic: &[u8], dat_size: Option<u64>) -> PicMetadata {
         };
         let start = u32::from_be_bytes(block[24..28].try_into().unwrap());
         let end = u32::from_be_bytes(block[28..32].try_into().unwrap());
-
-        // Validate DI block
-        if &block[..2] != b"DI"
-            || block[6] != b' '
-            || &block[8..11] != type_code
-            || usize::from(block[5]) != index
-            || start > end.saturating_add(2)
-            || layer_count.is_some_and(|count| count != block_layer_count)
-            || sectors_to_end.is_some_and(|total| total != block_sectors_to_end)
-        {
-            return metadata;
-        }
-        layer_count = Some(block_layer_count);
-        sectors_to_end = Some(block_sectors_to_end);
 
         let Some(sectors) = u64::from(end)
             .checked_add(2)
@@ -1286,7 +1259,7 @@ fn parse_pic_metadata(pic: &[u8], dat_size: Option<u64>) -> PicMetadata {
             used_sectors = full_sectors
                 .checked_sub(sectors)
                 .and_then(|previous| {
-                    u64::from(sectors_to_end?)
+                    u64::from(block_sectors_to_end)
                         .checked_sub(u64::from(start))
                         .and_then(|last| previous.checked_add(last + 2))
                 });
@@ -1296,10 +1269,6 @@ fn parse_pic_metadata(pic: &[u8], dat_size: Option<u64>) -> PicMetadata {
         } else {
             layerbreaks.push(full_sectors);
         }
-    }
-
-    if layer_count.is_none_or(|count| usize::from(count) != block_count) {
-        return metadata;
     }
 
     metadata.physical_size = full_sectors.checked_mul(2048);
@@ -1312,30 +1281,104 @@ fn parse_pic_metadata(pic: &[u8], dat_size: Option<u64>) -> PicMetadata {
     metadata
 }
 
+pub(crate) fn pic_di_layout(pic: &[u8]) -> Option<PicDiLayout> {
+    let body = pic.get(4..)?;
+    let first_block = body.get(..0x20)?;
+    if &first_block[..2] != b"DI" {
+        return None;
+    }
+
+    let (disc_type, type_code, block_size): (&str, &[u8], usize) = match &first_block[8..11] {
+        b"BDR" => ("BD-R", b"BDR", 0x70),
+        b"BDE" => ("BD-RE", b"BDE", 0x70),
+        b"BDO" => ("BD-ROM", b"BDO", 0x40),
+        b"BDU" => ("UHD BD-ROM", b"BDU", 0x40),
+        b"XG4" => ("XGD4", b"XG4", 0x40),
+        _ => return None,
+    };
+    let block_count = if block_size == 0x70 {
+        let mut valid_block_count = 0usize;
+        for block in body.chunks_exact(block_size) {
+            if block.iter().all(|byte| *byte == 0) {
+                break;
+            }
+            if &block[..2] != b"DI"
+                || &block[8..11] != type_code
+                || usize::from(block[5]) != valid_block_count
+            {
+                break;
+            }
+            valid_block_count += 1;
+        }
+        (valid_block_count > 0).then_some(valid_block_count)
+    } else {
+        let declared_block_count: Option<usize> = match body[3] {
+            0x08 => Some(1),
+            0x10 => Some(2),
+            0x18 => Some(3),
+            _ => None,
+        };
+        declared_block_count.filter(|&block_count| {
+            let Some(blocks) = block_count
+                .checked_mul(block_size)
+                .and_then(|length| body.get(..length))
+            else {
+                return false;
+            };
+
+            let mut layer_count = None;
+            let mut sectors_to_end = None;
+            for (index, block) in blocks.chunks_exact(block_size).enumerate() {
+                let block_layer_count = block[12] >> 4;
+                let Some(block_sectors_to_end) =
+                    u32::from_be_bytes(block[20..24].try_into().unwrap()).checked_sub(1)
+                else {
+                    return false;
+                };
+                let start = u32::from_be_bytes(block[24..28].try_into().unwrap());
+                let end = u32::from_be_bytes(block[28..32].try_into().unwrap());
+
+                if &block[..2] != b"DI"
+                    || block[6] != b' '
+                    || &block[8..11] != type_code
+                    || usize::from(block[5]) != index
+                    || start > end.saturating_add(2)
+                    || layer_count.is_some_and(|count| count != block_layer_count)
+                    || sectors_to_end.is_some_and(|total| total != block_sectors_to_end)
+                {
+                    return false;
+                }
+                layer_count = Some(block_layer_count);
+                sectors_to_end = Some(block_sectors_to_end);
+            }
+
+            layer_count.is_some_and(|count| usize::from(count) == block_count)
+        })
+    };
+
+    Some(PicDiLayout {
+        disc_type,
+        block_size,
+        block_count,
+    })
+}
+
 fn layerbreak_from_pic(pic: &[u8]) -> Option<String> {
+    let layout = pic_di_layout(pic)?;
+    if layout.block_size != 0x40 {
+        return None;
+    }
+    let block_count = layout.block_count?;
+    let block_length = block_count.checked_mul(layout.block_size)?;
+    let blocks = pic.get(4..)?.get(..block_length)?;
+
     let mut cumulative = 0u64;
     let mut layerbreaks: Vec<u64> = Vec::new();
 
-    let body = pic.get(4..)?;
-    let chunks = body.chunks_exact(0x40);
-    if !chunks.remainder().is_empty() {
-        return None;
-    }
-    for block in chunks {
-        // Check for valid DI block
-        if &block[..2] != b"DI" {
-            break;
-        }
-        // Check for pressed BD
-        if block[6] != b' ' {
-            return None;
-        }
+    for block in blocks.chunks_exact(layout.block_size) {
         let start = u32::from_be_bytes(block[24..28].try_into().ok()?) as u64;
         let end = u32::from_be_bytes(block[28..32].try_into().ok()?) as u64;
-        if start > end + 2 {
-            return None;
-        }
-        cumulative += end + 2 - start;
+        cumulative = cumulative.checked_add(end.checked_add(2)?.checked_sub(start)?)?;
         layerbreaks.push(cumulative);
     }
 
