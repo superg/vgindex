@@ -3581,7 +3581,7 @@ pub(crate) fn build_flat_changes(
         "edc": new_edc,
         "layerbreaks": new_layerbreaks,
         "pvd": norm_opt_multiline_str(form.pvd.as_deref()).map(|s| normalize_pvd_hex_dump(&s)),
-        "pic": norm_opt_multiline_str(form.pic.as_deref()).map(|s| normalize_compact_hex(&s)),
+        "pic": norm_opt_multiline_str(form.pic.as_deref()).map(|s| normalize_pic_hex(&s)),
         "bca": norm_opt_multiline_str(form.bca.as_deref()).map(|s| normalize_compact_hex(&s)),
         "bca_mastering": new_bca_mastering,
         "header": norm_opt_multiline_str(form.header.as_deref()).map(|s| normalize_binary_hex_dump(&s)),
@@ -7396,6 +7396,23 @@ pub(crate) fn normalize_compact_hex(text: &str) -> String {
     let bytes = disc_service::parse_binary_hex_input(text)
         .expect("binary hex fields should be validated before normalization");
     format_compact_hex(&bytes)
+}
+
+fn normalize_pic_hex(text: &str) -> String {
+    let bytes = disc_service::parse_binary_hex_input(text)
+        .expect("PIC should be validated before normalization");
+    let mut pic = bytes.as_slice();
+    if let Some(layout) = crate::routes::disc_view::pic_di_layout(&bytes) {
+        if let Some(block_count) = layout.block_count {
+            let trimmed_length = 4 + block_count * layout.block_size;
+            if let Some(trailing) = bytes.get(trimmed_length..) {
+                if trailing.iter().all(|byte| *byte == 0) {
+                    pic = &bytes[..trimmed_length];
+                }
+            }
+        }
+    }
+    format_compact_hex(pic)
 }
 
 pub(crate) fn format_compact_hex(data: &[u8]) -> String {
