@@ -728,7 +728,7 @@ async fn save_systems(
     };
 
     let rows_for_errors = build_payload_system_rows(&payload);
-    let validated = match validate_systems_payload(&payload, &existing_systems, &media_types) {
+    let validated = match validate_systems_payload(&payload, &existing_systems, &media_types, user.role.can_admin()) {
         Ok(rows) => rows,
         Err(errors) => {
             let template = build_maintenance_template(
@@ -917,25 +917,15 @@ async fn delete_tag(
 ) -> AppResult<Response> {
     csrf::verify_form(&user, &form)?;
 
-    let deleted: Option<String> = sqlx::query_scalar(
-        "DELETE FROM tags AS target
-         WHERE target.id = $1
-           AND NOT EXISTS (
-               SELECT 1 FROM disc_tags WHERE tag_id = target.id
-           )
-         RETURNING target.name",
-    )
-    .bind(tag_id)
-    .fetch_optional(&state.pool)
-    .await?;
-
-    if let Some(name) = deleted {
-        state.discs_cache.invalidate_tag_references().await;
-        return Ok(redirect_with_message(
-            "tags",
-            "status",
-            &format!("Deleted tag “{name}”."),
-        ));
+    let mut transaction = state.pool.begin().await?;
+    let locked_tag: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM tags WHERE id = $1 FOR UPDATE")
+            .bind(tag_id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+    if locked_tag.is_none() {
+        transaction.rollback().await?;
+        return Ok(redirect_with_message("tags", "error", "Tag was not found."));
     }
 
     let in_use: bool = sqlx::query_scalar(
@@ -945,17 +935,34 @@ async fn delete_tag(
          )",
     )
     .bind(tag_id)
-    .fetch_one(&state.pool)
+    .fetch_one(&mut *transaction)
     .await?;
-    Ok(if in_use {
-        redirect_with_message(
+    if in_use {
+        transaction.rollback().await?;
+        return Ok(redirect_with_message(
             "tags",
             "error",
             "This tag is assigned to one or more discs and cannot be deleted.",
-        )
-    } else {
-        redirect_with_message("tags", "error", "Tag was not found.")
-    })
+        ));
+    }
+
+    let deleted: Option<String> =
+        sqlx::query_scalar("DELETE FROM tags WHERE id = $1 RETURNING name")
+            .bind(tag_id)
+            .fetch_optional(&mut *transaction)
+            .await?;
+    let Some(name) = deleted else {
+        transaction.rollback().await?;
+        return Ok(redirect_with_message("tags", "error", "Tag was not found."));
+    };
+    transaction.commit().await?;
+
+    state.discs_cache.invalidate_tag_references().await;
+    Ok(redirect_with_message(
+        "tags",
+        "status",
+        &format!("Deleted tag “{name}”."),
+    ))
 }
 
 async fn render_submission_validation_errors(
@@ -1684,7 +1691,7 @@ fn maintenance_template(
     user: AuthenticatedUser,
     query: MaintenanceQuery,
     maintenance_errors: Vec<String>,
-    system_rows: Vec<SystemEditorRow>,
+    mut system_rows: Vec<SystemEditorRow>,
     region_rows: Vec<LookupEditorRow>,
     language_rows: Vec<LookupEditorRow>,
     tag_rows: Vec<TagEditorRow>,
@@ -1695,6 +1702,14 @@ fn maintenance_template(
     submission_editor: Option<MaintenanceSubmissionEditor>,
     backup_files: Vec<BackupFile>,
 ) -> MaintenanceTemplate {
+    let can_admin = user.role.can_admin();
+    if !can_admin {
+        for row in &mut system_rows {
+            if !row.original_code.is_empty() {
+                row.code = row.original_code.clone();
+            }
+        }
+    }
     let active_tab = match query.tab.as_deref() {
         Some("systems") => "systems",
         Some("regions") => "regions",
@@ -1709,7 +1724,6 @@ fn maintenance_template(
     let system_input_sizes = system_input_sizes(&system_rows);
     let region_input_sizes = lookup_input_sizes(&region_rows);
     let language_input_sizes = lookup_input_sizes(&language_rows);
-    let can_admin = user.role.can_admin();
     MaintenanceTemplate {
         current_user: Some(user),
         status_message: query.status.unwrap_or_default(),
@@ -2489,6 +2503,7 @@ fn validate_systems_payload(
     payload: &SystemsPayload,
     existing_systems: &[System],
     media_types: &[MaintenanceMediaType],
+    can_edit_codes: bool,
 ) -> Result<Vec<ValidatedSystemRow>, Vec<String>> {
     let existing_codes: HashSet<String> = existing_systems
         .iter()
@@ -2510,6 +2525,15 @@ fn validate_systems_payload(
         }
 
         let label = normalized.row_label(index + 1);
+        if !can_edit_codes {
+            if let Some(original_code) = normalized.original_code.as_deref() {
+                if normalized.code != original_code {
+                    errors.push(format!(
+                        "{label}: only administrators can change system codes."
+                    ));
+                }
+            }
+        }
         if let Some(original_code) = &normalized.original_code {
             if !existing_codes.contains(original_code) {
                 errors.push(format!("{label}: original system does not exist."));
@@ -3467,6 +3491,7 @@ mod tests {
             &payload,
             &[test_system("SYS", "System"), test_system("OTHER", "Other")],
             &test_media_types(),
+            true,
         )
         .unwrap_err()
     }
@@ -3961,6 +3986,7 @@ mod tests {
             &payload,
             &[test_system("SYS", "System")],
             &test_media_types(),
+            true,
         )
         .unwrap();
 
@@ -4118,6 +4144,7 @@ mod tests {
             },
             std::slice::from_ref(&existing),
             &test_media_types(),
+            true,
         )
         .unwrap()
         .remove(0);
@@ -4129,6 +4156,7 @@ mod tests {
             },
             std::slice::from_ref(&existing),
             &test_media_types(),
+            true,
         )
         .unwrap()
         .remove(0);
@@ -4138,6 +4166,7 @@ mod tests {
             },
             std::slice::from_ref(&existing),
             &test_media_types(),
+            true,
         )
         .unwrap()
         .remove(0);
@@ -4147,6 +4176,7 @@ mod tests {
             },
             std::slice::from_ref(&existing),
             &test_media_types(),
+            true,
         )
         .unwrap()
         .remove(0);
