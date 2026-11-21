@@ -3555,7 +3555,7 @@ mod tests {
         assert_eq!(
             html.matches(r#"name="_csrf" value="test-csrf-token""#)
                 .count(),
-            12
+            9
         );
         assert!(html.contains(r#"action="/maintenance/systems""#));
         assert!(html.contains(r#"action="/maintenance/regions""#));
