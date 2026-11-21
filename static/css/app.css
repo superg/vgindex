@@ -611,6 +611,24 @@ nav[aria-label="Pagination"] ul {
     text-align: right;
     line-height: 1.1;
 }
+
+/* Bold blue labels for the currently activated filters when advanced box is open */
+:is(#filter-form.advanced-search-visible > label, #filter-form.advanced-search-visible #advanced-search-panel > .advanced-search-row):has(
+    input:not([type="checkbox"])[value]:not([value=""]),
+    input[type="checkbox"]:checked:not([name="tag"]),
+    select:not(.text-match-mode) option[selected]:not([value=""]),
+    select.text-match-mode option[value="null"][selected],
+    select.text-match-mode option[value="any"][selected],
+    select[name="dumper"][data-selected-dumper]:not([data-selected-dumper=""])
+) > span {
+    color: var(--pico-primary);
+    font-weight: 600;
+}
+#filter-form.advanced-search-visible #advanced-search-panel > .tag-filter-active > #tag-filter-label {
+    color: var(--pico-primary);
+    font-weight: 600;
+}
+
 #filter-form select {
     font-size: 0.75rem;
     /* Looser line-height + vertical padding so descenders (g, p, y) are never
@@ -756,7 +774,9 @@ nav[aria-label="Pagination"] ul {
     min-width: 8rem;
 }
 #filter-form .text-match-controls .text-match-mode,
-#filter-form.advanced-search-visible .text-match-controls .text-match-mode {
+#filter-form.advanced-search-visible .text-match-controls .text-match-mode,
+#filter-form .text-match-controls .tag-match-mode,
+#filter-form.advanced-search-visible .text-match-controls .tag-match-mode {
     flex: 0 0 6rem;
     width: 6rem;
     min-width: 0;
@@ -833,6 +853,43 @@ nav[aria-label="Pagination"] ul {
 #filter-form .edc-filter-controls label > span {
     align-self: center;
     text-align: left;
+}
+#filter-form .disc-filter-tags {
+    position: relative;
+    width: min(var(--advanced-dumper-control-width, max-content), 100%);
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    font-size: 0.75rem;
+}
+#filter-form .tag-filter-controls .disc-filter-tags {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 8rem;
+}
+#filter-form .disc-filter-tags.disc-tag-dropdown > summary {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 1.6rem;
+    padding: 0.2rem 0.5rem;
+    white-space: nowrap;
+}
+#filter-form .disc-filter-tags.disc-tag-dropdown > summary:focus:not([role]) {
+    color: var(--pico-accordion-close-summary-color);
+}
+#filter-form .disc-filter-tags > .disc-filter-tag-options {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 0.2rem);
+    left: 0;
+    box-sizing: border-box;
+    width: max-content;
+    min-width: 100%;
+    max-width: min(34rem, calc(100vw - 2rem));
+    max-height: 16rem;
+    overflow: auto;
+    margin-top: 0;
+    box-shadow: 0 0.25rem 0.75rem rgba(20, 27, 36, 0.18);
 }
 #filter-form .advanced-search-row select {
     width: max-content;
@@ -2841,6 +2898,8 @@ body:has(.disc-edit) footer.container hr {
     margin: 0 !important;
 }
 .disc-edit .disc-meta-label {
+    font-size: 0.75rem;
+    font-weight: 600;
     text-align: right;
     line-height: 1.1;
     white-space: nowrap;
@@ -2856,6 +2915,59 @@ body:has(.disc-edit) footer.container hr {
 .disc-edit .disc-meta-row > select {
     width: max-content;
     max-width: 100%;
+}
+.disc-edit .disc-tag-dropdown,
+#filter-form .disc-tag-dropdown {
+    display: block;
+    min-width: 0;
+}
+.disc-edit .disc-tag-dropdown {
+    margin: calc(var(--pico-spacing) * 0.25) 0 0;
+    max-width: min(34rem, calc(100vw - 11rem));
+}
+:is(.disc-edit, #filter-form) :is(.disc-tag-dropdown > summary, .disc-tag-option-list) {
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-form-element-background-color);
+}
+.disc-edit .disc-tag-dropdown > summary,
+#filter-form .disc-tag-dropdown > summary {
+    width: max-content;
+    max-width: 100%;
+    margin: 0;
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: var(--pico-line-height);
+}
+#filter-form .disc-tag-dropdown > summary {
+    width: 100%;
+    min-height: 1.6rem;
+    padding: 0.2rem 1.6rem 0.2rem 0.5rem;
+    white-space: nowrap;
+}
+.disc-edit .disc-tag-dropdown > summary {
+    padding: 0.15rem 0.35rem;
+}
+.disc-edit .disc-tag-option-list,
+#filter-form .disc-tag-option-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.1rem 0.45rem;
+    width: 100%;
+    margin-top: 0.2rem;
+    padding: 0.35rem;
+}
+.disc-edit .disc-tag-option-list {
+    min-width: min(20rem, calc(100vw - 11rem));
+}
+.disc-edit .disc-tag-option span,
+#filter-form .disc-tag-option span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.disc-edit .disc-tag-option input[type="checkbox"],
+#filter-form .disc-tag-option input[type="checkbox"] {
+    flex: 0 0 auto;
 }
 .disc-edit .disc-meta-row > input[name="disc_number"] {
     width: calc(3ch + 0.7rem + (var(--pico-border-width) * 2));
@@ -2961,8 +3073,14 @@ body:has(.disc-edit) footer.container hr {
     .flag-check-list {
         columns: 1;
     }
+    .disc-edit .disc-tag-option-list,
+    #filter-form .disc-tag-option-list {
+        grid-template-columns: 1fr;
+    }
 }
-.flag-check {
+.flag-check,
+.disc-edit .disc-tag-option,
+#filter-form .disc-tag-option {
     display: flex !important;
     break-inside: avoid;
     align-items: center;
@@ -2971,8 +3089,16 @@ body:has(.disc-edit) footer.container hr {
     font-size: 0.75rem;
     cursor: pointer;
 }
-.flag-check input[type="checkbox"] {
+.flag-check input[type="checkbox"],
+.disc-edit .disc-tag-option input[type="checkbox"],
+#filter-form .disc-tag-option input[type="checkbox"] {
     margin: 0;
+}
+.disc-edit .disc-tag-option,
+#filter-form .disc-tag-option {
+    gap: 0.3rem;
+    margin: 0;
+    padding: 0.08rem 0.2rem;
 }
 .flag-check .flag-icon {
     height: 1em;
@@ -3935,7 +4061,9 @@ textarea.full-width-textarea {
 }
 
 .maintenance-systems-form,
-.maintenance-editor-form {
+.maintenance-editor-form,
+.maintenance-tag-rename-form,
+.maintenance-tag-delete-form {
     margin: 0;
 }
 
@@ -4012,7 +4140,9 @@ textarea.full-width-textarea {
 .maintenance-system-text-row input[type="text"],
 .maintenance-editor-text-row input[type="text"],
 .maintenance-simple-row input[type="text"],
-.maintenance-simple-row select {
+.maintenance-simple-row select,
+.maintenance-tag-rename-form input[type="text"],
+.maintenance-tag-add-row input[type="text"] {
     width: auto;
     min-width: 0;
     height: auto;
@@ -4075,12 +4205,74 @@ textarea.full-width-textarea {
 }
 
 .maintenance-system-save button,
-.maintenance-editor-save button {
+.maintenance-editor-save button,
+.maintenance-tag-card button,
+.maintenance-tag-add-row button {
     width: auto;
     margin: 0;
     padding: 0.25rem 0.75rem;
     font-size: 0.75rem;
     line-height: 1.2;
+}
+
+.maintenance-tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.45rem;
+    max-width: 58rem;
+    margin: 0 auto;
+}
+
+.maintenance-tag-card {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    max-width: 100%;
+    padding: 0.3rem;
+    border: var(--pico-border-width) solid var(--pico-form-element-border-color);
+    border-radius: var(--pico-border-radius);
+    background: var(--pico-card-background-color);
+}
+
+.maintenance-tag-rename-form {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.maintenance-tag-rename-form input[type="text"] {
+    width: min(14rem, 38vw);
+}
+
+.maintenance-tag-card button,
+.maintenance-tag-add-row button {
+    padding: 0.25rem 0.55rem;
+}
+
+.maintenance-tag-delete-button {
+    background-color: #c62828;
+    border-color: #c62828;
+}
+
+.maintenance-tag-add-form {
+    margin: 0.75rem 0 0;
+}
+
+.maintenance-tag-add-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    width: min(24rem, 100%);
+    margin: 0 auto;
+}
+
+.maintenance-tag-add-row input[type="text"] {
+    width: 100%;
+    flex: 1 1 auto;
 }
 
 .maintenance-action form {

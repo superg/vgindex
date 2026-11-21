@@ -22,12 +22,13 @@ use super::compact_query_url;
 
 use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
-    build_check_options, build_flat_changes, build_lang_check_options, build_media_has_dummy_layer_json,
-    build_media_has_dmi_json, build_media_has_pic_json, build_media_has_ss_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
+    build_check_options, build_flat_changes, build_lang_check_options,
+    build_media_has_dummy_layer_json, build_media_has_dmi_json, build_media_has_pic_json,
+    build_media_has_ss_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
     build_media_rom_extensions_json, build_new_disc_changes, build_sparse_disc_submission_changes,
-    build_sparse_edit_changes, build_system_options, build_systems_json, fetch_ref_data,
-    max_layers_for_media, validate_form, DiscEditForm, DiscEditTemplate, ReviewAnnotation,
-    ReviewOldMultiline,
+    build_sparse_edit_changes, build_system_options, build_systems_json, build_tag_options,
+    fetch_ref_data, max_layers_for_media, validate_form, validate_tag_selection, DiscEditForm,
+    DiscEditTemplate, ReviewAnnotation, ReviewOldMultiline,
 };
 
 fn normalize_newlines(s: &str) -> String {
@@ -635,6 +636,7 @@ fn draft_add_form(sub: &DiscSubmission) -> AppResult<DiscEditForm> {
         disc_title_foreign: string("disc_title_foreign"),
         filename_suffix: string("filename_suffix"),
         category: string("category").unwrap_or_default(),
+        tags: strings("tags"),
         regions: strings("regions"),
         languages: strings("languages"),
         serial: strings("serial"),
@@ -939,6 +941,7 @@ fn build_review_template(
 
     let regions_codes = json_str_vec("regions");
     let languages_codes = json_str_vec("languages");
+    let tags_names = json_str_vec("tags");
 
     let ring_codes_json = snapshot
         .get("ring_codes")
@@ -1012,6 +1015,7 @@ fn build_review_template(
             &ref_data.all_categories,
             snapshot["category"].as_str().unwrap_or("Games"),
         ),
+        tags: build_tag_options(&ref_data.all_tags, &tags_names),
         regions: build_check_options(&ref_data.all_regions, &regions_codes),
         languages: build_lang_check_options(&ref_data.all_languages, &languages_codes),
 
@@ -1593,7 +1597,7 @@ fn build_review_diff_context(
         );
     }
 
-    for field in ["serial", "edition", "barcode", "bca_mastering"] {
+    for field in ["tags", "serial", "edition", "barcode", "bca_mastering"] {
         let old = array_strings(&db_snapshot[field]);
         let new = array_strings(&submitted_snapshot[field]);
         let (added, removed) = set_added_removed(&old, &new);
@@ -1972,6 +1976,7 @@ struct FieldHighlights {
     changed_fields: Vec<String>,
     region_highlights: std::collections::HashMap<String, String>,
     language_highlights: std::collections::HashMap<String, String>,
+    tag_highlights: std::collections::HashMap<String, String>,
     serial_highlights: std::collections::HashMap<String, String>,
     edition_highlights: std::collections::HashMap<String, String>,
     barcode_highlights: std::collections::HashMap<String, String>,
@@ -2115,6 +2120,26 @@ fn compute_field_highlights(
     }
     if !language_highlights.is_empty() {
         changed_fields.push("languages:changed".to_string());
+    }
+
+    let mut tag_highlights = std::collections::HashMap::new();
+    let tag_change = submitted_changes.get("tags");
+    let added_tags = tag_change
+        .and_then(|change| change.get("add"))
+        .map(|values| str_set(values))
+        .unwrap_or_default();
+    let removed_tags = tag_change
+        .and_then(|change| change.get("remove"))
+        .map(|values| str_set(values))
+        .unwrap_or_default();
+    for tag in added_tags {
+        tag_highlights.insert(tag, "added".to_string());
+    }
+    for tag in removed_tags {
+        tag_highlights.insert(tag, "removed".to_string());
+    }
+    if !tag_highlights.is_empty() {
+        changed_fields.push("tags:changed".to_string());
     }
 
     let mut serial_highlights = std::collections::HashMap::new();
@@ -2329,6 +2354,7 @@ fn compute_field_highlights(
         changed_fields,
         region_highlights,
         language_highlights,
+        tag_highlights,
         serial_highlights,
         edition_highlights,
         barcode_highlights,
@@ -2348,6 +2374,11 @@ fn apply_highlights(template: &mut DiscEditTemplate, highlights: FieldHighlights
     for opt in &mut template.languages {
         if let Some(hl) = highlights.language_highlights.get(&opt.value) {
             opt.highlight = hl.clone();
+        }
+    }
+    for tag in &mut template.tags {
+        if let Some(hl) = highlights.tag_highlights.get(&tag.value) {
+            tag.highlight = hl.clone();
         }
     }
     for item in &mut template.serials {
@@ -2728,6 +2759,7 @@ async fn review_submit(
     }
 
     let mut errors = validate_form(&form.disc, &ref_data.all_media_types, &ref_data.all_systems);
+    errors.extend(validate_tag_selection(&form.disc.tags, &ref_data.all_tags));
     if comments_text_contains_review_delimiter(form.disc.comments.as_deref()) {
         errors.push("Comments: remove the review delimiter before approval".to_string());
     }
@@ -3159,6 +3191,14 @@ mod tests {
                 disc_edit::CategoryRow {
                     id: 2,
                     name: "Demos".to_string(),
+                },
+            ],
+            all_tags: vec![
+                disc_edit::TagRow {
+                    name: "Demos".to_string(),
+                },
+                disc_edit::TagRow {
+                    name: "Games".to_string(),
                 },
             ],
             all_regions: vec![

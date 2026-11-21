@@ -640,6 +640,7 @@ pub struct DiscDetail {
     pub system: System,
     pub regions: Vec<Region>,
     pub languages: Vec<Language>,
+    pub tags: Vec<String>,
     pub ring_entries: Vec<RingEntryView>,
     pub files: Vec<File>,
     pub extras: Vec<DiscExtra>,

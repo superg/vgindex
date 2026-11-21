@@ -121,6 +121,7 @@ pub(crate) struct DiscEditTemplate {
     pub systems: Vec<SystemOption>,
     pub media_types_all: Vec<MediaTypeOption>,
     pub categories: Vec<SelectOption>,
+    pub tags: Vec<TagOption>,
     pub regions: Vec<CheckOption>,
     pub languages: Vec<CheckOption>,
 
@@ -326,6 +327,14 @@ pub(crate) struct CheckOption {
     pub common: bool,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct TagOption {
+    pub value: String,
+    pub name: String,
+    pub selected: bool,
+    pub highlight: String,
+}
+
 pub(crate) struct HighlightedValue {
     pub value: String,
     pub highlight: String,
@@ -364,10 +373,16 @@ pub(crate) struct CategoryRow {
     pub name: String,
 }
 
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub(crate) struct TagRow {
+    pub name: String,
+}
+
 pub(crate) struct EditRefData {
     pub all_systems: Vec<System>,
     pub all_media_types: Vec<EditMediaTypeRow>,
     pub all_categories: Vec<CategoryRow>,
+    pub all_tags: Vec<TagRow>,
     pub all_regions: Vec<Region>,
     pub all_languages: Vec<Language>,
 }
@@ -383,6 +398,9 @@ pub(crate) async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData
         sqlx::query_as("SELECT id, name FROM categories ORDER BY name")
             .fetch_all(pool)
             .await?;
+    let all_tags: Vec<TagRow> = sqlx::query_as("SELECT name FROM tags ORDER BY LOWER(name), name")
+        .fetch_all(pool)
+        .await?;
     let all_regions: Vec<Region> = sqlx::query_as("SELECT * FROM regions ORDER BY sort_order")
         .fetch_all(pool)
         .await?;
@@ -394,6 +412,7 @@ pub(crate) async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData
         all_systems,
         all_media_types,
         all_categories,
+        all_tags,
         all_regions,
         all_languages,
     })
@@ -826,6 +845,53 @@ pub(crate) fn build_category_options(
         .collect()
 }
 
+pub(crate) fn build_tag_options(all_tags: &[TagRow], selected_names: &[String]) -> Vec<TagOption> {
+    let mut options: Vec<TagOption> = all_tags
+        .iter()
+        .map(|tag| TagOption {
+            value: tag.name.clone(),
+            name: tag.name.clone(),
+            selected: selected_names.iter().any(|name| name == &tag.name),
+            highlight: String::new(),
+        })
+        .collect();
+    for name in selected_names {
+        if name.trim().is_empty()
+            || options
+                .iter()
+                .any(|option| option.value.as_str() == name.as_str())
+        {
+            continue;
+        }
+        options.push(TagOption {
+            value: name.clone(),
+            name: format!("{name} (missing from tag catalog)"),
+            selected: true,
+            highlight: String::new(),
+        });
+    }
+    options
+}
+
+pub(crate) fn validate_tag_selection(tags: &[String], all_tags: &[TagRow]) -> Vec<String> {
+    let allowed: std::collections::HashSet<&str> =
+        all_tags.iter().map(|tag| tag.name.as_str()).collect();
+    let mut unknown: Vec<String> = tags
+        .iter()
+        .map(|tag| tag.trim())
+        .filter(|tag| !tag.is_empty() && !allowed.contains(tag))
+        .map(str::to_string)
+        .collect();
+    unknown.sort();
+    unknown.dedup();
+
+    if unknown.is_empty() {
+        Vec::new()
+    } else {
+        vec![format!("Tags: unknown tag(s): {}", unknown.join(", "))]
+    }
+}
+
 fn build_add_category_options(all_categories: &[CategoryRow], selected: &str) -> Vec<SelectOption> {
     let mut categories = Vec::with_capacity(all_categories.len() + 1);
     categories.push(SelectOption {
@@ -1056,6 +1122,7 @@ async fn edit_page(
                 &ref_data.all_categories,
                 &detail.disc.category.to_string(),
             ),
+            tags: build_tag_options(&ref_data.all_tags, &detail.tags),
             regions: build_check_options(&ref_data.all_regions, &disc_region_codes),
             languages: build_lang_check_options(&ref_data.all_languages, &disc_lang_codes),
 
@@ -1311,6 +1378,8 @@ pub struct DiscEditForm {
     pub filename_suffix: Option<String>,
     #[serde(default)]
     pub category: String,
+    #[serde(default, deserialize_with = "one_or_many_strings")]
+    pub tags: Vec<String>,
     #[serde(default, deserialize_with = "one_or_many_strings")]
     pub regions: Vec<String>,
     #[serde(default, deserialize_with = "one_or_many_strings")]
@@ -1970,6 +2039,7 @@ async fn render_form_with_context(
         } else {
             build_category_options(&ref_data.all_categories, &form.category)
         },
+        tags: build_tag_options(&ref_data.all_tags, &form.tags),
         regions: build_check_options(&ref_data.all_regions, &form.regions),
         languages: build_lang_check_options(&ref_data.all_languages, &form.languages),
 
@@ -2698,6 +2768,7 @@ async fn edit_submit(
     preserve_existing_status_for_submission(&mut form, &detail, can_edit_directly);
     let ref_data = fetch_ref_data(&state.pool).await?;
     let mut errors = validate_form(&form, &ref_data.all_media_types, &ref_data.all_systems);
+    errors.extend(validate_tag_selection(&form.tags, &ref_data.all_tags));
     errors.extend(validate_edit_submission_comment(&form, can_edit_directly));
     if !errors.is_empty() {
         return render_form_with_errors(
@@ -2875,6 +2946,7 @@ async fn add_page(
                 &media_type_code,
             ),
             categories: build_add_category_options(&ref_data.all_categories, ""),
+            tags: build_tag_options(&ref_data.all_tags, &[]),
             regions: build_check_options(&ref_data.all_regions, &[]),
             languages: build_lang_check_options(&ref_data.all_languages, &[]),
 
@@ -3149,6 +3221,7 @@ async fn add_submit(
         is_verification,
         save_as_draft,
     );
+    errors.extend(validate_tag_selection(&form.tags, &ref_data.all_tags));
     if !save_as_draft {
         errors.extend(validate_add_submission_ring_offsets(
             &form,
@@ -3456,6 +3529,13 @@ pub(crate) fn build_flat_changes(
         };
     let new_regions = norm_str_vec(form.regions.clone());
     let new_languages = norm_str_vec(form.languages.clone());
+    let mut new_tags = norm_str_vec(form.tags.clone());
+    new_tags.sort_by(|a, b| {
+        a.to_lowercase()
+            .cmp(&b.to_lowercase())
+            .then_with(|| a.cmp(b))
+    });
+    new_tags.dedup();
     let new_serials = norm_str_vec_keep_order(form.serial.clone());
     let new_editions = norm_str_vec_keep_order(form.edition.clone());
     let new_barcodes = norm_str_vec_keep_order(form.barcode.clone());
@@ -3482,6 +3562,7 @@ pub(crate) fn build_flat_changes(
         "media_type": form.media_type.trim(),
         "title": form.title.trim(),
         "category": form.category.trim(),
+        "tags": new_tags,
         "title_foreign": norm_opt_str(form.title_foreign.as_deref()),
         "disc_number": norm_opt_str(form.disc_number.as_deref()),
         "disc_title": norm_opt_str(form.disc_title.as_deref()),
@@ -4229,7 +4310,7 @@ fn build_history_changes(
         }
     }
 
-    for key in ["regions", "languages", "serial", "edition", "barcode"] {
+    for key in ["regions", "languages", "tags", "serial", "edition", "barcode"] {
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let new = form_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let old_values = json_str_vec(old);
@@ -4647,6 +4728,7 @@ mod operation_delta_tests {
             system: test_system(),
             regions: vec![region("Europe"), region("Americas")],
             languages: vec![language("en")],
+            tags: vec!["Games".to_string()],
             ring_entries: vec![
                 ring_entry(10, "MASTER-A", "T1", "old ring"),
                 ring_entry(20, "MASTER-B", "T9", "remove ring"),
@@ -4676,6 +4758,7 @@ mod operation_delta_tests {
             disc_title_foreign: detail.disc.disc_title_foreign.clone(),
             filename_suffix: detail.disc.filename_suffix.clone(),
             category: detail.disc.category.to_string(),
+            tags: detail.tags.clone(),
             regions: detail.regions.iter().map(|r| r.code.clone()).collect(),
             languages: detail.languages.iter().map(|l| l.code.clone()).collect(),
             serial: detail.disc.serial.clone(),
@@ -4742,6 +4825,7 @@ mod operation_delta_tests {
             disc_title_foreign: Some("Install Disc Foreign".to_string()),
             filename_suffix: None,
             category: "Games".to_string(),
+            tags: vec![],
             regions: vec![
                 "Europe".to_string(),
                 "Asia".to_string(),

@@ -37,6 +37,7 @@
     <a href="/maintenance?tab=languages" {% if show_languages %}class="active"{% endif %}>Languages</a>
     <a href="/maintenance?tab=misc" {% if show_misc %}class="active"{% endif %}>Miscellaneous</a>
     {% if can_admin %}
+    <a href="/maintenance?tab=tags" {% if show_tags %}class="active"{% endif %}>Tags</a>
     <a href="/maintenance?tab=users" {% if show_users %}class="active"{% endif %}>Users</a>
     <a href="/maintenance?tab=submissions" {% if show_submissions %}class="active"{% endif %}>Submissions</a>
     <a href="/maintenance?tab=backup" {% if show_backup %}class="active"{% endif %}>Backup</a>
@@ -64,7 +65,7 @@
         {% for row in system_rows %}
             <tbody data-maintenance-row data-system-row data-original-code="{{ row.original_code }}">
                 <tr class="maintenance-system-text-row maintenance-editor-text-row">
-                    <td><input type="text" value="{{ row.code }}" maxlength="16" size="{{ system_input_sizes.code }}" data-maintenance-field="code" data-system-field="code" aria-label="Code" title="Code" placeholder="code"></td>
+                    <td><input type="text" value="{{ row.code }}" maxlength="16" size="{{ system_input_sizes.code }}" data-maintenance-field="code" data-system-field="code" aria-label="Code" title="Code" placeholder="code" {% if !can_admin && !row.original_code.is_empty() %}readonly{% endif %}></td>
                     <td><input type="text" value="{{ row.system_type }}" maxlength="8" size="{{ system_input_sizes.system_type }}" data-maintenance-field="type" data-system-field="type" aria-label="Type" title="Type" placeholder="type"></td>
                     <td><input type="text" value="{{ row.manufacturer }}" maxlength="32" size="{{ system_input_sizes.manufacturer }}" data-maintenance-field="manufacturer" data-system-field="manufacturer" aria-label="Manufacturer" title="Manufacturer" placeholder="manufacturer"></td>
                     <td><input type="text" value="{{ row.name }}" maxlength="64" size="{{ system_input_sizes.name }}" data-maintenance-field="name" data-system-field="name" aria-label="Name" title="Name" placeholder="name"></td>
@@ -203,6 +204,45 @@
 </section>
 
 {% if can_admin %}
+<section id="maintenance-tags-panel" class="maintenance-panel" {% if !show_tags %}hidden{% endif %}>
+    <div class="maintenance-tag-list">
+    {% for row in tag_rows %}
+        <div class="maintenance-tag-card">
+            <form method="post" action="/maintenance/tags/{{ row.id }}/rename" class="maintenance-tag-rename-form">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <input type="text" name="name" value="{{ row.name }}" maxlength="64" aria-label="Tag name" required>
+                <button type="submit">Rename</button>
+            </form>
+            <form method="post" action="/maintenance/tags/{{ row.id }}/delete" class="maintenance-tag-delete-form">
+                {% match current_user %}
+                {% when Some with (user) %}
+                <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+                {% when None %}
+                {% endmatch %}
+                <button type="submit" class="maintenance-tag-delete-button">Delete</button>
+            </form>
+        </div>
+    {% endfor %}
+    </div>
+
+    <form method="post" action="/maintenance/tags" class="maintenance-tag-add-form">
+        {% match current_user %}
+        {% when Some with (user) %}
+        <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+        {% when None %}
+        {% endmatch %}
+
+        <div class="maintenance-tag-add-row">
+            <input type="text" name="name" maxlength="64" aria-label="New tag name" placeholder="New tag name" required>
+            <button type="submit">Add</button>
+        </div>
+    </form>
+</section>
+
 <section id="maintenance-submissions-panel" class="maintenance-panel" {% if !show_submissions %}hidden{% endif %}>
     <form method="get" action="/maintenance" class="maintenance-submission-lookup">
         <input type="hidden" name="tab" value="submissions">

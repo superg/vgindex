@@ -29,6 +29,12 @@
             <tr><td><strong>System</strong></td><td><a href="/discs?system={{ system_code }}">{{ system_name }}</a></td></tr>
             <tr><td><strong>Media</strong></td><td>{{ media_type }}</td></tr>
             <tr><td><strong>Category</strong></td><td>{{ category }}</td></tr>
+            {% if !tags.is_empty() %}
+            <tr><td><strong>Tags</strong></td><td>
+                {% for tag in tags %}{{ tag }}{% if !loop.last %}<br>{% endif %}
+                {% endfor %}
+            </td></tr>
+            {% endif %}
             {% if !regions.is_empty() %}
             <tr><td><strong>{% if regions.len() == 1 %}Region{% else %}Regions{% endif %}</strong></td><td class="flags-inline flags-region">
                 {% for r in regions %}

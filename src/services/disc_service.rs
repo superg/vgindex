@@ -965,6 +965,16 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .fetch_all(pool)
     .await?;
 
+    let tags: Vec<String> = sqlx::query_scalar(
+        "SELECT t.name FROM tags t
+         JOIN disc_tags dt ON dt.tag_id = t.id
+         WHERE dt.disc_id = $1
+         ORDER BY LOWER(t.name), t.name",
+    )
+    .bind(disc_id)
+    .fetch_all(pool)
+    .await?;
+
     let ring_entries: Vec<DiscRingCodeEntry> =
         sqlx::query_as("SELECT * FROM disc_ring_code_entries WHERE disc_id = $1 ORDER BY id")
             .bind(disc_id)
@@ -1057,6 +1067,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
         system,
         regions,
         languages,
+        tags,
         ring_entries: ring_views,
         files,
         extras,
@@ -1359,6 +1370,22 @@ pub async fn update_disc(
             }
         }
     }
+
+    // Tags
+    sqlx::query("DELETE FROM disc_tags WHERE disc_id = $1")
+        .bind(disc_id)
+        .execute(&mut *conn)
+        .await?;
+    let tags = parse_text_array(&data["tags"]);
+    sqlx::query(
+        "INSERT INTO disc_tags (disc_id, tag_id)
+         SELECT $1, id FROM tags WHERE name = ANY($2)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(disc_id)
+    .bind(&tags)
+    .execute(&mut *conn)
+    .await?;
 
     // Ring codes
     if let Some(ring_codes) = data["ring_codes"].as_array() {
@@ -1993,6 +2020,7 @@ mod tests {
             },
             regions: vec![],
             languages: vec![],
+            tags: vec![],
             ring_entries: vec![RingEntryView {
                 id: 1,
                 offset_value: None,
@@ -2770,6 +2798,7 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
         "status": detail.disc.status.to_string(),
         "regions": region_codes,
         "languages": lang_codes,
+        "tags": detail.tags,
         "ring_codes": ring_codes,
         "sector_ranges": sector_ranges,
         "dat": if files_xml.is_empty() { serde_json::Value::Null } else { serde_json::json!(files_xml) },
