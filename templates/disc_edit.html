@@ -356,11 +356,11 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
                 {% endif %}
             {% endfor %}
             </div>
-            <details class="language-variant-details{% if is_add_mode %} flag-check-extra{% endif %}"{% if self.has_selected_language_variants() %} open{% endif %}>
+            <details class="language-variant-details{% if is_add_mode && !self.has_selected_language_variants() %} flag-check-extra{% endif %}"{% if self.has_selected_language_variants() %} open{% endif %}>
                 <summary><span class="language-variant-summary">Language variants</span></summary>
                 <div class="flag-check-list">
                 {% for lang in language_variants %}
-                    <label class="flag-check">
+                    <label class="flag-check{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">
                         <input type="checkbox" name="languages" value="{{ lang.value }}" data-base-language="{{ lang.base_language }}" {% if lang.selected %}checked{% endif %}>
                         <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
                         <span>{{ lang.name }}</span>

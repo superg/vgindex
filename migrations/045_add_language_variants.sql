@@ -5,7 +5,7 @@ CREATE TABLE language_variants (
     name VARCHAR(32) NOT NULL,
     flag_code VARCHAR(16) NOT NULL,
     PRIMARY KEY (language_code, code),
-    CHECK (code <> '')
+    CHECK (code <> '' AND code = BTRIM(code))
 );
 
 CREATE TABLE disc_language_variants (

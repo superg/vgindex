@@ -940,6 +940,8 @@ async fn save_language_variants(
         }
         if code.is_empty() {
             errors.push(format!("{label}: variant code is required."));
+        } else if code.chars().any(char::is_whitespace) {
+            errors.push(format!("{label}: variant code cannot contain whitespace."));
         } else if code.chars().count() > 4 {
             errors.push(format!("{label}: variant code must be 4 characters or fewer."));
         }
@@ -957,10 +959,12 @@ async fn save_language_variants(
         }
 
         if !language_code.is_empty() && !code.is_empty() {
-            let key = (language_code.clone(), code.clone());
-            let is_own_key = is_existing
-                && original_language_code == language_code
-                && original_code == code;
+            let key = (language_code.to_lowercase(), code.to_lowercase());
+            let original_key = (
+                original_language_code.to_lowercase(),
+                original_code.to_lowercase(),
+            );
+            let is_own_key = is_existing && original_key == key;
             if existing_keys.contains(&key) && !is_own_key {
                 errors.push(format!("{label}: this variant already exists."));
             }

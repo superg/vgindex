@@ -2378,6 +2378,11 @@ fn apply_highlights(template: &mut DiscEditTemplate, highlights: FieldHighlights
             opt.highlight = hl.clone();
         }
     }
+    for opt in &mut template.language_variants {
+        if let Some(hl) = highlights.language_highlights.get(&opt.value) {
+            opt.highlight = hl.clone();
+        }
+    }
     for tag in &mut template.tags {
         if let Some(hl) = highlights.tag_highlights.get(&tag.value) {
             tag.highlight = hl.clone();
