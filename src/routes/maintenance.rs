@@ -943,10 +943,10 @@ async fn save_language_variants(
         }
         if code.is_empty() {
             errors.push(format!("{label}: variant code is required."));
-        } else if code.chars().any(char::is_whitespace) {
-            errors.push(format!("{label}: variant code cannot contain whitespace."));
         } else if code.chars().count() > 4 {
             errors.push(format!("{label}: variant code must be 4 characters or fewer."));
+        } else if !code.chars().all(char::is_alphanumeric) {
+            errors.push(format!("{label}: variant code must contain only alphanumeric characters."));
         }
         if name.is_empty() {
             errors.push(format!("{label}: name is required."));
