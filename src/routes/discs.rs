@@ -1834,11 +1834,33 @@ fn add_language_clause(where_clauses: &mut Vec<String>, bind_idx: &mut u32, lang
         return;
     }
 
+    let bytes = language.as_bytes();
+    let is_base_language = bytes.len() == 2 && bytes.iter().all(|byte| byte.is_ascii_alphabetic());
+    let is_language_variant = (4..=7).contains(&bytes.len())
+        && bytes[..2].iter().all(|byte| byte.is_ascii_alphabetic())
+        && bytes[2] == b'-'
+        && bytes[3..]
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric());
+
+    if !is_base_language && !is_language_variant {
+        *bind_idx += 1;
+        where_clauses.push(format!("FALSE AND ${}::text IS NULL", *bind_idx));
+        return;
+    }
+
     *bind_idx += 1;
-    where_clauses.push(format!(
-        "EXISTS (SELECT 1 FROM disc_languages dl_filter WHERE dl_filter.disc_id = d.id AND dl_filter.language_code = ${})",
-        *bind_idx
-    ));
+    if is_language_variant {
+        where_clauses.push(format!(
+            "EXISTS (SELECT 1 FROM disc_language_variants dlv_filter WHERE dlv_filter.disc_id = d.id AND lower(btrim(dlv_filter.language_code::text) || '-' || dlv_filter.variant_code) = ${})",
+            *bind_idx
+        ));
+    } else {
+        where_clauses.push(format!(
+            "EXISTS (SELECT 1 FROM disc_languages dl_filter WHERE dl_filter.disc_id = d.id AND dl_filter.language_code = ${})",
+            *bind_idx
+        ));
+    }
 }
 
 const TRACK_COUNT_SQL: &str = "track_filter.track_count";

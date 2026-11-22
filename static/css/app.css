@@ -3037,6 +3037,11 @@ body:has(.disc-edit) footer.container hr {
 .language-variant-details {
     margin-top: 0.35rem;
 }
+.language-variant-warning {
+    margin: 0.25rem 0;
+    color: var(--pico-muted-color);
+    font-size: 0.72rem;
+}
 .language-variant-details[open] > .flag-check-list {
     margin-top: 0.35rem;
 }
