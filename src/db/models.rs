@@ -477,6 +477,8 @@ pub struct Language {
     pub name: String,
     pub flag_code: String,
     pub sort_order: i32,
+    #[serde(skip)]
+    pub base_code: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]

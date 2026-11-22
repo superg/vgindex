@@ -1540,6 +1540,19 @@ async fn load_disc_flags(
          FROM disc_languages dl
          JOIN languages l ON l.code = dl.language_code
          WHERE dl.disc_id = ANY($1)
+           AND NOT EXISTS (
+               SELECT 1 FROM disc_language_variants dlv
+               WHERE dlv.disc_id = dl.disc_id
+                 AND dlv.language_code = dl.language_code
+           )
+         UNION ALL
+         SELECT dlv.disc_id, 1::INT AS flag_kind,
+                TRIM(lv.flag_code)::TEXT AS code, lv.name, l.sort_order
+         FROM disc_language_variants dlv
+         JOIN language_variants lv
+           ON lv.language_code = dlv.language_code AND lv.code = dlv.variant_code
+         JOIN languages l ON l.code = lv.language_code
+         WHERE dlv.disc_id = ANY($1)
          ORDER BY disc_id, flag_kind, sort_order, code",
     )
     .bind(disc_ids)

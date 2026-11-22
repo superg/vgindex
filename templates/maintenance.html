@@ -146,6 +146,9 @@
 
         <div class="maintenance-editor-scroll">
         <table class="maintenance-editor-table maintenance-lookup-table">
+            <thead>
+                <tr><th>Code</th><th>Language Name</th><th>Flag</th><th>Sort Order</th></tr>
+            </thead>
         {% for row in language_rows %}
             <tbody data-maintenance-row data-original-code="{{ row.original_code }}">
                 <tr class="maintenance-simple-row">
@@ -171,6 +174,60 @@
 
         <div class="maintenance-editor-save">
             <button type="submit">Save Languages</button>
+        </div>
+    </form>
+
+    <hr>
+    <form method="post" action="/maintenance/language-variants" id="maintenance-language-variants-form" class="maintenance-editor-form" data-maintenance-form data-maintenance-payload="#maintenance-language-variants-payload">
+        {% match current_user %}
+        {% when Some with (user) %}
+        <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
+        {% when None %}
+        {% endmatch %}
+        <input type="hidden" name="language_variants_payload" id="maintenance-language-variants-payload" value="">
+        <div class="maintenance-editor-scroll">
+        <table class="maintenance-editor-table maintenance-lookup-table">
+            <thead>
+                <tr><th>Base Language</th><th>Code Suffix</th><th>Name</th><th>Flag</th></tr>
+            </thead>
+        {% for variant in language_variant_rows %}
+            <tbody data-maintenance-row data-original-code="{{ variant.original_code }}">
+                <tr class="maintenance-simple-row">
+                    <td>
+                        <input type="hidden" value="{{ variant.original_language_code }}" data-maintenance-field="original_language_code">
+                        {% if !variant.original_code.is_empty() %}
+                        <input type="text" value="{{ variant.language_code }}" size="2" data-maintenance-field="language_code" aria-label="Base Language" title="Base Language" disabled>
+                        {% else %}
+                        <select data-maintenance-field="language_code" aria-label="Base Language" title="Base Language">
+                            <option value="">language_code</option>
+                            {% for language in language_rows %}
+                            {% if !language.code.is_empty() %}
+                            <option value="{{ language.code }}" {% if language.code == variant.language_code %}selected{% endif %}>{{ language.name }} ({{ language.code }})</option>
+                            {% endif %}
+                            {% endfor %}
+                        </select>
+                        {% endif %}
+                    </td>
+                    <td><input type="text" value="{{ variant.code }}" maxlength="4" size="4" data-maintenance-field="code" aria-label="Variant Code" title="Variant Code" placeholder="code"></td>
+                    <td><input type="text" value="{{ variant.name }}" maxlength="32" size="18" data-maintenance-field="name" aria-label="Variant Name" title="Variant Name" placeholder="name"></td>
+                    <td>
+                        <span class="maintenance-flag-field">
+                            <img class="maintenance-flag-preview" data-flag-preview src="{% if variant.flag_code.is_empty() %}about:blank{% else %}/static/flags/{{ variant.flag_code }}.svg{% endif %}" title="{{ variant.flag_code }}" alt="{{ variant.flag_code }}" {% if variant.flag_code.is_empty() %}hidden{% endif %}>
+                            <select data-maintenance-field="flag_code" data-flag-select aria-label="Flag Code" title="Flag Code">
+                                <option value="">flag_code</option>
+                                {% for option in flag_options %}
+                                <option value="{{ option.code }}" {% if option.code == variant.flag_code %}selected{% endif %}>{{ option.code }}</option>
+                                {% endfor %}
+                            </select>
+                        </span>
+                    </td>
+                </tr>
+            </tbody>
+        {% endfor %}
+        </table>
+        </div>
+        <div class="maintenance-editor-save">
+            <button type="submit">Save Language Variants</button>
         </div>
     </form>
 </section>

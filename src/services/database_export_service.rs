@@ -58,6 +58,14 @@ CREATE TABLE languages (
     sort_order INTEGER NOT NULL
 );
 
+CREATE TABLE language_variants (
+    code TEXT NOT NULL,
+    language_code TEXT NOT NULL REFERENCES languages(code) ON UPDATE CASCADE ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    flag_code TEXT NOT NULL,
+    PRIMARY KEY (language_code, code)
+);
+
 CREATE TABLE systems (
     code TEXT PRIMARY KEY,
     type TEXT NOT NULL,
@@ -165,6 +173,15 @@ CREATE TABLE disc_languages (
     PRIMARY KEY (disc_id, language_code)
 );
 
+CREATE TABLE disc_language_variants (
+    disc_id INTEGER NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
+    language_code TEXT NOT NULL,
+    variant_code TEXT NOT NULL,
+    PRIMARY KEY (disc_id, language_code, variant_code),
+    FOREIGN KEY (language_code, variant_code)
+        REFERENCES language_variants(language_code, code) ON UPDATE CASCADE
+);
+
 CREATE TABLE disc_tags (
     disc_id INTEGER NOT NULL REFERENCES discs(id) ON DELETE CASCADE,
     tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
@@ -251,6 +268,14 @@ struct LookupRow {
     name: String,
     flag_code: String,
     sort_order: i32,
+}
+
+#[derive(sqlx::FromRow)]
+struct LanguageVariantRow {
+    code: String,
+    language_code: String,
+    name: String,
+    flag_code: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -579,6 +604,10 @@ async fn generate_export_inner(
         table = "languages"
     );
     tracing::info!(
+        rows = export_language_variants(&mut postgres, &mut output).await?,
+        table = "language_variants"
+    );
+    tracing::info!(
         rows = export_systems(&mut postgres, &mut output).await?,
         table = "systems"
     );
@@ -605,6 +634,10 @@ async fn generate_export_inner(
     tracing::info!(
         rows = export_disc_languages(&mut postgres, &mut output).await?,
         table = "disc_languages"
+    );
+    tracing::info!(
+        rows = export_disc_language_variants(&mut postgres, &mut output).await?,
+        table = "disc_language_variants"
     );
     tracing::info!(
         rows = export_disc_tags(&mut postgres, &mut output).await?,
@@ -751,6 +784,29 @@ async fn export_languages(
     sqlite: &mut Transaction<'_, Sqlite>,
 ) -> AppResult<u64> {
     export_lookup_table(postgres, sqlite, "languages").await
+}
+
+async fn export_language_variants(
+    postgres: &mut Transaction<'_, Postgres>,
+    sqlite: &mut Transaction<'_, Sqlite>,
+) -> AppResult<u64> {
+    let mut count = 0;
+    let mut rows = sqlx::query_as::<_, LanguageVariantRow>(
+        "SELECT TRIM(code) AS code, TRIM(language_code) AS language_code, name, flag_code
+         FROM language_variants ORDER BY language_code, code",
+    )
+    .fetch(&mut **postgres);
+    while let Some(row) = rows.try_next().await? {
+        sqlx::query("INSERT INTO language_variants VALUES (?, ?, ?, ?)")
+            .bind(row.code)
+            .bind(row.language_code)
+            .bind(row.name)
+            .bind(row.flag_code)
+            .execute(&mut **sqlite)
+            .await?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 async fn export_lookup_table(
@@ -1012,6 +1068,31 @@ async fn export_disc_languages(
         sqlx::query("INSERT INTO disc_languages VALUES (?, ?)")
             .bind(row.disc_id)
             .bind(row.language_code)
+            .execute(&mut **sqlite)
+            .await?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+async fn export_disc_language_variants(
+    postgres: &mut Transaction<'_, Postgres>,
+    sqlite: &mut Transaction<'_, Sqlite>,
+) -> AppResult<u64> {
+    let mut count = 0;
+    let mut rows = sqlx::query_as::<_, (i32, String, String)>(
+        "SELECT dlv.disc_id, TRIM(dlv.language_code) AS language_code,
+                TRIM(dlv.variant_code) AS variant_code
+         FROM disc_language_variants dlv JOIN discs d ON d.id = dlv.disc_id
+         WHERE d.status <> 'Disabled'
+         ORDER BY dlv.disc_id, dlv.language_code, dlv.variant_code",
+    )
+    .fetch(&mut **postgres);
+    while let Some((disc_id, language_code, variant_code)) = rows.try_next().await? {
+        sqlx::query("INSERT INTO disc_language_variants VALUES (?, ?, ?)")
+            .bind(disc_id)
+            .bind(language_code)
+            .bind(variant_code)
             .execute(&mut **sqlite)
             .await?;
         count += 1;

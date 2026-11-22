@@ -22,7 +22,7 @@ use super::compact_query_url;
 
 use super::disc_edit::{
     self, approval_conflicts_to_linked_validation_errors, build_category_options,
-    build_check_options, build_flat_changes, build_lang_check_options,
+    build_check_options, build_flat_changes,
     build_media_has_dummy_layer_json, build_media_has_dmi_json, build_media_has_pic_json,
     build_media_has_ss_json, build_media_is_cd_json, build_media_layers_json, build_media_options,
     build_media_rom_extensions_json, build_new_disc_changes, build_sparse_disc_submission_changes,
@@ -1001,6 +1001,7 @@ fn build_review_template(
     let can_retarget_submission = current_user.role.can_moderate()
         && sub.submission_type == SubmissionType::Disc
         && sub.status == SubmissionStatus::Pending;
+    let (languages, language_variants) = disc_edit::build_language_option_groups(&ref_data.all_languages, &languages_codes);
 
     DiscEditTemplate {
         current_user: Some(current_user),
@@ -1017,7 +1018,8 @@ fn build_review_template(
         ),
         tags: build_tag_options(&ref_data.all_tags, &tags_names),
         regions: build_check_options(&ref_data.all_regions, &regions_codes),
-        languages: build_lang_check_options(&ref_data.all_languages, &languages_codes),
+        languages,
+        language_variants,
 
         system_code: system_code.to_string(),
         media_type_code: media_type_code.to_string(),
@@ -3227,12 +3229,14 @@ mod tests {
                     name: "English".to_string(),
                     flag_code: "gb".to_string(),
                     sort_order: 0,
+                    base_code: None,
                 },
                 Language {
                     code: "ja".to_string(),
                     name: "Japanese".to_string(),
                     flag_code: "jp".to_string(),
                     sort_order: 1,
+                    base_code: None,
                 },
             ],
         }

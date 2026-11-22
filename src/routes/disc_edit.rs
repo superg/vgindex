@@ -124,6 +124,7 @@ pub(crate) struct DiscEditTemplate {
     pub tags: Vec<TagOption>,
     pub regions: Vec<CheckOption>,
     pub languages: Vec<CheckOption>,
+    pub language_variants: Vec<CheckOption>,
 
     pub system_code: String,
     pub media_type_code: String,
@@ -254,6 +255,16 @@ pub(crate) struct DiscEditTemplate {
 impl SiteConfig for DiscEditTemplate {}
 
 impl DiscEditTemplate {
+    pub fn has_selected_language_variants(&self) -> bool {
+        self.language_variants.iter().any(|language| language.selected)
+    }
+
+    pub fn language_required_by_variant(&self, language_code: &str) -> bool {
+        self.language_variants.iter().any(|variant| {
+            variant.selected && variant.base_language.as_str() == language_code
+        })
+    }
+
     pub fn highlight_class(&self, field: &str) -> &str {
         for f in &self.changed_fields {
             if f.len() > field.len() && f.as_bytes()[field.len()] == b':' && f.starts_with(field) {
@@ -322,6 +333,7 @@ pub(crate) struct CheckOption {
     pub value: String,
     pub name: String,
     pub code: String,
+    pub base_language: String,
     pub selected: bool,
     pub highlight: String,
     pub common: bool,
@@ -404,10 +416,17 @@ pub(crate) async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData
     let all_regions: Vec<Region> = sqlx::query_as("SELECT * FROM regions ORDER BY sort_order")
         .fetch_all(pool)
         .await?;
-    let all_languages: Vec<Language> =
-        sqlx::query_as("SELECT * FROM languages ORDER BY sort_order")
-            .fetch_all(pool)
-            .await?;
+    let all_languages: Vec<Language> = sqlx::query_as(
+        "SELECT TRIM(code)::TEXT AS code, name, flag_code, sort_order, NULL::TEXT AS base_code FROM languages
+         UNION ALL
+         SELECT TRIM(l.code)::TEXT || '-' || TRIM(lv.code)::TEXT AS code,
+                lv.name, lv.flag_code, l.sort_order, TRIM(l.code)::TEXT AS base_code
+         FROM language_variants lv
+         JOIN languages l ON l.code = lv.language_code
+         ORDER BY sort_order, name",
+    )
+    .fetch_all(pool)
+    .await?;
     Ok(EditRefData {
         all_systems,
         all_media_types,
@@ -927,6 +946,7 @@ pub(crate) fn build_check_options(all: &[Region], selected_codes: &[String]) -> 
             value: r.code.trim().to_string(),
             name: r.name.clone(),
             code: r.flag_code.trim().to_lowercase(),
+            base_language: String::new(),
             selected: selected_codes.iter().any(|c| c.trim() == r.code.trim()),
             highlight: String::new(),
             common: COMMON_REGIONS.iter().any(|name| *name == r.name),
@@ -957,19 +977,35 @@ pub(crate) fn build_lang_check_options(
         "Spanish",
         "Swedish",
     ];
+    let selected_codes = disc_service::include_base_languages(selected_codes.to_vec());
     let mut options: Vec<CheckOption> = all
         .iter()
-        .map(|l| CheckOption {
-            value: l.code.trim().to_string(),
-            name: l.name.clone(),
-            code: l.flag_code.trim().to_lowercase(),
-            selected: selected_codes.iter().any(|c| c.trim() == l.code.trim()),
-            highlight: String::new(),
-            common: COMMON_LANGUAGES.iter().any(|name| *name == l.name),
+        .map(|l| {
+            let value = l.code.trim().to_string();
+            CheckOption {
+                base_language: l.base_code.clone().unwrap_or_default(),
+                selected: selected_codes.contains(&value),
+                value,
+                name: l.name.clone(),
+                code: l.flag_code.trim().to_lowercase(),
+                highlight: String::new(),
+                common: COMMON_LANGUAGES.iter().any(|name| *name == l.name),
+            }
         })
         .collect();
     options.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     options
+}
+
+pub(crate) fn build_language_option_groups(
+    all: &[Language],
+    selected_codes: &[String],
+) -> (Vec<CheckOption>, Vec<CheckOption>) {
+    let (language_variants, languages): (Vec<_>, Vec<_>) =
+        build_lang_check_options(all, selected_codes)
+            .into_iter()
+            .partition(|option| !option.base_language.is_empty());
+    (languages, language_variants)
 }
 
 pub(crate) fn max_layers_for_media(all_media_types: &[EditMediaTypeRow], code: &str) -> u32 {
@@ -1019,11 +1055,19 @@ async fn edit_page(
             .bind(id)
             .fetch_all(&state.pool)
             .await?;
-    let disc_lang_codes: Vec<String> =
-        sqlx::query_scalar("SELECT language_code FROM disc_languages WHERE disc_id = $1")
-            .bind(id)
-            .fetch_all(&state.pool)
-            .await?;
+    let disc_lang_codes: Vec<String> = sqlx::query_scalar(
+        "SELECT TRIM(language_code)::TEXT AS code FROM disc_languages WHERE disc_id = $1
+         UNION ALL
+         SELECT TRIM(l.code)::TEXT || '-' || TRIM(lv.code)::TEXT
+         FROM disc_language_variants dlv
+         JOIN language_variants lv
+           ON lv.language_code = dlv.language_code AND lv.code = dlv.variant_code
+         JOIN languages l ON l.code = lv.language_code
+         WHERE dlv.disc_id = $1",
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
 
     let (systems_media_json, systems_has_flags_json) = build_systems_json(&ref_data.all_systems);
     let media_layers_json = build_media_layers_json(&ref_data.all_media_types);
@@ -1104,6 +1148,7 @@ async fn edit_page(
         detail.disc.disc_title.as_deref(),
         detail.disc.filename_suffix.as_deref(),
     );
+    let (languages, language_variants) = build_language_option_groups(&ref_data.all_languages, &disc_lang_codes);
 
     Ok(Html(
         DiscEditTemplate {
@@ -1124,7 +1169,8 @@ async fn edit_page(
             ),
             tags: build_tag_options(&ref_data.all_tags, &detail.tags),
             regions: build_check_options(&ref_data.all_regions, &disc_region_codes),
-            languages: build_lang_check_options(&ref_data.all_languages, &disc_lang_codes),
+            languages,
+            language_variants,
 
             system_code: detail.disc.system_code.clone(),
             media_type_code: detail.disc.media_type.code().to_string(),
@@ -2012,6 +2058,7 @@ async fn render_form_with_context(
         form.disc_title.as_deref(),
         form.filename_suffix.as_deref(),
     );
+    let (languages, language_variants) = build_language_option_groups(&ref_data.all_languages, &form.languages);
 
     let template = DiscEditTemplate {
         current_user: Some(current_user.clone()),
@@ -2041,7 +2088,8 @@ async fn render_form_with_context(
         },
         tags: build_tag_options(&ref_data.all_tags, &form.tags),
         regions: build_check_options(&ref_data.all_regions, &form.regions),
-        languages: build_lang_check_options(&ref_data.all_languages, &form.languages),
+        languages,
+        language_variants,
 
         system_code: form.system_code.clone(),
         media_type_code: form.media_type.clone(),
@@ -2930,6 +2978,7 @@ async fn add_page(
     let max_layers = max_layers_for_media(&ref_data.all_media_types, &media_type_code);
     let show_error_count = false;
     let show_pic = false;
+    let (languages, language_variants) = build_language_option_groups(&ref_data.all_languages, &[]);
 
     Ok(Html(
         DiscEditTemplate {
@@ -2948,7 +2997,8 @@ async fn add_page(
             categories: build_add_category_options(&ref_data.all_categories, ""),
             tags: build_tag_options(&ref_data.all_tags, &[]),
             regions: build_check_options(&ref_data.all_regions, &[]),
-            languages: build_lang_check_options(&ref_data.all_languages, &[]),
+            languages,
+            language_variants,
 
             system_code,
             media_type_code,
@@ -3528,7 +3578,7 @@ pub(crate) fn build_flat_changes(
             Vec::new()
         };
     let new_regions = norm_str_vec(form.regions.clone());
-    let new_languages = norm_str_vec(form.languages.clone());
+    let new_languages = disc_service::include_base_languages(form.languages.clone());
     let mut new_tags = norm_str_vec(form.tags.clone());
     new_tags.sort_by(|a, b| {
         a.to_lowercase()
@@ -4656,6 +4706,7 @@ mod operation_delta_tests {
             name: code.to_string(),
             flag_code: code.to_string(),
             sort_order: 0,
+            base_code: None,
         }
     }
 
@@ -6041,7 +6092,7 @@ mod operation_delta_tests {
         );
         assert_eq!(
             changes["languages"],
-            serde_json::json!({ "add": ["en", "ja", "en"] })
+            serde_json::json!({ "add": ["en", "ja"] })
         );
         assert_eq!(
             changes["serial"],

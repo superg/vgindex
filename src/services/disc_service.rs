@@ -937,6 +937,30 @@ async fn enrich_media_type(pool: &PgPool, disc: &mut Disc) -> AppResult<()> {
     Ok(())
 }
 
+pub(crate) fn include_base_languages(language_codes: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for code in language_codes
+        .into_iter()
+        .map(|code| code.trim().to_string())
+        .filter(|code| !code.is_empty())
+    {
+        if let Some((base, variant)) = code.split_once('-') {
+            if !base.is_empty()
+                && !variant.is_empty()
+                && !normalized
+                    .iter()
+                    .any(|selected: &String| selected.as_str() == base)
+            {
+                normalized.push(base.to_string());
+            }
+        }
+        if !normalized.iter().any(|selected| selected == &code) {
+            normalized.push(code);
+        }
+    }
+    normalized
+}
+
 pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetail> {
     let mut disc: Disc = sqlx::query_as("SELECT * FROM discs WHERE id = $1")
         .bind(disc_id)
@@ -957,9 +981,19 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
     .await?;
 
     let languages: Vec<Language> = sqlx::query_as(
-        "SELECT l.* FROM languages l
+        "SELECT TRIM(l.code)::TEXT AS code, l.name, l.flag_code, l.sort_order, NULL::TEXT AS base_code
+         FROM languages l
          JOIN disc_languages dl ON dl.language_code = l.code
-         WHERE dl.disc_id = $1 ORDER BY l.sort_order",
+         WHERE dl.disc_id = $1
+         UNION ALL
+         SELECT TRIM(l.code)::TEXT || '-' || TRIM(lv.code)::TEXT AS code,
+                lv.name, lv.flag_code, l.sort_order, TRIM(l.code)::TEXT AS base_code
+         FROM language_variants lv
+         JOIN disc_language_variants dlv
+           ON dlv.language_code = lv.language_code AND dlv.variant_code = lv.code
+         JOIN languages l ON l.code = lv.language_code
+         WHERE dlv.disc_id = $1
+         ORDER BY sort_order, code",
     )
     .bind(disc_id)
     .fetch_all(pool)
@@ -1356,18 +1390,40 @@ pub async fn update_disc(
         .bind(disc_id)
         .execute(&mut *conn)
         .await?;
+    sqlx::query("DELETE FROM disc_language_variants WHERE disc_id = $1")
+        .bind(disc_id)
+        .execute(&mut *conn)
+        .await?;
     if let Some(langs) = data["languages"].as_array() {
-        for l in langs {
-            if let Some(lcode) = l.as_str() {
-                sqlx::query(
-                    "INSERT INTO disc_languages (disc_id, language_code) VALUES ($1, $2)
-                     ON CONFLICT DO NOTHING",
-                )
-                .bind(disc_id)
-                .bind(lcode)
-                .execute(&mut *conn)
-                .await?;
+        let mut language_codes = Vec::new();
+        let mut variant_codes = Vec::new();
+        for code in langs.iter().filter_map(|lang| lang.as_str()) {
+            if let Some((language_code, variant_code)) = code.split_once('-') {
+                variant_codes.push((language_code.to_string(), variant_code.to_string()));
+            } else {
+                language_codes.push(code.to_string());
             }
+        }
+        for lcode in language_codes {
+            sqlx::query(
+                "INSERT INTO disc_languages (disc_id, language_code) VALUES ($1, $2)
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(disc_id)
+            .bind(lcode)
+            .execute(&mut *conn)
+            .await?;
+        }
+        for (language_code, variant_code) in variant_codes {
+            sqlx::query(
+                "INSERT INTO disc_language_variants (disc_id, language_code, variant_code)
+                 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            )
+            .bind(disc_id)
+            .bind(language_code)
+            .bind(variant_code)
+            .execute(&mut *conn)
+            .await?;
         }
     }
 
