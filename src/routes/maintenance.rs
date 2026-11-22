@@ -886,7 +886,10 @@ async fn save_language_variants(
             )
         })
         .collect();
-    let existing_keys: HashSet<(String, String)> = existing_by_key.keys().cloned().collect();
+    let existing_keys: HashSet<(String, String)> = existing_by_key
+        .keys()
+        .map(|(language_code, code)| (language_code.to_lowercase(), code.to_lowercase()))
+        .collect();
     let mut submitted_keys = HashSet::new();
     let mut original_keys = HashSet::new();
     let mut errors = Vec::new();
