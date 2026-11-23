@@ -141,7 +141,10 @@ FROM discs d
 CROSS JOIN LATERAL unnest(d.edition) AS e(edition)
 WHERE d.status <> 'Disabled'
   AND btrim(e.edition) <> ''
-GROUP BY d.system_code, btrim(e.edition)";
+GROUP BY d.system_code, btrim(e.edition)
+HAVING COUNT(DISTINCT d.id) >= $1";
+
+const MIN_EDITION_SUGGESTION_USAGE: i64 = 5;
 
 fn to_lf_newlines(s: &str) -> String {
     s.replace("\r\n", "\n").replace('\r', "\n")
@@ -219,16 +222,19 @@ pub(crate) fn parse_ss_extras(text: &str) -> Result<Vec<DiscExtra>, String> {
             return Err(format!("line {row}: '{name}' has an unsupported extension"));
         };
         let size: Option<i64> = extract_attr(line, "size").and_then(|s| s.parse().ok());
-        if size != Some(extra_type.size) {
-            return Err(format!(
-                "line {row}: .{} size must be {}",
-                extra_type.extension, extra_type.size
-            ));
+        if let Some(expected_size) = extra_type.size {
+            if size != Some(expected_size) {
+                return Err(format!(
+                    "line {row}: .{} size must be {}",
+                    extra_type.extension, expected_size
+                ));
+            }
         }
+        let size = size.ok_or_else(|| format!("line {row}: size must be a non-negative integer"))?;
         let hash = |attr: &str| extract_attr(line, attr).unwrap_or_default().to_ascii_lowercase();
         let extra = DiscExtra {
             file_type: extra_type.extension.to_string(),
-            size: extra_type.size,
+            size,
             crc32: hash("crc"),
             md5: hash("md5"),
             sha1: hash("sha1"),
@@ -265,7 +271,7 @@ pub(crate) fn format_extras_lines(extras: &[DiscExtra]) -> Vec<String> {
     extras
         .iter()
         .map(|e| {
-            let name = if crate::services::validation::is_cd_extra_type(&e.file_type) {
+            let name = if crate::services::validation::is_cd_track_extra_type(&e.file_type) {
                 format!("Track {}.bin", e.file_type)
             } else {
                 format!("extra.{}", e.file_type)
@@ -286,9 +292,13 @@ pub(crate) fn parse_cd_extras(text: &str, normal_track_count: usize) -> Vec<Disc
             continue;
         }
         let name = extract_attr(line, "name").expect("CD extras were validated");
-        let track = crate::services::validation::extract_cd_extra_track(&name)
-            .expect("CD extra track was validated");
-        let track = canonical_cd_extra_type(&track, normal_track_count);
+        let extra_type = crate::services::validation::extract_cd_extra_type(&name)
+            .expect("CD extra type was validated");
+        let file_type = if crate::services::validation::is_cd_track_extra_type(&extra_type) {
+            canonical_cd_extra_type(&extra_type, normal_track_count)
+        } else {
+            extra_type
+        };
         let size = extract_attr(line, "size")
             .and_then(|value| value.parse::<i64>().ok())
             .expect("CD extra size was validated");
@@ -298,7 +308,7 @@ pub(crate) fn parse_cd_extras(text: &str, normal_track_count: usize) -> Vec<Disc
                 .to_ascii_lowercase()
         };
         extras.push(DiscExtra {
-            file_type: track,
+            file_type,
             size,
             crc32: hash("crc"),
             md5: hash("md5"),
@@ -352,7 +362,7 @@ pub(crate) fn name_extras<'a>(
         .map(|e| {
             let shared = primary != Some(e)
                 && extras.iter().filter(|o| o.file_type == e.file_type).count() > 1;
-            let name = if crate::services::validation::is_cd_extra_type(&e.file_type) {
+            let name = if crate::services::validation::is_cd_track_extra_type(&e.file_type) {
                 format!("{base_name} (Track {}).bin", e.file_type)
             } else if shared {
                 format!("{base_name} ({}).{}", e.crc32, e.file_type)
@@ -587,6 +597,7 @@ pub(crate) async fn fetch_edition_suggestion_map(
     pool: &PgPool,
 ) -> AppResult<BTreeMap<String, Vec<String>>> {
     let usage_counts: Vec<EditionUsageCount> = sqlx::query_as(EDITION_USAGE_COUNTS_SQL)
+        .bind(MIN_EDITION_SUGGESTION_USAGE)
         .fetch_all(pool)
         .await?;
 
@@ -600,7 +611,7 @@ pub(crate) fn build_edition_suggestion_map(
 
     for usage in usage_counts {
         let edition = usage.edition.trim();
-        if edition.is_empty() || usage.edition_count <= 0 {
+        if edition.is_empty() {
             continue;
         }
         grouped
@@ -1648,9 +1659,8 @@ pub async fn update_disc(
             .unwrap_or_default();
         let extras = if capabilities.has_extras && capabilities.media_is_cd {
             // Leadin/Leadout tracks
-            let cue_sessions = crate::services::validation::cuesheet_session_numbers(cue.as_deref().unwrap_or(""));
-            crate::services::validation::validate_cd_extras(&extras_text, &cue_sessions)
-                .map_err(|error| AppError::BadRequest(format!("Extras: {error}")))?;
+            crate::services::validation::validate_cd_extras(&extras_text, cue.as_deref().unwrap_or(""))
+            .map_err(|error| AppError::BadRequest(format!("Extras: {error}")))?;
             Ok(parse_cd_extras(&extras_text, normal_track_count))
         } else if capabilities.has_ss {
             // XGD extras
