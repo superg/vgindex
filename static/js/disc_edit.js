@@ -44,12 +44,16 @@ function attachEditionSelector(input) {
     if (!select || !select.classList || !select.classList.contains('edition-suggestion-select')) {
         select = document.createElement('select');
         select.className = 'edition-suggestion-select';
-        select.setAttribute('aria-label', 'Choose edition');
+        select.setAttribute('aria-label', 'Choose edition suggestion');
+        select.title = 'For large lists, type in the edition field to filter suggestions.';
         select.tabIndex = 0;
         group.appendChild(select);
     }
 
     populateEditionSelect(select);
+    input.addEventListener('input', function () {
+        populateEditionSelectForInput(select);
+    });
     select.addEventListener('change', function () {
         var selectedEdition = select.value;
         if (!selectedEdition) return;
@@ -81,26 +85,50 @@ function currentSystemEditionSuggestions() {
     return EDITION_SUGGESTIONS[sysSel.value] || [];
 }
 
+var MAX_EDITION_SELECT_OPTIONS = 200;
+
 function populateEditionSelect(select) {
+    populateEditionSelectOptions(select, false);
+}
+
+function populateEditionSelectForInput(select) {
+    populateEditionSelectOptions(select, true);
+}
+
+function populateEditionSelectOptions(select, filterByInput) {
     if (!select) return;
 
-    select.innerHTML = '';
+    var options = document.createDocumentFragment();
+    var suggestions = currentSystemEditionSuggestions();
+    var visibleSuggestions = suggestions;
+    if (suggestions.length > MAX_EDITION_SELECT_OPTIONS) {
+        var group = select.closest('.edition-value-picker');
+        var input = group && group.querySelector('input[name="edition"]');
+        var query = filterByInput && input ? input.value.trim().toLowerCase() : '';
+        visibleSuggestions = [];
+        for (var i = 0; i < suggestions.length; i++) {
+            if (!query || suggestions[i].toLowerCase().indexOf(query) !== -1) {
+                visibleSuggestions.push(suggestions[i]);
+                if (visibleSuggestions.length === MAX_EDITION_SELECT_OPTIONS) break;
+            }
+        }
+    }
 
     var blank = document.createElement('option');
     blank.value = '';
     blank.textContent = '';
-    select.appendChild(blank);
+    options.appendChild(blank);
 
-    var suggestions = currentSystemEditionSuggestions();
-    for (var i = 0; i < suggestions.length; i++) {
-        var edition = suggestions[i];
+    for (var j = 0; j < visibleSuggestions.length; j++) {
+        var edition = visibleSuggestions[j];
         var option = document.createElement('option');
         option.value = edition;
         option.textContent = edition;
-        select.appendChild(option);
+        options.appendChild(option);
     }
 
-    select.value = '';
+    select.replaceChildren(options);
+    select.selectedIndex = 0;
 }
 
 function initEditionSelectors() {
@@ -225,6 +253,57 @@ function initFlagListToggle() {
         setFlagListExpanded(showAll);
         saveFlagListPreference(showAll);
     });
+}
+
+function initLanguageVariantSelection() {
+    var languageGroup = document.querySelector('.flag-select-languages');
+    if (!languageGroup) return;
+
+    var checkboxes = Array.from(
+        languageGroup.querySelectorAll('input[type="checkbox"][name="languages"]')
+    );
+    function syncBaseLanguage(baseLanguage) {
+        var baseInput = checkboxes.find(function (input) {
+            return !input.dataset.baseLanguage && input.value === baseLanguage;
+        });
+        if (!baseInput) return;
+
+        var hasSelectedVariant = checkboxes.some(function (input) {
+            return input.dataset.baseLanguage === baseLanguage && input.checked;
+        });
+        var baseSubmitInput = Array.from(
+            languageGroup.querySelectorAll('[data-language-base-submit]')
+        ).find(function (input) {
+            return input.dataset.languageBaseSubmit === baseLanguage;
+        });
+
+        if (hasSelectedVariant) {
+            baseInput.checked = true;
+            baseInput.disabled = true;
+            if (!baseSubmitInput) {
+                baseSubmitInput = document.createElement('input');
+                baseSubmitInput.type = 'hidden';
+                baseSubmitInput.name = 'languages';
+                baseSubmitInput.value = baseLanguage;
+                baseSubmitInput.dataset.languageBaseSubmit = baseLanguage;
+                languageGroup.appendChild(baseSubmitInput);
+            }
+        } else {
+            baseInput.disabled = false;
+            if (baseSubmitInput) baseSubmitInput.remove();
+        }
+    }
+
+    languageGroup.addEventListener('change', function (event) {
+        var input = event.target;
+        if (!input.matches('input[type="checkbox"][name="languages"][data-base-language]')) return;
+        syncBaseLanguage(input.dataset.baseLanguage);
+    });
+
+    Array.from(new Set(checkboxes
+        .map(function (input) { return input.dataset.baseLanguage; })
+        .filter(Boolean)))
+        .forEach(syncBaseLanguage);
 }
 
 // Vertical repeatable array field (layerbreaks)
@@ -1966,6 +2045,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initEditionSelectors();
     initSubmitAsSelector();
     initFlagListToggle();
+    initLanguageVariantSelection();
     initTransliterate();
     initDumpLogFill();
     initDumpLogDragDrop();
