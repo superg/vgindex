@@ -2255,7 +2255,7 @@ fn format_sbi_contents(sector: u32, qdata: &[u8]) -> String {
         if b == expected_byte {
             parts.push(hex);
         } else {
-            parts.push(format!(r#"<span style="color: #ff0000;">{}</span>"#, hex));
+            parts.push(format!(r#"<span class="sbi-highlight">{}</span>"#, hex));
         }
     }
     parts.join(" ")
@@ -2994,17 +2994,59 @@ mod tests {
         let template = include_str!("../../templates/disc_view.html");
 
         assert!(template.contains(r#"<td class="entry-num ring-entry-cell""#));
-        assert!(template.contains(r#"<td class="ring-fixed-cell ring-entry-cell""#));
-        assert!(template.contains(r#"<td class="ring-entry-cell""#));
+        assert!(template.contains(r#"<td class="ring-fixed-cell ring-entry-cell ring-offset""#));
+        assert!(template.contains(r#"<td class="ring-entry-cell ring-sample-start""#));
         assert!(template
             .contains(r#"<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>"#));
         assert!(
-            template.contains(r#"<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>"#)
+            template.contains(r#"<td class="ring-fixed-cell ring-mastering-code">{% if !row.mastering_code.is_empty() %}<span class="ring-value">{{ row.mastering_code|safe }}</span>{% endif %}</td>"#)
         );
         assert!(!template.contains(r#"<td class="ring-layer-col ring-entry-cell""#));
         assert!(!template.contains(
             r#"<td class="ring-fixed-cell ring-entry-cell">{{ row.mastering_code|safe }}</td>"#
         ));
+    }
+
+    #[test]
+    fn ring_values_render_in_one_wrapper_with_their_tab_markers() {
+        let mut template = disc_view_template();
+        template.ring_rows = vec![ViewRingRow {
+            entry_num: 1,
+            layer: "L0".to_string(),
+            mastering_code: ring_tab_replace("ABC-123 1A2\t++ DADC"),
+            mastering_sid: "IFPI L553".to_string(),
+            mould_sids: String::new(),
+            additional_moulds: String::new(),
+            toolstamps: ring_tab_replace("B1\tB2"),
+            offset: String::new(),
+            offset_extra: String::new(),
+            sample_data_start: String::new(),
+            comment: String::new(),
+            first_in_entry: true,
+            entry_even: false,
+            entry_rowspan: 1,
+        }];
+        template.ring_vis = RingColVis {
+            layer: true,
+            mastering_code: true,
+            mastering_sid: true,
+            mould_sids: true,
+            additional_moulds: false,
+            toolstamps: true,
+            offset: true,
+            offset_extra: false,
+            sample_data_start: false,
+            comment: false,
+        };
+
+        let html = template.render().unwrap();
+
+        assert!(html.contains(r#"<td class="ring-fixed-cell ring-mastering-code"><span class="ring-value">ABC-123 1A2<span class="ring-tab-marker" title="Tab"></span>++ DADC</span></td>"#));
+        assert!(html.contains(r#"<td class="ring-fixed-cell ring-toolstamps"><span class="ring-value">B1<span class="ring-tab-marker" title="Tab"></span>B2</span></td>"#));
+        assert!(html.contains(r#"<td class="ring-fixed-cell ring-mastering-sid"><span class="ring-value">IFPI L553</span></td>"#));
+        // Empty values leave the cell empty, so the phone card can hide the field
+        assert!(html.contains(r#"<td class="ring-fixed-cell ring-mould-sids"></td>"#));
+        assert!(html.contains(r#"<td class="ring-fixed-cell ring-entry-cell ring-offset"></td>"#));
     }
 
     #[test]
@@ -3060,11 +3102,11 @@ mod tests {
         let html = template.render().unwrap();
 
         assert!(
-            html.contains(r#"<td class="ring-fixed-cell ring-entry-cell" rowspan="2">+123</td>"#)
+            html.contains(r#"<td class="ring-fixed-cell ring-entry-cell ring-offset" rowspan="2"><span class="ring-value">+123</span></td>"#)
         );
-        assert!(html.contains(r#"<td class="ring-fixed-cell ring-entry-cell" rowspan="2">+4</td>"#));
-        assert!(html.contains(r#"<td class="ring-entry-cell" rowspan="2">+5678</td>"#));
-        assert!(html.contains(r#"<td class="ring-entry-cell" rowspan="2">Entry comment</td>"#));
+        assert!(html.contains(r#"<td class="ring-fixed-cell ring-entry-cell ring-offset-extra" rowspan="2"><span class="ring-value">+4</span></td>"#));
+        assert!(html.contains(r#"<td class="ring-entry-cell ring-sample-start" rowspan="2"><span class="ring-value">+5678</span></td>"#));
+        assert!(html.contains(r#"<td class="ring-entry-cell ring-comment" rowspan="2"><span class="ring-value">Entry comment</span></td>"#));
         assert_eq!(html.matches("+123").count(), 1);
         assert_eq!(html.matches("+4").count(), 1);
         assert_eq!(html.matches("+5678").count(), 1);

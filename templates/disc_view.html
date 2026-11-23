@@ -152,10 +152,11 @@
     </div>
 </div>
 
+<div class="disc-details">
 {% if show_tracks_table %}
 <section class="left-section detail-section">
     <h3>Tracks</h3>
-    <div class="table-scroll table-scroll-compact scroll-only">
+    <div class="table-scroll table-scroll-compact">
     <table class="disc-table striped table-nowrap tracks-table">
         <thead>
             <tr>
@@ -214,7 +215,7 @@
 
 <section class="left-section detail-section">
     <h3>Files</h3>
-    <div class="table-scroll table-scroll-compact scroll-only">
+    <div class="table-scroll table-scroll-compact">
     <table class="disc-table files-table">
         <thead>
             <tr>
@@ -240,7 +241,7 @@
 {% if !ring_rows.is_empty() %}
 <section class="left-section detail-section">
     <h3>Rings</h3>
-    <div class="table-scroll table-scroll-compact scroll-only">
+    <div class="table-scroll table-scroll-compact">
     <table class="disc-table ring-table">
         <colgroup>
             <col class="ring-entry-col">
@@ -266,22 +267,22 @@
             <tr class="{% if row.first_in_entry && row.entry_num > 1 %}ring-group-start{% endif %}{% if row.entry_even %} ring-entry-even{% endif %}">
                 {% if row.entry_rowspan > 0 %}<td class="entry-num ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.entry_num }}</td>{% endif %}
                 {% if ring_vis.layer %}<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>{% endif %}
-                {% if ring_vis.mastering_code %}<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>{% endif %}
-                {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell">{{ row.mastering_sid|safe }}</td>{% endif %}
-                {% if ring_vis.toolstamps %}<td class="ring-fixed-cell">{{ row.toolstamps|safe }}</td>{% endif %}
-                {% if ring_vis.mould_sids %}<td class="ring-fixed-cell">{{ row.mould_sids|safe }}</td>{% endif %}
-                {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell">{{ row.additional_moulds|safe }}</td>{% endif %}
+                {% if ring_vis.mastering_code %}<td class="ring-fixed-cell ring-mastering-code">{% if !row.mastering_code.is_empty() %}<span class="ring-value">{{ row.mastering_code|safe }}</span>{% endif %}</td>{% endif %}
+                {% if ring_vis.mastering_sid %}<td class="ring-fixed-cell ring-mastering-sid">{% if !row.mastering_sid.is_empty() %}<span class="ring-value">{{ row.mastering_sid|safe }}</span>{% endif %}</td>{% endif %}
+                {% if ring_vis.toolstamps %}<td class="ring-fixed-cell ring-toolstamps">{% if !row.toolstamps.is_empty() %}<span class="ring-value">{{ row.toolstamps|safe }}</span>{% endif %}</td>{% endif %}
+                {% if ring_vis.mould_sids %}<td class="ring-fixed-cell ring-mould-sids">{% if !row.mould_sids.is_empty() %}<span class="ring-value">{{ row.mould_sids|safe }}</span>{% endif %}</td>{% endif %}
+                {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell ring-additional-moulds">{% if !row.additional_moulds.is_empty() %}<span class="ring-value">{{ row.additional_moulds|safe }}</span>{% endif %}</td>{% endif %}
                 {% if ring_vis.offset %}
-                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell ring-offset"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{% if !row.offset.is_empty() %}<span class="ring-value">{{ row.offset }}</span>{% endif %}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.offset_extra %}
-                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset_extra }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell ring-offset-extra"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{% if !row.offset_extra.is_empty() %}<span class="ring-value">{{ row.offset_extra }}</span>{% endif %}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.sample_data_start %}
-                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.sample_data_start }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell ring-sample-start"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{% if !row.sample_data_start.is_empty() %}<span class="ring-value">{{ row.sample_data_start }}</span>{% endif %}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.comment %}
-                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.comment }}</td>{% endif %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell ring-comment"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{% if !row.comment.is_empty() %}<span class="ring-value">{{ row.comment }}</span>{% endif %}</td>{% endif %}
                 {% endif %}
             </tr>
             {% endfor %}
@@ -296,7 +297,7 @@
 <section class="left-section detail-section">
     <h3>PVD</h3>
     <div class="table-scroll table-scroll-compact">
-    <table class="table-nowrap binary-table">
+    <table class="table-nowrap binary-table pvd-table">
         <thead>
             <tr><th></th><th>Contents</th><th>Date</th><th>Time</th><th>GMT</th></tr>
         </thead>
@@ -304,7 +305,7 @@
             {% for row in pvd_rows %}
             <tr>
                 <td>{{ row.label }}</td>
-                <td><code>{{ row.hex_contents }}</code></td>
+                <td class="hex-bytes"><code>{{ row.hex_contents }}</code></td>
                 <td><code>{{ row.date }}</code></td>
                 <td><code>{{ row.time }}</code></td>
                 <td><code>{{ row.gmt }}</code></td>
@@ -320,7 +321,7 @@
 <section class="left-section detail-section">
     <h3>SBI</h3>
     <div class="table-scroll table-scroll-compact">
-    <table class="table-nowrap binary-table">
+    <table class="table-nowrap binary-table sbi-table">
         <thead>
             <tr><th>Sector</th><th>MSF</th><th>Contents</th><th>XOR</th></tr>
         </thead>
@@ -329,7 +330,7 @@
             <tr>
                 <td>{{ row.sector }}</td>
                 <td><code>{{ row.msf }}</code></td>
-                <td><code>{{ row.contents|safe }}</code></td>
+                <td class="hex-bytes"><code>{{ row.contents|safe }}</code></td>
                 <td><code>{{ row.xor }}</code></td>
             </tr>
             {% endfor %}
@@ -353,8 +354,8 @@
             {% for row in header_rows %}
             <tr>
                 <td><code>{{ row.offset }}</code></td>
-                <td><code>{{ row.hex_contents }}</code></td>
-                <td><code>{{ row.ascii }}</code></td>
+                <td class="hex-bytes"><code>{{ row.hex_contents }}</code></td>
+                <td class="hex-ascii"><code>{{ row.ascii }}</code></td>
             </tr>
             {% endfor %}
         </tbody>
@@ -367,7 +368,7 @@
 <section class="left-section detail-section">
     <h3>BCA Mastering Data</h3>
     <div class="table-scroll table-scroll-compact">
-    <table class="table-nowrap binary-table">
+    <table class="table-nowrap binary-table bca-mastering-table">
         <thead>
             <tr>
                 <th class="col-num">#</th>
@@ -422,8 +423,8 @@
                 {% for row in bca_rows %}
                 <tr>
                     <td><code>{{ row.offset }}</code></td>
-                    <td><code>{{ row.hex_contents }}</code></td>
-                    <td><code>{{ row.ascii }}</code></td>
+                    <td class="hex-bytes"><code>{{ row.hex_contents }}</code></td>
+                    <td class="hex-ascii"><code>{{ row.ascii }}</code></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -453,8 +454,8 @@
                 {% for row in pic_rows %}
                 <tr>
                     <td><code>{{ row.offset }}</code></td>
-                    <td><code>{{ row.hex_contents }}</code></td>
-                    <td><code>{{ row.ascii }}</code></td>
+                    <td class="hex-bytes"><code>{{ row.hex_contents }}</code></td>
+                    <td class="hex-ascii"><code>{{ row.ascii }}</code></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -471,8 +472,8 @@
             {% for row in pic_rows %}
             <tr>
                 <td><code>{{ row.offset }}</code></td>
-                <td><code>{{ row.hex_contents }}</code></td>
-                <td><code>{{ row.ascii }}</code></td>
+                <td class="hex-bytes"><code>{{ row.hex_contents }}</code></td>
+                <td class="hex-ascii"><code>{{ row.ascii }}</code></td>
             </tr>
             {% endfor %}
         </tbody>
@@ -485,7 +486,7 @@
 {% if !dmi_rows.is_empty() %}
 <section class="left-section detail-section dmi-section">
     {% if !dmi_placeholder_rows.is_empty() %}
-    <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-placeholder-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
+    <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-placeholder-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded);"></button></h3>
     <p class="binary-metadata"><strong>DMI Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     {% if show_xgd_type %}
     {% if !xbox_mid.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_ringcode.is_empty() %}XMID{% else %}XeMID{% endif %}</strong> <code>{{ xbox_mid }}</code></p>{% endif %}
@@ -501,15 +502,15 @@
             {% for row in dmi_rows.iter().take(0x80 - dmi_placeholder_rows.len()) %}
             <tr>
                 <td><code>{{ row.offset }}</code></td>
-                <td><code>{{ row.hex_contents }}</code></td>
-                <td><code>{{ row.ascii }}</code></td>
+                <td class="hex-bytes"><code>{{ row.hex_contents }}</code></td>
+                <td class="hex-ascii"><code>{{ row.ascii }}</code></td>
             </tr>
             {% endfor %}
             {% for row in dmi_placeholder_rows %}
             <tr class="dmi-placeholder-remainder" hidden>
                 <td><code>{{ row.offset }}</code></td>
-                <td><code>{{ row.hex_contents }}</code></td>
-                <td><code>{{ row.ascii }}</code></td>
+                <td class="hex-bytes"><code>{{ row.hex_contents }}</code></td>
+                <td class="hex-ascii"><code>{{ row.ascii }}</code></td>
             </tr>
             {% endfor %}
         </tbody>
@@ -517,7 +518,7 @@
     </div>
     {% if dmi_download_available %}<p><a href="/disc/{{ disc_id }}/dmi">Download DMI</a></p>{% endif %}
     {% else %}
-    <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
+    <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded);"></button></h3>
     <p class="binary-metadata"><strong>DMI Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     {% if show_xgd_type %}
     {% if !xbox_mid.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_ringcode.is_empty() %}XMID{% else %}XeMID{% endif %}</strong> <code>{{ xbox_mid }}</code></p>{% endif %}
@@ -531,10 +532,10 @@
         </thead>
         <tbody>
             {% for row in dmi_rows.iter().take(4) %}
-            <tr><td><code>{{ row.offset }}</code></td><td><code>{{ row.hex_contents }}</code></td><td><code>{{ row.ascii }}</code></td></tr>
+            <tr><td><code>{{ row.offset }}</code></td><td class="hex-bytes"><code>{{ row.hex_contents }}</code></td><td class="hex-ascii"><code>{{ row.ascii }}</code></td></tr>
             {% endfor %}
             {% for row in dmi_rows.iter().skip(4) %}
-            <tr class="dmi-remainder" hidden><td><code>{{ row.offset }}</code></td><td><code>{{ row.hex_contents }}</code></td><td><code>{{ row.ascii }}</code></td></tr>
+            <tr class="dmi-remainder" hidden><td><code>{{ row.offset }}</code></td><td class="hex-bytes"><code>{{ row.hex_contents }}</code></td><td class="hex-ascii"><code>{{ row.ascii }}</code></td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -569,7 +570,7 @@
 {% if !extras.is_empty() %}
 <section class="left-section detail-section">
     <h3>Extras</h3>
-    <div class="table-scroll table-scroll-compact scroll-only">
+    <div class="table-scroll table-scroll-compact">
     <table class="disc-table files-table">
         <thead>
             <tr>
@@ -593,6 +594,8 @@
 </section>
 {% endif %}
 
+</div>
+
 <div class="disc-bottom-actions">
     {% if can_edit %}
     <a href="/disc/{{ disc_id }}/edit" role="button">Edit</a>
@@ -603,112 +606,4 @@
 </div>
 
 </div>
-<script>
-(function() {
-    function refreshDetailSectionFit(wrapper, didOverflow) {
-        var section = wrapper.closest('.detail-section');
-        if (!section) return;
-        section.classList.toggle('table-fits', !didOverflow);
-        section.classList.toggle('table-overflows', didOverflow);
-    }
-
-    function alignFittingDetailSections() {
-        var discView = document.querySelector('.disc-view');
-        var hasOverflowingSection = !!document.querySelector('.disc-view .detail-section.table-overflows');
-        if (discView) {
-            discView.classList.toggle('has-overflowing-detail-sections', hasOverflowingSection);
-        }
-
-        var sections = Array.prototype.slice.call(document.querySelectorAll('.disc-view .detail-section.table-fits'));
-        if (!sections.length) return;
-
-        var maxWidth = 0;
-        sections.forEach(function(section) {
-            maxWidth = Math.max(maxWidth, Math.ceil(section.getBoundingClientRect().width));
-        });
-
-        sections.forEach(function(section) {
-            section.style.width = maxWidth + 'px';
-        });
-    }
-
-    function scaleBottomTables() {
-        document.querySelectorAll('.disc-view .detail-section .table-scroll:not(.scroll-only)').forEach(function(wrapper) {
-            var table = wrapper.querySelector('table');
-            if (!table) return;
-            var section = wrapper.closest('.detail-section');
-            if (section) {
-                section.classList.remove('table-fits');
-                section.classList.remove('table-overflows');
-                section.style.width = '';
-            }
-            table.style.transform = '';
-            table.style.transformOrigin = '';
-            var metadataRows = wrapper.closest('.detail-section')?.querySelectorAll('.binary-metadata') || [];
-            metadataRows.forEach(function(metadata) {
-                metadata.style.transform = '';
-                metadata.style.transformOrigin = '';
-                metadata.style.zoom = '';
-            });
-            wrapper.style.height = '';
-            wrapper.style.overflow = '';
-            wrapper.style.width = '';
-            var containerWidth = wrapper.clientWidth;
-            var tableWidth = table.scrollWidth;
-            // Tolerance avoids a false scrollbar from sub-pixel rounding of
-            // fixed-layout table widths.
-            if (tableWidth > containerWidth + 2 && containerWidth > 0) {
-                var scale = containerWidth / tableWidth;
-                table.style.transform = 'scale(' + scale + ')';
-                table.style.transformOrigin = 'top left';
-                metadataRows.forEach(function(metadata) {
-                    metadata.style.zoom = scale;
-                });
-                wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
-                wrapper.style.overflow = 'hidden';
-                refreshDetailSectionFit(wrapper, true);
-            } else {
-                refreshDetailSectionFit(wrapper, false);
-            }
-        });
-        document.querySelectorAll('.disc-view .detail-section .table-scroll.scroll-only').forEach(function(wrapper) {
-            var table = wrapper.querySelector('table');
-            if (!table) return;
-            var section = wrapper.closest('.detail-section');
-            if (section) {
-                section.classList.remove('table-fits');
-                section.classList.remove('table-overflows');
-                section.style.width = '';
-            }
-            wrapper.style.width = '';
-            var containerWidth = wrapper.clientWidth;
-            var tableWidth = table.scrollWidth;
-            // Tolerance avoids a false scrollbar from sub-pixel rounding of
-            // fixed-layout table widths.
-            refreshDetailSectionFit(wrapper, tableWidth > containerWidth + 2 && containerWidth > 0);
-            if (section && section.classList.contains('table-fits')) {
-                wrapper.style.width = tableWidth + 'px';
-            }
-        });
-        alignFittingDetailSections();
-        document.querySelectorAll('.dat-filename-scaler').forEach(function(wrapper) {
-            var p = wrapper.querySelector('.dat-filename');
-            if (!p) return;
-            p.style.transform = '';
-            p.style.transformOrigin = '';
-            wrapper.style.height = '';
-            var containerWidth = wrapper.clientWidth;
-            var contentWidth = p.scrollWidth;
-            if (contentWidth > containerWidth && containerWidth > 0) {
-                var scale = containerWidth / contentWidth;
-                p.style.transform = 'scale(' + scale + ')';
-                p.style.transformOrigin = 'top left';
-                wrapper.style.height = Math.ceil(p.offsetHeight * scale) + 'px';
-            }
-        });
-    }
-    scaleBottomTables();
-    window.addEventListener('resize', scaleBottomTables);
-})();
-</script>
 {% endblock %}

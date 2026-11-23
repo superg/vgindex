@@ -7,7 +7,6 @@
     <div class="home-data-column">
     <section class="home-recent-dumps">
         <h3>Recent Dumps</h3>
-        <div class="recent-dumps-scaler">
         <table class="recent-dumps">
             <thead>
                 <tr>
@@ -37,13 +36,11 @@
                 {% endif %}
             </tbody>
         </table>
-        </div>
         <p><a href="/discs?sort=added&amp;order=desc">More...</a></p>
     </section>
 
     <section class="home-recent-changes">
         <h3>Recent Changes</h3>
-        <div class="recent-changes-scaler">
         <table class="recent-dumps recent-changes">
             <thead>
                 <tr>
@@ -73,7 +70,6 @@
                 {% endif %}
             </tbody>
         </table>
-        </div>
         <p><a href="/discs?sort=modified&amp;order=desc">More...</a></p>
     </section>
     </div>
@@ -106,42 +102,4 @@
         {% endif %}
     </section>
 </div>
-<script>
-(function() {
-    var shouldScaleHomeTables = window.matchMedia('(max-width: 768px)');
-
-    function scaleHomeTables() {
-        document.querySelectorAll('.recent-dumps-scaler, .recent-changes-scaler').forEach(function(wrapper) {
-        var table = wrapper && wrapper.querySelector('table');
-        if (!table) return;
-        table.style.transform = '';
-        table.style.transformOrigin = '';
-        table.style.width = '';
-        wrapper.style.overflow = '';
-        wrapper.style.height = '';
-        if (!shouldScaleHomeTables.matches) {
-            return;
-        }
-        table.style.width = 'max-content';
-        var containerWidth = wrapper.clientWidth;
-        var tableWidth = table.scrollWidth;
-        var scale = 1;
-        if (tableWidth > containerWidth && containerWidth > 0) {
-            scale = containerWidth / tableWidth;
-            table.style.transform = 'scale(' + scale + ')';
-            table.style.transformOrigin = 'top left';
-            wrapper.style.height = Math.ceil(table.offsetHeight * scale) + 'px';
-            wrapper.style.overflow = 'hidden';
-        } else {
-            table.style.width = '100%';
-        }
-        });
-    }
-    document.addEventListener('DOMContentLoaded', scaleHomeTables);
-    window.addEventListener('resize', scaleHomeTables);
-    if (shouldScaleHomeTables.addEventListener) {
-        shouldScaleHomeTables.addEventListener('change', scaleHomeTables);
-    }
-})();
-</script>
 {% endblock %}
