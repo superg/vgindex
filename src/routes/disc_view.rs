@@ -31,6 +31,14 @@ fn format_added_timestamp(timestamp: Option<&DateTime<Utc>>) -> String {
     format_minute_timestamp(timestamp.filter(|timestamp| **timestamp != NO_ADDED_SENTINEL))
 }
 
+fn language_codes_for_rom_name(languages: &[Language]) -> Vec<String> {
+    languages
+        .iter()
+        .filter(|language| language.base_code.is_none())
+        .map(|language| language.code.clone())
+        .collect()
+}
+
 fn ring_tab_replace(s: &str) -> String {
     let escaped = s
         .replace('&', "&amp;")
@@ -762,7 +770,7 @@ async fn disc_view(
     let ring_rows = build_ring_rows(&sorted_entries, ring_display_layers);
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
-    let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
+    let language_codes = language_codes_for_rom_name(&detail.languages);
     let rom_extension = detail.disc.media_type.rom_extension();
     let rom_base_name = build_rom_base_name(
         &detail.disc.title,
@@ -1052,6 +1060,11 @@ async fn disc_view(
             lang_flags: detail
                 .languages
                 .iter()
+                .filter(|language| {
+                    !detail.languages.iter().any(|variant| {
+                        variant.base_code.as_deref() == Some(language.code.as_str())
+                    })
+                })
                 .map(|l| ViewFlag {
                     code: l.flag_code.trim().to_lowercase(),
                     region_code: String::new(),
@@ -2347,7 +2360,7 @@ async fn disc_cue_download(
         .ok_or(AppError::NotFound)?;
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
-    let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
+    let language_codes = language_codes_for_rom_name(&detail.languages);
     let rom_base_name = build_rom_base_name(
         &detail.disc.title,
         &region_names,
@@ -2396,7 +2409,7 @@ async fn disc_sbi_download(
     let buf = build_sbi_binary(&sbi_text);
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
-    let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
+    let language_codes = language_codes_for_rom_name(&detail.languages);
     let rom_base_name = build_rom_base_name(
         &detail.disc.title,
         &region_names,
@@ -2445,7 +2458,7 @@ async fn disc_lsd_download(
     let buf = build_lsd_binary(&sbi_text);
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
-    let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
+    let language_codes = language_codes_for_rom_name(&detail.languages);
     let rom_base_name = build_rom_base_name(
         &detail.disc.title,
         &region_names,
@@ -2500,7 +2513,7 @@ async fn disc_dmi_download(
     }
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
-    let language_codes: Vec<String> = detail.languages.iter().map(|l| l.code.clone()).collect();
+    let language_codes = language_codes_for_rom_name(&detail.languages);
     let rom_base_name = build_rom_base_name(
         &detail.disc.title,
         &region_names,

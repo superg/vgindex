@@ -347,12 +347,28 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
             <div class="flag-check-list">
             {% for lang in languages %}
                 <label class="flag-check{% if is_add_mode && !lang.common && !lang.selected %} flag-check-extra{% endif %}{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">
-                    <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}>
+                    <input type="checkbox" name="languages" value="{{ lang.value }}" {% if lang.selected %}checked{% endif %}{% if self.language_required_by_variant(lang.value.as_str()) %} disabled{% endif %}>
                     <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
                     <span>{{ lang.name }}</span>
                 </label>
+                {% if self.language_required_by_variant(lang.value.as_str()) %}
+                <input type="hidden" name="languages" value="{{ lang.value }}" data-language-base-submit="{{ lang.value }}">
+                {% endif %}
             {% endfor %}
             </div>
+            <details class="language-variant-details{% if is_add_mode && !self.has_selected_language_variants() %} flag-check-extra{% endif %}"{% if self.has_selected_language_variants() %} open{% endif %}>
+                <summary><span class="language-variant-summary">Language variants</span></summary>
+                <p class="language-variant-warning">Select variant only if it is specified (e.g. Dutch vs Flemish in-game)</p>
+                <div class="flag-check-list">
+                {% for lang in language_variants %}
+                    <label class="flag-check{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">
+                        <input type="checkbox" name="languages" value="{{ lang.value }}" data-base-language="{{ lang.base_language }}" {% if lang.selected %}checked{% endif %}>
+                        <img class="flag-icon" src="/static/flags/{{ lang.code }}.svg" title="{{ lang.name }}" alt="{{ lang.name }}">
+                        <span>{{ lang.name }}</span>
+                    </label>
+                {% endfor %}
+                </div>
+            </details>
             {% if self.has_annotations_for("languages") %}
             <div class="review-field-annotation review-field-annotation-combined">
                 {% for ann in self.annotations_for("languages") %}

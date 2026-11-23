@@ -1555,33 +1555,44 @@ nav[aria-label="Pagination"] ul {
 }
 
 /* Contents disclosure arrow — suppress Pico's float-right chevron, use inline arrow instead */
-.disc-view details > summary {
+.disc-view details > summary,
+.language-variant-details > summary {
     list-style: none;
     display: flex;
     align-items: center;
     width: fit-content;
-    margin: 0 auto;
     cursor: pointer;
 }
-.disc-view details > summary::-webkit-details-marker {
+.disc-view details > summary {
+    margin: 0 auto;
+}
+.language-variant-details > summary {
+    margin: 0;
+}
+.disc-view details > summary::-webkit-details-marker,
+.language-variant-details > summary::-webkit-details-marker {
     display: none;
 }
-.disc-view details > summary::marker {
+.disc-view details > summary::marker,
+.language-variant-details > summary::marker {
     content: '';
 }
 /* Hide Pico's ::after chevron */
-.disc-view details > summary::after {
+.disc-view details > summary::after,
+.language-variant-details > summary::after {
     display: none !important;
 }
-/* Custom arrow via ::before on the h3 inside summary */
-.disc-view details > summary h3::after {
-    content: ' ▶';
+/* Custom inline arrow after the summary text */
+.disc-view details > summary h3::after,
+.language-variant-summary::after {
+    content: '▶';
     font-size: 0.8em;
     margin-left: 0.3rem;
     display: inline-block;
     transition: transform 0.15s;
 }
-.disc-view details[open] > summary h3::after {
+.disc-view details[open] > summary h3::after,
+.language-variant-details[open] .language-variant-summary::after {
     transform: rotate(90deg);
 }
 
@@ -2807,7 +2818,8 @@ pre code {
     border: 0 !important;
 }
 .disc-edit label,
-.disc-edit fieldset legend {
+.disc-edit fieldset legend,
+.disc-edit .language-variant-details > summary {
     font-size: 0.75rem;
     font-weight: 600;
     margin-bottom: 0.25rem;
@@ -3021,6 +3033,17 @@ body:has(.disc-edit) footer.container hr {
 .flag-select-languages {
     border-left: 1px solid #d7e1ea;
     padding-left: 0.85rem;
+}
+.language-variant-details {
+    margin-top: 0.35rem;
+}
+.language-variant-warning {
+    margin: 0.25rem 0;
+    color: var(--pico-muted-color);
+    font-size: 0.72rem;
+}
+.language-variant-details[open] > .flag-check-list {
+    margin-top: 0.35rem;
 }
 [data-theme="dark"] .flag-select-languages {
     border-left-color: #2B3645;

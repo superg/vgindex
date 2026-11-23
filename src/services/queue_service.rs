@@ -1761,7 +1761,9 @@ async fn find_generated_name_conflict(
     }
 
     let regions = json_nonempty_strings(&effective_data["regions"]);
-    let languages = json_nonempty_strings(&effective_data["languages"]);
+    let languages = disc_service::include_base_languages(json_nonempty_strings(
+        &effective_data["languages"],
+    ));
     let region_names = selected_region_names(pool, &regions).await?;
     let language_codes = selected_language_codes(pool, &languages).await?;
     let proposed_name = generated_disc_name(

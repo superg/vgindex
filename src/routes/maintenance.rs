@@ -30,6 +30,7 @@ pub fn routes() -> Router<AppState> {
         .route("/maintenance/systems", post(save_systems))
         .route("/maintenance/regions", post(save_regions))
         .route("/maintenance/languages", post(save_languages))
+        .route("/maintenance/language-variants", post(save_language_variants))
         .route("/maintenance/tags", post(save_tag))
         .route("/maintenance/tags/{tag_id}/rename", post(rename_tag))
         .route("/maintenance/tags/{tag_id}/delete", post(delete_tag))
@@ -72,6 +73,7 @@ struct MaintenanceTemplate {
     system_rows: Vec<SystemEditorRow>,
     region_rows: Vec<LookupEditorRow>,
     language_rows: Vec<LookupEditorRow>,
+    language_variant_rows: Vec<LanguageVariantInput>,
     tag_rows: Vec<TagEditorRow>,
     flag_options: Vec<FlagOption>,
     system_input_sizes: SystemInputSizes,
@@ -693,6 +695,36 @@ struct LanguagesForm {
     languages_payload: String,
 }
 
+#[derive(Deserialize)]
+struct LanguageVariantsForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    language_variants_payload: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, sqlx::FromRow)]
+struct LanguageVariantInput {
+    #[serde(default)]
+    original_language_code: String,
+    #[serde(default)]
+    original_code: String,
+    #[serde(default)]
+    language_code: String,
+    #[serde(default)]
+    code: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    flag_code: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct LanguageVariantsPayload {
+    #[serde(default)]
+    rows: Vec<LanguageVariantInput>,
+}
+
 async fn save_systems(
     State(state): State<AppState>,
     RequireModerator(user): RequireModerator,
@@ -806,6 +838,285 @@ async fn save_languages(
         LookupTable::Languages,
     )
     .await
+}
+
+async fn save_language_variants(
+    State(state): State<AppState>,
+    RequireModerator(user): RequireModerator,
+    Form(form): Form<LanguageVariantsForm>,
+) -> AppResult<Response> {
+    csrf::verify_token(&user, &form.csrf_token)?;
+
+    let payload = match serde_json::from_str::<LanguageVariantsPayload>(
+        &form.language_variants_payload,
+    ) {
+        Ok(payload) => payload,
+        Err(err) => {
+            tracing::warn!("Failed to parse language variants maintenance payload: {err}");
+            return render_language_variants_error(
+                &state.pool,
+                user,
+                None,
+                vec!["Language variants form payload was invalid. Reload the page and try again.".to_string()],
+            )
+            .await;
+        }
+    };
+
+    let language_records = fetch_lookup_records(&state.pool, LookupTable::Languages).await?;
+    let language_codes: HashSet<String> = language_records
+        .iter()
+        .map(|language| language.code.trim().to_string())
+        .collect();
+    let existing_variants = fetch_language_variant_rows(&state.pool).await?;
+    let flag_codes: HashSet<String> = load_flag_options()?
+        .into_iter()
+        .map(|option| option.code)
+        .collect();
+    let existing_by_key: HashMap<(String, String), LanguageVariantInput> = existing_variants
+        .iter()
+        .filter(|variant| !variant.original_code.is_empty())
+        .map(|variant| {
+            (
+                (
+                    variant.original_language_code.clone(),
+                    variant.original_code.clone(),
+                ),
+                variant.clone(),
+            )
+        })
+        .collect();
+    let existing_keys: HashSet<(String, String)> = existing_by_key
+        .keys()
+        .map(|(language_code, code)| (language_code.to_lowercase(), code.to_lowercase()))
+        .collect();
+    let mut submitted_keys = HashSet::new();
+    let mut original_keys = HashSet::new();
+    let mut errors = Vec::new();
+    let mut rows = Vec::new();
+
+    for (index, row) in payload.rows.iter().enumerate() {
+        let original_language_code = row.original_language_code.trim().to_string();
+        let original_code = row.original_code.trim().to_string();
+        let language_code = row.language_code.trim().to_string();
+        let code = row.code.trim().to_string();
+        let name = row.name.trim().to_string();
+        let flag_code = row.flag_code.trim().to_string();
+        let is_existing = !original_language_code.is_empty() && !original_code.is_empty();
+        if !is_existing
+            && original_language_code.is_empty()
+            && original_code.is_empty()
+            && language_code.is_empty()
+            && code.is_empty()
+            && name.is_empty()
+            && flag_code.is_empty()
+        {
+            continue;
+        }
+
+        let label = if is_existing {
+            format!("Language variant {original_language_code}-{original_code}")
+        } else if code.is_empty() {
+            format!("New language variant row {}", index + 1)
+        } else {
+            format!("Language variant {language_code}-{code}")
+        };
+        if original_language_code.is_empty() != original_code.is_empty() {
+            errors.push(format!("{label}: original language and code must both be present."));
+        } else if is_existing {
+            let original_key = (original_language_code.clone(), original_code.clone());
+            if let Some(existing) = existing_by_key.get(&original_key) {
+                if language_code != existing.language_code {
+                    errors.push(format!(
+                        "{label}: the base language cannot be changed for an existing variant."
+                    ));
+                }
+            } else {
+                errors.push(format!("{label}: original variant does not exist."));
+            }
+            if !original_keys.insert(original_key) {
+                errors.push(format!("{label}: original variant is listed more than once."));
+            }
+        }
+        if !language_codes.contains(&language_code) {
+            errors.push(format!("{label}: base language must be selected."));
+        }
+        if code.is_empty() {
+            errors.push(format!("{label}: variant code is required."));
+        } else if code.chars().count() > 4 {
+            errors.push(format!("{label}: variant code must be 4 characters or fewer."));
+        } else if !code.chars().all(char::is_alphanumeric) {
+            errors.push(format!("{label}: variant code must contain only alphanumeric characters."));
+        }
+        if name.is_empty() {
+            errors.push(format!("{label}: name is required."));
+        } else if name.chars().count() > 32 {
+            errors.push(format!("{label}: name must be 32 characters or fewer."));
+        }
+        if flag_code.is_empty() {
+            errors.push(format!("{label}: flag_code is required."));
+        } else if !flag_codes.contains(&flag_code) {
+            errors.push(format!(
+                "{label}: flag_code {flag_code} does not match a static flag SVG."
+            ));
+        }
+
+        if !language_code.is_empty() && !code.is_empty() {
+            let key = (language_code.to_lowercase(), code.to_lowercase());
+            let original_key = (
+                original_language_code.to_lowercase(),
+                original_code.to_lowercase(),
+            );
+            let is_own_key = is_existing && original_key == key;
+            if existing_keys.contains(&key) && !is_own_key {
+                errors.push(format!("{label}: this variant already exists."));
+            }
+            if !submitted_keys.insert(key) {
+                errors.push(format!("{label}: this variant is listed more than once."));
+            }
+        }
+
+        rows.push(LanguageVariantInput {
+            original_language_code,
+            original_code,
+            language_code,
+            code,
+            name,
+            flag_code,
+        });
+    }
+
+    if !errors.is_empty() {
+        let mut editor_rows: Vec<LanguageVariantInput> = payload
+            .rows
+            .iter()
+            .map(|row| LanguageVariantInput {
+                original_language_code: row.original_language_code.trim().to_string(),
+                original_code: row.original_code.trim().to_string(),
+                language_code: row.language_code.trim().to_string(),
+                code: row.code.trim().to_string(),
+                name: row.name.trim().to_string(),
+                flag_code: row.flag_code.trim().to_string(),
+            })
+            .collect();
+        for row in &mut editor_rows {
+            if let Some(existing) = existing_by_key.get(&(
+                row.original_language_code.clone(),
+                row.original_code.clone(),
+            )) {
+                row.language_code = existing.language_code.clone();
+            }
+        }
+        if !editor_rows.iter().any(|row| row.original_code.is_empty()) {
+            editor_rows.push(LanguageVariantInput::default());
+        }
+        return render_language_variants_error(
+            &state.pool,
+            user,
+            Some(editor_rows),
+            errors,
+        )
+        .await;
+    }
+    if rows.is_empty() {
+        return Ok(redirect_with_message(
+            "languages",
+            "status",
+            "No language variant changes were made.",
+        ));
+    }
+
+    let mut tx = state.pool.begin().await?;
+    let mut saved = 0;
+    for row in &rows {
+        if !row.original_code.is_empty() {
+            let original_key = (
+                row.original_language_code.clone(),
+                row.original_code.clone(),
+            );
+            let existing = existing_by_key
+                .get(&original_key)
+                .expect("validated original variant exists");
+            if existing.language_code == row.language_code
+                && existing.code == row.code
+                && existing.name == row.name
+                && existing.flag_code == row.flag_code
+            {
+                continue;
+            }
+            sqlx::query(
+                "UPDATE language_variants
+                 SET code = $1, name = $2, flag_code = $3
+                 WHERE language_code = $4 AND code = $5",
+            )
+            .bind(&row.code)
+            .bind(&row.name)
+            .bind(&row.flag_code)
+            .bind(&row.original_language_code)
+            .bind(&row.original_code)
+            .execute(&mut *tx)
+            .await?;
+        } else {
+            sqlx::query(
+                "INSERT INTO language_variants (language_code, code, name, flag_code)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(&row.language_code)
+            .bind(&row.code)
+            .bind(&row.name)
+            .bind(&row.flag_code)
+            .execute(&mut *tx)
+            .await?;
+        }
+        saved += 1;
+    }
+    if saved == 0 {
+        tx.rollback().await?;
+        return Ok(redirect_with_message(
+            "languages",
+            "status",
+            "No language variant changes were made.",
+        ));
+    }
+    tx.commit().await?;
+
+    if let Err(err) = database_export_service::mark_export_dirty() {
+        tracing::error!("Failed to mark database export for language variants: {err}");
+        return Ok(redirect_with_message(
+            "languages",
+            "error",
+            "Language variants were saved, but the database export could not be marked for refresh.",
+        ));
+    }
+
+    Ok(redirect_with_message(
+        "languages",
+        "status",
+        &format!("Saved {saved} language variant change(s)."),
+    ))
+}
+
+async fn render_language_variants_error(
+    pool: &sqlx::PgPool,
+    user: AuthenticatedUser,
+    rows: Option<Vec<LanguageVariantInput>>,
+    errors: Vec<String>,
+) -> AppResult<Response> {
+    let template = build_maintenance_template(
+        pool,
+        user,
+        MaintenanceQuery {
+            tab: Some("languages".to_string()),
+            ..Default::default()
+        },
+        errors,
+        MaintenanceOverrides {
+            language_variant_rows: rows,
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok(Html(template.render().unwrap()).into_response())
 }
 
 #[derive(Deserialize)]
@@ -1591,6 +1902,7 @@ struct MaintenanceOverrides {
     system_rows: Option<Vec<SystemEditorRow>>,
     region_rows: Option<Vec<LookupEditorRow>>,
     language_rows: Option<Vec<LookupEditorRow>>,
+    language_variant_rows: Option<Vec<LanguageVariantInput>>,
     submission_editor: Option<MaintenanceSubmissionEditor>,
 }
 
@@ -1621,6 +1933,10 @@ async fn build_maintenance_template(
             let languages = fetch_lookup_records(pool, LookupTable::Languages).await?;
             build_lookup_editor_rows(&languages)
         }
+    };
+    let language_variant_rows = match overrides.language_variant_rows {
+        Some(rows) => rows,
+        None => fetch_language_variant_rows(pool).await?,
     };
     let tag_rows = if user.role.can_admin() {
         fetch_tag_editor_rows(pool).await?
@@ -1677,6 +1993,7 @@ async fn build_maintenance_template(
         system_rows,
         region_rows,
         language_rows,
+        language_variant_rows,
         tag_rows,
         flag_options,
         user_rows,
@@ -1694,6 +2011,7 @@ fn maintenance_template(
     mut system_rows: Vec<SystemEditorRow>,
     region_rows: Vec<LookupEditorRow>,
     language_rows: Vec<LookupEditorRow>,
+    language_variant_rows: Vec<LanguageVariantInput>,
     tag_rows: Vec<TagEditorRow>,
     flag_options: Vec<FlagOption>,
     user_rows: Vec<MaintenanceUser>,
@@ -1732,6 +2050,7 @@ fn maintenance_template(
         system_rows,
         region_rows,
         language_rows,
+        language_variant_rows,
         tag_rows,
         flag_options,
         system_input_sizes,
@@ -2273,6 +2592,24 @@ async fn fetch_lookup_records(
         }
     };
     Ok(sqlx::query_as(sql).fetch_all(pool).await?)
+}
+
+async fn fetch_language_variant_rows(
+    pool: &sqlx::PgPool,
+) -> AppResult<Vec<LanguageVariantInput>> {
+    let mut rows: Vec<LanguageVariantInput> = sqlx::query_as(
+        "SELECT TRIM(lv.language_code)::TEXT AS original_language_code,
+                TRIM(lv.code)::TEXT AS original_code,
+                TRIM(lv.language_code)::TEXT AS language_code,
+                TRIM(lv.code)::TEXT AS code, lv.name, lv.flag_code
+         FROM language_variants lv
+         JOIN languages l ON l.code = lv.language_code
+         ORDER BY l.sort_order, lv.code",
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.push(LanguageVariantInput::default());
+    Ok(rows)
 }
 
 async fn fetch_tag_editor_rows(pool: &sqlx::PgPool) -> AppResult<Vec<TagEditorRow>> {
@@ -3050,6 +3387,17 @@ async fn save_validated_lookup_rows(
             LookupSaveAction::Rename => {
                 let old_code = row.original_code.as_deref().unwrap_or_default();
                 insert_lookup_row(&mut tx, row, table).await?;
+                if table == LookupTable::Languages {
+                    sqlx::query(
+                        "UPDATE language_variants
+                         SET language_code = $1
+                         WHERE language_code = $2",
+                    )
+                    .bind(&row.code)
+                    .bind(old_code)
+                    .execute(&mut *tx)
+                    .await?;
+                }
                 sqlx::query(table.rename_junction_sql())
                     .bind(&row.code)
                     .bind(old_code)
@@ -3393,6 +3741,7 @@ mod tests {
             system_rows,
             region_rows,
             language_rows,
+            vec![LanguageVariantInput::default()],
             vec![TagEditorRow {
                 id: 1,
                 name: "Games".to_string(),
@@ -3580,7 +3929,7 @@ mod tests {
         assert_eq!(
             html.matches(r#"name="_csrf" value="test-csrf-token""#)
                 .count(),
-            9
+            10
         );
         assert!(html.contains(r#"action="/maintenance/systems""#));
         assert!(html.contains(r#"action="/maintenance/regions""#));
