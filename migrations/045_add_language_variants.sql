@@ -21,14 +21,14 @@ CREATE INDEX idx_disc_language_variants_variant_disc
 ON disc_language_variants (language_code, variant_code, disc_id);
 
 INSERT INTO language_variants (code, language_code, name, flag_code) VALUES
-    ('Hant', 'zh', 'Traditional Chinese', 'tw'),
-    ('Hans', 'zh', 'Simplified Chinese', 'cn'),
-    ('BR', 'pt', 'Brazilian Portuguese', 'br'),
-    ('PT', 'pt', 'European Portuguese', 'pt'),
-    ('419', 'es', 'Latin American Spanish', 'xl'),
-    ('ES', 'es', 'European Spanish', 'es'),
+    ('Hans', 'zh', 'Chinese (Simplified)', 'cn'),
+    ('Hant', 'zh', 'Chinese (Traditional)', 'tw'),
+    ('BE', 'nl', 'Dutch (Belgium)', 'be'),
     ('NL', 'nl', 'Dutch (Netherlands)', 'nl'),
-    ('BE', 'nl', 'Flemish', 'be'),
-    ('FR', 'fr', 'French (France)', 'fr'),
-    ('BE', 'fr', 'Belgian French', 'be'),
-    ('CA', 'fr', 'Canadian French', 'ca');
+    ('BR', 'pt', 'Portuguese (Brazil)', 'br'),
+    ('PT', 'pt', 'Portuguese (Portugal)', 'pt'),
+    ('419', 'es', 'Spanish (Latin America)', 'xl'),
+    ('ES', 'es', 'Spanish (Spain)', 'es'),
+    ('BE', 'fr', 'French (Belgium)', 'be'),
+    ('CA', 'fr', 'French (Canada)', 'ca'),
+    ('FR', 'fr', 'French (France)', 'fr');
