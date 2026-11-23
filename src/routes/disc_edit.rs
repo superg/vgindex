@@ -1666,8 +1666,7 @@ fn validate_form_with_options(
         let media_is_cd = media_code_is_cd(all_media_types, media_code);
         let parsed_extras = if system_has_extras && media_is_cd {
             // Leadin/Leadout extras
-            let cue_sessions = validation::cuesheet_session_numbers(form.cue.as_deref().unwrap_or(""));
-            validation::validate_cd_extras(text, &cue_sessions).map(|()| {
+            validation::validate_cd_extras(text, form.cue.as_deref().unwrap_or("")).map(|()| {
                 disc_service::parse_cd_extras(
                     text,
                     validation::dat_rom_count(form.files_xml.as_deref().unwrap_or("")),
@@ -3607,10 +3606,7 @@ pub(crate) fn build_flat_changes(
                     validation::dat_rom_count(form.files_xml.as_deref().unwrap_or(""));
                 let extras = if system_has_extras && media_is_cd {
                     // Leadin/Leadout tracks
-                    let cue_sessions = validation::cuesheet_session_numbers(
-                        form.cue.as_deref().unwrap_or(""),
-                    );
-                    validation::validate_cd_extras(&s, &cue_sessions).map(|()| {
+                    validation::validate_cd_extras(&s, form.cue.as_deref().unwrap_or("")).map(|()| {
                         disc_service::parse_cd_extras(&s, normal_track_count)
                     })
                 } else if media_has_ss {

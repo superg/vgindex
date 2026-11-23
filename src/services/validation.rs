@@ -99,17 +99,24 @@ pub fn media_allows_bca_mastering(media_code: &str) -> bool {
 
 pub struct ExtraFileType {
     pub extension: &'static str,
-    pub size: i64,
+    pub size: Option<i64>,
     pub max_count: Option<usize>,
 }
 
 pub fn dvd_extra_file_types() -> &'static [ExtraFileType] {
     const DVD_EXTRAS: &[ExtraFileType] = &[
-        ExtraFileType { extension: "dmi", size: 2048, max_count: None },
-        ExtraFileType { extension: "pfi", size: 2048, max_count: Some(1) },
-        ExtraFileType { extension: "ss", size: 2048, max_count: None },
+        ExtraFileType { extension: "dmi", size: Some(2048), max_count: None },
+        ExtraFileType { extension: "pfi", size: Some(2048), max_count: Some(1) },
+        ExtraFileType { extension: "ss", size: Some(2048), max_count: None },
     ];
     DVD_EXTRAS
+}
+
+pub fn cd_extra_file_types() -> &'static [ExtraFileType] {
+    const CD_EXTRAS: &[ExtraFileType] = &[
+        ExtraFileType { extension: "cdg", size: None, max_count: Some(1) },
+    ];
+    CD_EXTRAS
 }
 
 pub fn normalize_bca_mastering_input(input: &str) -> String {
@@ -415,6 +422,38 @@ pub fn cuesheet_has_only_audio_tracks(text: &str) -> bool {
     found_track
 }
 
+fn cuesheet_session_has_only_audio_tracks(text: &str, session_number: u32) -> bool {
+    if validate_cuesheet(text).is_err() {
+        return false;
+    }
+
+    let mut tracks_by_session: std::collections::HashMap<u32, Vec<bool>> = std::collections::HashMap::new();
+    let mut current_session = 1;
+    for line in text.lines() {
+        let line = line.trim();
+        if is_cue_session_line(line) {
+            let Some(session_number) = line
+                .strip_prefix("REM SESSION ")
+                .and_then(|number| number.parse::<u32>().ok())
+            else {
+                return false;
+            };
+            current_session = session_number;
+            continue;
+        }
+        if let Some((_number, mode)) = parse_cue_track_line(line) {
+            tracks_by_session
+                .entry(current_session)
+                .or_default()
+                .push(mode == "AUDIO");
+        }
+    }
+
+    tracks_by_session
+        .get(&session_number)
+        .is_some_and(|tracks| !tracks.is_empty() && tracks.iter().all(|is_audio| *is_audio))
+}
+
 pub fn cuesheet_is_enhanced_cd(text: &str) -> bool {
     if validate_cuesheet(text).is_err() {
         return false;
@@ -583,8 +622,10 @@ pub fn dat_rom_count(text: &str) -> usize {
         .count()
 }
 
-pub fn validate_cd_extras(text: &str, cue_sessions: &[u32]) -> Result<(), String> {
+pub fn validate_cd_extras(text: &str, cue_text: &str) -> Result<(), String> {
+    let cue_sessions = cuesheet_session_numbers(cue_text);
     let mut track_keys = std::collections::HashSet::new();
+    let mut file_type_counts = std::collections::HashMap::new();
     for (index, line) in text.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() {
@@ -592,45 +633,97 @@ pub fn validate_cd_extras(text: &str, cue_sessions: &[u32]) -> Result<(), String
         }
         let row = index + 1;
         let name = validate_rom_line(line, row)?;
-        let Some(track) = extract_cd_extra_track(&name) else {
+        let Some(extra_type) = extract_cd_extra_type(&name) else {
             return Err(format!(
-                "line {row}: '{name}' must be a lead-in or lead-out track name ending in .bin"
+                "line {row}: '{name}' must be a lead-in or lead-out track name ending in .bin, or be a .cdg file"
             ));
         };
-        let session = track
-            .split_once('.')
-            .map(|(_, session)| session);
-        if cue_sessions.len() > 1 {
-            let Some(session_suffix) = session else {
+        let size = dat_extract_attr(line, "size").and_then(|value| value.parse::<i64>().ok());
+
+        if is_cd_track_extra_type(&extra_type) {
+            let session = extra_type.split_once('.').map(|(_, session)| session);
+            let session_number = if cue_sessions.len() > 1 {
+                let Some(session_suffix) = session else {
+                    return Err(format!(
+                        "line {row}: a session suffix is required because the CUE has multiple sessions"
+                    ));
+                };
+                let session_number = session_suffix
+                    .parse::<u32>()
+                    .map_err(|_| format!("line {row}: invalid CUE session suffix"))?;
+                if !cue_sessions.contains(&session_number) {
+                    return Err(format!(
+                        "line {row}: session suffix .{session_number} is not present in the CUE"
+                    ));
+                }
+                Some(session_number)
+            } else if session.is_some() {
                 return Err(format!(
-                    "line {row}: a session suffix is required because the CUE has multiple sessions"
+                    "line {row}: a session suffix is only allowed when the CUE has multiple sessions"
                 ));
+            } else {
+                None
             };
-            let session_number = session_suffix
-                .parse::<u32>()
-                .map_err(|_| format!("line {row}: invalid CUE session suffix"))?;
-            if !cue_sessions.contains(&session_number) {
+
+            let session_is_audio_only = session_number.map_or_else(
+                || cuesheet_has_only_audio_tracks(cue_text),
+                |session_number| cuesheet_session_has_only_audio_tracks(cue_text, session_number),
+            );
+            if !session_is_audio_only {
                 return Err(format!(
-                    "line {row}: session suffix .{session_number} is not present in the CUE"
+                    "line {row}: track lead-in/lead-out hashes are only allowed for sessions containing only audio tracks"
                 ));
             }
-        } else if session.is_some() {
-            return Err(format!(
-                "line {row}: a session suffix is only allowed when the CUE has multiple sessions"
-            ));
+
+            if !track_keys.insert(extra_type.clone()) {
+                return Err(format!("line {row}: duplicate track '{extra_type}'"));
+            }
+        } else {
+            let type_info = cd_extra_file_types()
+                .iter()
+                .find(|file_type| file_type.extension == extra_type)
+                .expect("CD extra type was validated");
+            if let Some(expected_size) = type_info.size {
+                if size != Some(expected_size) {
+                    return Err(format!(
+                        "line {row}: .{} size must be {expected_size}",
+                        type_info.extension
+                    ));
+                }
+            }
+            let count = file_type_counts.entry(extra_type.clone()).or_insert(0);
+            *count += 1;
+            if let Some(max) = type_info.max_count.filter(|max| *count > *max) {
+                return Err(format!(
+                    "line {row}: at most {max} .{} file(s) allowed",
+                    type_info.extension
+                ));
+            }
         }
 
-        if !track_keys.insert(track.clone()) {
-            return Err(format!("line {row}: duplicate track '{track}'"));
-        }
-
-        let size = dat_extract_attr(line, "size")
-            .and_then(|value| value.parse::<i64>().ok());
         if size.is_none() {
             return Err(format!("line {row}: size must be a non-negative integer"));
         }
     }
     Ok(())
+}
+
+pub(crate) fn extract_cd_extra_type(name: &str) -> Option<String> {
+    if let Some(track) = extract_cd_extra_track(name) {
+        return Some(track);
+    }
+    if dat_extract_track_number(name).is_some() {
+        return None;
+    }
+    let (_, file_type) = name.rsplit_once('.')?;
+    if file_type.is_empty() || !file_type.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let file_type = file_type.to_ascii_lowercase();
+    cd_extra_file_types()
+        .iter()
+        .any(|extra_type| extra_type.extension == file_type)
+        .then_some(file_type)
 }
 
 pub(crate) fn extract_cd_extra_track(name: &str) -> Option<String> {
@@ -643,7 +736,7 @@ pub(crate) fn extract_cd_extra_track(name: &str) -> Option<String> {
         .take_while(|character| character.is_ascii_alphanumeric() || *character == '.')
         .collect::<String>()
         .to_ascii_uppercase();
-    if !is_cd_extra_type(&track) {
+    if !is_cd_track_extra_type(&track) {
         return None;
     }
     let (marker, session) = track
@@ -667,7 +760,7 @@ pub(crate) fn extract_cd_extra_track(name: &str) -> Option<String> {
     })
 }
 
-pub(crate) fn is_cd_extra_type(track: &str) -> bool {
+pub(crate) fn is_cd_track_extra_type(track: &str) -> bool {
     let (marker, session) = track
         .split_once('.')
         .map_or((track, None), |(marker, session)| (marker, Some(session)));
