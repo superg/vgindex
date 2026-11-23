@@ -1406,13 +1406,19 @@ pub async fn update_disc(
         .execute(&mut *conn)
         .await?;
     if let Some(langs) = data["languages"].as_array() {
+        let selected_language_codes = include_base_languages(
+            langs
+                .iter()
+                .filter_map(|lang| lang.as_str().map(str::to_string))
+                .collect(),
+        );
         let mut language_codes = Vec::new();
         let mut variant_codes = Vec::new();
-        for code in langs.iter().filter_map(|lang| lang.as_str()) {
+        for code in selected_language_codes {
             if let Some((language_code, variant_code)) = code.split_once('-') {
                 variant_codes.push((language_code.to_string(), variant_code.to_string()));
             } else {
-                language_codes.push(code.to_string());
+                language_codes.push(code);
             }
         }
         for lcode in language_codes {
