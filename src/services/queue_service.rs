@@ -957,13 +957,9 @@ fn apply_extras_set_operation(
     change_node: &serde_json::Value,
 ) -> AppResult<serde_json::Value> {
     let replacement_identity = |line: &str| -> Option<String> {
-        if let Some(name) = crate::services::validation::dat_extract_attr(line, "name") {
-            if name
-                .rsplit_once('.')
-                .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
-            {
-                let track = crate::services::validation::extract_cd_extra_track(&name)?;
-                return Some(format!("cd:{track}"));
+        let name = crate::services::validation::dat_extract_attr(line, "name")?;
+        if let Some(extra_type) = crate::services::validation::extract_cd_extra_type(&name) {
+            return Some(format!("cd:{extra_type}"));
             }
         }
 
