@@ -141,7 +141,10 @@ FROM discs d
 CROSS JOIN LATERAL unnest(d.edition) AS e(edition)
 WHERE d.status <> 'Disabled'
   AND btrim(e.edition) <> ''
-GROUP BY d.system_code, btrim(e.edition)";
+GROUP BY d.system_code, btrim(e.edition)
+HAVING COUNT(DISTINCT d.id) >= $1";
+
+const MIN_EDITION_SUGGESTION_USAGE: i64 = 5;
 
 fn to_lf_newlines(s: &str) -> String {
     s.replace("\r\n", "\n").replace('\r', "\n")
@@ -594,6 +597,7 @@ pub(crate) async fn fetch_edition_suggestion_map(
     pool: &PgPool,
 ) -> AppResult<BTreeMap<String, Vec<String>>> {
     let usage_counts: Vec<EditionUsageCount> = sqlx::query_as(EDITION_USAGE_COUNTS_SQL)
+        .bind(MIN_EDITION_SUGGESTION_USAGE)
         .fetch_all(pool)
         .await?;
 
@@ -607,7 +611,7 @@ pub(crate) fn build_edition_suggestion_map(
 
     for usage in usage_counts {
         let edition = usage.edition.trim();
-        if edition.is_empty() || usage.edition_count <= 0 {
+        if edition.is_empty() {
             continue;
         }
         grouped
