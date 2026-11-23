@@ -960,7 +960,6 @@ fn apply_extras_set_operation(
         let name = crate::services::validation::dat_extract_attr(line, "name")?;
         if let Some(extra_type) = crate::services::validation::extract_cd_extra_type(&name) {
             return Some(format!("cd:{extra_type}"));
-            }
         }
 
         let extra = disc_service::parse_ss_extras(line).ok()?.into_iter().next()?;
