@@ -358,7 +358,7 @@ const CAN_ADD_RINGCODE_ENTRIES = {{ can_add_ringcode_entries }};
             </div>
             <details class="language-variant-details{% if is_add_mode && !self.has_selected_language_variants() %} flag-check-extra{% endif %}"{% if self.has_selected_language_variants() %} open{% endif %}>
                 <summary><span class="language-variant-summary">Language variants</span></summary>
-                <p class="language-variant-warning">Only add language variants when explicitly mentioned.</p>
+                <p class="language-variant-warning">Select variant only if it is specified (e.g. Dutch vs Flemish in-game)</p>
                 <div class="flag-check-list">
                 {% for lang in language_variants %}
                     <label class="flag-check{% if !lang.highlight.is_empty() %} item-{{ lang.highlight }}{% endif %}">
