@@ -188,7 +188,7 @@
         <div class="maintenance-editor-scroll">
         <table class="maintenance-editor-table maintenance-lookup-table">
             <thead>
-                <tr><th>Base Language</th><th>Code Suffix</th><th>Name</th><th>Flag</th></tr>
+                <tr><th>Base Language</th><th>Code Suffix</th><th>Name</th><th>Flag</th>{% if can_admin %}<th>Actions</th>{% endif %}</tr>
             </thead>
         {% for variant in language_variant_rows %}
             <tbody data-maintenance-row data-original-code="{{ variant.original_code }}">
@@ -221,6 +221,13 @@
                             </select>
                         </span>
                     </td>
+                    {% if can_admin %}
+                    <td>
+                        {% if !variant.original_code.is_empty() %}
+                        <button type="submit" formaction="/maintenance/language-variants/{{ variant.original_language_code }}/{{ variant.original_code }}/delete" formmethod="post" formnovalidate>Delete</button>
+                        {% endif %}
+                    </td>
+                    {% endif %}
                 </tr>
             </tbody>
         {% endfor %}

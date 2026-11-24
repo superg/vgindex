@@ -31,6 +31,10 @@ pub fn routes() -> Router<AppState> {
         .route("/maintenance/regions", post(save_regions))
         .route("/maintenance/languages", post(save_languages))
         .route("/maintenance/language-variants", post(save_language_variants))
+        .route(
+            "/maintenance/language-variants/{language_code}/{variant_code}/delete",
+            post(delete_language_variant),
+        )
         .route("/maintenance/tags", post(save_tag))
         .route("/maintenance/tags/{tag_id}/rename", post(rename_tag))
         .route("/maintenance/tags/{tag_id}/delete", post(delete_tag))
@@ -1093,6 +1097,90 @@ async fn save_language_variants(
         "languages",
         "status",
         &format!("Saved {saved} language variant change(s)."),
+    ))
+}
+
+async fn delete_language_variant(
+    State(state): State<AppState>,
+    RequireAdmin(user): RequireAdmin,
+    AxumPath((language_code, variant_code)): AxumPath<(String, String)>,
+    Form(form): Form<CsrfForm>,
+) -> AppResult<Response> {
+    csrf::verify_form(&user, &form)?;
+
+    let mut transaction = state.pool.begin().await?;
+    let locked_variant: Option<i32> = sqlx::query_scalar(
+        "SELECT 1
+         FROM language_variants
+         WHERE language_code = $1 AND code = $2
+         FOR UPDATE",
+    )
+    .bind(&language_code)
+    .bind(&variant_code)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let Some(_) = locked_variant else {
+        transaction.rollback().await?;
+        return Ok(redirect_with_message(
+            "languages",
+            "error",
+            "Language variant was not found.",
+        ));
+    };
+
+    let in_use: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1
+             FROM disc_language_variants
+             WHERE language_code = $1 AND variant_code = $2
+         )",
+    )
+    .bind(&language_code)
+    .bind(&variant_code)
+    .fetch_one(&mut *transaction)
+    .await?;
+    if in_use {
+        transaction.rollback().await?;
+        return Ok(redirect_with_message(
+            "languages",
+            "error",
+            "This language variant is used by one or more discs and cannot be deleted.",
+        ));
+    }
+
+    let deleted: Option<String> = sqlx::query_scalar(
+        "DELETE FROM language_variants
+         WHERE language_code = $1 AND code = $2
+         RETURNING name",
+    )
+    .bind(&language_code)
+    .bind(&variant_code)
+    .fetch_optional(&mut *transaction)
+    .await?;
+    let Some(name) = deleted else {
+        transaction.rollback().await?;
+        return Ok(redirect_with_message(
+            "languages",
+            "error",
+            "Language variant was not found.",
+        ));
+    };
+    transaction.commit().await?;
+
+    state.discs_cache.invalidate_tag_references().await;
+    if let Err(err) = database_export_service::mark_export_dirty() {
+        tracing::error!("Failed to mark database export for language variant deletion: {err}");
+        return Ok(redirect_with_message(
+            "languages",
+            "error",
+            "Language variant was deleted, but the database export could not be marked for refresh.",
+        ));
+    }
+
+    Ok(redirect_with_message(
+        "languages",
+        "status",
+        &format!("Deleted language variant {language_code}-{variant_code} (“{name}”)."),
     ))
 }
 
