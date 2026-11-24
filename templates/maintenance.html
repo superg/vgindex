@@ -178,13 +178,16 @@
     </form>
 
     <hr>
-    <form method="post" action="/maintenance/language-variants" id="maintenance-language-variants-form" class="maintenance-editor-form" data-maintenance-form data-maintenance-payload="#maintenance-language-variants-payload">
+    <form method="post" action="/maintenance/language-variants" id="maintenance-language-variants-form" class="maintenance-editor-form maintenance-language-variants-form" data-maintenance-form data-maintenance-payload="#maintenance-language-variants-payload">
         {% match current_user %}
         {% when Some with (user) %}
         <input type="hidden" name="_csrf" value="{{ user.csrf_token }}">
         {% when None %}
         {% endmatch %}
         <input type="hidden" name="language_variants_payload" id="maintenance-language-variants-payload" value="">
+        <div class="maintenance-editor-save">
+            <button type="submit">Save Language Variants</button>
+        </div>
         <div class="maintenance-editor-scroll">
         <table class="maintenance-editor-table maintenance-lookup-table">
             <thead>
@@ -224,7 +227,7 @@
                     {% if can_admin %}
                     <td>
                         {% if !variant.original_code.is_empty() %}
-                        <button type="submit" formaction="/maintenance/language-variants/{{ variant.original_language_code }}/{{ variant.original_code }}/delete" formmethod="post" formnovalidate>Delete</button>
+                        <button type="submit" class="maintenance-tag-delete-button" formaction="/maintenance/language-variants/{{ variant.original_language_code }}/{{ variant.original_code }}/delete" formmethod="post" formnovalidate>Delete</button>
                         {% endif %}
                     </td>
                     {% endif %}
@@ -232,9 +235,6 @@
             </tbody>
         {% endfor %}
         </table>
-        </div>
-        <div class="maintenance-editor-save">
-            <button type="submit">Save Language Variants</button>
         </div>
     </form>
 </section>

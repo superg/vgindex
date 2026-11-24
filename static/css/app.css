@@ -4105,6 +4105,19 @@ textarea.full-width-textarea {
     overflow-x: auto;
 }
 
+.maintenance-language-variants-form {
+    display: flex;
+    flex-direction: column;
+}
+
+.maintenance-language-variants-form > .maintenance-editor-scroll {
+    order: 1;
+}
+
+.maintenance-language-variants-form > .maintenance-editor-save {
+    order: 2;
+}
+
 .maintenance-system-table,
 .maintenance-editor-table {
     width: max-content;
@@ -4230,7 +4243,8 @@ textarea.full-width-textarea {
 .maintenance-system-save button,
 .maintenance-editor-save button,
 .maintenance-tag-card button,
-.maintenance-tag-add-row button {
+.maintenance-tag-add-row button,
+.maintenance-tag-delete-button {
     width: auto;
     margin: 0;
     padding: 0.25rem 0.75rem;
@@ -4271,7 +4285,8 @@ textarea.full-width-textarea {
 }
 
 .maintenance-tag-card button,
-.maintenance-tag-add-row button {
+.maintenance-tag-add-row button,
+.maintenance-tag-delete-button {
     padding: 0.25rem 0.55rem;
 }
 
