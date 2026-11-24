@@ -1749,12 +1749,8 @@ fn validate_form_with_options(
     if let Some(ref text) = form.pvd {
         let text = text.trim();
         if !text.is_empty() {
-            match disc_service::parse_binary_hex_input(text) {
+            match disc_service::parse_pvd_hex_dump(text) {
                 Err(e) => errors.push(format!("PVD: {}", e)),
-                Ok(bytes) if bytes.len() < 82 => errors.push(format!(
-                    "PVD: must be at least 82 bytes, got {} bytes",
-                    bytes.len()
-                )),
                 Ok(_) => {}
             }
         }
@@ -2584,7 +2580,10 @@ fn normalize_hex_dump_for_render(text: Option<&str>, style: HexStyle) -> String 
         return text.to_string();
     };
     match style {
-        HexStyle::Pvd => format_pvd_hex_dump(&bytes),
+        HexStyle::Pvd => {
+            let (layout, skip) = disc_service::pvd_input_layout(text, &bytes);
+            format_pvd_hex_dump_with_layout(bytes.get(skip..).unwrap_or_default(), layout)
+        }
         HexStyle::Header => format_header_hex_dump(&bytes),
         HexStyle::Compact => format_compact_hex(&bytes),
     }
@@ -7430,7 +7429,8 @@ fn format_hex_dump_edit(data: &[u8], base_addr: usize) -> String {
 pub(crate) fn normalize_pvd_hex_dump(text: &str) -> String {
     let bytes = disc_service::parse_binary_hex_input(text)
         .expect("binary hex fields should be validated before normalization");
-    format_pvd_hex_dump(&bytes)
+    let (layout, skip) = disc_service::pvd_input_layout(text, &bytes);
+    format_pvd_hex_dump_with_layout(bytes.get(skip..).unwrap_or_default(), layout)
 }
 
 pub(crate) fn normalize_binary_hex_dump(text: &str) -> String {
@@ -7452,7 +7452,8 @@ fn normalize_pic_hex(text: &str) -> String {
     if let Some(layout) = crate::routes::disc_view::pic_di_layout(&bytes) {
         if let Some(block_count) = layout.block_count {
             let trimmed_length = 4 + block_count * layout.block_size;
-            if let Some(trailing) = bytes.get(trimmed_length..) {
+            let trim_check_end = bytes.len().min(4 + 2048);
+            if let Some(trailing) = bytes.get(trimmed_length..trim_check_end) {
                 if trailing.iter().all(|byte| *byte == 0) {
                     pic = &bytes[..trimmed_length];
                 }
@@ -7467,12 +7468,12 @@ pub(crate) fn format_compact_hex(data: &[u8]) -> String {
 }
 
 pub(crate) fn format_pvd_hex_dump(data: &[u8]) -> String {
-    const PVD_FULL_SIZE: usize = 96;
-    const PVD_STORED_SIZE: usize = 82;
-    let mut buf = [0u8; PVD_FULL_SIZE];
-    let copy_len = data.len().min(PVD_STORED_SIZE);
-    buf[..copy_len].copy_from_slice(&data[..copy_len]);
-    format_hex_dump_edit(&buf, 0x0320)
+    format_pvd_hex_dump_with_layout(data, disc_service::pvd_layout(data))
+}
+
+fn format_pvd_hex_dump_with_layout(data: &[u8], layout: disc_service::PvdLayout) -> String {
+    let copy_len = data.len().min(layout.stored_size());
+    format_hex_dump_edit(&data[..copy_len], layout.dump_offset)
 }
 
 pub(crate) fn format_header_hex_dump(data: &[u8]) -> String {
