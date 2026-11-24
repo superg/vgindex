@@ -931,21 +931,27 @@ fn add_pvd_date_clauses(
     pvd_date_min: Option<&str>,
     pvd_date_max: Option<&str>,
 ) {
+    const PVD_CREATION_DATE: &str = "CASE
+        WHEN octet_length(d.pvd) = 70
+        THEN substring(d.pvd from 7 for 8)
+        ELSE substring(d.pvd from 14 for 8)
+    END";
+
     if pvd_date_min.is_none() && pvd_date_max.is_none() {
         return;
     }
 
-    where_clauses.push(
-        "encode(substring(d.pvd from 14 for 8), 'hex') ~ '^([3-9a-f][0-9a-f]){8}$'".to_string(),
-    );
+    where_clauses.push(format!(
+        "encode(({PVD_CREATION_DATE}), 'hex') ~ '^([3-9a-f][0-9a-f]){{8}}$'"
+    ));
 
     if pvd_date_min.is_some() {
         *bind_idx += 1;
-        where_clauses.push(format!("substring(d.pvd from 14 for 8) >= ${}", *bind_idx));
+        where_clauses.push(format!("({PVD_CREATION_DATE}) >= ${}", *bind_idx));
     }
     if pvd_date_max.is_some() {
         *bind_idx += 1;
-        where_clauses.push(format!("substring(d.pvd from 14 for 8) <= ${}", *bind_idx));
+        where_clauses.push(format!("({PVD_CREATION_DATE}) <= ${}", *bind_idx));
     }
 }
 

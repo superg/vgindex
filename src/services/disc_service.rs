@@ -449,16 +449,84 @@ fn parse_raw_hex_input(text: &str) -> Result<Vec<u8>, String> {
     Ok(result)
 }
 
-fn parse_pvd_hex_dump(text: &str) -> Result<Vec<u8>, String> {
-    let mut result = parse_binary_hex_input(text)?;
-    if result.len() < 82 {
+#[derive(Clone, Copy)]
+pub(crate) struct PvdLayout {
+    pub(crate) dump_offset: usize,
+    pub(crate) date_offset: usize,
+    pub(crate) date_field_size: usize,
+}
+
+impl PvdLayout {
+    pub(crate) fn is_high_sierra(self) -> bool {
+        self.date_field_size == HIGH_SIERRA_PVD_LAYOUT.date_field_size
+    }
+
+    pub(crate) fn stored_size(self) -> usize {
+        self.date_offset + 4 * self.date_field_size
+    }
+}
+
+const ISO9660_PVD_LAYOUT: PvdLayout = PvdLayout {
+    dump_offset: 0x0320,
+    date_offset: 13,
+    date_field_size: 17,
+};
+const HIGH_SIERRA_PVD_LAYOUT: PvdLayout = PvdLayout {
+    dump_offset: 0x0310,
+    date_offset: 6,
+    date_field_size: 16,
+};
+
+pub(crate) fn pvd_layout(data: &[u8]) -> PvdLayout {
+    if data.len() == HIGH_SIERRA_PVD_LAYOUT.stored_size() {
+        HIGH_SIERRA_PVD_LAYOUT
+    } else {
+        ISO9660_PVD_LAYOUT
+    }
+}
+
+pub(crate) fn pvd_input_layout(text: &str, data: &[u8]) -> (PvdLayout, usize) {
+    let first_offset = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .and_then(|line| line.split_once(':'))
+        .and_then(|(offset, _)| usize::from_str_radix(offset.trim(), 16).ok());
+
+    match first_offset {
+        Some(0x0309) => return (HIGH_SIERRA_PVD_LAYOUT, 7),
+        Some(0x0310) => return (HIGH_SIERRA_PVD_LAYOUT, 0),
+        Some(0x0320) => return (ISO9660_PVD_LAYOUT, 0),
+        _ => {}
+    }
+
+    let high_sierra_dates = data.len() < ISO9660_PVD_LAYOUT.stored_size()
+        && data
+            .get(
+                HIGH_SIERRA_PVD_LAYOUT.date_offset
+                    ..HIGH_SIERRA_PVD_LAYOUT.date_offset
+                        + 4 * HIGH_SIERRA_PVD_LAYOUT.date_field_size,
+            )
+            .is_some_and(|dates| dates.iter().all(|byte| byte.is_ascii_digit()));
+    if high_sierra_dates {
+        (HIGH_SIERRA_PVD_LAYOUT, 0)
+    } else {
+        (ISO9660_PVD_LAYOUT, 0)
+    }
+}
+
+pub(crate) fn parse_pvd_hex_dump(text: &str) -> Result<Vec<u8>, String> {
+    let result = parse_binary_hex_input(text)?;
+    let (layout, skip) = pvd_input_layout(text, &result);
+    let stored_size = layout.stored_size();
+    let required_size = skip + stored_size;
+    if result.len() < required_size {
         return Err(format!(
-            "must be at least 82 bytes, got {} bytes",
+            "must be at least {required_size} bytes, got {} bytes",
             result.len()
         ));
     }
-    result.truncate(82);
-    Ok(result)
+    Ok(result[skip..required_size].to_vec())
 }
 
 fn parse_text_array(val: &serde_json::Value) -> Vec<String> {
@@ -1897,7 +1965,7 @@ mod tests {
     }
 
     #[test]
-    fn pvd_hex_parser_keeps_existing_stored_length_limit() {
+    fn pvd_hex_parser_stores_only_iso_date_fields() {
         let bytes: Vec<u8> = (0u8..96).collect();
         let compact = bytes
             .iter()
@@ -1907,8 +1975,8 @@ mod tests {
 
         let parsed = parse_pvd_hex_dump(&compact).unwrap();
 
-        assert_eq!(parsed.len(), 82);
-        assert_eq!(parsed, bytes[..82]);
+        assert_eq!(parsed.len(), 81);
+        assert_eq!(parsed, bytes[..81]);
     }
 
     #[test]
@@ -2753,12 +2821,9 @@ pub(crate) fn format_space_separated_hex(data: &[u8]) -> String {
 }
 
 fn format_pvd_hex_snapshot(data: &[u8]) -> String {
-    const PVD_FULL_SIZE: usize = 96;
-    const PVD_STORED_SIZE: usize = 82;
-    let mut buf = [0u8; PVD_FULL_SIZE];
-    let copy_len = data.len().min(PVD_STORED_SIZE);
-    buf[..copy_len].copy_from_slice(&data[..copy_len]);
-    format_hex_dump_snapshot(&buf, 0x0320)
+    let layout = pvd_layout(data);
+    let copy_len = data.len().min(layout.stored_size());
+    format_hex_dump_snapshot(&data[..copy_len], layout.dump_offset)
 }
 
 /// Convert a DiscDetail into the flat JSON snapshot format that `update_disc` expects.

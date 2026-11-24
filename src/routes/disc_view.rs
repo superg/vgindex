@@ -252,6 +252,7 @@ struct DiscViewTemplate {
     sbi_rows: Vec<SbiRow>,
     show_sbi: bool,
     pvd_rows: Vec<PvdRow>,
+    pvd_is_high_sierra: bool,
     show_pvd: bool,
     dmi_rows: Vec<HeaderRow>,
     dmi_placeholder_rows: Vec<HeaderRow>,
@@ -895,11 +896,17 @@ async fn disc_view(
         Vec::new()
     };
 
-    let pvd_rows = detail
+    let (pvd_rows, pvd_is_high_sierra) = detail
         .disc
         .pvd
-        .as_ref()
-        .map(|data| parse_pvd_rows(data))
+        .as_deref()
+        .map(|data| {
+            let layout = disc_service::pvd_layout(data);
+            (
+                parse_pvd_rows(data, layout),
+                layout.is_high_sierra(),
+            )
+        })
         .unwrap_or_default();
 
     let pic_dump = detail
@@ -1162,6 +1169,7 @@ async fn disc_view(
             sbi_rows,
             show_sbi,
             pvd_rows,
+            pvd_is_high_sierra,
             show_pvd: detail.system.has_pvd,
             dmi_rows,
             dmi_placeholder_rows,
@@ -1452,11 +1460,7 @@ fn xgd2_wave_from_pvd(pvd: Option<&[u8]>) -> Option<&'static str> {
         ("2015042617000000", "XGD2 (Wave 20)"),
     ];
 
-    let pvd = match pvd {
-        Some(p) if p.len() >= 13 + 16 => p,
-        _ => return None,
-    };
-    let field = &pvd[13..13 + 16];
+    let field = pvd?.get(13..29)?;
     if !field[..16].iter().all(|b| b.is_ascii_digit()) {
         return None;
     }
@@ -2038,12 +2042,11 @@ fn allowed_html_tag(s: &str) -> Option<usize> {
     None
 }
 
-fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
-    const PVD_DATE_OFFSET: usize = 13;
-    const PVD_DATE_SIZE: usize = 17;
+fn parse_pvd_rows(data: &[u8], layout: disc_service::PvdLayout) -> Vec<PvdRow> {
+    const PVD_DATE_CONTENT_SIZE: usize = 16;
     const LABELS: [&str; 4] = ["Creation", "Modification", "Expiration", "Effective"];
 
-    if data.len() < PVD_DATE_OFFSET + 4 * PVD_DATE_SIZE {
+    if data.len() < layout.date_offset + 4 * layout.date_field_size {
         return Vec::new();
     }
 
@@ -2051,8 +2054,8 @@ fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
         .iter()
         .enumerate()
         .map(|(i, label)| {
-            let start = PVD_DATE_OFFSET + i * PVD_DATE_SIZE;
-            let field = &data[start..start + PVD_DATE_SIZE];
+            let start = layout.date_offset + i * layout.date_field_size;
+            let field = &data[start..start + layout.date_field_size];
 
             let hex_contents = field
                 .iter()
@@ -2060,7 +2063,7 @@ fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
                 .collect::<Vec<_>>()
                 .join(" ");
 
-            let ascii: String = field[..16]
+            let ascii: String = field[..PVD_DATE_CONTENT_SIZE]
                 .iter()
                 .map(|&b| if b.is_ascii_digit() { b as char } else { '0' })
                 .collect();
@@ -2073,11 +2076,15 @@ fn parse_pvd_rows(data: &[u8]) -> Vec<PvdRow> {
             let second = &ascii[12..14];
             let centiseconds = &ascii[14..16];
 
-            let gmt_byte = field[16] as i8;
-            let gmt_minutes = gmt_byte as i32 * 15;
-            let gmt_sign = if gmt_minutes >= 0 { '+' } else { '-' };
-            let gmt_abs = gmt_minutes.unsigned_abs();
-            let gmt = format!("{}{:02}:{:02}", gmt_sign, gmt_abs / 60, gmt_abs % 60);
+            let gmt = if layout.date_field_size > PVD_DATE_CONTENT_SIZE {
+                let gmt_byte = field[PVD_DATE_CONTENT_SIZE] as i8;
+                let gmt_minutes = gmt_byte as i32 * 15;
+                let gmt_sign = if gmt_minutes >= 0 { '+' } else { '-' };
+                let gmt_abs = gmt_minutes.unsigned_abs();
+                format!("{}{:02}:{:02}", gmt_sign, gmt_abs / 60, gmt_abs % 60)
+            } else {
+                String::new()
+            };
 
             PvdRow {
                 label,
@@ -2791,6 +2798,7 @@ mod tests {
             sbi_rows: Vec::new(),
             show_sbi: false,
             pvd_rows: Vec::new(),
+            pvd_is_high_sierra: false,
             show_pvd: false,
             dmi_rows: Vec::new(),
             dmi_placeholder_rows: Vec::new(),
