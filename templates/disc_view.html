@@ -294,7 +294,11 @@
 
 {% if show_pvd && !pvd_rows.is_empty() %}
 <section class="left-section detail-section">
-    <h3>{% if pvd_is_high_sierra %}SFSVD{% else %}PVD{% endif %}</h3>
+    {% if pvd_is_high_sierra %}
+    <h3 title="Standard File Structure Volume Descriptor">SFSVD</h3>
+    {% else %}
+    <h3 title="Primary Volume Descriptor">PVD</h3>
+    {% endif %}
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
         <thead>
@@ -411,7 +415,7 @@
 {% if show_bca && !bca_rows.is_empty() %}
 <section class="left-section detail-section">
     <details>
-        <summary><h3>BCA</h3></summary>
+        <summary><h3 title="Burst Cutting Area">BCA</h3></summary>
         <p class="binary-metadata"><strong>BCA Length</strong> <code>{{ bca_length }}</code>{% if bca_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
         <div class="table-scroll table-scroll-compact">
         <table class="table-nowrap binary-table">
@@ -435,7 +439,7 @@
 
 {% if !pic_rows.is_empty() %}
 <section class="left-section detail-section">
-    <h3>PIC</h3>
+    <h3 title="Permanent Information &amp; Control">PIC</h3>
     <p class="binary-metadata"><strong>PIC Length</strong> <code>{{ pic_length }}</code>{% if pic_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     {% if let Some(disc_type) = pic_metadata.disc_type %}<p class="binary-metadata"><strong>Disc Type</strong> <code>{{ disc_type }}</code></p>{% else %}<p class="binary-metadata"><span class="binary-metadata-warning">Unknown disc type</span></p>{% endif %}
     {% if let Some(physical_size) = pic_metadata.physical_size %}<p class="binary-metadata"><strong>Physical Size</strong> <code>{{ physical_size }}</code></p>{% endif %}
@@ -485,7 +489,7 @@
 {% if !dmi_rows.is_empty() %}
 <section class="left-section detail-section dmi-section">
     {% if !dmi_placeholder_rows.is_empty() %}
-    <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-placeholder-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
+    <h3 title="Disc Manufacturing Information">DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-placeholder-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
     <p class="binary-metadata"><strong>DMI Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     {% if show_xgd_type %}
     {% if !xbox_mid.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_ringcode.is_empty() %}XMID{% else %}XeMID{% endif %}</strong> <code>{{ xbox_mid }}</code></p>{% endif %}
@@ -517,7 +521,7 @@
     </div>
     {% if dmi_download_available %}<p><a href="/disc/{{ disc_id }}/dmi">Download DMI</a></p>{% endif %}
     {% else %}
-    <h3>DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
+    <h3 title="Disc Manufacturing Information">DMI<button type="button" class="dmi-toggle" aria-label="Toggle DMI dump rows" aria-expanded="false" onclick="this.closest('.dmi-section').querySelectorAll('.dmi-remainder').forEach(function(row) { row.hidden = !row.hidden; }); var expanded = this.getAttribute('aria-expanded') !== 'true'; this.setAttribute('aria-expanded', expanded); window.dispatchEvent(new Event('resize'));"></button></h3>
     <p class="binary-metadata"><strong>DMI Length</strong> <code>{{ dmi_length }}</code>{% if dmi_invalid %} <span class="binary-metadata-warning">Unexpected SCSI header</span>{% endif %}</p>
     {% if show_xgd_type %}
     {% if !xbox_mid.is_empty() %}<p class="binary-metadata"><strong>{% if xbox_ringcode.is_empty() %}XMID{% else %}XeMID{% endif %}</strong> <code>{{ xbox_mid }}</code></p>{% endif %}

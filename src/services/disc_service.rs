@@ -522,7 +522,7 @@ pub(crate) fn pvd_input_layout(text: &str, data: &[u8]) -> (PvdLayout, usize) {
             .get(HIGH_SIERRA_PVD_LAYOUT.date_offset + 7..high_sierra_size + 7)
             .is_some_and(|dates| dates.iter().all(|byte| byte.is_ascii_digit()))
     {
-        return (HIGH_SIERRA_PVD_LAYOUT, 0);
+        return (HIGH_SIERRA_PVD_LAYOUT, 7);
     }
 
     (ISO9660_PVD_LAYOUT, 0)
