@@ -7452,7 +7452,8 @@ fn normalize_pic_hex(text: &str) -> String {
     if let Some(layout) = crate::routes::disc_view::pic_di_layout(&bytes) {
         if let Some(block_count) = layout.block_count {
             let trimmed_length = 4 + block_count * layout.block_size;
-            if let Some(trailing) = bytes.get(trimmed_length..) {
+            let trim_check_end = bytes.len().min(4 + 2048);
+            if let Some(trailing) = bytes.get(trimmed_length..trim_check_end) {
                 if trailing.iter().all(|byte| *byte == 0) {
                     pic = &bytes[..trimmed_length];
                 }

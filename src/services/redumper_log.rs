@@ -122,7 +122,7 @@ fn parse_internal(
             nonempty_join(info.iter().map(|line| line.trim()).filter(|line| {
                 line.starts_with("MSF: ") && validation::validate_sbi(line).is_ok()
             }));
-        result.pvd = hex_dump_after(info, "PVD:");
+        result.pvd = hex_dump_after(info, "PVD:").or_else(|| hex_dump_after(info, "SFSVD:"));
         result.header = hex_dump_after(info, "header:");
         result.bca = bca_after(info, "BCA:");
         result.system_code = system_code(info, known_system_codes);

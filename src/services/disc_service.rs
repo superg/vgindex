@@ -500,19 +500,32 @@ pub(crate) fn pvd_input_layout(text: &str, data: &[u8]) -> (PvdLayout, usize) {
         _ => {}
     }
 
-    let high_sierra_dates = data.len() < ISO9660_PVD_LAYOUT.stored_size()
-        && data
-            .get(
-                HIGH_SIERRA_PVD_LAYOUT.date_offset
-                    ..HIGH_SIERRA_PVD_LAYOUT.date_offset
-                        + 4 * HIGH_SIERRA_PVD_LAYOUT.date_field_size,
-            )
-            .is_some_and(|dates| dates.iter().all(|byte| byte.is_ascii_digit()));
-    if high_sierra_dates {
-        (HIGH_SIERRA_PVD_LAYOUT, 0)
-    } else {
-        (ISO9660_PVD_LAYOUT, 0)
+    let high_sierra_size = HIGH_SIERRA_PVD_LAYOUT.stored_size();
+    if data.len() == high_sierra_size {
+        return (HIGH_SIERRA_PVD_LAYOUT, 0);
     }
+
+    if data.len() < high_sierra_size || data.len() >= ISO9660_PVD_LAYOUT.stored_size() {
+        return (ISO9660_PVD_LAYOUT, 0);
+    }
+
+    if data.len() >= high_sierra_size
+        && data
+            .get(HIGH_SIERRA_PVD_LAYOUT.date_offset..high_sierra_size)
+            .is_some_and(|dates| dates.iter().all(|byte| byte.is_ascii_digit()))
+    {
+        return (HIGH_SIERRA_PVD_LAYOUT, 0);
+    }
+
+    if data.len() >= high_sierra_size + 7
+        && data
+            .get(HIGH_SIERRA_PVD_LAYOUT.date_offset + 7..high_sierra_size + 7)
+            .is_some_and(|dates| dates.iter().all(|byte| byte.is_ascii_digit()))
+    {
+        return (HIGH_SIERRA_PVD_LAYOUT, 0);
+    }
+
+    (ISO9660_PVD_LAYOUT, 0)
 }
 
 pub(crate) fn parse_pvd_hex_dump(text: &str) -> Result<Vec<u8>, String> {

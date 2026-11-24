@@ -1740,7 +1740,7 @@ function applyDumpLogZipJson(data, pasteDumpLog) {
 function applyDumpLogZipFields(bytes) {
     var fields = [
         { name: 'dmi', extension: '.manufacturer', size: 2052 },
-        { name: 'pic', extension: '.physical', size: 2052 },
+        { name: 'pic', extension: '.physical', size: 4100 },
         { name: 'bca', extension: '.bca', minSize: 16, maxSize: 192 }
     ];
     try {

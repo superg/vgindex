@@ -294,8 +294,7 @@
 
 {% if show_pvd && !pvd_rows.is_empty() %}
 <section class="left-section detail-section">
-    <h3>PVD</h3>
-    {% if pvd_is_high_sierra %}<p class="binary-metadata"><strong>Type</strong> <code>High Sierra Format</code></p>{% endif %}
+    <h3>{% if pvd_is_high_sierra %}SFSVD{% else %}PVD{% endif %}</h3>
     <div class="table-scroll table-scroll-compact">
     <table class="table-nowrap binary-table">
         <thead>
