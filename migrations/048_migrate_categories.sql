@@ -2,24 +2,21 @@ ALTER TABLE IF EXISTS tags
 ADD COLUMN IF NOT EXISTS sort_order SMALLINT DEFAULT NULL;
 
 INSERT INTO tags (name)
-VALUES ('Preproduction')
+VALUES
+    ('Preproduction'),
+    ('Bonus Discs'),
+    ('Unlicensed'),
+    ('Aftermarket'),
+    ('Compilation')
 ON CONFLICT DO NOTHING;
 
 UPDATE tags
 SET sort_order = 1
 WHERE LOWER(name) = LOWER('Preproduction');
 
-INSERT INTO tags (name)
-VALUES ('Bonus Discs')
-ON CONFLICT DO NOTHING;
-
 UPDATE tags
 SET sort_order = 2
 WHERE LOWER(name) = LOWER('Bonus Discs');
-
-INSERT INTO tags (name)
-VALUES ('Unlicensed')
-ON CONFLICT DO NOTHING;
 
 INSERT INTO disc_tags (disc_id, tag_id)
 SELECT d.id, t.id
@@ -50,7 +47,7 @@ ON CONFLICT DO NOTHING;
 
 UPDATE discs
 SET category_id = CASE
-    WHEN system_code = 'AUDIO-CD' THEN (
+    WHEN system_code IN ('AUDIO-CD', 'MP3') THEN (
         SELECT id
         FROM categories
         WHERE name = 'Audio'
@@ -60,15 +57,10 @@ SET category_id = CASE
         FROM categories
         WHERE name = 'Video'
     )
-    WHEN system_code = 'ENHANCED-CD' THEN (
-        SELECT id
-        FROM categories
-        WHERE name = 'Multimedia'
-    )
     ELSE (
         SELECT id
         FROM categories
-        WHERE name = 'Games'
+        WHERE name = 'Multimedia'
     )
 END
 WHERE category_id = (
@@ -79,6 +71,15 @@ WHERE category_id = (
 
 UPDATE discs
 SET category_id = CASE
+    WHEN system_code = 'CDI' AND EXISTS (
+        SELECT 1
+        FROM unnest(edition) AS edition_value
+        WHERE edition_value ILIKE '%Demonstration%'
+    ) THEN (
+        SELECT id
+        FROM categories
+        WHERE name = 'Games'
+    )
     WHEN EXISTS (
         SELECT 1
         FROM unnest(edition) AS edition_value
@@ -87,6 +88,16 @@ SET category_id = CASE
         SELECT id
         FROM categories
         WHERE name = 'Demos'
+    )
+    WHEN system_code IN ('AUDIO-CD', 'MP3') THEN (
+        SELECT id
+        FROM categories
+        WHERE name = 'Audio'
+    )
+    WHEN system_code IN ('MAC', 'PHOTO-CD') THEN (
+        SELECT id
+        FROM categories
+        WHERE name = 'Multimedia'
     )
     ELSE (
         SELECT id
