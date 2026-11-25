@@ -2928,12 +2928,12 @@ body:has(.disc-edit) footer.container hr {
     width: max-content;
     max-width: 100%;
 }
-.disc-edit .disc-tag-dropdown,
+.disc-edit .disc-tag-options,
 #filter-form .disc-tag-dropdown {
     display: block;
     min-width: 0;
 }
-.disc-edit .disc-tag-dropdown {
+.disc-edit .disc-tag-options {
     margin: calc(var(--pico-spacing) * 0.25) 0 0;
     max-width: min(34rem, calc(100vw - 11rem));
 }
@@ -2942,7 +2942,6 @@ body:has(.disc-edit) footer.container hr {
     border-radius: var(--pico-border-radius);
     background: var(--pico-form-element-background-color);
 }
-.disc-edit .disc-tag-dropdown > summary,
 #filter-form .disc-tag-dropdown > summary {
     width: max-content;
     max-width: 100%;
@@ -2956,9 +2955,6 @@ body:has(.disc-edit) footer.container hr {
     min-height: 1.6rem;
     padding: 0.2rem 1.6rem 0.2rem 0.5rem;
     white-space: nowrap;
-}
-.disc-edit .disc-tag-dropdown > summary {
-    padding: 0.15rem 0.35rem;
 }
 .disc-edit .disc-tag-option-list,
 #filter-form .disc-tag-option-list {
@@ -4105,19 +4101,6 @@ textarea.full-width-textarea {
     overflow-x: auto;
 }
 
-.maintenance-language-variants-form {
-    display: flex;
-    flex-direction: column;
-}
-
-.maintenance-language-variants-form > .maintenance-editor-scroll {
-    order: 1;
-}
-
-.maintenance-language-variants-form > .maintenance-editor-save {
-    order: 2;
-}
-
 .maintenance-system-table,
 .maintenance-editor-table {
     width: max-content;
@@ -4243,8 +4226,7 @@ textarea.full-width-textarea {
 .maintenance-system-save button,
 .maintenance-editor-save button,
 .maintenance-tag-card button,
-.maintenance-tag-add-row button,
-.maintenance-tag-delete-button {
+.maintenance-tag-add-row button {
     width: auto;
     margin: 0;
     padding: 0.25rem 0.75rem;
@@ -4285,8 +4267,7 @@ textarea.full-width-textarea {
 }
 
 .maintenance-tag-card button,
-.maintenance-tag-add-row button,
-.maintenance-tag-delete-button {
+.maintenance-tag-add-row button {
     padding: 0.25rem 0.55rem;
 }
 

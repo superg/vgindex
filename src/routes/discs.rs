@@ -3366,7 +3366,7 @@ async fn load_disc_reference_data(pool: &sqlx::PgPool) -> AppResult<DiscReferenc
         sqlx::query_as("SELECT code, name FROM media_types ORDER BY LOWER(name)").fetch_all(pool);
     let categories =
         sqlx::query_as("SELECT id, name FROM categories ORDER BY LOWER(name)").fetch_all(pool);
-    let tags = sqlx::query_scalar::<_, String>("SELECT name FROM tags ORDER BY LOWER(name), name")
+    let tags = sqlx::query_scalar::<_, String>("SELECT name FROM tags ORDER BY sort_order NULLS LAST, LOWER(name), name",)
         .fetch_all(pool);
     let regions =
         sqlx::query_as("SELECT code, name FROM regions ORDER BY LOWER(name)").fetch_all(pool);

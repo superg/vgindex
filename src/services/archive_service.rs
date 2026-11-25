@@ -590,7 +590,15 @@ async fn generate_datfile_archive(
         "SELECT d.id, d.title,
                 d.filename_suffix, d.disc_number, d.disc_title,
                 d.serial, d.version,
-                c.name AS category_name,
+                COALESCE((
+                    SELECT t.name
+                    FROM disc_tags dt
+                    JOIN tags t ON t.id = dt.tag_id
+                    WHERE dt.disc_id = d.id
+                      AND t.sort_order IS NOT NULL
+                    ORDER BY t.sort_order, t.id
+                    LIMIT 1
+                ), c.name) AS category_name,
                 d.media_type_code,
                 mt.rom_extension,
                 ARRAY(SELECT r.name::TEXT FROM disc_regions dr JOIN regions r ON r.code = dr.region_code
@@ -638,7 +646,15 @@ pub async fn generate_user_datfile(
         "SELECT d.id, d.title,
                 d.filename_suffix, d.disc_number, d.disc_title,
                 d.serial, d.version,
-                c.name AS category_name,
+                COALESCE((
+                    SELECT t.name
+                    FROM disc_tags dt
+                    JOIN tags t ON t.id = dt.tag_id
+                    WHERE dt.disc_id = d.id
+                      AND t.sort_order IS NOT NULL
+                    ORDER BY t.sort_order, t.id
+                    LIMIT 1
+                ), c.name) AS category_name,
                 d.media_type_code,
                 mt.rom_extension,
                 ARRAY(SELECT r.name::TEXT FROM disc_regions dr JOIN regions r ON r.code = dr.region_code
