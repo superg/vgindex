@@ -41,7 +41,8 @@ CREATE TABLE categories (
 
 CREATE TABLE tags (
     id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    sort_order INTEGER DEFAULT NULL
 );
 
 CREATE TABLE regions (
@@ -260,6 +261,7 @@ struct CategoryRow {
 struct TagRow {
     id: i32,
     name: String,
+    sort_order: Option<i16>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -759,12 +761,15 @@ async fn export_tags(
     sqlite: &mut Transaction<'_, Sqlite>,
 ) -> AppResult<u64> {
     let mut count = 0;
-    let mut rows =
-        sqlx::query_as::<_, TagRow>("SELECT id, name FROM tags ORDER BY id").fetch(&mut **postgres);
+    let mut rows = sqlx::query_as::<_, TagRow>(
+        "SELECT id, name, sort_order FROM tags ORDER BY id",
+    )
+    .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
-        sqlx::query("INSERT INTO tags VALUES (?, ?)")
+        sqlx::query("INSERT INTO tags (id, name, sort_order) VALUES (?, ?, ?)")
             .bind(row.id)
             .bind(row.name)
+            .bind(row.sort_order)
             .execute(&mut **sqlite)
             .await?;
         count += 1;

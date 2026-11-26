@@ -410,7 +410,7 @@ pub(crate) async fn fetch_ref_data(pool: &sqlx::PgPool) -> AppResult<EditRefData
         sqlx::query_as("SELECT id, name FROM categories ORDER BY name")
             .fetch_all(pool)
             .await?;
-    let all_tags: Vec<TagRow> = sqlx::query_as("SELECT name FROM tags ORDER BY LOWER(name), name")
+    let all_tags: Vec<TagRow> = sqlx::query_as("SELECT name FROM tags ORDER BY sort_order NULLS LAST, LOWER(name), name")
         .fetch_all(pool)
         .await?;
     let all_regions: Vec<Region> = sqlx::query_as("SELECT * FROM regions ORDER BY sort_order")
