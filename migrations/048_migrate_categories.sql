@@ -52,7 +52,7 @@ SET category_id = CASE
         FROM categories
         WHERE name = 'Audio'
     )
-    WHEN system_code IN ('DVD-VIDEO', 'BD-VIDEO') THEN (
+    WHEN system_code IN ('DVD-VIDEO', 'BD-VIDEO', 'HVNC') THEN (
         SELECT id
         FROM categories
         WHERE name = 'Video'
@@ -71,20 +71,7 @@ WHERE category_id = (
 
 UPDATE discs
 SET category_id = CASE
-    WHEN system_code = 'CDI' AND EXISTS (
-        SELECT 1
-        FROM unnest(edition) AS edition_value
-        WHERE edition_value ILIKE '%Demonstration%'
-    ) THEN (
-        SELECT id
-        FROM categories
-        WHERE name = 'Games'
-    )
-    WHEN EXISTS (
-        SELECT 1
-        FROM unnest(edition) AS edition_value
-        WHERE edition_value ILIKE '%Demo%'
-    ) THEN (
+    WHEN filename_suffix ILIKE '%Demo%' THEN (
         SELECT id
         FROM categories
         WHERE name = 'Demos'
