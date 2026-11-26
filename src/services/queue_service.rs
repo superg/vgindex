@@ -646,7 +646,49 @@ pub(crate) async fn find_unambiguous_exact_disc_match(
         Some(universal_hash) => find_matching_disc_by_universal_hash(pool, universal_hash).await?,
         None => None,
     };
+    let universal_hash_match = if let Some(disc_id) = universal_hash_match {
+        if track_sizes_match(pool, disc_id, files_xml).await? {
+            Some(disc_id)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     Ok(resolve_exact_disc_match(dat_match, universal_hash_match))
+}
+
+async fn track_sizes_match(
+    pool: &PgPool,
+    disc_id: i32,
+    files_xml: Option<&str>,
+) -> AppResult<bool> {
+    let Some(files_xml) = files_xml else {
+        return Ok(false);
+    };
+    let mut submitted_sizes: Vec<(i32, i64)> = parse_rom_entries(files_xml)
+        .into_iter()
+        .filter_map(|entry| {
+            track_number_value(entry.track_number.as_deref()).map(|n| (n, entry.size))
+        })
+        .collect();
+    submitted_sizes.sort_unstable_by_key(|track| track.0);
+
+    let stored_tracks: Vec<(Option<String>, i64)> = sqlx::query_as(
+        "SELECT track_number, size FROM files WHERE disc_id = $1 AND track_number IS NOT NULL",
+    )
+    .bind(disc_id)
+    .fetch_all(pool)
+    .await?;
+    let mut stored_sizes: Vec<(i32, i64)> = stored_tracks
+        .into_iter()
+        .filter_map(|(track_number, size)| {
+            track_number_value(track_number.as_deref()).map(|n| (n, size))
+        })
+        .collect();
+    stored_sizes.sort_unstable_by_key(|track| track.0);
+
+    Ok(!submitted_sizes.is_empty() && stored_sizes == submitted_sizes)
 }
 
 fn normalize_hash_attr(value: Option<String>) -> String {
@@ -1620,11 +1662,20 @@ async fn find_approval_conflicts_for_effective_data(
             find_matching_disc_by_universal_hash_excluding(pool, universal_hash, target_disc_id)
                 .await?
         {
-            conflicts.push(ApprovalConflict {
-                text: "Universal hash already exists:".to_string(),
-                disc_id,
-                disc_title: fetch_approval_conflict_disc_title(pool, disc_id).await?,
-            });
+            let sizes_match = if submission_type == SubmissionType::Disc
+                && target_disc_id.is_none()
+            {
+                track_sizes_match(pool, disc_id, effective_data["dat"].as_str()).await?
+            } else {
+                true
+            };
+            if sizes_match {
+                conflicts.push(ApprovalConflict {
+                    text: "Universal hash already exists:".to_string(),
+                    disc_id,
+                    disc_title: fetch_approval_conflict_disc_title(pool, disc_id).await?,
+                });
+            }
         }
     }
 
