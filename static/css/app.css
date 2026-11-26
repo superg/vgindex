@@ -614,9 +614,9 @@ nav[aria-label="Pagination"] ul {
 
 /* Bold blue labels for the currently activated filters when advanced box is open */
 :is(#filter-form.advanced-search-visible > label, #filter-form.advanced-search-visible #advanced-search-panel > .advanced-search-row):has(
-    input:not([type="checkbox"])[value]:not([value=""]),
-    input[type="checkbox"]:checked:not([name="tag"]),
-    select:not(.text-match-mode) option[selected]:not([value=""]),
+    input:not([type="checkbox"])[value]:not([value=""]):not(:disabled),
+    input[type="checkbox"]:checked:not([data-tag-filter]),
+    select:not(.text-match-mode):not(.tag-mode) option[selected]:not([value=""]),
     select.text-match-mode option[value="null"][selected],
     select.text-match-mode option[value="any"][selected],
     select[name="dumper"][data-selected-dumper]:not([data-selected-dumper=""])
@@ -775,8 +775,8 @@ nav[aria-label="Pagination"] ul {
 }
 #filter-form .text-match-controls .text-match-mode,
 #filter-form.advanced-search-visible .text-match-controls .text-match-mode,
-#filter-form .text-match-controls .tag-match-mode,
-#filter-form.advanced-search-visible .text-match-controls .tag-match-mode {
+#filter-form .text-match-controls .tag-mode,
+#filter-form.advanced-search-visible .text-match-controls .tag-mode {
     flex: 0 0 6rem;
     width: 6rem;
     min-width: 0;
@@ -2972,6 +2972,9 @@ body:has(.disc-edit) footer.container hr {
 #filter-form .disc-tag-option span {
     min-width: 0;
     overflow-wrap: anywhere;
+}
+#filter-form input[type="checkbox"][data-tag-filter][data-mode="not_tag"] {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='rgb(255, 255, 255)' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 5 19 19M19 5 5 19'%3E%3C/path%3E%3C/svg%3E");
 }
 .disc-edit .disc-tag-option input[type="checkbox"],
 #filter-form .disc-tag-option input[type="checkbox"] {

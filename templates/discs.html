@@ -71,16 +71,17 @@
                         <div class="disc-tag-option-list disc-filter-tag-options">
                             {% for tag in tags %}
                             <label class="disc-tag-option">
-                                <input type="checkbox" name="tag" value="{{ tag.name }}" {% if tag.selected %}checked{% endif %}>
+                                <input type="hidden" name="tag" value="{{ tag.name }}" data-tag-param="tag" {% if tag.mode != "tag" %}disabled{% endif %}>
+                                <input type="hidden" name="not_tag" value="{{ tag.name }}" data-tag-param="not_tag" {% if tag.mode != "not_tag" %}disabled{% endif %}>
+                                <input type="checkbox" data-tag-filter data-mode="{{ tag.mode }}" data-tag-name="{{ tag.name }}" {% if !tag.mode.is_empty() %}checked{% endif %} aria-checked="{% if tag.mode == "tag" %}true{% else if tag.mode == "not_tag" %}mixed{% else %}false{% endif %}" aria-label="{{ tag.name }}: {% if tag.mode == "tag" %}included{% else if tag.mode == "not_tag" %}excluded{% else %}not filtered{% endif %}. Click to change.">
                                 <span>{{ tag.name }}</span>
                             </label>
                             {% endfor %}
                         </div>
                     </details>
-                    <select name="tag_mode" class="tag-match-mode" aria-label="Tag match mode">
-                        <option value="" {% if filter_tag_mode.is_empty() %}selected{% endif %}>Or</option>
-                        <option value="and" {% if filter_tag_mode == "and" %}selected{% endif %}>And</option>
-                        <option value="not" {% if filter_tag_mode == "not" %}selected{% endif %}>Not</option>
+                    <select name="tag_mode" class="tag-mode" aria-label="Combine active tag filters">
+                        <option value="" {% if filter_tag_mode != "any" %}selected{% endif %}>All</option>
+                        <option value="any" {% if filter_tag_mode == "any" %}selected{% endif %}>Any</option>
                     </select>
                 </div>
             </div>
@@ -409,7 +410,8 @@
                     {% if !filter_media.is_empty() %}<input type="hidden" name="media" value="{{ filter_media }}">{% endif %}
                     {% if !filter_category.is_empty() %}<input type="hidden" name="category" value="{{ filter_category }}">{% endif %}
                     {% for tag in filter_tags %}<input type="hidden" name="tag" value="{{ tag }}">{% endfor %}
-                    {% if !filter_tag_mode.is_empty() %}<input type="hidden" name="tag_mode" value="{{ filter_tag_mode }}">{% endif %}
+                    {% if filter_tag_mode == "any" %}<input type="hidden" name="tag_mode" value="any">{% endif %}
+                    {% for tag in filter_not_tags %}<input type="hidden" name="not_tag" value="{{ tag }}">{% endfor %}
                     <input type="hidden" name="letter" value="{{ filter_letter }}">
                     <input type="hidden" name="status" value="{{ filter_status }}">
                     <input type="hidden" name="q" value="{{ filter_q }}">
@@ -542,7 +544,8 @@
                     {% if !filter_media.is_empty() %}<input type="hidden" name="media" value="{{ filter_media }}">{% endif %}
                     {% if !filter_category.is_empty() %}<input type="hidden" name="category" value="{{ filter_category }}">{% endif %}
                     {% for tag in filter_tags %}<input type="hidden" name="tag" value="{{ tag }}">{% endfor %}
-                    {% if !filter_tag_mode.is_empty() %}<input type="hidden" name="tag_mode" value="{{ filter_tag_mode }}">{% endif %}
+                    {% if filter_tag_mode == "any" %}<input type="hidden" name="tag_mode" value="any">{% endif %}
+                    {% for tag in filter_not_tags %}<input type="hidden" name="not_tag" value="{{ tag }}">{% endfor %}
                     <input type="hidden" name="letter" value="{{ filter_letter }}">
                     <input type="hidden" name="status" value="{{ filter_status }}">
                     <input type="hidden" name="q" value="{{ filter_q }}">
@@ -732,6 +735,28 @@
 
             select.addEventListener('change', syncTextMatchMode);
             syncTextMatchMode();
+        });
+
+        var tagFilterStates = {
+            '': { next: 'tag', label: 'not filtered', checked: 'false' },
+            tag: { next: 'not_tag', label: 'included', checked: 'true' },
+            not_tag: { next: '', label: 'excluded', checked: 'mixed' }
+        };
+        form.querySelectorAll('[data-tag-filter]').forEach(function(checkbox) {
+            checkbox.addEventListener('change', function() {
+                var state = tagFilterStates[checkbox.dataset.mode] || tagFilterStates[''];
+                var nextMode = state.next;
+                checkbox.dataset.mode = nextMode;
+                checkbox.checked = !!nextMode;
+                checkbox.setAttribute('aria-checked', tagFilterStates[nextMode].checked);
+                checkbox.setAttribute(
+                    'aria-label',
+                    checkbox.dataset.tagName + ': ' + tagFilterStates[nextMode].label + '. Click to change.'
+                );
+                checkbox.closest('.disc-tag-option').querySelectorAll('[data-tag-param]').forEach(function(input) {
+                    input.disabled = input.dataset.tagParam !== nextMode;
+                });
+            });
         });
 
         function syncEdcFilter(changed) {

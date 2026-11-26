@@ -358,6 +358,8 @@ pub struct DiscsQuery {
     pub category: Option<String>,
     #[serde(default)]
     pub tag: Vec<String>,
+    #[serde(default)]
+    pub not_tag: Vec<String>,
     pub tag_mode: Option<String>,
     pub letter: Option<String>,
     pub status: Option<String>,
@@ -1052,10 +1054,21 @@ fn normalize_language_filter(language: Option<&str>) -> String {
 
 fn normalize_tag_mode(mode: Option<&str>) -> String {
     match mode.unwrap_or_default().trim().to_ascii_lowercase().as_str() {
-        "and" => "and".to_string(),
-        "not" => "not".to_string(),
+        "any" => "any".to_string(),
+        "all" => "all".to_string(),
         _ => String::new(),
     }
+}
+
+fn resolve_tag_filter(tags: &[String], requested: &[String]) -> Vec<String> {
+    tags.iter()
+        .filter(|tag| {
+            requested
+                .iter()
+                .any(|requested_tag| tag.eq_ignore_ascii_case(requested_tag))
+        })
+        .cloned()
+        .collect()
 }
 
 fn normalize_non_negative_bound(value: Option<&str>) -> Option<i32> {
@@ -1139,6 +1152,7 @@ struct DiscsTemplate {
     filter_category: String,
     selected_tag_count: usize,
     filter_tags: Vec<String>,
+    filter_not_tags: Vec<String>,
     filter_tag_mode: String,
     filter_status: String,
     filter_letter: String,
@@ -1223,6 +1237,7 @@ impl DiscsTemplate {
             category: &self.filter_category,
             tags: &self.filter_tags,
             tag_mode: &self.filter_tag_mode,
+            not_tags: &self.filter_not_tags,
             status: &self.filter_status,
             letter,
             dumper: &self.filter_dumper,
@@ -1321,6 +1336,7 @@ struct DiscsUrlOptions<'a> {
     category: &'a str,
     tags: &'a [String],
     tag_mode: &'a str,
+    not_tags: &'a [String],
     status: &'a str,
     letter: &'a str,
     dumper: &'a str,
@@ -1423,7 +1439,17 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
             ("language", options.language),
             ("media", options.media),
             ("category", options.category),
-            ("tag_mode", options.tag_mode),
+            (
+                "tag_mode",
+                if options.tags.is_empty()
+                    && options.not_tags.is_empty()
+                    || options.tag_mode == "all"
+                {
+                    ""
+                } else {
+                    options.tag_mode
+                },
+            ),
             ("status", options.status),
             ("letter", options.letter),
             ("dumper", options.dumper),
@@ -1481,6 +1507,11 @@ fn build_discs_url(options: DiscsUrlOptions<'_>) -> String {
     for tag in options.tags {
         url.push(if url.contains('?') { '&' } else { '?' });
         url.push_str("tag=");
+        url.push_str(&urlencoding::encode(tag));
+    }
+    for tag in options.not_tags {
+        url.push(if url.contains('?') { '&' } else { '?' });
+        url.push_str("not_tag=");
         url.push_str(&urlencoding::encode(tag));
     }
     url
@@ -1742,7 +1773,7 @@ struct CategoryOption {
 
 struct TagFilterOption {
     name: String,
-    selected: bool,
+    mode: String,
 }
 
 #[derive(Clone, sqlx::FromRow)]
@@ -1990,13 +2021,19 @@ async fn discs_page_response(
         .unwrap_or_default()
         .trim()
         .to_string();
-    let requested_tag_mode = normalize_tag_mode(query.tag_mode.as_deref());
     let requested_tags = query
         .tag
         .into_iter()
         .map(|tag| tag.trim().to_string())
         .filter(|tag| !tag.is_empty())
         .collect::<Vec<_>>();
+    let requested_not_tags = query
+        .not_tag
+        .into_iter()
+        .map(|tag| tag.trim().to_string())
+        .filter(|tag| !tag.is_empty())
+        .collect::<Vec<_>>();
+    let requested_tag_mode = normalize_tag_mode(query.tag_mode.as_deref());
     let filter_status = normalize_status_filter(query.status.as_deref(), can_view_disabled_discs);
     let filter_letter = normalize_letter_filter(query.letter.as_deref());
     let filter_q = query.q.clone().unwrap_or_default().trim().to_string();
@@ -2229,27 +2266,21 @@ async fn discs_page_response(
     let advanced_open = advanced_explicit;
 
     let reference_data = state.discs_cache.references.get(&state.pool).await?;
-    let filter_tags = reference_data
-        .tags
-        .iter()
-        .filter(|tag| {
-            requested_tags
-                .iter()
-                .any(|requested| tag.eq_ignore_ascii_case(requested))
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let filter_tag_mode = if filter_tags.is_empty() {
-        String::new()
-    } else {
-        requested_tag_mode
-    };
+    let filter_tags = resolve_tag_filter(&reference_data.tags, &requested_tags);
+    let filter_not_tags = resolve_tag_filter(&reference_data.tags, &requested_not_tags);
+    let filter_tag_mode = requested_tag_mode;
     let tag_options = reference_data
         .tags
         .iter()
         .map(|tag| TagFilterOption {
             name: tag.clone(),
-            selected: filter_tags.iter().any(|selected| selected == tag),
+            mode: if filter_tags.iter().any(|selected| selected == tag) {
+                "tag".to_string()
+            } else if filter_not_tags.iter().any(|selected| selected == tag) {
+                "not_tag".to_string()
+            } else {
+                String::new()
+            },
         })
         .collect::<Vec<_>>();
     let sys_rows = reference_data.systems.clone();
@@ -2327,19 +2358,38 @@ async fn discs_page_response(
         filter_category_id,
         filter_category_unknown,
     );
+    let mut tag_clauses = Vec::new();
     if !filter_tags.is_empty() {
         bind_idx += 1;
         let matching_tags = format!(
             "SELECT 1 FROM disc_tags dt_filter JOIN tags t_filter ON t_filter.id = dt_filter.tag_id WHERE dt_filter.disc_id = d.id AND t_filter.name = ANY(${bind_idx})"
         );
         let tag_clause = match filter_tag_mode.as_str() {
-            "and" => format!(
+            "any" => format!("EXISTS ({matching_tags})"),
+            _ => format!(
                 "EXISTS ({matching_tags} GROUP BY dt_filter.disc_id HAVING COUNT(DISTINCT t_filter.id) = cardinality(${bind_idx}))"
             ),
-            "not" => format!("NOT EXISTS ({matching_tags})"),
-            _ => format!("EXISTS ({matching_tags})"),
         };
-        where_clauses.push(tag_clause);
+        tag_clauses.push(tag_clause);
+    }
+    if !filter_not_tags.is_empty() {
+        bind_idx += 1;
+        let matching_tags = format!(
+            "SELECT 1 FROM disc_tags dt_filter JOIN tags t_filter ON t_filter.id = dt_filter.tag_id WHERE dt_filter.disc_id = d.id AND t_filter.name = ANY(${bind_idx})"
+        );
+        let tag_clause = if filter_tag_mode == "any" {
+            format!(
+                "NOT EXISTS ({matching_tags} GROUP BY dt_filter.disc_id HAVING COUNT(DISTINCT t_filter.id) = cardinality(${bind_idx}))"
+            )
+        } else {
+            format!("NOT EXISTS ({matching_tags})")
+        };
+        tag_clauses.push(tag_clause);
+    }
+    if filter_tag_mode == "any" && !tag_clauses.is_empty() {
+        where_clauses.push(format!("({})", tag_clauses.join(" OR ")));
+    } else {
+        where_clauses.extend(tag_clauses);
     }
     if !filter_region.is_empty() {
         bind_idx += 1;
@@ -2734,6 +2784,7 @@ async fn discs_page_response(
             category: &filter_category,
             tags: &filter_tags,
             tag_mode: &filter_tag_mode,
+            not_tags: &filter_not_tags,
             status: &filter_status,
             letter: &filter_letter,
             dumper: &filter_dumper,
@@ -2896,6 +2947,9 @@ async fn discs_page_response(
     if !filter_tags.is_empty() {
         bind_queries!(filter_tags.clone());
     }
+    if !filter_not_tags.is_empty() {
+        bind_queries!(filter_not_tags.clone());
+    }
     if !filter_region.is_empty() {
         bind_queries!(filter_region.clone());
     }
@@ -3045,6 +3099,7 @@ async fn discs_page_response(
             category: &filter_category,
             tags: &filter_tags,
             tag_mode: &filter_tag_mode,
+            not_tags: &filter_not_tags,
             status: &filter_status,
             letter: &filter_letter,
             dumper: &filter_dumper,
@@ -3219,8 +3274,9 @@ async fn discs_page_response(
             filter_language,
             filter_media,
             filter_category,
-            selected_tag_count: filter_tags.len(),
+            selected_tag_count: filter_tags.len() + filter_not_tags.len(),
             filter_tags,
+            filter_not_tags,
             filter_tag_mode,
             filter_status,
             filter_letter,
@@ -3961,6 +4017,7 @@ mod tests {
                 category: "Bonus Discs",
                 tags: &[],
                 tag_mode: "",
+                not_tags: &[],
                 status: "Verified",
                 letter: "#",
                 dumper: "A/B",
