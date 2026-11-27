@@ -1798,18 +1798,13 @@ nav[aria-label="Pagination"] ul {
     font-size: 0.75rem;
     font-weight: 400;
     color: var(--pico-code-color);
+    white-space: pre-wrap;
 }
 .ring-table .ring-fixed-cell * {
     font-family: inherit;
     font-size: inherit;
     font-weight: inherit;
     color: inherit;
-}
-.ring-tab-marker {
-    display: inline-block;
-    width: 3ch;
-    height: 1em;
-    vertical-align: -0.1em;
 }
 
 .disc-view .tracks-table.striped tbody tr.tracks-session-row td {

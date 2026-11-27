@@ -255,6 +255,28 @@ pub(crate) struct DiscEditTemplate {
 impl SiteConfig for DiscEditTemplate {}
 
 impl DiscEditTemplate {
+    pub fn ring_codes_display_json(&self) -> String {
+        let Ok(mut entries) = serde_json::from_str::<serde_json::Value>(&self.ring_codes_json)
+        else {
+            return self.ring_codes_json.clone();
+        };
+        let layers = entries
+            .as_array_mut()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.get_mut("layers")?.as_array_mut())
+            .flatten()
+            .filter_map(serde_json::Value::as_object_mut);
+        for layer in layers {
+            for value in layer.values_mut() {
+                if let Some(text) = value.as_str() {
+                    *value = disc_service::ring_display_value(text).into();
+                }
+            }
+        }
+        entries.to_string()
+    }
+
     pub fn has_selected_language_variants(&self) -> bool {
         self.language_variants.iter().any(|language| language.selected)
     }

@@ -39,18 +39,6 @@ fn language_codes_for_rom_name(languages: &[Language]) -> Vec<String> {
         .collect()
 }
 
-fn ring_tab_replace(s: &str) -> String {
-    let escaped = s
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;");
-    escaped.replace(
-        '\t',
-        "<span class=\"ring-tab-marker\" title=\"Tab\"></span>",
-    )
-}
-
 fn join_sorted_identifier_values(values: &[String]) -> String {
     let mut sorted = values.to_vec();
     sorted.sort_by(|a, b| {
@@ -522,25 +510,25 @@ fn build_ring_rows(entries: &[RingEntryView], ring_display_layers: usize) -> Vec
                 .map(|(row_index, (li, layer))| ViewRingRow {
                     entry_num,
                     layer: ring_layer_label(li, ring_display_layers),
-                    mastering_code: ring_tab_replace(
+                    mastering_code: disc_service::ring_display_value(
                         &layer
                             .and_then(|l| l.mastering_code.clone())
                             .unwrap_or_default(),
                     ),
-                    mastering_sid: ring_tab_replace(
+                    mastering_sid: disc_service::ring_display_value(
                         &layer
                             .and_then(|l| l.mastering_sid.clone())
                             .unwrap_or_default(),
                     ),
-                    mould_sids: ring_tab_replace(
+                    mould_sids: disc_service::ring_display_value(
                         &layer.map(|l| l.mould_sids.clone()).unwrap_or_default(),
                     ),
-                    additional_moulds: ring_tab_replace(
+                    additional_moulds: disc_service::ring_display_value(
                         &layer
                             .map(|l| l.additional_moulds.clone())
                             .unwrap_or_default(),
                     ),
-                    toolstamps: ring_tab_replace(
+                    toolstamps: disc_service::ring_display_value(
                         &layer.map(|l| l.toolstamps.clone()).unwrap_or_default(),
                     ),
                     offset: offset.clone(),
@@ -3020,11 +3008,11 @@ mod tests {
         assert!(template
             .contains(r#"<td class="ring-layer-col"><strong>{{ row.layer }}</strong></td>"#));
         assert!(
-            template.contains(r#"<td class="ring-fixed-cell">{{ row.mastering_code|safe }}</td>"#)
+            template.contains(r#"<td class="ring-fixed-cell">{{ row.mastering_code }}</td>"#)
         );
         assert!(!template.contains(r#"<td class="ring-layer-col ring-entry-cell""#));
         assert!(!template.contains(
-            r#"<td class="ring-fixed-cell ring-entry-cell">{{ row.mastering_code|safe }}</td>"#
+            r#"<td class="ring-fixed-cell ring-entry-cell">{{ row.mastering_code }}</td>"#
         ));
     }
 

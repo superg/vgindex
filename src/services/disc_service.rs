@@ -449,6 +449,12 @@ fn parse_raw_hex_input(text: &str) -> Result<Vec<u8>, String> {
     Ok(result)
 }
 
+/// Ring code text as shown on disc view and in the disc edit form: each tab
+/// becomes 4 spaces. Saving collapses runs of 2+ spaces back into a tab.
+pub(crate) fn ring_display_value(value: &str) -> String {
+    value.replace('\t', "    ")
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct PvdLayout {
     pub(crate) dump_offset: usize,

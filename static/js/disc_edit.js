@@ -477,10 +477,6 @@ function isEntryEmpty(entry) {
     return true;
 }
 
-function ringDisplayValue(value) {
-    return String(value || '').replace(/\t/g, '    ');
-}
-
 function renderRingEntries() {
     var thead = document.getElementById('ring-thead');
     var tbody = document.getElementById('ring-tbody');
@@ -546,9 +542,9 @@ function renderRingEntries() {
             }
             if (ml > 1) cells += '<td>' + ringLayerLabelHtml(li, ml) + '</td>';
             var layerSeedPrefix = li === ml - 1 ? 'label_side_' : 'layer_' + li + '_';
-            cells += '<td><input type="text" data-json-seed-key="' + layerSeedPrefix + 'mastering_code" class="' + ringInputClass('ring-mc', layerHighlight && layerHighlight.mastering_code) + '" value="' + esc(ringDisplayValue(l.mastering_code)) + '"></td>';
-            cells += '<td><input type="text" data-json-seed-key="' + layerSeedPrefix + 'mastering_sid" class="' + ringInputClass('ring-ms', layerHighlight && layerHighlight.mastering_sid) + '" value="' + esc(ringDisplayValue(l.mastering_sid)) + '"></td>';
-            cells += '<td><input type="text" data-json-seed-key="' + layerSeedPrefix + 'toolstamps" class="' + ringInputClass('ring-tools', layerHighlight && layerHighlight.toolstamps) + '" value="' + esc(ringDisplayValue(l.toolstamps)) + '"></td>';
+            cells += '<td><input type="text" data-json-seed-key="' + layerSeedPrefix + 'mastering_code" class="' + ringInputClass('ring-mc', layerHighlight && layerHighlight.mastering_code) + '" value="' + esc(l.mastering_code || '') + '"></td>';
+            cells += '<td><input type="text" data-json-seed-key="' + layerSeedPrefix + 'mastering_sid" class="' + ringInputClass('ring-ms', layerHighlight && layerHighlight.mastering_sid) + '" value="' + esc(l.mastering_sid || '') + '"></td>';
+            cells += '<td><input type="text" data-json-seed-key="' + layerSeedPrefix + 'toolstamps" class="' + ringInputClass('ring-tools', layerHighlight && layerHighlight.toolstamps) + '" value="' + esc(l.toolstamps || '') + '"></td>';
             var mouldSidValue = l.mould_sids || '';
             var isMouldLayer = li === 0 || li === ml - 1;
             var mouldSeedPrefix = li === ml - 1 ? 'label_side_' : (li === 0 ? 'layer_0_' : '');
@@ -556,7 +552,7 @@ function renderRingEntries() {
                 ? ' data-json-seed-key="' + mouldSeedPrefix + 'mould_sids"'
                 : '';
             if (isMouldLayer || mouldSidValue.trim() !== '') {
-                cells += '<td><input type="text"' + mouldSeedAttr + ' class="' + ringInputClass('ring-moulds', layerHighlight && layerHighlight.mould_sids) + '" value="' + esc(ringDisplayValue(mouldSidValue)) + '"></td>';
+                cells += '<td><input type="text"' + mouldSeedAttr + ' class="' + ringInputClass('ring-moulds', layerHighlight && layerHighlight.mould_sids) + '" value="' + esc(mouldSidValue || '') + '"></td>';
             } else {
                 cells += '<td></td>';
             }
@@ -565,7 +561,7 @@ function renderRingEntries() {
                 ? ' data-json-seed-key="' + mouldSeedPrefix + 'additional_moulds"'
                 : '';
             if (isMouldLayer || additionalMouldsValue.trim() !== '') {
-                cells += '<td><input type="text"' + additionalMouldsSeedAttr + ' class="' + ringInputClass('ring-addmoulds', layerHighlight && layerHighlight.additional_moulds) + '" value="' + esc(ringDisplayValue(additionalMouldsValue)) + '"></td>';
+                cells += '<td><input type="text"' + additionalMouldsSeedAttr + ' class="' + ringInputClass('ring-addmoulds', layerHighlight && layerHighlight.additional_moulds) + '" value="' + esc(additionalMouldsValue || '') + '"></td>';
             } else {
                 cells += '<td></td>';
             }
