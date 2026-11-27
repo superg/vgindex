@@ -613,13 +613,14 @@ pub async fn find_closest_disc_by_universal_hash(
         let mut matching_sizes = 0;
         let mut matching_hashes = 0;
         for submitted_file in &submitted {
-            let Some(track_number) = track_number_value(submitted_file.track_number.as_deref())
-            else {
-                continue;
+            let disc_file = match track_number_value(submitted_file.track_number.as_deref()) {
+                Some(track_number) => disc_files.iter().find(|file| {
+                    track_number_value(file.track_number.as_deref()) == Some(track_number)
+                }),
+                None if disc_files.len() == 1 => disc_files.first(),
+                None => None,
             };
-            let Some(disc_file) = disc_files.iter().find(|file| {
-                track_number_value(file.track_number.as_deref()) == Some(track_number)
-            }) else {
+            let Some(disc_file) = disc_file else {
                 continue;
             };
             if disc_file.size == submitted_file.size {
@@ -722,7 +723,20 @@ async fn track_sizes_match(
     let Some(files_xml) = files_xml else {
         return Ok(false);
     };
-    let mut submitted_sizes: Vec<(i32, i64)> = parse_rom_entries(files_xml)
+    let submitted = parse_rom_entries(files_xml);
+    let stored_tracks: Vec<(Option<String>, i64)> =
+        sqlx::query_as("SELECT track_number, size FROM files WHERE disc_id = $1")
+            .bind(disc_id)
+            .fetch_all(pool)
+            .await?;
+
+    if submitted.len() == 1
+        && track_number_value(submitted[0].track_number.as_deref()).is_none()
+    {
+        return Ok(stored_tracks.len() == 1 && stored_tracks[0].1 == submitted[0].size);
+    }
+
+    let mut submitted_sizes: Vec<(i32, i64)> = submitted
         .into_iter()
         .filter_map(|entry| {
             track_number_value(entry.track_number.as_deref()).map(|n| (n, entry.size))
@@ -730,12 +744,6 @@ async fn track_sizes_match(
         .collect();
     submitted_sizes.sort_unstable_by_key(|track| track.0);
 
-    let stored_tracks: Vec<(Option<String>, i64)> = sqlx::query_as(
-        "SELECT track_number, size FROM files WHERE disc_id = $1 AND track_number IS NOT NULL",
-    )
-    .bind(disc_id)
-    .fetch_all(pool)
-    .await?;
     let mut stored_sizes: Vec<(i32, i64)> = stored_tracks
         .into_iter()
         .filter_map(|(track_number, size)| {
