@@ -1798,7 +1798,7 @@ nav[aria-label="Pagination"] ul {
     font-size: 0.75rem;
     font-weight: 400;
     color: var(--pico-code-color);
-    white-space: pre-wrap;
+    white-space: pre;
 }
 .ring-table .ring-fixed-cell * {
     font-family: inherit;
