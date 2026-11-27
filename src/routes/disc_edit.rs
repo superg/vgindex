@@ -1771,9 +1771,17 @@ fn validate_form_with_options(
     if let Some(ref text) = form.pvd {
         let text = text.trim();
         if !text.is_empty() {
-            match disc_service::parse_pvd_hex_dump(text) {
-                Err(e) => errors.push(format!("PVD: {}", e)),
-                Ok(_) => {}
+            match disc_service::parse_binary_hex_input(text) {
+                Ok(bytes) if bytes.len() != disc_service::PVD_DISPLAY_SIZE => errors.push(format!(
+                    "PVD: must be exactly {} bytes, got {} bytes",
+                    disc_service::PVD_DISPLAY_SIZE,
+                    bytes.len()
+                )),
+                _ => {
+                    if let Err(e) = disc_service::parse_pvd_hex_dump(text) {
+                        errors.push(format!("PVD: {}", e));
+                    }
+                }
             }
         }
     }

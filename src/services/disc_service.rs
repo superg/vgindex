@@ -455,6 +455,9 @@ pub(crate) fn ring_display_value(value: &str) -> String {
     value.replace('\t', "    ")
 }
 
+/// Size of the PVD/SFSVD hex dump redumper prints and the edit form expects.
+pub(crate) const PVD_DISPLAY_SIZE: usize = 96;
+
 #[derive(Clone, Copy)]
 pub(crate) struct PvdLayout {
     pub(crate) dump_offset: usize,
@@ -473,7 +476,6 @@ impl PvdLayout {
 
     /// Stored bytes zero-padded to the 96-byte dump redumper prints for PVD/SFSVD.
     pub(crate) fn display_bytes(self, data: &[u8]) -> Vec<u8> {
-        const PVD_DISPLAY_SIZE: usize = 96;
         let mut buf = vec![0u8; PVD_DISPLAY_SIZE];
         let copy_len = data.len().min(self.stored_size());
         buf[..copy_len].copy_from_slice(&data[..copy_len]);
