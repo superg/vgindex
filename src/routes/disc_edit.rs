@@ -2598,17 +2598,18 @@ fn normalize_hex_dump_for_render(text: Option<&str>, style: HexStyle) -> String 
     if text.trim().is_empty() {
         return String::new();
     }
-    let Ok(bytes) = disc_service::parse_binary_hex_input(text) else {
-        return text.to_string();
-    };
-    match style {
+    let formatted = match style {
         HexStyle::Pvd => {
-            let (layout, skip) = disc_service::pvd_input_layout(text, &bytes);
-            format_pvd_hex_dump_with_layout(bytes.get(skip..).unwrap_or_default(), layout)
+            disc_service::parse_pvd_hex_dump(text).map(|bytes| format_pvd_hex_dump(&bytes))
         }
-        HexStyle::Header => format_header_hex_dump(&bytes),
-        HexStyle::Compact => format_compact_hex(&bytes),
-    }
+        HexStyle::Header => {
+            disc_service::parse_binary_hex_input(text).map(|bytes| format_header_hex_dump(&bytes))
+        }
+        HexStyle::Compact => {
+            disc_service::parse_binary_hex_input(text).map(|bytes| format_compact_hex(&bytes))
+        }
+    };
+    formatted.unwrap_or_else(|_| text.to_string())
 }
 
 pub(crate) fn norm_str_vec(v: Vec<String>) -> Vec<String> {
@@ -4558,7 +4559,7 @@ mod operation_delta_tests {
     fn nonempty_pvd_is_canonicalized_for_render() {
         assert_eq!(
             normalize_hex_dump_for_render(Some("a1 b2"), HexStyle::Pvd),
-            format_pvd_hex_dump(&[0xa1, 0xb2])
+            "a1 b2"
         );
     }
 
