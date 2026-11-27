@@ -502,15 +502,28 @@ pub(crate) fn pvd_layout(data: &[u8]) -> PvdLayout {
     }
 }
 
-pub(crate) fn pvd_input_layout(text: &str, data: &[u8]) -> (PvdLayout, usize) {
-    let first_offset = text
-        .lines()
+/// Address of the first row of a hex dump ("0320 : ..."), if it has one.
+pub(crate) fn hex_dump_first_offset(text: &str) -> Option<usize> {
+    text.lines()
         .map(str::trim)
         .find(|line| !line.is_empty())
         .and_then(|line| line.split_once(':'))
-        .and_then(|(offset, _)| usize::from_str_radix(offset.trim(), 16).ok());
+        .and_then(|(offset, _)| usize::from_str_radix(offset.trim(), 16).ok())
+}
 
-    match first_offset {
+/// Two PVD hex dumps are equal when the bytes that get stored are equal;
+/// padding and bytes outside the stored range are ignored.
+pub(crate) fn pvd_values_equal(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a.as_str(), b.as_str()) {
+        (Some(a), Some(b)) => {
+            matches!((parse_pvd_hex_dump(a), parse_pvd_hex_dump(b)), (Ok(a), Ok(b)) if a == b)
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn pvd_input_layout(text: &str, data: &[u8]) -> (PvdLayout, usize) {
+    match hex_dump_first_offset(text) {
         Some(0x0309) => return (HIGH_SIERRA_PVD_LAYOUT, 7),
         Some(0x0310) => return (HIGH_SIERRA_PVD_LAYOUT, 0),
         Some(0x0320) => return (ISO9660_PVD_LAYOUT, 0),

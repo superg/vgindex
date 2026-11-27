@@ -1237,6 +1237,13 @@ fn review_values_equal(old: &serde_json::Value, new: &serde_json::Value) -> bool
     }
 }
 
+fn review_field_changed(field: &str, old: &serde_json::Value, new: &serde_json::Value) -> bool {
+    if field == "pvd" && disc_service::pvd_values_equal(old, new) {
+        return false;
+    }
+    review_value_changed(old, new)
+}
+
 fn review_value_changed(old: &serde_json::Value, new: &serde_json::Value) -> bool {
     if is_empty_review_value(old) && is_empty_review_value(new) {
         return false;
@@ -1517,7 +1524,7 @@ fn build_review_diff_context(
     ] {
         let old = &db_snapshot[field];
         let new = &submitted_snapshot[field];
-        if review_value_changed(old, new) {
+        if review_field_changed(field, old, new) {
             let annotation_value = match identity_mode {
                 ReviewIdentityMode::PreferOld => review_annotation_value(new),
                 ReviewIdentityMode::PreferSubmitted => review_annotation_value(old),
@@ -1542,7 +1549,7 @@ fn build_review_diff_context(
     ] {
         let old = &db_snapshot[field];
         let new = &submitted_snapshot[field];
-        if review_value_changed(old, new) {
+        if review_field_changed(field, old, new) {
             add_single_annotation(
                 &mut context,
                 field,
@@ -1623,7 +1630,7 @@ fn build_review_diff_context(
     ] {
         let old = &db_snapshot[field];
         let new = &submitted_snapshot[field];
-        if review_value_changed(old, new) {
+        if review_field_changed(field, old, new) {
             context.old_multiline.push(ReviewOldMultiline {
                 field: template_field_name(field),
                 value: multiline_display_value(field, old),
@@ -2061,7 +2068,9 @@ fn compute_field_highlights(
             changed_fields.push(format!("{}:added", template_field_name(field)));
         } else if !db_empty && ch_empty {
             changed_fields.push(format!("{}:removed", template_field_name(field)));
-        } else if !vals_equal(db_val, ch_val) {
+        } else if !vals_equal(db_val, ch_val)
+            && !(*field == "pvd" && disc_service::pvd_values_equal(db_val, ch_val))
+        {
             changed_fields.push(format!("{}:changed", template_field_name(field)));
         }
     }
@@ -2346,7 +2355,11 @@ fn compute_field_highlights(
 
     if let Some(submitted) = submitted_changes.as_object() {
         for field in submitted.keys().filter(|field| field.as_str() != "ring_codes") {
-            if !review_value_changed(&db_snapshot[field.as_str()], &changes[field.as_str()]) {
+            if !review_field_changed(
+                field,
+                &db_snapshot[field.as_str()],
+                &changes[field.as_str()],
+            ) {
                 changed_fields.push(format!("{}:same", template_field_name(field)));
             }
         }
