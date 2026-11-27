@@ -724,11 +724,12 @@ async fn track_sizes_match(
         return Ok(false);
     };
     let submitted = parse_rom_entries(files_xml);
-    let stored_tracks: Vec<(Option<String>, i64)> =
-        sqlx::query_as("SELECT track_number, size FROM files WHERE disc_id = $1")
-            .bind(disc_id)
-            .fetch_all(pool)
-            .await?;
+    let stored_tracks: Vec<(Option<String>, i64)> = sqlx::query_as(
+        "SELECT track_number, size FROM files WHERE disc_id = $1 AND track_number IS NOT NULL",
+    )
+    .bind(disc_id)
+    .fetch_all(pool)
+    .await?;
 
     if submitted.len() == 1
         && track_number_value(submitted[0].track_number.as_deref()).is_none()
