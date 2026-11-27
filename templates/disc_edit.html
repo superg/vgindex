@@ -4,7 +4,7 @@
 
 {% block head %}
 <script>
-const RING_CODES = {{ ring_codes_json|script_json|safe }};
+const RING_CODES = {{ self.ring_codes_display_json()|script_json|safe }};
 const MAX_LAYERS = {{ max_layers }};
 const MEDIA_LAYERS = {{ media_layers_json|script_json|safe }};
 const SYSTEMS_MEDIA = {{ systems_media_json|script_json|safe }};

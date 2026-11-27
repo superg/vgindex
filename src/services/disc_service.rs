@@ -449,6 +449,15 @@ fn parse_raw_hex_input(text: &str) -> Result<Vec<u8>, String> {
     Ok(result)
 }
 
+/// Ring code text as shown on disc view and in the disc edit form: each tab
+/// becomes 4 spaces. Saving collapses runs of 2+ spaces back into a tab.
+pub(crate) fn ring_display_value(value: &str) -> String {
+    value.replace('\t', "    ")
+}
+
+/// Size of the PVD/SFSVD hex dump redumper prints and the edit form expects.
+pub(crate) const PVD_DISPLAY_SIZE: usize = 96;
+
 #[derive(Clone, Copy)]
 pub(crate) struct PvdLayout {
     pub(crate) dump_offset: usize,
@@ -463,6 +472,14 @@ impl PvdLayout {
 
     pub(crate) fn stored_size(self) -> usize {
         self.date_offset + 4 * self.date_field_size
+    }
+
+    /// Stored bytes zero-padded to the 96-byte dump redumper prints for PVD/SFSVD.
+    pub(crate) fn display_bytes(self, data: &[u8]) -> Vec<u8> {
+        let mut buf = vec![0u8; PVD_DISPLAY_SIZE];
+        let copy_len = data.len().min(self.stored_size());
+        buf[..copy_len].copy_from_slice(&data[..copy_len]);
+        buf
     }
 }
 
@@ -485,15 +502,28 @@ pub(crate) fn pvd_layout(data: &[u8]) -> PvdLayout {
     }
 }
 
-pub(crate) fn pvd_input_layout(text: &str, data: &[u8]) -> (PvdLayout, usize) {
-    let first_offset = text
-        .lines()
+/// Address of the first row of a hex dump ("0320 : ..."), if it has one.
+pub(crate) fn hex_dump_first_offset(text: &str) -> Option<usize> {
+    text.lines()
         .map(str::trim)
         .find(|line| !line.is_empty())
         .and_then(|line| line.split_once(':'))
-        .and_then(|(offset, _)| usize::from_str_radix(offset.trim(), 16).ok());
+        .and_then(|(offset, _)| usize::from_str_radix(offset.trim(), 16).ok())
+}
 
-    match first_offset {
+/// Two PVD hex dumps are equal when the bytes that get stored are equal;
+/// padding and bytes outside the stored range are ignored.
+pub(crate) fn pvd_values_equal(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a.as_str(), b.as_str()) {
+        (Some(a), Some(b)) => {
+            matches!((parse_pvd_hex_dump(a), parse_pvd_hex_dump(b)), (Ok(a), Ok(b)) if a == b)
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn pvd_input_layout(text: &str, data: &[u8]) -> (PvdLayout, usize) {
+    match hex_dump_first_offset(text) {
         Some(0x0309) => return (HIGH_SIERRA_PVD_LAYOUT, 7),
         Some(0x0310) => return (HIGH_SIERRA_PVD_LAYOUT, 0),
         Some(0x0320) => return (ISO9660_PVD_LAYOUT, 0),
@@ -2835,8 +2865,7 @@ pub(crate) fn format_space_separated_hex(data: &[u8]) -> String {
 
 fn format_pvd_hex_snapshot(data: &[u8]) -> String {
     let layout = pvd_layout(data);
-    let copy_len = data.len().min(layout.stored_size());
-    format_hex_dump_snapshot(&data[..copy_len], layout.dump_offset)
+    format_hex_dump_snapshot(&layout.display_bytes(data), layout.dump_offset)
 }
 
 /// Convert a DiscDetail into the flat JSON snapshot format that `update_disc` expects.

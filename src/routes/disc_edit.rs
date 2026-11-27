@@ -255,6 +255,28 @@ pub(crate) struct DiscEditTemplate {
 impl SiteConfig for DiscEditTemplate {}
 
 impl DiscEditTemplate {
+    pub fn ring_codes_display_json(&self) -> String {
+        let Ok(mut entries) = serde_json::from_str::<serde_json::Value>(&self.ring_codes_json)
+        else {
+            return self.ring_codes_json.clone();
+        };
+        let layers = entries
+            .as_array_mut()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.get_mut("layers")?.as_array_mut())
+            .flatten()
+            .filter_map(serde_json::Value::as_object_mut);
+        for layer in layers {
+            for value in layer.values_mut() {
+                if let Some(text) = value.as_str() {
+                    *value = disc_service::ring_display_value(text).into();
+                }
+            }
+        }
+        entries.to_string()
+    }
+
     pub fn has_selected_language_variants(&self) -> bool {
         self.language_variants.iter().any(|language| language.selected)
     }
@@ -1749,9 +1771,8 @@ fn validate_form_with_options(
     if let Some(ref text) = form.pvd {
         let text = text.trim();
         if !text.is_empty() {
-            match disc_service::parse_pvd_hex_dump(text) {
-                Err(e) => errors.push(format!("PVD: {}", e)),
-                Ok(_) => {}
+            if let Err(e) = validate_pvd_input(text) {
+                errors.push(format!("PVD: {}", e));
             }
         }
     }
@@ -2576,17 +2597,16 @@ fn normalize_hex_dump_for_render(text: Option<&str>, style: HexStyle) -> String 
     if text.trim().is_empty() {
         return String::new();
     }
-    let Ok(bytes) = disc_service::parse_binary_hex_input(text) else {
-        return text.to_string();
-    };
-    match style {
-        HexStyle::Pvd => {
-            let (layout, skip) = disc_service::pvd_input_layout(text, &bytes);
-            format_pvd_hex_dump_with_layout(bytes.get(skip..).unwrap_or_default(), layout)
+    let formatted = match style {
+        HexStyle::Pvd => validate_pvd_input(text).map(|()| normalize_pvd_hex_dump(text)),
+        HexStyle::Header => {
+            disc_service::parse_binary_hex_input(text).map(|bytes| format_header_hex_dump(&bytes))
         }
-        HexStyle::Header => format_header_hex_dump(&bytes),
-        HexStyle::Compact => format_compact_hex(&bytes),
-    }
+        HexStyle::Compact => {
+            disc_service::parse_binary_hex_input(text).map(|bytes| format_compact_hex(&bytes))
+        }
+    };
+    formatted.unwrap_or_else(|_| text.to_string())
 }
 
 pub(crate) fn norm_str_vec(v: Vec<String>) -> Vec<String> {
@@ -4313,6 +4333,9 @@ fn build_history_changes(
         }
         let old = db_obj.get(key).unwrap_or(&serde_json::Value::Null);
         let new = form_obj.get(key).unwrap_or(&serde_json::Value::Null);
+        if key == "pvd" && disc_service::pvd_values_equal(old, new) {
+            continue;
+        }
         let Some(change) = scalar_operation_change(old, new) else {
             continue;
         };
@@ -4536,7 +4559,7 @@ mod operation_delta_tests {
     fn nonempty_pvd_is_canonicalized_for_render() {
         assert_eq!(
             normalize_hex_dump_for_render(Some("a1 b2"), HexStyle::Pvd),
-            format_pvd_hex_dump(&[0xa1, 0xb2])
+            "a1 b2"
         );
     }
 
@@ -5928,7 +5951,7 @@ mod operation_delta_tests {
             &systems_with_sbi_media(true, &["DVD", "CD"]),
         );
         let expected = format_header_hex_dump(&[0xa1, 0xb2, 0xc3, 0xd4]);
-        let expected_pvd = format_pvd_hex_dump(&pvd_bytes[..82]);
+        let expected_pvd = format_hex_dump_edit(&pvd_bytes, 0x0320);
         let expected_compact = format_compact_hex(&[0xa1, 0xb2, 0xc3, 0xd4]);
         let expected_dmi = format_compact_hex(&dmi_bytes);
 
@@ -7426,11 +7449,25 @@ fn format_hex_dump_edit(data: &[u8], base_addr: usize) -> String {
     out
 }
 
+/// Submitted PVD bytes as typed, at their own address, in canonical hex dump form.
 pub(crate) fn normalize_pvd_hex_dump(text: &str) -> String {
     let bytes = disc_service::parse_binary_hex_input(text)
         .expect("binary hex fields should be validated before normalization");
-    let (layout, skip) = disc_service::pvd_input_layout(text, &bytes);
-    format_pvd_hex_dump_with_layout(bytes.get(skip..).unwrap_or_default(), layout)
+    let (layout, _) = disc_service::pvd_input_layout(text, &bytes);
+    let base_addr = disc_service::hex_dump_first_offset(text).unwrap_or(layout.dump_offset);
+    format_hex_dump_edit(&bytes, base_addr)
+}
+
+fn validate_pvd_input(text: &str) -> Result<(), String> {
+    let bytes = disc_service::parse_binary_hex_input(text)?;
+    if bytes.len() != disc_service::PVD_DISPLAY_SIZE {
+        return Err(format!(
+            "must be exactly {} bytes, got {} bytes",
+            disc_service::PVD_DISPLAY_SIZE,
+            bytes.len()
+        ));
+    }
+    disc_service::parse_pvd_hex_dump(text).map(|_| ())
 }
 
 pub(crate) fn normalize_binary_hex_dump(text: &str) -> String {
@@ -7472,8 +7509,7 @@ pub(crate) fn format_pvd_hex_dump(data: &[u8]) -> String {
 }
 
 fn format_pvd_hex_dump_with_layout(data: &[u8], layout: disc_service::PvdLayout) -> String {
-    let copy_len = data.len().min(layout.stored_size());
-    format_hex_dump_edit(&data[..copy_len], layout.dump_offset)
+    format_hex_dump_edit(&layout.display_bytes(data), layout.dump_offset)
 }
 
 pub(crate) fn format_header_hex_dump(data: &[u8]) -> String {
