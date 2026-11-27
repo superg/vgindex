@@ -584,11 +584,71 @@ pub(crate) fn universal_hash_bytes_for_matching(universal_hash: Option<&str>) ->
     hex::decode(text).ok()
 }
 
-pub async fn find_matching_disc_by_universal_hash(
+pub async fn find_closest_disc_by_universal_hash(
     pool: &PgPool,
     universal_hash: &str,
+    files_xml: Option<&str>,
 ) -> AppResult<Option<i32>> {
-    find_matching_disc_by_universal_hash_excluding(pool, universal_hash, None).await
+    let candidates = find_matching_discs_by_universal_hash_excluding(pool, universal_hash, None).await?;
+    if candidates.len() <= 1 {
+        return Ok(candidates.into_iter().next());
+    }
+    let Some(files_xml) = files_xml else {
+        return Ok(candidates.into_iter().next());
+    };
+    let submitted = parse_rom_entries(files_xml);
+    if submitted.is_empty() {
+        return Ok(candidates.into_iter().next());
+    }
+
+    let mut best: Option<(i32, usize, usize, usize)> = None;
+    for disc_id in candidates {
+        let disc_files: Vec<crate::db::models::File> = sqlx::query_as(
+            "SELECT * FROM files WHERE disc_id = $1 AND track_number IS NOT NULL ORDER BY track_number",
+        )
+        .bind(disc_id)
+        .fetch_all(pool)
+        .await?;
+        let count_difference = submitted.len().abs_diff(disc_files.len());
+        let mut matching_sizes = 0;
+        let mut matching_hashes = 0;
+        for submitted_file in &submitted {
+            let Some(track_number) = track_number_value(submitted_file.track_number.as_deref())
+            else {
+                continue;
+            };
+            let Some(disc_file) = disc_files.iter().find(|file| {
+                track_number_value(file.track_number.as_deref()) == Some(track_number)
+            }) else {
+                continue;
+            };
+            if disc_file.size == submitted_file.size {
+                matching_sizes += 1;
+            }
+            if hashes_match(disc_file, submitted_file) {
+                matching_hashes += 1;
+            }
+        }
+
+        let better_match =
+            best.is_none_or(|(_, best_count_difference, best_sizes, best_hashes)| {
+                count_difference < best_count_difference
+                    || (count_difference == best_count_difference
+                        && matching_sizes > best_sizes)
+                    || (count_difference == best_count_difference
+                        && matching_sizes == best_sizes
+                        && matching_hashes > best_hashes)
+            });
+        if better_match {
+            best = Some((
+                disc_id,
+                count_difference,
+                matching_sizes,
+                matching_hashes,
+            ));
+        }
+    }
+    Ok(best.map(|(disc_id, _, _, _)| disc_id))
 }
 
 const UNIVERSAL_HASH_MATCH_SQL: &str = "SELECT id
@@ -596,21 +656,20 @@ const UNIVERSAL_HASH_MATCH_SQL: &str = "SELECT id
          WHERE universal_hash = $1
            AND status <> 'Disabled'
            AND ($2::INT IS NULL OR id <> $2)
-         ORDER BY id
-         LIMIT 1";
+         ORDER BY id";
 
-async fn find_matching_disc_by_universal_hash_excluding(
+async fn find_matching_discs_by_universal_hash_excluding(
     pool: &PgPool,
     universal_hash: &str,
     exclude_disc_id: Option<i32>,
-) -> AppResult<Option<i32>> {
+) -> AppResult<Vec<i32>> {
     let Some(hash_bytes) = universal_hash_bytes_for_matching(Some(universal_hash)) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     Ok(sqlx::query_scalar(UNIVERSAL_HASH_MATCH_SQL)
         .bind(hash_bytes)
         .bind(exclude_disc_id)
-        .fetch_optional(pool)
+        .fetch_all(pool)
         .await?)
 }
 
@@ -639,22 +698,19 @@ pub(crate) async fn find_unambiguous_exact_disc_match(
         Some(files_xml) => find_matching_disc(pool, files_xml).await?,
         None => None,
     };
-    let universal_hash_match = match universal_hash
+    let size_matching_universal_hashes = match universal_hash
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        Some(universal_hash) => find_matching_disc_by_universal_hash(pool, universal_hash).await?,
-        None => None,
-    };
-    let universal_hash_match = if let Some(disc_id) = universal_hash_match {
-        if track_sizes_match(pool, disc_id, files_xml).await? {
-            Some(disc_id)
-        } else {
-            None
+        Some(universal_hash) => {
+            find_matching_discs_by_universal_hash_and_track_sizes(pool, universal_hash, files_xml)
+                .await?
         }
-    } else {
-        None
+        None => Vec::new(),
     };
+    let universal_hash_match = dat_match
+        .filter(|disc_id| size_matching_universal_hashes.contains(disc_id))
+        .or_else(|| size_matching_universal_hashes.first().copied());
     Ok(resolve_exact_disc_match(dat_match, universal_hash_match))
 }
 
@@ -689,6 +745,22 @@ async fn track_sizes_match(
     stored_sizes.sort_unstable_by_key(|track| track.0);
 
     Ok(!submitted_sizes.is_empty() && stored_sizes == submitted_sizes)
+}
+
+async fn find_matching_discs_by_universal_hash_and_track_sizes(
+    pool: &PgPool,
+    universal_hash: &str,
+    files_xml: Option<&str>,
+) -> AppResult<Vec<i32>> {
+    let mut matches = Vec::new();
+    for disc_id in find_matching_discs_by_universal_hash_excluding(pool, universal_hash, None)
+        .await?
+    {
+        if track_sizes_match(pool, disc_id, files_xml).await? {
+            matches.push(disc_id);
+        }
+    }
+    Ok(matches)
 }
 
 fn normalize_hash_attr(value: Option<String>) -> String {
@@ -1658,24 +1730,29 @@ async fn find_approval_conflicts_for_effective_data(
     }
 
     if let Some(universal_hash) = universal_hash_conflict_input(changes, effective_data) {
-        if let Some(disc_id) =
-            find_matching_disc_by_universal_hash_excluding(pool, universal_hash, target_disc_id)
-                .await?
+        let matching_disc_id = if submission_type == SubmissionType::Disc
+            && target_disc_id.is_none()
         {
-            let sizes_match = if submission_type == SubmissionType::Disc
-                && target_disc_id.is_none()
-            {
-                track_sizes_match(pool, disc_id, effective_data["dat"].as_str()).await?
-            } else {
-                true
-            };
-            if sizes_match {
-                conflicts.push(ApprovalConflict {
-                    text: "Universal hash already exists:".to_string(),
-                    disc_id,
-                    disc_title: fetch_approval_conflict_disc_title(pool, disc_id).await?,
-                });
-            }
+            find_matching_discs_by_universal_hash_and_track_sizes(
+                pool,
+                universal_hash,
+                effective_data["dat"].as_str(),
+            )
+            .await?
+            .into_iter()
+            .next()
+        } else {
+            find_matching_discs_by_universal_hash_excluding(pool, universal_hash, target_disc_id)
+                .await?
+                .into_iter()
+                .next()
+        };
+        if let Some(disc_id) = matching_disc_id {
+            conflicts.push(ApprovalConflict {
+                text: "Universal hash already exists:".to_string(),
+                disc_id,
+                disc_title: fetch_approval_conflict_disc_title(pool, disc_id).await?,
+            });
         }
     }
 
@@ -4349,7 +4426,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn public_match_helpers_return_database_errors() {
+    async fn match_helpers_return_database_errors() {
         let pool = unreachable_pool();
         let dat = rom_line(
             "1",
@@ -4363,7 +4440,7 @@ mod tests {
         assert!(matches!(dat_err, AppError::Database(_)));
 
         let hash_err =
-            find_matching_disc_by_universal_hash(&pool, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+            find_matching_discs_by_universal_hash_excluding(&pool, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", None)
                 .await
                 .unwrap_err();
         assert!(matches!(hash_err, AppError::Database(_)));
