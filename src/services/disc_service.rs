@@ -464,6 +464,15 @@ impl PvdLayout {
     pub(crate) fn stored_size(self) -> usize {
         self.date_offset + 4 * self.date_field_size
     }
+
+    /// Stored bytes zero-padded to the 96-byte dump redumper prints for PVD/SFSVD.
+    pub(crate) fn display_bytes(self, data: &[u8]) -> Vec<u8> {
+        const PVD_DISPLAY_SIZE: usize = 96;
+        let mut buf = vec![0u8; PVD_DISPLAY_SIZE];
+        let copy_len = data.len().min(self.stored_size());
+        buf[..copy_len].copy_from_slice(&data[..copy_len]);
+        buf
+    }
 }
 
 const ISO9660_PVD_LAYOUT: PvdLayout = PvdLayout {
@@ -2835,8 +2844,7 @@ pub(crate) fn format_space_separated_hex(data: &[u8]) -> String {
 
 fn format_pvd_hex_snapshot(data: &[u8]) -> String {
     let layout = pvd_layout(data);
-    let copy_len = data.len().min(layout.stored_size());
-    format_hex_dump_snapshot(&data[..copy_len], layout.dump_offset)
+    format_hex_dump_snapshot(&layout.display_bytes(data), layout.dump_offset)
 }
 
 /// Convert a DiscDetail into the flat JSON snapshot format that `update_disc` expects.

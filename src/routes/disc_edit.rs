@@ -7472,8 +7472,7 @@ pub(crate) fn format_pvd_hex_dump(data: &[u8]) -> String {
 }
 
 fn format_pvd_hex_dump_with_layout(data: &[u8], layout: disc_service::PvdLayout) -> String {
-    let copy_len = data.len().min(layout.stored_size());
-    format_hex_dump_edit(&data[..copy_len], layout.dump_offset)
+    format_hex_dump_edit(&layout.display_bytes(data), layout.dump_offset)
 }
 
 pub(crate) fn format_header_hex_dump(data: &[u8]) -> String {
