@@ -1223,10 +1223,7 @@ fn identityless_ring_change_is_contained(
         }
     }
 
-    if change.get("cue_variant").is_some()
-        && ring["cue_variant"].as_str().unwrap_or("")
-            != operation_new_str(change, "cue_variant")
-    {
+    if ring["cue_variant"].as_str().unwrap_or("") != operation_new_str(change, "cue_variant") {
         return false;
     }
 

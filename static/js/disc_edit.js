@@ -1434,7 +1434,7 @@ function setDumpLogControls(mode) {
 
 function setDumpLogTextareaState(textarea, uploaded) {
     if (!textarea) return;
-    textarea.readOnly = uploaded;
+    textarea.readOnly = false;
     textarea.classList.toggle('dump-log-scrollable', uploaded);
     textarea.style.height = '';
 }
