@@ -122,6 +122,7 @@ async fn disc_json(
         "system": detail.system.code,
         "media_type": d.media_type.code(),
         "category": d.category,
+        "tags": detail.tags,
         "status": d.status,
         "title": d.title,
         "title_foreign": d.title_foreign,

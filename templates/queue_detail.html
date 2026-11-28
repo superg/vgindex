@@ -61,7 +61,7 @@
     </form>
     {% endif %}
 
-    {% call changes_details("Submitted Metadata", submitted_changes, false) %}
+    {% call changes_details("Submitted Metadata", submitted_changes, approved_changes.is_empty()) %}
     {% call changes_details("Approved Changes", approved_changes, true) %}
 </div>
 
