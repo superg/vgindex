@@ -1151,6 +1151,7 @@ pub async fn get_disc_detail(pool: &PgPool, disc_id: i32) -> AppResult<DiscDetai
             offset_extra_value: entry.offset_extra_value,
             sample_data_start: entry.sample_data_start,
             comment: entry.comment.clone(),
+            cue_variant: entry.cue_variant.clone(),
             layers,
         });
     }
@@ -1586,19 +1587,26 @@ pub async fn update_disc(
                 .as_str()
                 .and_then(|s| s.trim().parse::<i32>().ok());
             let comment = entry_data["comment"].as_str().filter(|s| !s.is_empty());
+            let cue_variant = entry_data
+                .get("cue_variant")
+                .and_then(serde_json::Value::as_str)
+                .map(normalize_newlines)
+                .filter(|s| !s.trim().is_empty());
 
             let entry_id: i32 = if let Some(existing_id) =
                 entry_data["id"].as_i64().map(|v| v as i32)
             {
                 let updated = sqlx::query(
                     "UPDATE disc_ring_code_entries
-                     SET offset_value = $1, offset_extra_value = $2, sample_data_start = $3, comment = $4
-                     WHERE id = $5 AND disc_id = $6"
+                     SET offset_value = $1, offset_extra_value = $2, sample_data_start = $3, comment = $4,
+                         cue_variant = $5
+                     WHERE id = $6 AND disc_id = $7"
                 )
                 .bind(offset_value)
                 .bind(offset_extra_value)
                 .bind(sample_start)
                 .bind(comment)
+                .bind(cue_variant.as_deref())
                 .bind(existing_id)
                 .bind(disc_id)
                 .execute(&mut *conn)
@@ -1612,14 +1620,16 @@ pub async fn update_disc(
                 existing_id
             } else {
                 sqlx::query_scalar(
-                    "INSERT INTO disc_ring_code_entries (disc_id, offset_value, offset_extra_value, sample_data_start, comment)
-                     VALUES ($1, $2, $3, $4, $5) RETURNING id"
+                    "INSERT INTO disc_ring_code_entries
+                     (disc_id, offset_value, offset_extra_value, sample_data_start, comment, cue_variant)
+                     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
                 )
                 .bind(disc_id)
                 .bind(offset_value)
                 .bind(offset_extra_value)
                 .bind(sample_start)
                 .bind(comment)
+                .bind(cue_variant.as_deref())
                 .fetch_one(&mut *conn)
                 .await?
             };
@@ -2090,6 +2100,7 @@ mod tests {
                 offset_extra_value: None,
                 sample_data_start: None,
                 comment: Some("pressing".to_string()),
+                cue_variant: None,
                 layers: vec![layer(1, "MASTER", "SID")],
             },
             RingEntryView {
@@ -2098,6 +2109,7 @@ mod tests {
                 offset_extra_value: None,
                 sample_data_start: None,
                 comment: Some("Pressing".to_string()),
+                cue_variant: None,
                 layers: vec![layer(9, "MASTER", "SID")],
             },
         ];
@@ -2210,6 +2222,7 @@ mod tests {
                 offset_extra_value: None,
                 sample_data_start: None,
                 comment: None,
+                cue_variant: None,
                 layers: vec![
                     DiscRingCodeLayer {
                         id: 1,
@@ -2381,12 +2394,20 @@ pub async fn regenerate_cue_entry(conn: &mut PgConnection, disc_id: i32) -> AppR
     let raw_cue = match &disc.cue {
         Some(c) if !c.is_empty() => c,
         _ => {
+            sqlx::query("UPDATE disc_ring_code_entries SET cue_variant = NULL WHERE disc_id = $1")
+                .bind(disc_id)
+                .execute(&mut *conn)
+                .await?;
             delete_cue_file_entry(&mut *conn, disc_id).await?;
             return Ok(());
         }
     };
 
     if !system.has_cue_for_media_type(&disc.media_type) {
+        sqlx::query("UPDATE disc_ring_code_entries SET cue_variant = NULL WHERE disc_id = $1")
+            .bind(disc_id)
+            .execute(&mut *conn)
+            .await?;
         delete_cue_file_entry(&mut *conn, disc_id).await?;
         return Ok(());
     }
@@ -2421,6 +2442,22 @@ pub async fn regenerate_cue_entry(conn: &mut PgConnection, disc_id: i32) -> AppR
 
     let finalized = finalize_cue(raw_cue, &base_name, ext);
     let finalized_crlf = to_crlf_newlines(&finalized);
+
+    let variants: Vec<(i32, String)> = sqlx::query_as(
+        "SELECT id, cue_variant FROM disc_ring_code_entries
+         WHERE disc_id = $1 AND cue_variant IS NOT NULL",
+    )
+    .bind(disc_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    for (entry_id, raw_variant) in variants {
+        let finalized_variant = to_crlf_newlines(&finalize_cue(&raw_variant, &base_name, ext));
+        sqlx::query("UPDATE disc_ring_code_entries SET cue_variant = $1 WHERE id = $2")
+            .bind(finalized_variant)
+            .bind(entry_id)
+            .execute(&mut *conn)
+            .await?;
+    }
 
     sqlx::query("UPDATE discs SET cue = $1 WHERE id = $2")
         .bind(&finalized_crlf)
@@ -2527,6 +2564,20 @@ pub async fn regenerate_all_cue_entries(pool: &PgPool) -> AppResult<CueRebuildSu
     .fetch_all(pool)
     .await?;
 
+    let variant_rows: Vec<(i32, i32, String)> = sqlx::query_as(
+        "SELECT disc_id, id, cue_variant FROM disc_ring_code_entries
+         WHERE cue_variant IS NOT NULL ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut variants_by_disc = std::collections::HashMap::<i32, Vec<(i32, String)>>::new();
+    for (disc_id, entry_id, cue_variant) in variant_rows {
+        variants_by_disc
+            .entry(disc_id)
+            .or_default()
+            .push((entry_id, cue_variant));
+    }
+
     let load_elapsed = load_started.elapsed();
     tracing::info!(
         count = discs.len(),
@@ -2540,6 +2591,8 @@ pub async fn regenerate_all_cue_entries(pool: &PgPool) -> AppResult<CueRebuildSu
         ..CueRebuildSummary::default()
     };
     let mut cue_updates: Vec<(i32, String)> = Vec::new();
+    let mut cue_variant_updates: Vec<(i32, String)> = Vec::new();
+    let mut cue_variant_deletes: Vec<i32> = Vec::new();
     let mut file_upserts: Vec<CueFileWrite> = Vec::new();
     let mut cue_file_deletes: Vec<i32> = Vec::new();
 
@@ -2553,7 +2606,9 @@ pub async fn regenerate_all_cue_entries(pool: &PgPool) -> AppResult<CueRebuildSu
             );
         }
 
+        let variants = variants_by_disc.remove(&disc.id).unwrap_or_default();
         if !disc.has_active_cue() {
+            cue_variant_deletes.extend(variants.into_iter().map(|(id, _)| id));
             if disc.cue_file_size.is_some() {
                 cue_file_deletes.push(disc.id);
             }
@@ -2573,6 +2628,13 @@ pub async fn regenerate_all_cue_entries(pool: &PgPool) -> AppResult<CueRebuildSu
         let finalized = finalize_cue(&disc.cue, &base_name, &disc.rom_extension);
         let finalized_crlf = to_crlf_newlines(&finalized);
         let (size, crc32, md5, sha1) = compute_file_hashes(finalized_crlf.as_bytes());
+        for (entry_id, cue_variant) in variants {
+            let finalized_variant =
+                to_crlf_newlines(&finalize_cue(&cue_variant, &base_name, &disc.rom_extension));
+            if finalized_variant != cue_variant {
+                cue_variant_updates.push((entry_id, finalized_variant));
+            }
+        }
 
         if finalized_crlf != disc.cue {
             cue_updates.push((disc.id, finalized_crlf));
@@ -2613,6 +2675,8 @@ pub async fn regenerate_all_cue_entries(pool: &PgPool) -> AppResult<CueRebuildSu
 
     let write_started = Instant::now();
     summary.updated_cues = update_cues_in_chunks(pool, &cue_updates).await?;
+    update_cue_variants_in_chunks(pool, &cue_variant_updates).await?;
+    clear_cue_variants_in_chunks(pool, &cue_variant_deletes).await?;
     summary.upserted_file_entries = upsert_cue_files_in_chunks(pool, &file_upserts).await?;
     summary.deleted_file_entries = delete_cue_files_in_chunks(pool, &cue_file_deletes).await?;
 
@@ -2668,6 +2732,40 @@ async fn update_cues_in_chunks(pool: &PgPool, updates: &[(i32, String)]) -> AppR
         updated += result.rows_affected() as usize;
     }
     Ok(updated)
+}
+
+async fn update_cue_variants_in_chunks(
+    pool: &PgPool,
+    updates: &[(i32, String)],
+) -> AppResult<()> {
+    for chunk in updates.chunks(CUE_REBUILD_WRITE_CHUNK_SIZE) {
+        let ids: Vec<i32> = chunk.iter().map(|(id, _)| *id).collect();
+        let cues: Vec<String> = chunk.iter().map(|(_, cue)| cue.clone()).collect();
+        sqlx::query(
+            "UPDATE disc_ring_code_entries e
+             SET cue_variant = u.cue
+             FROM UNNEST($1::INT[], $2::TEXT[]) AS u(id, cue)
+             WHERE e.id = u.id",
+        )
+        .bind(&ids)
+        .bind(&cues)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
+async fn clear_cue_variants_in_chunks(pool: &PgPool, entry_ids: &[i32]) -> AppResult<()> {
+    for chunk in entry_ids.chunks(CUE_REBUILD_WRITE_CHUNK_SIZE) {
+        let ids = chunk.to_vec();
+        sqlx::query(
+            "UPDATE disc_ring_code_entries SET cue_variant = NULL WHERE id = ANY($1)",
+        )
+        .bind(&ids)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
 }
 
 async fn upsert_cue_files_in_chunks(pool: &PgPool, writes: &[CueFileWrite]) -> AppResult<usize> {
@@ -2892,6 +2990,9 @@ pub fn build_snapshot_from_disc(detail: &DiscDetail) -> serde_json::Value {
             "offset_extra_value": e.offset_extra_value.map(|v| v.to_string()).unwrap_or_default(),
             "sample_start": e.sample_data_start.map(|v| v.to_string()).unwrap_or_default(),
             "comment": e.comment.clone().unwrap_or_default(),
+            "cue_variant": e.cue_variant.as_deref()
+                .map(|cue| simplify_cue(cue, rom_extension))
+                .unwrap_or_default(),
             "layers": layers,
         })
     }).collect();

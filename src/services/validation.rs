@@ -405,6 +405,42 @@ pub fn validate_cuesheet(text: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn validate_cue_variant(main_cue: &str, variant: &str) -> Result<(), String> {
+    validate_cuesheet(main_cue)?;
+    validate_cuesheet(variant)?;
+
+    let normalized_lines = |cue: &str| {
+        cue.lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    };
+    let is_variant_line = |line: &str| {
+        matches!(
+            line.split_whitespace().next(),
+            Some("TITLE" | "PERFORMER" | "SONGWRITER" | "CATALOG" | "ISRC" | "FLAGS")
+        )
+    };
+    let main_lines = normalized_lines(main_cue);
+    let variant_lines = normalized_lines(variant);
+    let non_variant_lines = |lines: &[String]| {
+        lines
+            .iter()
+            .filter(|line| !is_variant_line(line))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+
+    if non_variant_lines(&main_lines) != non_variant_lines(&variant_lines) {
+        Err("only TITLE, PERFORMER, SONGWRITER, CATALOG, ISRC, and FLAGS lines may differ".into())
+    } else if main_lines == variant_lines {
+        Err("CUE variant must differ from the main CUE sheet".into())
+    } else {
+        Ok(())
+    }
+}
+
 pub fn cuesheet_has_only_audio_tracks(text: &str) -> bool {
     if validate_cuesheet(text).is_err() {
         return false;

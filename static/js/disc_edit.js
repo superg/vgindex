@@ -337,6 +337,7 @@ function addArrayEntry(containerId, name) {
 // Ring code editor — table-based, matching disc view layout
 var ringEntries = [];
 var ringEntryHighlights = [];
+var ringCueVariantOpen = [];
 function isAddMode() {
     return typeof IS_ADD_MODE !== 'undefined' && !!IS_ADD_MODE;
 }
@@ -360,6 +361,9 @@ function ringInputClass(baseClass, status) {
 function initRingEditor() {
     ringEntries = (typeof RING_CODES !== 'undefined' && Array.isArray(RING_CODES)) ? RING_CODES : [];
     var initialHighlights = (typeof RING_HIGHLIGHTS !== 'undefined' && Array.isArray(RING_HIGHLIGHTS)) ? RING_HIGHLIGHTS : [];
+    ringCueVariantOpen = ringEntries.map(function (entry) {
+        return !!entry && typeof entry.cue_variant === 'string' && entry.cue_variant.trim() !== '';
+    });
     ringEntryHighlights = ringEntries.map(function (_, idx) {
         return initialHighlights[idx] || null;
     });
@@ -428,17 +432,19 @@ function emptyLayer() {
 function emptyEntry(ml) {
     var layers = [];
     for (var i = 0; i < ml; i++) layers.push(emptyLayer());
-    return { offset_value: '', offset_extra_value: '', sample_start: '', comment: '', layers: layers };
+    return { offset_value: '', offset_extra_value: '', sample_start: '', comment: '', cue_variant: '', layers: layers };
 }
 
 function pushRingEntry(entry, highlight) {
     ringEntries.push(entry);
     ringEntryHighlights.push(highlight || null);
+    ringCueVariantOpen.push(false);
 }
 
 function removeRingEntryState(idx) {
     ringEntries.splice(idx, 1);
     ringEntryHighlights.splice(idx, 1);
+    ringCueVariantOpen.splice(idx, 1);
 }
 
 function ensureEmptyRingEntry() {
@@ -456,6 +462,7 @@ function ensureEmptyRingEntry() {
             }
             ringEntries = [ringEntries[keepIndex]];
             ringEntryHighlights = [ringEntryHighlights[keepIndex] || null];
+            ringCueVariantOpen = [ringCueVariantOpen[keepIndex] || false];
         }
         return;
     }
@@ -467,6 +474,7 @@ function ensureEmptyRingEntry() {
 
 function isEntryEmpty(entry) {
     if ((entry.offset_value || '').trim() !== '' || (entry.offset_extra_value || '').trim() !== '' || (entry.sample_start || '').trim() !== '' || (entry.comment || '').trim() !== '') return false;
+    if (mediaIsCd() && (entry.cue_variant || '').trim() !== '') return false;
     if (!entry.layers) return true;
     for (var i = 0; i < entry.layers.length; i++) {
         var l = entry.layers[i];
@@ -494,6 +502,7 @@ function renderRingEntries() {
     var showSampleStart = showOffset && systemHasFlag('has_sample_start');
     var showOffsetExtra = showOffset && systemHasOffsetExtra();
     var showRemoveButton = !isAddMode();
+    var showCueVariant = showOffset && canAddRingcodeEntries() && !isAddMode();
 
     // Build header
     var hdr = '<tr><th>#</th>';
@@ -506,6 +515,9 @@ function renderRingEntries() {
     if (showRemoveButton) hdr += '<th></th>';
     hdr += '</tr>';
     thead.innerHTML = hdr;
+    var columnCount = 1 + (ml > 1 ? 1 : 0) + 5 + (showOffset ? 1 : 0) +
+        (showOffsetExtra ? 1 : 0) + (showSampleStart ? 1 : 0) + 1 +
+        (showRemoveButton || showCueVariant ? 1 : 0);
 
     // Build rows
     tbody.innerHTML = '';
@@ -572,12 +584,40 @@ function renderRingEntries() {
                 if (showOffsetExtra) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-offset-extra', entryHighlight && entryHighlight.offset_extra_value) + '" value="' + esc(entry.offset_extra_value || '') + '"></td>';
                 if (showSampleStart) cells += '<td' + rs + '><input type="text" class="' + ringInputClass('ring-sample-start', entryHighlight && entryHighlight.sample_start) + '" value="' + esc(entry.sample_start || '') + '"></td>';
                 cells += '<td' + rs + '><input type="text" data-json-seed-key="ring_comment" class="' + ringInputClass('ring-comment', entryHighlight && entryHighlight.comment) + '" value="' + esc(entry.comment || '') + '"></td>';
-                if (showRemoveButton) cells += '<td' + rs + '><button type="button" class="outline secondary remove-entry" onclick="removeRingEntry(' + ei + ')">&times;</button></td>';
+                if (showRemoveButton || showCueVariant) {
+                    cells += '<td' + rs + '>';
+                    if (showRemoveButton) cells += '<button type="button" class="outline secondary remove-entry" onclick="removeRingEntry(' + ei + ')">&times;</button>';
+                    if (showCueVariant) {
+                        cells += '<button type="button" class="outline secondary ring-cue-variant-toggle" aria-expanded="' +
+                            (!!ringCueVariantOpen[ei]) + '" onclick="toggleRingCueVariant(' + ei + ')">CUE Variant</button>';
+                    }
+                    cells += '</td>';
+                }
             }
 
             tr.innerHTML = cells;
             tbody.appendChild(tr);
         }
+        if (showCueVariant && ringCueVariantOpen[ei]) {
+            var cueRow = document.createElement('tr');
+            cueRow.className = 'ring-cue-variant-row';
+            cueRow.dataset.entry = ei;
+            cueRow.innerHTML = '<td colspan="' + columnCount + '"><label>CUE Variant' +
+                '<textarea id="ring-cue-variant-' + ei + '" class="ring-cue-variant hex-scrollable" rows="5" spellcheck="false">' +
+                esc(entry.cue_variant || '') + '</textarea></label></td>';
+            tbody.appendChild(cueRow);
+        }
+    }
+}
+
+function toggleRingCueVariant(idx) {
+    saveRingFromDom();
+    ringCueVariantOpen[idx] = !ringCueVariantOpen[idx];
+    renderRingEntries();
+    applyRingColumnWidths();
+    if (ringCueVariantOpen[idx]) {
+        var textarea = document.getElementById('ring-cue-variant-' + idx);
+        if (textarea) textarea.focus();
     }
 }
 
@@ -617,6 +657,11 @@ function saveRingFromDom() {
     var rows = tbody.querySelectorAll('tr');
     rows.forEach(function (tr) {
         var ei = parseInt(tr.dataset.entry, 10);
+        var cueVariant = tr.querySelector('.ring-cue-variant');
+        if (cueVariant && !isNaN(ei) && ringEntries[ei]) {
+            ringEntries[ei].cue_variant = cueVariant.value;
+            return;
+        }
         var li = parseInt(tr.dataset.layer, 10);
         if (isNaN(ei) || isNaN(li) || !ringEntries[ei]) return;
         var layer = ringEntries[ei].layers[li];
@@ -670,6 +715,7 @@ function normalizeRingEntryForSubmission(entry) {
     ['offset_value', 'offset_extra_value', 'sample_start'].forEach(function (field) {
         out[field] = normalizeRingIntegerString(out[field]);
     });
+    out.cue_variant = mediaIsCd() ? String(out.cue_variant || '') : '';
     out.layers = [];
     var layers = Array.isArray(entry.layers) ? entry.layers : [];
     for (var i = 0; i < layers.length; i++) {
@@ -1373,8 +1419,10 @@ function setDumpLogControls(mode) {
     var uploadButton = document.getElementById('dump-log-upload-btn');
     var fillButton = document.getElementById('dump-log-fill-btn');
     var clearButton = document.getElementById('dump-log-clear-btn');
+    var textarea = document.querySelector('textarea[name="dump_log"]');
     var busy = mode === 'busy';
     var loaded = mode === 'loaded';
+    if (textarea) textarea.readOnly = busy;
     if (uploadButton) {
         uploadButton.hidden = loaded;
         uploadButton.disabled = busy;
@@ -1388,7 +1436,7 @@ function setDumpLogControls(mode) {
 
 function setDumpLogTextareaState(textarea, uploaded) {
     if (!textarea) return;
-    textarea.readOnly = uploaded;
+    textarea.readOnly = false;
     textarea.classList.toggle('dump-log-scrollable', uploaded);
     textarea.style.height = '';
 }
@@ -1915,8 +1963,13 @@ function initDumpLogFill() {
     var textarea = document.querySelector('textarea[name="dump_log"]');
     if (!button || !textarea) return;
 
-    textarea.addEventListener('input', function () {
+    textarea.addEventListener('change', function () {
         textarea.dumpLogZipArchive = null;
+        if (textarea.classList.contains('dump-log-scrollable')) {
+            setDumpLogControls('loaded');
+            clearDumpLogSession();
+            return;
+        }
         if (!clearButton || clearButton.hidden || textarea.readOnly) return;
         setDumpLogControls('ready');
         clearDumpLogSession();

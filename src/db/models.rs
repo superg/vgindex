@@ -548,6 +548,7 @@ pub struct DiscRingCodeEntry {
     pub offset_extra_value: Option<i32>,
     pub sample_data_start: Option<i32>,
     pub comment: Option<String>,
+    pub cue_variant: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -667,6 +668,7 @@ pub struct RingEntryView {
     pub offset_extra_value: Option<i32>,
     pub sample_data_start: Option<i32>,
     pub comment: Option<String>,
+    pub cue_variant: Option<String>,
     pub layers: Vec<DiscRingCodeLayer>,
 }
 

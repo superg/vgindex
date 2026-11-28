@@ -1105,6 +1105,7 @@ async fn edit_page(
 
     let mut sorted_ring_entries = detail.ring_entries.clone();
     disc_service::sort_ring_entry_views(&mut sorted_ring_entries, ring_layer_count as usize);
+    let rom_extension = detail.disc.media_type.rom_extension();
     let ring_data: Vec<serde_json::Value> = sorted_ring_entries
         .iter()
         .map(|e| {
@@ -1126,13 +1127,15 @@ async fn edit_page(
                 "offset_extra_value": e.offset_extra_value.map(|v| v.to_string()).unwrap_or_default(),
                 "sample_start": e.sample_data_start.map(|v| v.to_string()).unwrap_or_default(),
                 "comment": e.comment.clone().unwrap_or_default(),
+                "cue_variant": e.cue_variant.as_deref()
+                    .map(|cue| simplify_cue(cue, rom_extension))
+                    .unwrap_or_default(),
                 "layers": layers,
             })
         })
         .collect();
     let ring_codes_json = serde_json::to_string(&ring_data).unwrap_or_else(|_| "[]".into());
 
-    let rom_extension = detail.disc.media_type.rom_extension();
     let total_tracks = detail
         .files
         .iter()
@@ -1893,6 +1896,42 @@ fn validate_form_with_options(
         if let Some(ref text) = form.cue {
             if !text.trim().is_empty() {
                 errors.push("Cuesheet: not applicable for this media type".into());
+            }
+        }
+    }
+
+    if let Some(entries) = form
+        .ring_codes_json
+        .as_deref()
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+        .and_then(|value| value.as_array().cloned())
+    {
+        for (index, entry) in entries.iter().enumerate() {
+            let Some(variant) = entry
+                .get("cue_variant")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|variant| !variant.is_empty())
+            else {
+                continue;
+            };
+            if !is_cd_media {
+                errors.push(format!(
+                    "Ring Code {} CUE variant: only applicable to CD media",
+                    index + 1
+                ));
+                continue;
+            }
+            match form.cue.as_deref().filter(|cue| !cue.trim().is_empty()) {
+                Some(main_cue) => {
+                    if let Err(error) = validation::validate_cue_variant(main_cue, variant) {
+                        errors.push(format!("Ring Code {} CUE variant: {error}", index + 1));
+                    }
+                }
+                None => errors.push(format!(
+                    "Ring Code {} CUE variant: requires a main CUE sheet",
+                    index + 1
+                )),
             }
         }
     }
@@ -2745,6 +2784,20 @@ fn normalize_ring_codes_for_changes(mut ring_codes: serde_json::Value) -> serde_
     ring_codes
 }
 
+fn normalize_ring_code_cues_for_changes(ring_codes: &mut serde_json::Value, extension: &str) {
+    if let Some(entries) = ring_codes.as_array_mut() {
+        for entry in entries {
+            if let Some(cue) = entry
+                .get("cue_variant")
+                .and_then(serde_json::Value::as_str)
+                .filter(|cue| !cue.trim().is_empty())
+            {
+                entry["cue_variant"] = serde_json::json!(simplify_cue(cue, extension));
+            }
+        }
+    }
+}
+
 /// Normalize multiline text for comparison: strip \r, trim each line's trailing whitespace,
 /// trim leading/trailing blank lines.
 fn normalize_multiline(s: Option<&str>) -> Option<String> {
@@ -2762,6 +2815,7 @@ fn normalize_multiline(s: Option<&str>) -> Option<String> {
 
 fn build_ring_codes_json_from_detail(detail: &DiscDetail) -> serde_json::Value {
     let ring_layer_count = ring_layers(detail.disc.media_type.max_layers());
+    let rom_extension = detail.disc.media_type.rom_extension();
     let mut sorted_ring_entries = detail.ring_entries.clone();
     disc_service::sort_ring_entry_views(&mut sorted_ring_entries, ring_layer_count as usize);
     let entries: Vec<serde_json::Value> = sorted_ring_entries
@@ -2785,6 +2839,9 @@ fn build_ring_codes_json_from_detail(detail: &DiscDetail) -> serde_json::Value {
                 "offset_extra_value": e.offset_extra_value.map(|v| v.to_string()).unwrap_or_default(),
                 "sample_start": e.sample_data_start.map(|v| v.to_string()).unwrap_or_default(),
                 "comment": e.comment.clone().unwrap_or_default(),
+                "cue_variant": e.cue_variant.as_deref()
+                    .map(|cue| simplify_cue(cue, rom_extension))
+                    .unwrap_or_default(),
                 "layers": layers,
             })
         })
@@ -2815,6 +2872,28 @@ fn validate_edit_ringcode_additions(
 
     if adds_entry {
         vec![NEW_RINGCODE_EDIT_ERROR.to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+fn validate_edit_ringcode_cue_variants(
+    changes: &serde_json::Value,
+    can_edit_directly: bool,
+) -> Vec<String> {
+    if can_edit_directly {
+        return Vec::new();
+    }
+    let changed = changes
+        .get("ring_codes")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|entries| {
+            entries.iter().any(|entry| {
+                entry.get("cue_variant").is_some()
+            })
+        });
+    if changed {
+        vec!["CUE variants can only be changed by users with direct edit access".to_string()]
     } else {
         Vec::new()
     }
@@ -2852,7 +2931,7 @@ async fn edit_submit(
             ValidationResultMessage::default(),
             false,
             can_edit_directly,
-            false,
+            user.role.can_moderate(),
         )
         .await;
     }
@@ -2865,6 +2944,11 @@ async fn edit_submit(
     );
 
     let ringcode_errors = validate_edit_ringcode_additions(&changes, can_edit_directly);
+    let mut ringcode_errors = ringcode_errors;
+    ringcode_errors.extend(validate_edit_ringcode_cue_variants(
+        &changes,
+        can_edit_directly,
+    ));
     if !ringcode_errors.is_empty() {
         return render_form_with_errors(
             &state,
@@ -2876,7 +2960,7 @@ async fn edit_submit(
             ValidationResultMessage::default(),
             false,
             can_edit_directly,
-            false,
+            user.role.can_moderate(),
         )
         .await;
     }
@@ -2902,7 +2986,7 @@ async fn edit_submit(
                 ValidationResultMessage::default(),
                 false,
                 can_edit_directly,
-                false,
+                user.role.can_moderate(),
             )
             .await;
         }
@@ -2950,7 +3034,7 @@ async fn edit_submit(
                     ValidationResultMessage::default(),
                     false,
                     can_edit_directly,
-                    false,
+                    user.role.can_moderate(),
                 )
                 .await
             }
@@ -3579,7 +3663,7 @@ pub(crate) fn build_flat_changes(
         .collect();
     let new_universal_hash =
         norm_opt_str(form.universal_hash.as_deref()).map(|hash| hash.to_ascii_lowercase());
-    let new_ring_codes = form
+    let mut new_ring_codes = form
         .ring_codes_json
         .as_deref()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
@@ -3618,6 +3702,7 @@ pub(crate) fn build_flat_changes(
         .find(|m| m.code == form.media_type)
         .map(|m| m.rom_extension.as_str())
         .unwrap_or("");
+    normalize_ring_code_cues_for_changes(&mut new_ring_codes, rom_ext);
     let new_cue = norm_opt_multiline_str(form.cue.as_deref()).map(|c| simplify_cue(&c, rom_ext));
     let new_sbi = if sbi_available_for_selection(
         all_systems,
@@ -3902,6 +3987,7 @@ fn ring_entry_change(
         "offset_extra_value": "",
         "sample_start": "",
         "comment": "",
+        "cue_variant": "",
         "layers": []
     });
     let new_default = old_default.clone();
@@ -3914,7 +4000,13 @@ fn ring_entry_change(
     }
     if is_removal {
         out.insert("remove".to_string(), serde_json::json!(true));
-        for key in ["offset_value", "offset_extra_value", "sample_start", "comment"] {
+        for key in [
+            "offset_value",
+            "offset_extra_value",
+            "sample_start",
+            "comment",
+            "cue_variant",
+        ] {
             let val = old_entry[key].as_str().unwrap_or("");
             if !val.is_empty() {
                 out.insert(key.to_string(), serde_json::json!(val));
@@ -3965,6 +4057,11 @@ fn ring_entry_change(
         if let Some(change) = scalar_operation_change(&old_entry[old_key], &new_entry[new_key]) {
             out.insert(history_field.to_string(), change);
         }
+    }
+    if let Some(change) =
+        scalar_operation_change(&old_entry["cue_variant"], &new_entry["cue_variant"])
+    {
+        out.insert("cue_variant".to_string(), change);
     }
 
     let old_layers = old_entry["layers"].as_array().cloned().unwrap_or_default();
@@ -4086,6 +4183,7 @@ fn ring_entry_is_empty(entry: &serde_json::Value) -> bool {
         "offset_extra_value",
         "sample_start",
         "comment",
+        "cue_variant",
     ]
     .iter()
     .all(|field| {
@@ -4123,6 +4221,7 @@ fn filter_ring_codes_for_capabilities(
         };
         if !media_is_cd {
             entry_obj.insert("offset_value".to_string(), serde_json::json!(""));
+            entry_obj.insert("cue_variant".to_string(), serde_json::json!(""));
         }
         if !media_is_cd || !has_offset_extra {
             entry_obj.insert("offset_extra_value".to_string(), serde_json::json!(""));
@@ -4758,6 +4857,7 @@ mod operation_delta_tests {
             offset_extra_value: None,
             sample_data_start: None,
             comment: Some(comment.to_string()),
+            cue_variant: None,
             layers: vec![ring_layer(id, 0, mastering, toolstamps)],
         }
     }
