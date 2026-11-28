@@ -2462,7 +2462,12 @@ async fn find_add_disc_match(
 ) -> AppResult<Option<AddDiscMatch>> {
     let universal_hash_match = match valid_universal_hash_for_matching(form) {
         Some(universal_hash) => {
-            queue_service::find_matching_disc_by_universal_hash(pool, universal_hash).await?
+            queue_service::find_closest_disc_by_universal_hash(
+                pool,
+                universal_hash,
+                valid_dat_for_matching(form),
+            )
+            .await?
         }
         None => None,
     };
