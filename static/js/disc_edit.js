@@ -1963,8 +1963,13 @@ function initDumpLogFill() {
     var textarea = document.querySelector('textarea[name="dump_log"]');
     if (!button || !textarea) return;
 
-    textarea.addEventListener('input', function () {
+    textarea.addEventListener('change', function () {
         textarea.dumpLogZipArchive = null;
+        if (textarea.classList.contains('dump-log-scrollable')) {
+            setDumpLogControls('loaded');
+            clearDumpLogSession();
+            return;
+        }
         if (!clearButton || clearButton.hidden || textarea.readOnly) return;
         setDumpLogControls('ready');
         clearDumpLogSession();
