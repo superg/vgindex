@@ -1419,8 +1419,10 @@ function setDumpLogControls(mode) {
     var uploadButton = document.getElementById('dump-log-upload-btn');
     var fillButton = document.getElementById('dump-log-fill-btn');
     var clearButton = document.getElementById('dump-log-clear-btn');
+    var textarea = document.querySelector('textarea[name="dump_log"]');
     var busy = mode === 'busy';
     var loaded = mode === 'loaded';
+    if (textarea) textarea.readOnly = busy;
     if (uploadButton) {
         uploadButton.hidden = loaded;
         uploadButton.disabled = busy;
