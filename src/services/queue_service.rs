@@ -1463,6 +1463,7 @@ fn apply_ring_codes_history_with_mode(
                 "offset_extra_value": "",
                 "sample_start": "",
                 "comment": "",
+                "cue_variant": "",
                 "layers": []
             }));
             additions.last_mut().expect("addition just pushed")
@@ -1473,6 +1474,7 @@ fn apply_ring_codes_history_with_mode(
             ("offset_extra_value", "offset_extra_value"),
             ("sample_data_start", "sample_start"),
             ("comment", "comment"),
+            ("cue_variant", "cue_variant"),
         ] {
             if let Some(node) = change.get(history_key) {
                 apply_ring_scalar_field(entry, target_key, node)?;

@@ -195,7 +195,8 @@ CREATE TABLE disc_ring_code_entries (
     offset_value INTEGER,
     offset_extra_value INTEGER,
     sample_data_start INTEGER,
-    comment TEXT
+    comment TEXT,
+    cue_variant TEXT
 );
 
 CREATE TABLE disc_ring_code_layers (
@@ -398,6 +399,7 @@ struct RingEntryRow {
     offset_extra_value: Option<i32>,
     sample_data_start: Option<i32>,
     comment: Option<String>,
+    cue_variant: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -1135,19 +1137,20 @@ async fn export_ring_entries(
     let mut count = 0;
     let mut rows = sqlx::query_as::<_, RingEntryRow>(
         "SELECT e.id, e.disc_id, e.offset_value, e.offset_extra_value,
-                e.sample_data_start, e.comment
+                e.sample_data_start, e.comment, e.cue_variant
          FROM disc_ring_code_entries e JOIN discs d ON d.id = e.disc_id
          WHERE d.status <> 'Disabled' ORDER BY e.id",
     )
     .fetch(&mut **postgres);
     while let Some(row) = rows.try_next().await? {
-        sqlx::query("INSERT INTO disc_ring_code_entries VALUES (?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO disc_ring_code_entries VALUES (?, ?, ?, ?, ?, ?, ?)")
             .bind(row.id)
             .bind(row.disc_id)
             .bind(row.offset_value)
             .bind(row.offset_extra_value)
             .bind(row.sample_data_start)
             .bind(row.comment)
+            .bind(row.cue_variant)
             .execute(&mut **sqlite)
             .await?;
         count += 1;

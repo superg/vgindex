@@ -3458,6 +3458,16 @@ body:has(.disc-edit) footer.container hr {
     font-size: 0.72rem;
     height: auto;
 }
+.ring-edit-table .ring-cue-variant-row label {
+    display: block;
+    margin-bottom: 0;
+}
+.ring-edit-table .ring-cue-variant {
+    width: 100%;
+    min-width: 32rem;
+    margin-bottom: 0;
+    font-size: 0.75rem;
+}
 .ring-edit-table th,
 .ring-edit-table td {
     padding-top: 0.28rem;
@@ -3530,6 +3540,12 @@ body:has(.disc-edit) footer.container hr {
     padding: 0.1rem 0.35rem;
     font-size: 0.7rem;
     margin: 0;
+}
+.ring-edit-table .ring-cue-variant-toggle {
+    padding: 0.1rem 0.35rem;
+    font-size: 0.7rem;
+    margin: 0 0 0 0.2rem;
+    white-space: nowrap;
 }
 
 /* Hex dump textarea */

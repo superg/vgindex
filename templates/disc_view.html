@@ -256,6 +256,7 @@
                 {% if ring_vis.mould_sids %}<th>Mould SIDs</th>{% endif %}
                 {% if ring_vis.additional_moulds %}<th>Additional Moulds</th>{% endif %}
                 {% if ring_vis.offset %}<th>Offset</th>{% endif %}
+                {% if ring_vis.cue_variant %}<th>CUE Variant</th>{% endif %}
                 {% if ring_vis.offset_extra %}<th>Extra Offset</th>{% endif %}
                 {% if ring_vis.sample_data_start %}<th>Sample Start</th>{% endif %}
                 {% if ring_vis.comment %}<th>Comment</th>{% endif %}
@@ -273,6 +274,9 @@
                 {% if ring_vis.additional_moulds %}<td class="ring-fixed-cell">{{ row.additional_moulds }}</td>{% endif %}
                 {% if ring_vis.offset %}
                 {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset }}</td>{% endif %}
+                {% endif %}
+                {% if ring_vis.cue_variant %}
+                {% if row.entry_rowspan > 0 %}<td class="ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{% if row.has_cue_variant %}<a href="/disc/{{ disc_id }}/cue?ring={{ row.entry_id }}">Download</a>{% endif %}</td>{% endif %}
                 {% endif %}
                 {% if ring_vis.offset_extra %}
                 {% if row.entry_rowspan > 0 %}<td class="ring-fixed-cell ring-entry-cell"{% if row.entry_rowspan > 1 %} rowspan="{{ row.entry_rowspan }}"{% endif %}>{{ row.offset_extra }}</td>{% endif %}

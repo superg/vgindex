@@ -178,6 +178,11 @@ struct DiscQuery {
     id: i32,
 }
 
+#[derive(serde::Deserialize)]
+struct CueDownloadQuery {
+    ring: Option<i32>,
+}
+
 #[derive(Template)]
 #[template(path = "disc_view.html")]
 struct DiscViewTemplate {
@@ -367,7 +372,9 @@ struct ViewFlag {
 }
 
 struct ViewRingRow {
+    entry_id: i32,
     entry_num: usize,
+    has_cue_variant: bool,
     layer: String,
     mastering_code: String,
     mastering_sid: String,
@@ -391,6 +398,7 @@ struct RingColVis {
     additional_moulds: bool,
     toolstamps: bool,
     offset: bool,
+    cue_variant: bool,
     offset_extra: bool,
     sample_data_start: bool,
     comment: bool,
@@ -416,6 +424,7 @@ impl RingColVis {
     fn from_rows(
         rows: &[ViewRingRow],
         is_cd: bool,
+        show_cue_variants: bool,
         has_sample_start: bool,
         has_offset_extra: bool,
     ) -> Self {
@@ -427,6 +436,7 @@ impl RingColVis {
             additional_moulds: rows.iter().any(|r| !r.additional_moulds.is_empty()),
             toolstamps: rows.iter().any(|r| !r.toolstamps.is_empty()),
             offset: is_cd && rows.iter().any(|r| !r.offset.is_empty()),
+            cue_variant: show_cue_variants && rows.iter().any(|r| r.has_cue_variant),
             offset_extra: is_cd && has_offset_extra,
             sample_data_start: is_cd
                 && has_sample_start
@@ -482,10 +492,13 @@ fn build_ring_rows(entries: &[RingEntryView], ring_display_layers: usize) -> Vec
                 let has_data = !offset.is_empty()
                     || !offset_extra.is_empty()
                     || !sample_data_start.is_empty()
-                    || !comment.is_empty();
+                    || !comment.is_empty()
+                    || e.cue_variant.is_some();
                 if has_data {
                     return vec![ViewRingRow {
+                        entry_id: e.id,
                         entry_num,
+                        has_cue_variant: e.cue_variant.is_some(),
                         layer: String::new(),
                         mastering_code: String::new(),
                         mastering_sid: String::new(),
@@ -509,7 +522,9 @@ fn build_ring_rows(entries: &[RingEntryView], ring_display_layers: usize) -> Vec
                 .into_iter()
                 .enumerate()
                 .map(|(row_index, (li, layer))| ViewRingRow {
+                    entry_id: e.id,
                     entry_num,
+                    has_cue_variant: e.cue_variant.is_some(),
                     layer: ring_layer_label(li, ring_display_layers),
                     mastering_code: disc_service::ring_display_value(
                         &layer
@@ -787,6 +802,8 @@ async fn disc_view(
     let cue_active = detail
         .system
         .has_cue_for_media_type(&detail.disc.media_type);
+    let show_cue_variants = cue_active
+        && detail.disc.cue.as_deref().is_some_and(|cue| !cue.is_empty());
     let cue_track_meta = if cue_active {
         detail
             .disc
@@ -1146,6 +1163,7 @@ async fn disc_view(
             ring_vis: RingColVis::from_rows(
                 &ring_rows,
                 detail.disc.media_type.is_cd(),
+                show_cue_variants,
                 detail.system.has_sample_start,
                 detail.system.has_offset_extra,
             ),
@@ -2337,8 +2355,10 @@ async fn disc_cue_download(
     State(state): State<AppState>,
     user: CurrentUser,
     id: Result<Path<i32>, PathRejection>,
+    query: Result<Query<CueDownloadQuery>, QueryRejection>,
 ) -> AppResult<impl IntoResponse> {
     let id = crate::routes::path_i32(id)?;
+    let Query(query) = query .map_err(|_| AppError::BadRequest("Invalid query parameters".into()))?;
     let detail = disc_service::get_disc_detail(&state.pool, id).await?;
     disc_service::ensure_disc_status_visible(detail.disc.status, user.can_view_disabled_discs())?;
 
@@ -2349,11 +2369,17 @@ async fn disc_cue_download(
         return Err(AppError::NotFound);
     }
 
-    let cue = detail
-        .disc
-        .cue
-        .filter(|c| !c.is_empty())
-        .ok_or(AppError::NotFound)?;
+    let cue = if let Some(entry_id) = query.ring {
+        detail
+            .ring_entries
+            .iter()
+            .find(|entry| entry.id == entry_id)
+            .and_then(|entry| entry.cue_variant.clone())
+    } else {
+        detail.disc.cue.clone()
+    }
+    .filter(|c| !c.is_empty())
+    .ok_or(AppError::NotFound)?;
 
     let region_names: Vec<String> = detail.regions.iter().map(|r| r.name.clone()).collect();
     let language_codes = language_codes_for_rom_name(&detail.languages);
@@ -2679,6 +2705,7 @@ mod tests {
             offset_extra_value: None,
             sample_data_start: None,
             comment: comment.map(str::to_string),
+            cue_variant: None,
             layers,
         }
     }
@@ -2762,6 +2789,7 @@ mod tests {
                 additional_moulds: false,
                 toolstamps: false,
                 offset: false,
+                cue_variant: false,
                 offset_extra: false,
                 sample_data_start: false,
                 comment: false,
@@ -3022,7 +3050,9 @@ mod tests {
         let mut template = disc_view_template();
         template.ring_rows = vec![
             ViewRingRow {
+                entry_id: 1,
                 entry_num: 1,
+                has_cue_variant: false,
                 layer: "L0".to_string(),
                 mastering_code: "MASTER-L0".to_string(),
                 mastering_sid: String::new(),
@@ -3038,7 +3068,9 @@ mod tests {
                 entry_rowspan: 2,
             },
             ViewRingRow {
+                entry_id: 1,
                 entry_num: 1,
+                has_cue_variant: false,
                 layer: "LS".to_string(),
                 mastering_code: "MASTER-LS".to_string(),
                 mastering_sid: String::new(),
@@ -3062,6 +3094,7 @@ mod tests {
             additional_moulds: false,
             toolstamps: false,
             offset: true,
+            cue_variant: false,
             offset_extra: true,
             sample_data_start: true,
             comment: true,
