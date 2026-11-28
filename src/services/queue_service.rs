@@ -1288,6 +1288,7 @@ fn find_matching_identified_ring_entry(
     let change_offset_extra = operation_new_str(change, "offset_extra_value");
     let change_sample_start = operation_new_str(change, "sample_data_start");
     let change_comment = operation_new_str(change, "comment");
+    let change_cue_variant = operation_new_str(change, "cue_variant");
 
     'outer: for (ring_idx, ring) in rings.iter().enumerate() {
         if ring_is_scheduled_for_removal(ring, removed_ring_ids) {
@@ -1298,12 +1299,14 @@ fn find_matching_identified_ring_entry(
         let ring_offset_extra = ring["offset_extra_value"].as_str().unwrap_or("");
         let ring_sample_start = ring["sample_start"].as_str().unwrap_or("");
         let ring_comment = ring["comment"].as_str().unwrap_or("");
+        let ring_cue_variant = ring["cue_variant"].as_str().unwrap_or("");
         let ring_layers = ring["layers"].as_array();
 
         if !ring_numeric_values_match(ring_offset, &change_offset, false)
             || !ring_numeric_values_match(ring_offset_extra, &change_offset_extra, false)
             || !ring_numeric_values_match(ring_sample_start, &change_sample_start, false)
             || ring_comment != change_comment
+            || ring_cue_variant != change_cue_variant
         {
             continue;
         }

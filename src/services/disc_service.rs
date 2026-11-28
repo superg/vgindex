@@ -2661,13 +2661,6 @@ pub async fn regenerate_all_cue_entries(pool: &PgPool) -> AppResult<CueRebuildSu
         summary.skipped += 1;
     }
 
-    cue_variant_deletes.extend(
-        variants_by_disc
-            .into_values()
-            .flatten()
-            .map(|(entry_id, _)| entry_id),
-    );
-
     let compute_elapsed = compute_started.elapsed();
     tracing::info!(
         total = summary.total,
